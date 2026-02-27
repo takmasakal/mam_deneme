@@ -3,7 +3,8 @@ FROM node:22-bookworm-slim
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ffmpeg unzip poppler-utils antiword \
+  && apt-get install -y --no-install-recommends ffmpeg unzip poppler-utils antiword tesseract-ocr tesseract-ocr-tur python3 python3-pip \
+  && pip3 install --no-cache-dir --break-system-packages faster-whisper==1.1.1 requests \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./

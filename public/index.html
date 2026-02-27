@@ -58,9 +58,7 @@
           <textarea name="description" data-i18n-placeholder="ph_description" placeholder="Description"></textarea>
           <button type="submit" data-i18n="btn_upload_create">Upload & Create Asset</button>
           <div id="uploadProgressWrap" class="upload-progress hidden" aria-live="polite">
-            <div class="upload-progress-track">
-              <div id="uploadProgressBar" class="upload-progress-bar"></div>
-            </div>
+            <span id="uploadProgressSpinner" class="spinner upload-progress-spinner" aria-hidden="true"></span>
             <div id="uploadProgressText" class="upload-progress-text">0%</div>
           </div>
         </form>
@@ -121,6 +119,7 @@
       </section>
     </main>
 
+    <script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
     <script src="/main.js"></script>
   </body>
 </html>

@@ -11,7 +11,9 @@ const PORT = process.env.PORT || 3000;
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
 const PROXIES_DIR = path.join(UPLOADS_DIR, 'proxies');
 const THUMBNAILS_DIR = path.join(UPLOADS_DIR, 'thumbnails');
+const SUBTITLES_DIR = path.join(UPLOADS_DIR, 'subtitles');
 const proxyJobs = new Map();
+const subtitleJobs = new Map();
 
 app.use(express.json({ limit: '300mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -30,8 +32,10 @@ const DEFAULT_ADMIN_SETTINGS = {
 };
 const ELASTIC_URL = process.env.ELASTIC_URL || 'http://localhost:9200';
 const ELASTIC_INDEX = process.env.ELASTIC_INDEX || 'mam_assets';
+const WHISPER_MODEL = process.env.WHISPER_MODEL || 'small';
 const OIDC_JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
 const oidcJwksCache = new Map();
+const pdfOcrCache = new Map();
 
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -41,6 +45,9 @@ if (!fs.existsSync(PROXIES_DIR)) {
 }
 if (!fs.existsSync(THUMBNAILS_DIR)) {
   fs.mkdirSync(THUMBNAILS_DIR, { recursive: true });
+}
+if (!fs.existsSync(SUBTITLES_DIR)) {
+  fs.mkdirSync(SUBTITLES_DIR, { recursive: true });
 }
 
 function escapeElasticId(value) {
@@ -146,6 +153,142 @@ async function backfillElasticIndex() {
 function sanitizeFileName(fileName) {
   const cleaned = String(fileName || 'asset.bin').trim().replace(/[^a-zA-Z0-9._-]/g, '_');
   return cleaned || 'asset.bin';
+}
+
+function normalizeSubtitleLang(value) {
+  const lang = String(value || '').trim().toLowerCase();
+  if (!lang) return 'tr';
+  if (!/^[a-z0-9-]{2,12}$/.test(lang)) return 'tr';
+  return lang;
+}
+
+function sanitizeSubtitleItems(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const subtitleUrl = String(item.subtitleUrl || '').trim();
+      if (!subtitleUrl) return null;
+      return {
+        id: String(item.id || nanoid()).trim() || nanoid(),
+        subtitleUrl,
+        subtitleLang: normalizeSubtitleLang(item.subtitleLang),
+        subtitleLabel: String(item.subtitleLabel || '').trim() || 'subtitle',
+        createdAt: String(item.createdAt || new Date().toISOString())
+      };
+    })
+    .filter(Boolean);
+}
+
+function normalizeSubtitleTime(value) {
+  const raw = String(value || '').trim();
+  const match = raw.match(/^(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})$/);
+  if (!match) return null;
+  const hh = match[1].padStart(2, '0');
+  const mm = match[2];
+  const ss = match[3];
+  const mmm = match[4].padEnd(3, '0').slice(0, 3);
+  return `${hh}:${mm}:${ss}.${mmm}`;
+}
+
+function normalizeVttContent(input) {
+  let text = String(input || '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trim();
+  if (!text) return 'WEBVTT\n\n';
+  if (!text.startsWith('WEBVTT')) {
+    text = `WEBVTT\n\n${text}`;
+  }
+  return `${text}\n`
+    .replace(/(\d{1,2}:\d{2}:\d{2}),(\d{1,3})/g, (_, a, b) => `${a}.${String(b).padEnd(3, '0').slice(0, 3)}`);
+}
+
+function convertSrtToVtt(input) {
+  const lines = String(input || '')
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n');
+  const out = ['WEBVTT', ''];
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = String(lines[i] || '');
+    const trimmed = line.trim();
+    if (/^\d+$/.test(trimmed)) continue;
+    if (!trimmed) {
+      out.push('');
+      continue;
+    }
+
+    if (line.includes('-->')) {
+      const match = line.match(/^\s*([^ ]+)\s*-->\s*([^ ]+)(.*)$/);
+      if (match) {
+        const start = normalizeSubtitleTime(match[1]);
+        const end = normalizeSubtitleTime(match[2]);
+        if (start && end) {
+          out.push(`${start} --> ${end}${match[3] || ''}`);
+          continue;
+        }
+      }
+    }
+
+    out.push(line);
+  }
+
+  return normalizeVttContent(out.join('\n'));
+}
+
+function buildGeneratedSubtitleVtt(assetTitle, durationSeconds) {
+  const total = Math.max(15, Math.round(Number(durationSeconds) || 0));
+  const segmentCount = Math.min(16, Math.max(3, Math.ceil(total / 15)));
+  const segmentLen = Math.max(5, Math.ceil(total / segmentCount));
+  const title = String(assetTitle || 'Asset').trim() || 'Asset';
+  const lines = ['WEBVTT', ''];
+
+  for (let i = 0; i < segmentCount; i += 1) {
+    const fromSec = i * segmentLen;
+    const toSec = Math.min(total, fromSec + segmentLen);
+    const cueNo = i + 1;
+    const toTs = (sec) => {
+      const s = Math.max(0, Math.floor(sec));
+      const hh = String(Math.floor(s / 3600)).padStart(2, '0');
+      const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+      const ss = String(s % 60).padStart(2, '0');
+      return `${hh}:${mm}:${ss}.000`;
+    };
+    lines.push(`${toTs(fromSec)} --> ${toTs(toSec)}`);
+    lines.push(`[${title}] Subtitle cue ${cueNo}`);
+    lines.push('');
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+async function saveAssetSubtitleMetadata(assetId, row, subtitleUrl, subtitleLang, subtitleLabel) {
+  const now = new Date().toISOString();
+  const existingDc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+  const items = sanitizeSubtitleItems(existingDc.subtitleItems);
+  items.push({
+    id: nanoid(),
+    subtitleUrl: String(subtitleUrl || '').trim(),
+    subtitleLang: normalizeSubtitleLang(subtitleLang),
+    subtitleLabel: String(subtitleLabel || '').trim() || 'subtitle',
+    createdAt: now
+  });
+  const dcMetadata = {
+    ...existingDc,
+    subtitleUrl: String(subtitleUrl || '').trim(),
+    subtitleLang: normalizeSubtitleLang(subtitleLang),
+    subtitleLabel: String(subtitleLabel || '').trim(),
+    subtitleItems: items
+  };
+  const result = await pool.query(
+    `
+      UPDATE assets
+      SET dc_metadata = $2::jsonb,
+          updated_at = $3
+      WHERE id = $1
+      RETURNING *
+    `,
+    [assetId, JSON.stringify(dcMetadata), now]
+  );
+  return result.rows[0];
 }
 
 function normalizeTypeFolder(typeValue, mimeType, fileName) {
@@ -430,6 +573,19 @@ function publicUploadUrlToAbsolutePath(publicUrl) {
   return path.join(UPLOADS_DIR, rel);
 }
 
+function resolveAssetInputPath(row) {
+  let inputPath = String(row?.source_path || '').trim();
+  if (inputPath && fs.existsSync(inputPath)) return inputPath;
+
+  const mediaPath = publicUploadUrlToAbsolutePath(row?.media_url);
+  if (mediaPath && fs.existsSync(mediaPath)) return mediaPath;
+
+  const proxyPath = publicUploadUrlToAbsolutePath(resolveStoredUrl(row?.proxy_url, 'proxies'));
+  if (proxyPath && fs.existsSync(proxyPath)) return proxyPath;
+
+  return '';
+}
+
 function resolveStoredUrl(value, defaultSubdir) {
   const raw = String(value || '').trim();
   if (!raw) return '';
@@ -619,6 +775,206 @@ async function extractPreviewContentFromFile(row, inputPath) {
   return { text: '', html: '', mode: 'text' };
 }
 
+async function extractPdfPagesText(inputPath) {
+  const pdfToText = await runCommandCapture('pdftotext', ['-layout', inputPath, '-']);
+  if (!pdfToText.ok) return [];
+  const raw = String(pdfToText.stdout || '');
+  if (!raw.trim()) return [];
+  return raw
+    .split('\f')
+    .map((page) => normalizeExtractedText(page))
+    .filter((page, idx, arr) => idx < arr.length - 1 || page.trim().length > 0);
+}
+
+async function getPdfPageCount(inputPath) {
+  const info = await runCommandCapture('pdfinfo', [inputPath]);
+  if (!info.ok) return 0;
+  const text = String(info.stdout || '');
+  const match = text.match(/Pages:\s+(\d+)/i);
+  const parsed = Number(match?.[1] || 0);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+async function renderPdfPageJpegBuffer(inputPath, page, width) {
+  const safePage = Math.max(1, Number(page) || 1);
+  const safeWidth = Math.max(320, Math.min(2200, Math.round(Number(width) || 1200)));
+  const baseName = `${Date.now()}-${nanoid()}-pdf-${safePage}`;
+  const outBase = path.join('/tmp', baseName);
+  const outFile = `${outBase}.jpg`;
+
+  try {
+    const result = await runCommandQuiet('pdftoppm', [
+      '-jpeg',
+      '-f',
+      String(safePage),
+      '-singlefile',
+      '-scale-to',
+      String(safeWidth),
+      inputPath,
+      outBase
+    ]);
+    if (!result.ok || !fs.existsSync(outFile)) return null;
+    return fs.readFileSync(outFile);
+  } catch (_error) {
+    return null;
+  } finally {
+    try {
+      if (fs.existsSync(outFile)) fs.unlinkSync(outFile);
+    } catch (_error) {
+      // ignore
+    }
+  }
+}
+
+function normalizeForSearch(value) {
+  return String(value || '')
+    .normalize('NFC')
+    .toLocaleLowerCase('tr')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseTesseractTsvWords(tsvText) {
+  const lines = String(tsvText || '').split(/\r?\n/);
+  if (lines.length < 2) return [];
+  const words = [];
+  for (let i = 1; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!line) continue;
+    const cols = line.split('\t');
+    if (cols.length < 12) continue;
+    const text = String(cols[11] || '').trim();
+    if (!text) continue;
+    const conf = Number(cols[10] || 0);
+    if (Number.isFinite(conf) && conf < 25) continue;
+    const left = Number(cols[6] || 0);
+    const top = Number(cols[7] || 0);
+    const width = Number(cols[8] || 0);
+    const height = Number(cols[9] || 0);
+    if (width <= 0 || height <= 0) continue;
+    words.push({ text, left, top, width, height });
+  }
+  return words;
+}
+
+function findOcrPhraseMatches(words, query) {
+  const qNorm = normalizeForSearch(query);
+  if (!qNorm) return [];
+  const qTokens = qNorm.split(' ').filter(Boolean);
+  if (!qTokens.length) return [];
+
+  const tokens = words.map((w) => normalizeForSearch(w.text));
+  const matches = [];
+
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (!tokens[i]) continue;
+
+    if (qTokens.length === 1) {
+      if (!tokens[i].includes(qTokens[0])) continue;
+      matches.push([i, i]);
+      continue;
+    }
+
+    let j = i;
+    let built = tokens[j] || '';
+    while (j + 1 < tokens.length && built.length <= (qNorm.length + 24)) {
+      if (built === qNorm) break;
+      j += 1;
+      built = `${built} ${tokens[j] || ''}`.trim();
+    }
+    if (built === qNorm) {
+      matches.push([i, j]);
+    }
+  }
+  return matches;
+}
+
+function makeOcrSnippet(words, startIdx, endIdx) {
+  const from = Math.max(0, startIdx - 8);
+  const to = Math.min(words.length - 1, endIdx + 8);
+  const text = words.slice(from, to + 1).map((w) => String(w.text || '')).join(' ').trim();
+  if (!text) return '';
+  return `${from > 0 ? '...' : ''}${text}${to < words.length - 1 ? '...' : ''}`;
+}
+
+function matchBoxFromWords(words, startIdx, endIdx) {
+  const slice = words.slice(startIdx, endIdx + 1);
+  const left = Math.min(...slice.map((w) => Number(w.left) || 0));
+  const top = Math.min(...slice.map((w) => Number(w.top) || 0));
+  const right = Math.max(...slice.map((w) => (Number(w.left) || 0) + (Number(w.width) || 0)));
+  const bottom = Math.max(...slice.map((w) => (Number(w.top) || 0) + (Number(w.height) || 0)));
+  return {
+    left,
+    top,
+    width: Math.max(1, right - left),
+    height: Math.max(1, bottom - top)
+  };
+}
+
+async function ocrPdfWordsForPage({ assetId, inputPath, page, width, lang }) {
+  const safePage = Math.max(1, Number(page) || 1);
+  const safeWidth = Math.max(700, Math.min(2200, Math.round(Number(width) || 1400)));
+  const safeLang = String(lang || 'tur+eng').trim() || 'tur+eng';
+  const cacheKey = `${assetId}:${safePage}:${safeWidth}:${safeLang}`;
+  if (pdfOcrCache.has(cacheKey)) return pdfOcrCache.get(cacheKey);
+
+  const baseName = `${Date.now()}-${nanoid()}-ocr-${safePage}`;
+  const outBase = path.join('/tmp', baseName);
+  const outFile = `${outBase}.jpg`;
+  try {
+    const rendered = await runCommandQuiet('pdftoppm', [
+      '-jpeg',
+      '-f',
+      String(safePage),
+      '-singlefile',
+      '-scale-to',
+      String(safeWidth),
+      inputPath,
+      outBase
+    ]);
+    if (!rendered.ok || !fs.existsSync(outFile)) return [];
+
+    const tsv = await runCommandCapture('tesseract', [
+      outFile,
+      'stdout',
+      '-l',
+      safeLang,
+      '--dpi',
+      '300',
+      '--psm',
+      '6',
+      'tsv'
+    ]);
+    if (!tsv.ok) return [];
+
+    const words = parseTesseractTsvWords(tsv.stdout || '');
+    pdfOcrCache.set(cacheKey, words);
+    return words;
+  } catch (_error) {
+    return [];
+  } finally {
+    try {
+      if (fs.existsSync(outFile)) fs.unlinkSync(outFile);
+    } catch (_error) {
+      // ignore
+    }
+  }
+}
+
+function buildPdfSearchSnippet(text, query, radius = 90) {
+  const source = String(text || '').replace(/\s+/g, ' ').trim();
+  const needle = String(query || '').trim().toLowerCase();
+  if (!source || !needle) return '';
+  const hit = source.toLowerCase().indexOf(needle);
+  if (hit < 0) return '';
+  const start = Math.max(0, hit - radius);
+  const end = Math.min(source.length, hit + needle.length + radius);
+  let out = source.slice(start, end);
+  if (start > 0) out = `...${out}`;
+  if (end < source.length) out = `${out}...`;
+  return out;
+}
+
 function toTags(input) {
   if (Array.isArray(input)) {
     return input.map((t) => String(t).trim()).filter(Boolean);
@@ -682,6 +1038,17 @@ function buildDefaultDcMetadata(input) {
 function mapAssetRow(row) {
   const proxyUrl = resolveStoredUrl(row.proxy_url, 'proxies');
   const thumbnailUrl = resolveStoredUrl(row.thumbnail_url, 'thumbnails');
+  const dcMetadata = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+  let subtitleItems = sanitizeSubtitleItems(dcMetadata.subtitleItems);
+  if (!subtitleItems.length && String(dcMetadata.subtitleUrl || '').trim()) {
+    subtitleItems = [{
+      id: nanoid(),
+      subtitleUrl: String(dcMetadata.subtitleUrl || '').trim(),
+      subtitleLang: normalizeSubtitleLang(dcMetadata.subtitleLang),
+      subtitleLabel: String(dcMetadata.subtitleLabel || '').trim() || 'subtitle',
+      createdAt: row.updated_at || row.created_at || new Date().toISOString()
+    }];
+  }
   return {
     id: row.id,
     title: row.title,
@@ -697,7 +1064,11 @@ function mapAssetRow(row) {
     thumbnailUrl,
     fileName: row.file_name,
     mimeType: row.mime_type,
-    dcMetadata: row.dc_metadata || {},
+    dcMetadata,
+    subtitleUrl: String(dcMetadata.subtitleUrl || '').trim(),
+    subtitleLang: dcMetadata.subtitleUrl ? normalizeSubtitleLang(dcMetadata.subtitleLang) : '',
+    subtitleLabel: String(dcMetadata.subtitleLabel || '').trim(),
+    subtitleItems,
     status: row.status,
     deletedAt: row.deleted_at,
     inTrash: Boolean(row.deleted_at),
@@ -890,6 +1261,100 @@ function runCommandCapture(cmd, args) {
       resolve({ ok: code === 0, code: code ?? -1, stdout, stderr });
     });
   });
+}
+
+function runCommandQuiet(cmd, args) {
+  return new Promise((resolve) => {
+    const p = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    p.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    p.on('error', (error) => {
+      resolve({ ok: false, code: -1, stderr: String(error.message || error) });
+    });
+    p.on('close', (code) => {
+      resolve({ ok: code === 0, code: code ?? -1, stderr });
+    });
+  });
+}
+
+async function transcribeMediaToVtt(inputPath, outputPath, options = {}) {
+  const scriptPath = path.join(__dirname, 'transcribe_whisper.py');
+  const lang = String(options.lang || '').trim().toLowerCase();
+  const model = String(options.model || WHISPER_MODEL || 'small').trim();
+  const args = [
+    scriptPath,
+    '--input',
+    inputPath,
+    '--output',
+    outputPath,
+    '--model',
+    model
+  ];
+  if (lang) {
+    args.push('--lang', lang);
+  }
+  return runCommandCapture('python3', args);
+}
+
+function queueSubtitleGenerationJob(row, options = {}) {
+  const jobId = nanoid();
+  const subtitleLang = normalizeSubtitleLang(options.lang);
+  const subtitleLabel = String(options.label || 'auto-whisper').trim() || 'auto-whisper';
+  const model = String(options.model || WHISPER_MODEL || 'tiny').trim() || 'tiny';
+  const now = new Date().toISOString();
+  const job = {
+    jobId,
+    assetId: row.id,
+    status: 'queued',
+    model,
+    subtitleLang,
+    subtitleLabel,
+    subtitleUrl: '',
+    error: '',
+    startedAt: now,
+    updatedAt: now,
+    finishedAt: ''
+  };
+  subtitleJobs.set(jobId, job);
+
+  setTimeout(async () => {
+    const running = subtitleJobs.get(jobId);
+    if (!running) return;
+    running.status = 'running';
+    running.updatedAt = new Date().toISOString();
+
+    try {
+      const inputPath = resolveAssetInputPath(row);
+      if (!inputPath) throw new Error('Source media not found for transcription');
+      const storedName = `${Date.now()}-${nanoid()}-auto-${sanitizeFileName(row.id)}.vtt`;
+      const absolutePath = path.join(SUBTITLES_DIR, storedName);
+      const transcription = await transcribeMediaToVtt(inputPath, absolutePath, {
+        lang: subtitleLang,
+        model
+      });
+      if (!transcription.ok || !fs.existsSync(absolutePath) || fs.statSync(absolutePath).size < 16) {
+        throw new Error(String(transcription.stderr || transcription.stdout || 'Subtitle transcription failed'));
+      }
+      const subtitleUrl = `/uploads/subtitles/${storedName}`;
+      const updatedRow = await saveAssetSubtitleMetadata(row.id, row, subtitleUrl, subtitleLang, subtitleLabel);
+      running.status = 'completed';
+      running.subtitleUrl = subtitleUrl;
+      running.subtitleLang = subtitleLang;
+      running.subtitleLabel = subtitleLabel;
+      running.asset = mapAssetRow(updatedRow);
+      running.finishedAt = new Date().toISOString();
+      running.updatedAt = running.finishedAt;
+    } catch (error) {
+      running.status = 'failed';
+      running.error = String(error?.message || 'Subtitle generation failed').slice(0, 800);
+      running.finishedAt = new Date().toISOString();
+      running.updatedAt = running.finishedAt;
+    }
+  }, 10);
+
+  return job;
 }
 
 async function getAdminSettings() {
@@ -1626,6 +2091,229 @@ app.get('/api/assets/:id', async (req, res) => {
   }
 });
 
+app.post('/api/assets/:id/subtitles', async (req, res) => {
+  try {
+    const { fileName, fileData, lang } = req.body || {};
+    if (!fileName || !fileData) {
+      return res.status(400).json({ error: 'fileName and fileData are required' });
+    }
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
+    if (!assetResult.rowCount) {
+      return res.status(404).json({ error: 'Asset not found' });
+    }
+
+    const row = assetResult.rows[0];
+    if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+      return res.status(400).json({ error: 'Subtitles are supported only for video assets' });
+    }
+
+    const safeName = sanitizeFileName(fileName);
+    const ext = path.extname(safeName).toLowerCase();
+    if (ext !== '.vtt' && ext !== '.srt') {
+      return res.status(400).json({ error: 'Only .vtt or .srt subtitle files are supported' });
+    }
+
+    let rawText = '';
+    try {
+      rawText = Buffer.from(String(fileData), 'base64').toString('utf8');
+    } catch (_error) {
+      return res.status(400).json({ error: 'Could not decode subtitle file' });
+    }
+
+    const subtitleVtt = ext === '.srt' ? convertSrtToVtt(rawText) : normalizeVttContent(rawText);
+    const base = path.basename(safeName, ext) || 'subtitle';
+    const storedName = `${Date.now()}-${nanoid()}-${sanitizeFileName(base)}.vtt`;
+    const absolutePath = path.join(SUBTITLES_DIR, storedName);
+    fs.writeFileSync(absolutePath, subtitleVtt, 'utf8');
+
+    const subtitleUrl = `/uploads/subtitles/${storedName}`;
+    const updatedRow = await saveAssetSubtitleMetadata(
+      req.params.id,
+      row,
+      subtitleUrl,
+      normalizeSubtitleLang(lang),
+      safeName
+    );
+    return res.json({
+      subtitleUrl,
+      subtitleLang: normalizeSubtitleLang(lang),
+      subtitleLabel: safeName,
+      asset: mapAssetRow(updatedRow)
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to upload subtitle' });
+  }
+});
+
+app.post('/api/assets/:id/subtitles/generate', async (req, res) => {
+  try {
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
+    if (!assetResult.rowCount) {
+      return res.status(404).json({ error: 'Asset not found' });
+    }
+
+    const row = assetResult.rows[0];
+    if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+      return res.status(400).json({ error: 'Subtitles are supported only for video assets' });
+    }
+
+    const subtitleLang = normalizeSubtitleLang(req.body?.lang);
+    const subtitleLabel = String(req.body?.label || 'auto-whisper').trim() || 'auto-whisper';
+    const model = String(req.body?.model || WHISPER_MODEL || 'tiny').trim() || 'tiny';
+    const job = queueSubtitleGenerationJob(row, {
+      lang: subtitleLang,
+      label: subtitleLabel,
+      model
+    });
+    return res.status(202).json({
+      jobId: job.jobId,
+      status: job.status,
+      subtitleLang,
+      subtitleLabel,
+      model
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to generate subtitle' });
+  }
+});
+
+app.get('/api/subtitle-jobs/:jobId', (req, res) => {
+  const job = subtitleJobs.get(String(req.params.jobId || '').trim());
+  if (!job) return res.status(404).json({ error: 'Subtitle job not found' });
+  return res.json({
+    jobId: job.jobId,
+    assetId: job.assetId,
+    status: job.status,
+    subtitleUrl: job.subtitleUrl || '',
+    subtitleLang: job.subtitleLang || '',
+    subtitleLabel: job.subtitleLabel || '',
+    model: job.model || '',
+    asset: job.asset || null,
+    error: job.error || '',
+    startedAt: job.startedAt,
+    updatedAt: job.updatedAt,
+    finishedAt: job.finishedAt || ''
+  });
+});
+
+app.patch('/api/assets/:id/subtitles', async (req, res) => {
+  try {
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
+    if (!assetResult.rowCount) {
+      return res.status(404).json({ error: 'Asset not found' });
+    }
+    const row = assetResult.rows[0];
+    if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+      return res.status(400).json({ error: 'Subtitles are supported only for video assets' });
+    }
+
+    const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+    const items = sanitizeSubtitleItems(dc.subtitleItems);
+    const requestedUrl = String(req.body?.subtitleUrl || '').trim();
+    const subtitleUrl = requestedUrl || String(dc.subtitleUrl || '').trim();
+    if (!subtitleUrl) return res.status(400).json({ error: 'No subtitle found for this asset' });
+    const exists = items.some((item) => item.subtitleUrl === subtitleUrl);
+    if (!exists) return res.status(400).json({ error: 'Subtitle item not found' });
+
+    const subtitleLang = normalizeSubtitleLang(req.body?.lang || dc.subtitleLang || 'tr');
+    const subtitleLabel = String(req.body?.label || dc.subtitleLabel || '').trim() || 'subtitle';
+    const updatedItems = items.map((item) => {
+      if (item.subtitleUrl !== subtitleUrl) return item;
+      return {
+        ...item,
+        subtitleLang,
+        subtitleLabel
+      };
+    });
+    const updatedDc = {
+      ...dc,
+      subtitleUrl,
+      subtitleLang,
+      subtitleLabel,
+      subtitleItems: updatedItems
+    };
+    const updatedResult = await pool.query(
+      `
+        UPDATE assets
+        SET dc_metadata = $2::jsonb,
+            updated_at = $3
+        WHERE id = $1
+        RETURNING *
+      `,
+      [req.params.id, JSON.stringify(updatedDc), new Date().toISOString()]
+    );
+    const updatedRow = updatedResult.rows[0];
+    return res.json({
+      subtitleUrl,
+      subtitleLang,
+      subtitleLabel,
+      asset: mapAssetRow(updatedRow)
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to update subtitle metadata' });
+  }
+});
+
+app.delete('/api/assets/:id/subtitles', async (req, res) => {
+  try {
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
+    if (!assetResult.rowCount) {
+      return res.status(404).json({ error: 'Asset not found' });
+    }
+    const row = assetResult.rows[0];
+    if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+      return res.status(400).json({ error: 'Subtitles are supported only for video assets' });
+    }
+
+    const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+    const subtitleUrl = String(req.body?.subtitleUrl || '').trim();
+    if (!subtitleUrl) return res.status(400).json({ error: 'subtitleUrl is required' });
+
+    const items = sanitizeSubtitleItems(dc.subtitleItems);
+    const exists = items.some((item) => item.subtitleUrl === subtitleUrl);
+    if (!exists) return res.status(404).json({ error: 'Subtitle item not found' });
+
+    const nextItems = items.filter((item) => item.subtitleUrl !== subtitleUrl);
+    let nextActive = String(dc.subtitleUrl || '').trim();
+    if (nextActive === subtitleUrl) {
+      nextActive = nextItems.length ? nextItems[nextItems.length - 1].subtitleUrl : '';
+    }
+    const activeItem = nextItems.find((item) => item.subtitleUrl === nextActive);
+    const nextLang = activeItem ? normalizeSubtitleLang(activeItem.subtitleLang) : '';
+    const nextLabel = activeItem ? String(activeItem.subtitleLabel || '').trim() : '';
+
+    const updatedDc = {
+      ...dc,
+      subtitleUrl: nextActive,
+      subtitleLang: nextLang,
+      subtitleLabel: nextLabel,
+      subtitleItems: nextItems
+    };
+    const updatedResult = await pool.query(
+      `
+        UPDATE assets
+        SET dc_metadata = $2::jsonb,
+            updated_at = $3
+        WHERE id = $1
+        RETURNING *
+      `,
+      [req.params.id, JSON.stringify(updatedDc), new Date().toISOString()]
+    );
+
+    const filePath = publicUploadUrlToAbsolutePath(subtitleUrl);
+    if (filePath && filePath.startsWith(SUBTITLES_DIR) && fs.existsSync(filePath)) {
+      try { fs.unlinkSync(filePath); } catch (_error) {}
+    }
+
+    return res.json({
+      removed: subtitleUrl,
+      asset: mapAssetRow(updatedResult.rows[0])
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to remove subtitle' });
+  }
+});
+
 app.get('/api/assets/:id/preview-text', async (req, res) => {
   try {
     const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
@@ -1651,6 +2339,178 @@ app.get('/api/assets/:id/preview-text', async (req, res) => {
     });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to load preview text' });
+  }
+});
+
+app.get('/api/assets/:id/pdf-search', async (req, res) => {
+  try {
+    const query = String(req.query.q || '').trim();
+    if (!query) return res.status(400).json({ error: 'q is required' });
+
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
+    if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
+    const row = assetResult.rows[0];
+    if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+      return res.status(400).json({ error: 'Asset is not a PDF' });
+    }
+
+    let inputPath = row.source_path;
+    if (!inputPath || !fs.existsSync(inputPath)) {
+      const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
+      if (mediaPath && fs.existsSync(mediaPath)) inputPath = mediaPath;
+    }
+    if (!inputPath || !fs.existsSync(inputPath)) {
+      return res.status(404).json({ error: 'PDF file not found on server' });
+    }
+
+    const pages = await extractPdfPagesText(inputPath);
+    if (!pages.length) {
+      return res.json({ query, totalPages: 0, matches: [] });
+    }
+
+    const queryLower = query.toLowerCase();
+    const matches = [];
+    for (let i = 0; i < pages.length; i += 1) {
+      const pageText = String(pages[i] || '');
+      const lowered = pageText.toLowerCase();
+      let from = 0;
+      let count = 0;
+      while (true) {
+        const hit = lowered.indexOf(queryLower, from);
+        if (hit < 0) break;
+        count += 1;
+        from = hit + queryLower.length;
+      }
+      if (count > 0) {
+        matches.push({
+          page: i + 1,
+          count,
+          snippet: buildPdfSearchSnippet(pageText, query)
+        });
+      }
+    }
+
+    return res.json({ query, totalPages: pages.length, matches: matches.slice(0, 200) });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to search PDF' });
+  }
+});
+
+app.get('/api/assets/:id/pdf-search-ocr', async (req, res) => {
+  try {
+    const query = String(req.query.q || '').trim();
+    if (!query) return res.status(400).json({ error: 'q is required' });
+    const lang = String(req.query.lang || 'tur+eng').trim() || 'tur+eng';
+    const width = Math.max(700, Math.min(2200, Number(req.query.width) || 1400));
+
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
+    if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
+    const row = assetResult.rows[0];
+    if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+      return res.status(400).json({ error: 'Asset is not a PDF' });
+    }
+
+    let inputPath = row.source_path;
+    if (!inputPath || !fs.existsSync(inputPath)) {
+      const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
+      if (mediaPath && fs.existsSync(mediaPath)) inputPath = mediaPath;
+    }
+    if (!inputPath || !fs.existsSync(inputPath)) {
+      return res.status(404).json({ error: 'PDF file not found on server' });
+    }
+
+    const totalPages = await getPdfPageCount(inputPath);
+    const matches = [];
+    for (let p = 1; p <= totalPages; p += 1) {
+      const words = await ocrPdfWordsForPage({
+        assetId: row.id,
+        inputPath,
+        page: p,
+        width,
+        lang
+      });
+      if (!words.length) continue;
+      const ranges = findOcrPhraseMatches(words, query);
+      if (!ranges.length) continue;
+
+      ranges.forEach(([startIdx, endIdx]) => {
+        matches.push({
+          page: p,
+          count: 1,
+          snippet: makeOcrSnippet(words, startIdx, endIdx),
+          box: matchBoxFromWords(words, startIdx, endIdx)
+        });
+      });
+    }
+
+    return res.json({
+      query,
+      lang,
+      totalPages,
+      ocrWidth: width,
+      matches: matches.slice(0, 500)
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to search PDF with OCR' });
+  }
+});
+
+app.get('/api/assets/:id/pdf-meta', async (req, res) => {
+  try {
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
+    if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
+    const row = assetResult.rows[0];
+    if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+      return res.status(400).json({ error: 'Asset is not a PDF' });
+    }
+
+    let inputPath = row.source_path;
+    if (!inputPath || !fs.existsSync(inputPath)) {
+      const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
+      if (mediaPath && fs.existsSync(mediaPath)) inputPath = mediaPath;
+    }
+    if (!inputPath || !fs.existsSync(inputPath)) {
+      return res.status(404).json({ error: 'PDF file not found on server' });
+    }
+
+    const totalPages = await getPdfPageCount(inputPath);
+    return res.json({ totalPages });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load PDF metadata' });
+  }
+});
+
+app.get('/api/assets/:id/pdf-page-image', async (req, res) => {
+  try {
+    const requestedPage = Math.max(1, Number(req.query.page) || 1);
+    const requestedWidth = Math.max(320, Math.min(2200, Number(req.query.width) || 1200));
+
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
+    if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
+    const row = assetResult.rows[0];
+    if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+      return res.status(400).json({ error: 'Asset is not a PDF' });
+    }
+
+    let inputPath = row.source_path;
+    if (!inputPath || !fs.existsSync(inputPath)) {
+      const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
+      if (mediaPath && fs.existsSync(mediaPath)) inputPath = mediaPath;
+    }
+    if (!inputPath || !fs.existsSync(inputPath)) {
+      return res.status(404).json({ error: 'PDF file not found on server' });
+    }
+
+    const totalPages = await getPdfPageCount(inputPath);
+    const safePage = totalPages > 0 ? Math.min(requestedPage, totalPages) : requestedPage;
+    const imageBuffer = await renderPdfPageJpegBuffer(inputPath, safePage, requestedWidth);
+    if (!imageBuffer) return res.status(500).json({ error: 'Failed to render PDF page image' });
+
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'no-store');
+    return res.send(imageBuffer);
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load PDF page image' });
   }
 });
 

@@ -5,6 +5,7 @@ const mediaFileName = document.getElementById('mediaFileName');
 const uploadProgressWrap = document.getElementById('uploadProgressWrap');
 const uploadProgressBar = document.getElementById('uploadProgressBar');
 const uploadProgressText = document.getElementById('uploadProgressText');
+const uploadProgressSpinner = document.getElementById('uploadProgressSpinner');
 const searchForm = document.getElementById('searchForm');
 const assetGrid = document.getElementById('assetGrid');
 const assetDetail = document.getElementById('assetDetail');
@@ -43,6 +44,7 @@ const selectedAssetIds = new Set();
 let lastSelectedAssetId = null;
 let currentSearchQuery = '';
 const cutMarksByAsset = new Map();
+const subtitleOverlayEnabledByAsset = new Map();
 let panelSizes = Object.fromEntries(PANELS.map((p) => [p.id, p.defaultSize]));
 let panelVisibility = { panelIngest: true, panelAssets: true, panelDetail: true };
 let i18n = {
@@ -195,8 +197,39 @@ let i18n = {
     preview_search_placeholder: 'Search in preview',
     preview_search_empty: 'No matches',
     preview_next: 'Next',
+    preview_find: 'Find',
+    preview_search_error: 'Search failed',
+    preview_reset: 'Reset',
+    pdf_preview_unavailable: 'PDF preview engine is unavailable.',
     generate_proxy: 'Generate Proxy',
-    download_asset: 'Download'
+    download_asset: 'Download',
+    video_native_audio: 'Native video audio mode is active.',
+    subtitles: 'Subtitles',
+    subtitle_lang: 'Lang',
+    subtitle_none: 'No subtitle loaded',
+    subtitle_loaded: 'Subtitle loaded',
+    subtitle_upload: 'Upload Subtitle',
+    subtitle_generate: 'Generate Subtitle',
+    subtitle_upload_success: 'Subtitle uploaded.',
+    subtitle_generate_success: 'Subtitle generated.',
+    subtitle_file_required: 'Please choose a .srt or .vtt subtitle file first.',
+    subtitle_name: 'Subtitle name',
+    subtitle_save_name: 'Save name',
+    subtitle_list: 'Subtitle list',
+    subtitle_use: 'Use',
+    subtitle_active: 'Active',
+    subtitle_download: 'Download',
+    subtitle_remove: 'Remove',
+    subtitle_remove_confirm: 'Remove this subtitle from the list?',
+    subtitle_no_items: 'No subtitle items',
+    subtitle_rename_success: 'Subtitle name saved.',
+    subtitle_job_started: 'Subtitle generation started. Please wait...',
+    subtitle_job_failed: 'Subtitle generation failed.',
+    video_tools: 'Video Tools',
+    video_tools_title: 'Video Tools',
+    close: 'Close',
+    subtitle_current: 'Current subtitle',
+    subtitle_overlay_enabled: 'Show subtitle overlay in preview'
   },
   tr: {
     app_title: 'Yayın MAM Konsolu',
@@ -347,8 +380,39 @@ let i18n = {
     preview_search_placeholder: 'Önizlemede ara',
     preview_search_empty: 'Eşleşme yok',
     preview_next: 'Sonraki',
+    preview_find: 'Bul',
+    preview_search_error: 'Arama basarisiz',
+    preview_reset: 'Sifirla',
+    pdf_preview_unavailable: 'PDF onizleme motoru kullanilamiyor.',
     generate_proxy: 'Proxy Oluştur',
-    download_asset: 'İndir'
+    download_asset: 'İndir',
+    video_native_audio: 'Yerel video ses modu aktif.',
+    subtitles: 'Altyazı',
+    subtitle_lang: 'Dil',
+    subtitle_none: 'Yüklü altyazı yok',
+    subtitle_loaded: 'Altyazı yüklendi',
+    subtitle_upload: 'Altyazı Yükle',
+    subtitle_generate: 'Altyazı Oluştur',
+    subtitle_upload_success: 'Altyazı yüklendi.',
+    subtitle_generate_success: 'Altyazı oluşturuldu.',
+    subtitle_file_required: 'Önce bir .srt veya .vtt altyazı dosyası seçin.',
+    subtitle_name: 'Altyazı adı',
+    subtitle_save_name: 'Adı kaydet',
+    subtitle_list: 'Altyazı listesi',
+    subtitle_use: 'Kullan',
+    subtitle_active: 'Aktif',
+    subtitle_download: 'Indir',
+    subtitle_remove: 'Sil',
+    subtitle_remove_confirm: 'Bu altyazi listeden silinsin mi?',
+    subtitle_no_items: 'Altyazı yok',
+    subtitle_rename_success: 'Altyazı adı kaydedildi.',
+    subtitle_job_started: 'Altyazı üretimi başladı. Lütfen bekleyin...',
+    subtitle_job_failed: 'Altyazı üretimi başarısız.',
+    video_tools: 'Video Araçları',
+    video_tools_title: 'Video Araçları',
+    close: 'Kapat',
+    subtitle_current: 'Mevcut altyazı',
+    subtitle_overlay_enabled: 'Önizlemede altyazı katmanını göster'
   }
 };
 let currentLang = localStorage.getItem(LOCAL_LANG) || 'en';
@@ -476,9 +540,9 @@ function setPanelVisible(panelId, nextVisible) {
 }
 
 function applyPanelLayout() {
-  const ingest = Math.max(0.48, Number(panelSizes.panelIngest) || 1);
-  const assets = Math.max(0.6, Number(panelSizes.panelAssets) || 1);
-  const detail = Math.max(0.6, Number(panelSizes.panelDetail) || 1);
+  const ingest = Math.max(0.34, Number(panelSizes.panelIngest) || 1);
+  const assets = Math.max(0.45, Number(panelSizes.panelAssets) || 1);
+  const detail = Math.max(0.22, Number(panelSizes.panelDetail) || 1);
   const ingestVisible = isPanelVisible('panelIngest');
   const assetsVisible = isPanelVisible('panelAssets');
   const detailVisible = isPanelVisible('panelDetail');
@@ -497,8 +561,9 @@ function applyPanelLayout() {
 
 function initPanelSplitters() {
   const isMobile = () => window.matchMedia('(max-width: 760px)').matches;
-  const minSize = 0.6;
-  const minIngestAnyMode = Number((minSize * 0.8).toFixed(2));
+  const minSize = 0.45;
+  const minDetail = 0.22;
+  const minIngestAnyMode = Number((minSize * 0.76).toFixed(2));
 
   const clampPair = (a, b, minA = minSize, minB = minSize) => {
     if (a < minA) {
@@ -553,7 +618,7 @@ function initPanelSplitters() {
         } else {
           let nextAssets = assetsStart + deltaFr;
           let nextDetail = detailStart - deltaFr;
-          [nextAssets, nextDetail] = clampPair(nextAssets, nextDetail);
+          [nextAssets, nextDetail] = clampPair(nextAssets, nextDetail, minSize, minDetail);
           panelSizes.panelAssets = nextAssets;
           panelSizes.panelDetail = nextDetail;
         }
@@ -581,12 +646,24 @@ async function api(path, options = {}) {
     ...options
   });
 
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(body.error || 'Request failed');
+  const textBody = await response.text();
+  let jsonBody = {};
+  if (textBody) {
+    try {
+      jsonBody = JSON.parse(textBody);
+    } catch (_error) {
+      jsonBody = {};
+    }
   }
 
-  return response.json();
+  if (!response.ok) {
+    const fallback = textBody
+      ? textBody.replace(/\s+/g, ' ').trim().slice(0, 220)
+      : '';
+    throw new Error(jsonBody.error || fallback || 'Request failed');
+  }
+
+  return textBody ? (Object.keys(jsonBody).length ? jsonBody : {}) : {};
 }
 
 async function deleteApi(path) {
@@ -598,18 +675,18 @@ async function deleteApi(path) {
 }
 
 function setUploadProgress(percent, label = '') {
-  if (!uploadProgressWrap || !uploadProgressBar || !uploadProgressText) return;
-  const p = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+  if (!uploadProgressWrap || !uploadProgressText) return;
   uploadProgressWrap.classList.remove('hidden');
-  uploadProgressBar.style.width = `${p}%`;
-  uploadProgressText.textContent = label ? `${label} ${p}%` : `${p}%`;
+  if (uploadProgressSpinner) uploadProgressSpinner.classList.remove('hidden');
+  uploadProgressText.textContent = label || t('uploading');
 }
 
 function hideUploadProgress() {
-  if (!uploadProgressWrap || !uploadProgressBar || !uploadProgressText) return;
+  if (!uploadProgressWrap || !uploadProgressText) return;
   uploadProgressWrap.classList.add('hidden');
-  uploadProgressBar.style.width = '0%';
-  uploadProgressText.textContent = '0%';
+  if (uploadProgressBar) uploadProgressBar.style.width = '0%';
+  if (uploadProgressSpinner) uploadProgressSpinner.classList.add('hidden');
+  uploadProgressText.textContent = '';
 }
 
 function uploadAssetWithProgress(payload, onProgress) {
@@ -662,9 +739,65 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+function normalizeForSearch(value) {
+  return String(value || '')
+    .normalize('NFC')
+    .toLocaleLowerCase('tr');
+}
+
+function findMatchRanges(text, query) {
+  const raw = String(text || '').normalize('NFC');
+  const q = String(query || '').trim().normalize('NFC');
+  if (!raw || !q) return [];
+  const rawLower = raw.toLocaleLowerCase('tr');
+  const qLower = q.toLocaleLowerCase('tr');
+  const ranges = [];
+  let from = 0;
+  while (true) {
+    const idx = rawLower.indexOf(qLower, from);
+    if (idx < 0) break;
+    ranges.push([idx, idx + q.length]);
+    from = idx + q.length;
+  }
+  return ranges;
+}
+
+function highlightTextByRanges(text, ranges) {
+  if (!ranges.length) return escapeHtml(text);
+  let out = '';
+  let last = 0;
+  ranges.forEach(([start, end]) => {
+    if (start > last) out += escapeHtml(String(text).slice(last, start));
+    out += `<mark class="search-hit">${escapeHtml(String(text).slice(start, end))}</mark>`;
+    last = end;
+  });
+  if (last < String(text).length) out += escapeHtml(String(text).slice(last));
+  return out;
+}
+
 function serializeForm(form) {
   const data = new FormData(form);
   return Object.fromEntries(data.entries());
+}
+
+async function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      resolve(result.includes(',') ? result.split(',')[1] : result);
+    };
+    reader.onerror = () => reject(reader.error || new Error('Could not read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function subtitleTrackMarkup(asset) {
+  if (!asset?.subtitleUrl) return '';
+  const src = `${asset.subtitleUrl}${asset.subtitleUrl.includes('?') ? '&' : '?'}v=${Date.now()}`;
+  const lang = String(asset.subtitleLang || currentLang || 'tr').slice(0, 12);
+  const label = String(asset.subtitleLabel || t('subtitles'));
+  return `<track id="assetSubtitleTrack" kind="subtitles" label="${escapeHtml(label)}" srclang="${escapeHtml(lang)}" src="${escapeHtml(src)}" default />`;
 }
 
 function isVideo(asset) {
@@ -782,6 +915,7 @@ function documentSearchControls() {
   return `
     <div class="doc-search-row">
       <input id="docSearchInput" type="text" placeholder="${escapeHtml(t('preview_search_placeholder'))}" />
+      <button type="button" id="docSearchRunBtn" class="doc-search-nav">${escapeHtml(t('preview_find'))}</button>
       <button type="button" id="docSearchPrevBtn" class="doc-search-nav" aria-label="Previous match">&lt;</button>
       <button type="button" id="docSearchNextBtn" class="doc-search-nav" aria-label="Next match">&gt;</button>
       <span id="docSearchMeta" class="viewer-meta"></span>
@@ -1130,7 +1264,9 @@ function addShiftRangeSelection(assetId) {
   lastSelectedAssetId = assetId;
 }
 
-function mediaViewer(asset) {
+function mediaViewer(asset, options = {}) {
+  const showVideoToolsButton = options.showVideoToolsButton !== false;
+  const includeSubtitleTools = options.includeSubtitleTools !== false;
   if (!asset.mediaUrl) return `<div class="empty">${escapeHtml(t('no_media'))}</div>`;
 
   const playbackUrl = escapeHtml(isVideo(asset) ? (asset.proxyUrl || '') : asset.mediaUrl);
@@ -1151,7 +1287,9 @@ function mediaViewer(asset) {
           <div class="viewer-tc">${t('tc')}: <strong id="currentTimecode">00:00:00:00</strong></div>
         </div>
         <div class="viewer-resizable video-resizable">
-          <video id="assetMediaEl" class="asset-viewer" controls preload="metadata" src="${playbackUrl}" poster="${escapeHtml(asset.thumbnailUrl || '')}"></video>
+          <video id="assetMediaEl" class="asset-viewer" controls preload="metadata" src="${playbackUrl}" poster="${escapeHtml(asset.thumbnailUrl || '')}">
+            ${subtitleTrackMarkup(asset)}
+          </video>
         </div>
         <div class="player-controls-box control-stickbar">
           <div class="player-toolbar-row">
@@ -1166,9 +1304,38 @@ function mediaViewer(asset) {
               <button type="button" id="markOutBtn">${t('set_out')}</button>
               <button type="button" id="goInBtn">${t('go_in')}</button>
               <button type="button" id="goOutBtn">${t('go_out')}</button>
+              ${showVideoToolsButton ? `<button type="button" id="videoToolsBtn">${t('video_tools')}</button>` : ''}
             </div>
           </div>
         </div>
+        ${includeSubtitleTools ? `
+        <div class="subtitle-tools">
+          <div class="subtitle-tools-header">
+            <strong>${t('subtitles')}</strong>
+            <span id="subtitleStatus" class="subtitle-status">${asset.subtitleUrl ? `${t('subtitle_loaded')}: ${escapeHtml(asset.subtitleLabel || asset.subtitleLang || '')}` : t('subtitle_none')}</span>
+            <span id="subtitleBusy" class="subtitle-busy hidden"><span class="spinner"></span>${t('processing')}</span>
+          </div>
+          <div class="viewer-meta"><strong>${t('subtitle_current')}:</strong> <span id="videoSubtitleCurrent">${escapeHtml(asset.subtitleLabel || asset.subtitleLang || '-')}</span></div>
+          <div class="subtitle-list-wrap">
+            <div class="viewer-meta"><strong>${t('subtitle_list')}:</strong></div>
+            <div id="subtitleItems" class="subtitle-items"></div>
+          </div>
+          <label class="video-tools-check">
+            <input id="subtitleOverlayCheck" type="checkbox" ${subtitleOverlayEnabledByAsset.get(asset.id) !== false ? 'checked' : ''} />
+            ${t('subtitle_overlay_enabled')}
+          </label>
+          <div class="subtitle-tools-row">
+            <label for="subtitleLangInput">${t('subtitle_lang')}</label>
+            <input id="subtitleLangInput" class="subtitle-lang-input" type="text" maxlength="12" value="${escapeHtml(asset.subtitleLang || currentLang || 'tr')}" />
+            <label for="subtitleLabelInput">${t('subtitle_name')}</label>
+            <input id="subtitleLabelInput" class="subtitle-name-input" type="text" maxlength="120" value="${escapeHtml(asset.subtitleLabel || '')}" />
+            <button type="button" id="subtitleRenameBtn">${t('subtitle_save_name')}</button>
+            <input id="subtitleFileInput" type="file" accept=".vtt,.srt,text/vtt,application/x-subrip" />
+            <button type="button" id="subtitleUploadBtn">${t('subtitle_upload')}</button>
+            <button type="button" id="subtitleGenerateBtn">${t('subtitle_generate')}</button>
+          </div>
+        </div>
+        ` : ''}
       </div>
       <div class="viewer-extra">
         <div class="audio-tools">
@@ -1221,12 +1388,22 @@ function mediaViewer(asset) {
   if (isPdf(asset)) {
     return `
       <div class="viewer-resizable">
-        <object class="asset-viewer" data="${playbackUrl}" type="application/pdf"></object>
+        <div id="pdfRenderViewport" class="pdf-render-viewport asset-viewer">
+          <canvas id="pdfCanvas" class="pdf-canvas"></canvas>
+          <div id="pdfTextLayer" class="pdf-text-layer"></div>
+          <div id="pdfOcrLayer" class="pdf-ocr-layer"></div>
+        </div>
       </div>
       <div class="doc-preview-shell">
-        <div class="viewer-meta">${t('open_pdf')}: <a href="${playbackUrl}" target="_blank" rel="noreferrer">${t('open_file')}</a></div>
+        <div class="viewer-meta">${t('open_pdf')}: <a id="pdfOpenFileLink" href="${playbackUrl}" target="_blank" rel="noreferrer">${t('open_file')}</a></div>
+        <div class="pdf-toolbar-row">
+          <button type="button" id="pdfPagePrevBtn" class="doc-search-nav">&lt;</button>
+          <span id="pdfPageInfo" class="viewer-meta"></span>
+          <button type="button" id="pdfPageNextBtn" class="doc-search-nav">&gt;</button>
+          <button type="button" id="pdfOpenPageBtn" class="doc-search-nav">${t('open_file')}</button>
+        </div>
         ${documentSearchControls()}
-        <pre id="docPreviewBox" class="doc-preview">${escapeHtml(t('preview_loading'))}</pre>
+        <div id="pdfSearchResults" class="pdf-search-results"></div>
       </div>
     `;
   }
@@ -1265,10 +1442,16 @@ function detailMarkup(asset, workflow) {
       <button type="button" id="trashAssetBtn">${t('move_to_trash')}</button>
     `;
 
-  const viewerSection = `
-    <h4>${t('asset_viewer')}</h4>
-    ${mediaViewer(asset)}
-  `;
+  const viewerSection = isVideo(asset)
+    ? `
+      <h4>${t('asset_viewer')}</h4>
+      <button type="button" id="openVideoToolsModalBtn">${t('video_tools')}</button>
+      ${mediaViewer(asset, { showVideoToolsButton: false, includeSubtitleTools: false })}
+    `
+    : `
+      <h4>${t('asset_viewer')}</h4>
+      ${mediaViewer(asset)}
+    `;
 
   const metadataSection = `
     <h3>${highlightMatch(asset.title, currentSearchQuery)}</h3>
@@ -1419,21 +1602,22 @@ async function openMultiSelectionDetail() {
   return true;
 }
 
-function initFrameControls(mediaEl, asset) {
-  const playBtn = document.getElementById('playBtn');
-  const stopBtn = document.getElementById('stopBtn');
-  const reverseFrameBtn = document.getElementById('reverseFrameBtn');
-  const forwardFrameBtn = document.getElementById('forwardFrameBtn');
-  const currentTimecodeEl = document.getElementById('currentTimecode');
-  const markSummary = document.getElementById('markSummary');
-  const markInBtn = document.getElementById('markInBtn');
-  const markOutBtn = document.getElementById('markOutBtn');
-  const goInBtn = document.getElementById('goInBtn');
-  const goOutBtn = document.getElementById('goOutBtn');
-  const clearMarksBtn = document.getElementById('clearMarksBtn');
-  const saveCutBtn = document.getElementById('saveCutBtn');
-  const cutLabelInput = document.getElementById('cutLabelInput');
-  const cutsList = document.getElementById('cutsList');
+function initFrameControls(mediaEl, asset, root = document) {
+  const byId = (id) => root.querySelector(`#${id}`);
+  const playBtn = byId('playBtn');
+  const stopBtn = byId('stopBtn');
+  const reverseFrameBtn = byId('reverseFrameBtn');
+  const forwardFrameBtn = byId('forwardFrameBtn');
+  const currentTimecodeEl = byId('currentTimecode');
+  const markSummary = byId('markSummary');
+  const markInBtn = byId('markInBtn');
+  const markOutBtn = byId('markOutBtn');
+  const goInBtn = byId('goInBtn');
+  const goOutBtn = byId('goOutBtn');
+  const clearMarksBtn = byId('clearMarksBtn');
+  const saveCutBtn = byId('saveCutBtn');
+  const cutLabelInput = byId('cutLabelInput');
+  const cutsList = byId('cutsList');
 
   if (!playBtn || !stopBtn || !reverseFrameBtn || !forwardFrameBtn || !currentTimecodeEl || !markSummary) {
     return () => {};
@@ -1643,11 +1827,12 @@ function initFrameControls(mediaEl, asset) {
   };
 }
 
-function initAudioTools(mediaEl) {
-  const controlsWrap = document.getElementById('channelControls');
-  const graphCanvas = document.getElementById('audioGraph');
-  const toggleGraphInput = document.getElementById('toggleGraphInput');
-  const groupChannelsInput = document.getElementById('groupChannels');
+function initAudioTools(mediaEl, root = document) {
+  const byId = (id) => root.querySelector(`#${id}`);
+  const controlsWrap = byId('channelControls');
+  const graphCanvas = byId('audioGraph');
+  const toggleGraphInput = byId('toggleGraphInput');
+  const groupChannelsInput = byId('groupChannels');
 
   if (!controlsWrap || !graphCanvas || !toggleGraphInput || !groupChannelsInput) {
     return () => {};
@@ -1664,6 +1849,7 @@ function initAudioTools(mediaEl) {
   const channelCount = Math.max(1, Math.min(8, source.channelCount || 2));
   const splitter = ctx.createChannelSplitter(channelCount);
   const merger = ctx.createChannelMerger(channelCount);
+  const masterGain = ctx.createGain();
   const gains = [];
   const analysers = [];
   const selected = Array.from({ length: channelCount }, () => true);
@@ -1685,7 +1871,14 @@ function initAudioTools(mediaEl) {
     analysers.push(analyser);
   }
 
-  merger.connect(ctx.destination);
+  const clamp01 = (value) => Math.max(0, Math.min(1, Number(value)));
+  const applyMasterVolume = () => {
+    const base = clamp01(Number.isFinite(mediaEl.volume) ? mediaEl.volume : 1);
+    masterGain.gain.value = mediaEl.muted ? 0 : base;
+  };
+  merger.connect(masterGain);
+  masterGain.connect(ctx.destination);
+  applyMasterVolume();
 
   controlsWrap.innerHTML = selected
     .map(
@@ -1737,13 +1930,21 @@ function initAudioTools(mediaEl) {
   }
 
   const onMediaPlay = () => {
-    if (ctx.state === 'suspended') {
-      ctx.resume().catch(() => {});
-    }
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+  };
+  const ensureAudioContext = () => {
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+  };
+  const onVolumeChange = () => {
+    applyMasterVolume();
   };
 
   controlsWrap.addEventListener('change', onChannelChange);
   mediaEl.addEventListener('play', onMediaPlay);
+  mediaEl.addEventListener('playing', ensureAudioContext);
+  mediaEl.addEventListener('volumechange', ensureAudioContext);
+  mediaEl.addEventListener('volumechange', onVolumeChange);
+  window.addEventListener('pointerdown', ensureAudioContext, { passive: true });
 
   const draw = () => {
     const width = graphCanvas.width;
@@ -1791,10 +1992,15 @@ function initAudioTools(mediaEl) {
     toggleGraphInput.removeEventListener('change', onToggleGraph);
     controlsWrap.removeEventListener('change', onChannelChange);
     mediaEl.removeEventListener('play', onMediaPlay);
+    mediaEl.removeEventListener('playing', ensureAudioContext);
+    mediaEl.removeEventListener('volumechange', ensureAudioContext);
+    mediaEl.removeEventListener('volumechange', onVolumeChange);
+    window.removeEventListener('pointerdown', ensureAudioContext);
     if (rafId) cancelAnimationFrame(rafId);
     source.disconnect();
     splitter.disconnect();
     merger.disconnect();
+    masterGain.disconnect();
     gains.forEach((node) => node.disconnect());
     analysers.forEach((node) => node.disconnect());
     ctx.close().catch(() => {});
@@ -1804,6 +2010,7 @@ function initAudioTools(mediaEl) {
 function initDocumentPreview(asset) {
   const box = document.getElementById('docPreviewBox');
   const searchInput = document.getElementById('docSearchInput');
+  const runBtn = document.getElementById('docSearchRunBtn');
   const prevBtn = document.getElementById('docSearchPrevBtn');
   const nextBtn = document.getElementById('docSearchNextBtn');
   const searchMeta = document.getElementById('docSearchMeta');
@@ -1939,21 +2146,652 @@ function initDocumentPreview(asset) {
     focusMatchAt(activeMatchIndex - 1);
   };
   searchInput?.addEventListener('input', onSearch);
+  runBtn?.addEventListener('click', onSearch);
   prevBtn?.addEventListener('click', onPrev);
   nextBtn?.addEventListener('click', onNext);
 
   return () => {
     cancelled = true;
     searchInput?.removeEventListener('input', onSearch);
+    runBtn?.removeEventListener('click', onSearch);
     prevBtn?.removeEventListener('click', onPrev);
     nextBtn?.removeEventListener('click', onNext);
   };
 }
 
-function initAssetPlayer(asset) {
-  const mediaEl = document.getElementById('assetMediaEl');
+function initPdfSearch(asset) {
+  const pdfViewport = document.getElementById('pdfRenderViewport');
+  const pdfCanvas = document.getElementById('pdfCanvas');
+  const pdfTextLayer = document.getElementById('pdfTextLayer');
+  const pdfOcrLayer = document.getElementById('pdfOcrLayer');
+  const openFileLink = document.getElementById('pdfOpenFileLink');
+  const openPageBtn = document.getElementById('pdfOpenPageBtn');
+  const pagePrevBtn = document.getElementById('pdfPagePrevBtn');
+  const pageNextBtn = document.getElementById('pdfPageNextBtn');
+  const pageInfo = document.getElementById('pdfPageInfo');
+  const searchInput = document.getElementById('docSearchInput');
+  const runBtn = document.getElementById('docSearchRunBtn');
+  const prevBtn = document.getElementById('docSearchPrevBtn');
+  const nextBtn = document.getElementById('docSearchNextBtn');
+  const searchMeta = document.getElementById('docSearchMeta');
+  const resultsBox = document.getElementById('pdfSearchResults');
+  if (!pdfViewport || !pdfCanvas || !pdfTextLayer || !pdfOcrLayer || !searchInput || !runBtn || !nextBtn || !resultsBox) return () => {};
+  if (!window.pdfjsLib) {
+    if (searchMeta) searchMeta.textContent = t('pdf_preview_unavailable');
+    return () => {};
+  }
+
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  const baseUrl = String(asset.mediaUrl || '').split('#')[0];
+  const canvasCtx = pdfCanvas.getContext('2d');
+  if (!canvasCtx) return () => {};
+
+  let destroyed = false;
+  let renderToken = 0;
+  let pdfDoc = null;
+  let pageTextCache = new Map();
+  let currentOcrWidth = 0;
+  let ocrBoxesByPage = new Map();
+  let totalPages = 1;
+  let currentPage = 1;
+  let matches = [];
+  let activeIndex = -1;
+
+  const renderPageInfo = () => {
+    if (!pageInfo) return;
+    pageInfo.textContent = `${currentPage}/${totalPages}`;
+  };
+
+  const clearOcrBoxes = () => {
+    pdfOcrLayer.innerHTML = '';
+  };
+
+  const renderOcrBoxesForPage = (pageNum) => {
+    clearOcrBoxes();
+    const boxes = ocrBoxesByPage.get(pageNum) || [];
+    if (!boxes.length) return;
+    const pageWidth = pdfCanvas.width || 1;
+    const pageHeight = pdfCanvas.height || 1;
+    const srcWidth = Math.max(1, Number(currentOcrWidth) || pageWidth);
+    const scale = pageWidth / srcWidth;
+    boxes.forEach((b, idx) => {
+      const el = document.createElement('div');
+      el.className = `pdf-ocr-box${idx === 0 ? ' active' : ''}`;
+      el.style.left = `${Math.max(0, Math.round((Number(b.left) || 0) * scale))}px`;
+      el.style.top = `${Math.max(0, Math.round((Number(b.top) || 0) * scale))}px`;
+      el.style.width = `${Math.max(1, Math.round((Number(b.width) || 0) * scale))}px`;
+      el.style.height = `${Math.max(1, Math.round((Number(b.height) || 0) * scale))}px`;
+      pdfOcrLayer.appendChild(el);
+    });
+  };
+
+  const refreshOpenLink = () => {
+    if (!openFileLink) return;
+    const q = String(searchInput.value || '').trim();
+    const hash = q ? `#page=${currentPage}&search=${encodeURIComponent(q)}` : `#page=${currentPage}`;
+    openFileLink.href = `${baseUrl}${hash}`;
+  };
+
+  const setPage = (page) => {
+    currentPage = Math.min(totalPages, Math.max(1, Number(page) || 1));
+    renderPage(currentPage).catch(() => {});
+    refreshOpenLink();
+    renderPageInfo();
+  };
+
+  const renderActiveMatch = () => {
+    if (!searchMeta) return;
+    if (!matches.length || activeIndex < 0) {
+      searchMeta.textContent = t('preview_search_empty');
+      return;
+    }
+    const current = matches[activeIndex];
+    const pos = `${activeIndex + 1}/${matches.length}`;
+    const pageText = `p.${current.page}`;
+    const snippet = String(current.snippet || '').trim();
+    searchMeta.textContent = snippet ? `${pos} | ${pageText} | ${snippet}` : `${pos} | ${pageText}`;
+  };
+
+  const highlightSnippet = (text, query) => {
+    const source = String(text || '');
+    const ranges = findMatchRanges(source, query);
+    if (!ranges.length) return escapeHtml(source);
+    const [hitStart, hitEnd] = ranges[0];
+    const start = Math.max(0, hitStart - 48);
+    const end = Math.min(source.length, hitEnd + 72);
+    const prefix = start > 0 ? '...' : '';
+    const suffix = end < source.length ? '...' : '';
+    const clipped = source.slice(start, end);
+    const clippedRanges = ranges
+      .map(([a, b]) => [a - start, b - start])
+      .filter(([a, b]) => a >= 0 && b <= clipped.length);
+    return `${prefix}${highlightTextByRanges(clipped, clippedRanges)}${suffix}`;
+  };
+
+  const renderResultsList = () => {
+    resultsBox.innerHTML = '';
+  };
+
+  const countOccurrences = (source, needle) => {
+    return findMatchRanges(source, needle).length;
+  };
+
+  const pageText = async (pageNum) => {
+    if (pageTextCache.has(pageNum)) return pageTextCache.get(pageNum);
+    const page = await pdfDoc.getPage(pageNum);
+    const textContent = await page.getTextContent();
+    const text = textContent.items.map((it) => String(it.str || '')).join('');
+    pageTextCache.set(pageNum, text);
+    return text;
+  };
+
+  const clearTextHighlights = () => {
+    pdfTextLayer.querySelectorAll('span[data-pdf-original-text]').forEach((span) => {
+      const original = span.getAttribute('data-pdf-original-text') || '';
+      span.textContent = original;
+      span.removeAttribute('data-pdf-original-text');
+      span.classList.remove('search-hit-active');
+    });
+  };
+
+  const applyTextHighlights = () => {
+    clearTextHighlights();
+    const query = String(searchInput.value || '').trim();
+    if (!query) return;
+    const spans = Array.from(pdfTextLayer.querySelectorAll('span'));
+    if (!spans.length) return;
+
+    let full = '';
+    const segments = spans.map((span) => {
+      const text = String(span.textContent || '');
+      const start = full.length;
+      full += text;
+      return { span, text, start, end: start + text.length };
+    });
+    const ranges = findMatchRanges(full, query);
+    if (!ranges.length) return;
+
+    const activeSpanSet = new Set();
+    segments.forEach((seg) => {
+      const localRanges = [];
+      ranges.forEach(([a, b]) => {
+        const s = Math.max(a, seg.start);
+        const e = Math.min(b, seg.end);
+        if (s < e) localRanges.push([s - seg.start, e - seg.start]);
+      });
+      if (!localRanges.length) return;
+      seg.span.setAttribute('data-pdf-original-text', seg.text);
+      seg.span.innerHTML = highlightTextByRanges(seg.text, localRanges);
+      activeSpanSet.add(seg.span);
+    });
+
+    const firstActive = Array.from(activeSpanSet)[0];
+    if (firstActive) firstActive.classList.add('search-hit-active');
+  };
+
+  const renderPage = async (pageNum) => {
+    if (!pdfDoc || destroyed) return;
+    const token = ++renderToken;
+    const page = await pdfDoc.getPage(pageNum);
+    const width = Math.max(420, pdfViewport.clientWidth || 900);
+    const unscaled = page.getViewport({ scale: 1 });
+    const scale = width / unscaled.width;
+    const viewport = page.getViewport({ scale });
+
+    pdfCanvas.width = Math.ceil(viewport.width);
+    pdfCanvas.height = Math.ceil(viewport.height);
+    pdfCanvas.style.width = `${Math.ceil(viewport.width)}px`;
+    pdfCanvas.style.height = `${Math.ceil(viewport.height)}px`;
+    pdfTextLayer.style.width = `${Math.ceil(viewport.width)}px`;
+    pdfTextLayer.style.height = `${Math.ceil(viewport.height)}px`;
+    pdfOcrLayer.style.width = `${Math.ceil(viewport.width)}px`;
+    pdfOcrLayer.style.height = `${Math.ceil(viewport.height)}px`;
+    pdfTextLayer.innerHTML = '';
+    clearOcrBoxes();
+
+    await page.render({ canvasContext: canvasCtx, viewport }).promise;
+    if (destroyed || token !== renderToken) return;
+
+    const textContent = await page.getTextContent();
+    await window.pdfjsLib.renderTextLayer({
+      textContent,
+      container: pdfTextLayer,
+      viewport,
+      textDivs: []
+    }).promise;
+    if (destroyed || token !== renderToken) return;
+
+    applyTextHighlights();
+    renderOcrBoxesForPage(pageNum);
+  };
+
+  const moveMatch = (delta) => {
+    if (!matches.length) return;
+    activeIndex = (activeIndex + delta + matches.length) % matches.length;
+    setPage(matches[activeIndex].page);
+    renderActiveMatch();
+    renderResultsList();
+  };
+
+  const runSearch = async () => {
+    const query = String(searchInput.value || '').trim();
+    if (!query) {
+      matches = [];
+      activeIndex = -1;
+      if (searchMeta) searchMeta.textContent = '';
+      resultsBox.innerHTML = '';
+      return;
+    }
+    try {
+      const searchWidth = Math.max(900, Math.round(pdfViewport.clientWidth || 1200));
+      const result = await api(`/api/assets/${asset.id}/pdf-search-ocr?q=${encodeURIComponent(query)}&lang=tur+eng&width=${searchWidth}`);
+      currentOcrWidth = Number(result.ocrWidth) || searchWidth;
+      const rawMatches = Array.isArray(result.matches) ? result.matches : [];
+      ocrBoxesByPage = new Map();
+      rawMatches.forEach((m) => {
+        const p = Number(m.page) || 1;
+        if (!ocrBoxesByPage.has(p)) ocrBoxesByPage.set(p, []);
+        if (m.box) ocrBoxesByPage.get(p).push(m.box);
+      });
+      matches = rawMatches.map((m) => ({
+        page: Number(m.page) || 1,
+        count: Number(m.count) || 1,
+        snippet: String(m.snippet || ''),
+        box: m.box || null
+      }));
+      if (!matches.length) {
+        activeIndex = -1;
+        renderActiveMatch();
+        renderResultsList();
+        clearOcrBoxes();
+        return;
+      }
+      activeIndex = 0;
+      setPage(matches[0].page);
+      renderActiveMatch();
+      renderResultsList();
+    } catch (_error) {
+      matches = [];
+      activeIndex = -1;
+      if (searchMeta) searchMeta.textContent = t('preview_search_error');
+      resultsBox.innerHTML = '';
+      clearOcrBoxes();
+    }
+  };
+
+  const onKeyDown = (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    runSearch();
+  };
+  const onRunClick = () => {
+    runSearch();
+  };
+  const onNextClick = () => {
+    if (!matches.length) {
+      runSearch();
+      return;
+    }
+    moveMatch(1);
+  };
+  const onPrevClick = () => {
+    if (!matches.length) return;
+    moveMatch(-1);
+  };
+  const onPagePrev = () => setPage(currentPage - 1);
+  const onPageNext = () => setPage(currentPage + 1);
+  const onOpenPage = () => {
+    const q = String(searchInput.value || '').trim();
+    const hash = q ? `#page=${currentPage}&search=${encodeURIComponent(q)}` : `#page=${currentPage}`;
+    window.open(`${baseUrl}${hash}`, '_blank', 'noopener,noreferrer');
+  };
+
+  searchInput.addEventListener('keydown', onKeyDown);
+  runBtn.textContent = t('preview_find');
+  prevBtn.textContent = '<';
+  nextBtn.textContent = '>';
+  runBtn.addEventListener('click', onRunClick);
+  nextBtn.addEventListener('click', onNextClick);
+  prevBtn?.addEventListener('click', onPrevClick);
+  pagePrevBtn?.addEventListener('click', onPagePrev);
+  pageNextBtn?.addEventListener('click', onPageNext);
+  openPageBtn?.addEventListener('click', onOpenPage);
+
+  const loadingTask = window.pdfjsLib.getDocument({ url: baseUrl });
+  loadingTask.promise.then((doc) => {
+    if (destroyed) return;
+    pdfDoc = doc;
+    totalPages = Math.max(1, Number(doc.numPages) || 1);
+    setPage(1);
+  }).catch(() => {
+    if (searchMeta) searchMeta.textContent = t('preview_search_error');
+  });
+
+  (async () => {
+    try {
+      await api(`/api/assets/${asset.id}/pdf-meta`);
+    } catch (_error) {
+      // metadata call kept for backwards compatibility; viewer uses pdf.js page count.
+    }
+  })();
+
+  return () => {
+    destroyed = true;
+    searchInput.removeEventListener('keydown', onKeyDown);
+    runBtn.removeEventListener('click', onRunClick);
+    nextBtn.removeEventListener('click', onNextClick);
+    prevBtn?.removeEventListener('click', onPrevClick);
+    pagePrevBtn?.removeEventListener('click', onPagePrev);
+    pageNextBtn?.removeEventListener('click', onPageNext);
+    openPageBtn?.removeEventListener('click', onOpenPage);
+    try {
+      loadingTask.destroy();
+    } catch (_error) {
+      // ignore
+    }
+  };
+}
+
+function initVideoSubtitleTools(mediaEl, asset, root = document) {
+  const byId = (id) => root.querySelector(`#${id}`);
+  const statusEl = byId('subtitleStatus');
+  const busyEl = byId('subtitleBusy');
+  const currentEl = byId('videoSubtitleCurrent');
+  const itemsEl = byId('subtitleItems');
+  const overlayCheck = byId('subtitleOverlayCheck');
+  const langInput = byId('subtitleLangInput');
+  const labelInput = byId('subtitleLabelInput');
+  const renameBtn = byId('subtitleRenameBtn');
+  const fileInput = byId('subtitleFileInput');
+  const uploadBtn = byId('subtitleUploadBtn');
+  const generateBtn = byId('subtitleGenerateBtn');
+  if (!statusEl || !itemsEl || !langInput || !labelInput || !renameBtn || !fileInput || !uploadBtn || !generateBtn) return () => {};
+
+  const getLang = () => String(langInput.value || '').trim().toLowerCase().slice(0, 12) || 'tr';
+  const getOverlayEnabled = () => subtitleOverlayEnabledByAsset.get(asset.id) !== false;
+  if (!subtitleOverlayEnabledByAsset.has(asset.id)) subtitleOverlayEnabledByAsset.set(asset.id, Boolean(asset.subtitleUrl));
+
+  const setStatus = (text) => {
+    statusEl.textContent = text;
+    if (currentEl) currentEl.textContent = asset.subtitleLabel || asset.subtitleLang || '-';
+  };
+  const setBusy = (busy) => {
+    if (busyEl) busyEl.classList.toggle('hidden', !busy);
+    renameBtn.disabled = busy;
+    uploadBtn.disabled = busy;
+    generateBtn.disabled = busy;
+  };
+
+  const applyTrackMode = () => {
+    const enabled = getOverlayEnabled();
+    const tracks = Array.from(mediaEl.textTracks || []);
+    tracks.forEach((tt) => {
+      tt.mode = 'hidden';
+    });
+    if (!enabled) return;
+    const active = tracks[tracks.length - 1];
+    if (active) active.mode = 'showing';
+  };
+
+  const applyTrack = (subtitleUrl, subtitleLang, subtitleLabel) => {
+    const previous = mediaEl.querySelector('#assetSubtitleTrack');
+    if (previous) previous.remove();
+    if (!subtitleUrl) {
+      setStatus(t('subtitle_none'));
+      applyTrackMode();
+      return;
+    }
+    const track = document.createElement('track');
+    track.id = 'assetSubtitleTrack';
+    track.kind = 'subtitles';
+    track.default = true;
+    track.label = subtitleLabel || t('subtitles');
+    track.srclang = subtitleLang || getLang();
+    track.src = `${subtitleUrl}${subtitleUrl.includes('?') ? '&' : '?'}v=${Date.now()}`;
+    mediaEl.appendChild(track);
+    track.addEventListener('load', applyTrackMode, { once: true });
+    setTimeout(applyTrackMode, 60);
+    if (labelInput && subtitleLabel) labelInput.value = subtitleLabel;
+    setStatus(`${t('subtitle_loaded')}: ${subtitleLabel || subtitleLang || ''}`);
+  };
+  const subtitleItems = () => Array.isArray(asset.subtitleItems) ? asset.subtitleItems : [];
+  const applyAssetFromApi = (mappedAsset) => {
+    if (!mappedAsset || typeof mappedAsset !== 'object') return;
+    asset.subtitleUrl = mappedAsset.subtitleUrl || asset.subtitleUrl || '';
+    asset.subtitleLang = mappedAsset.subtitleLang || asset.subtitleLang || getLang();
+    asset.subtitleLabel = mappedAsset.subtitleLabel || asset.subtitleLabel || '';
+    asset.subtitleItems = Array.isArray(mappedAsset.subtitleItems) ? mappedAsset.subtitleItems : (asset.subtitleItems || []);
+  };
+  const renderSubtitleItems = () => {
+    const items = subtitleItems();
+    if (!items.length) {
+      itemsEl.innerHTML = `<div class="subtitle-item-empty">${escapeHtml(t('subtitle_no_items'))}</div>`;
+      return;
+    }
+    itemsEl.innerHTML = items.map((item) => {
+      const active = item.subtitleUrl === asset.subtitleUrl;
+      return `
+        <div class="subtitle-item-row ${active ? 'active' : ''}" data-subtitle-url="${escapeHtml(item.subtitleUrl)}">
+          <span class="subtitle-item-label">${escapeHtml(item.subtitleLabel || item.subtitleLang || 'subtitle')}</span>
+          <span class="subtitle-item-lang">${escapeHtml(item.subtitleLang || '')}</span>
+          <a class="subtitle-item-download-btn" href="${escapeHtml(item.subtitleUrl)}" download target="_blank" rel="noreferrer">${t('subtitle_download')}</a>
+          <button type="button" class="subtitle-item-remove-btn">${t('subtitle_remove')}</button>
+          <button type="button" class="subtitle-item-use-btn">${active ? t('subtitle_active') : t('subtitle_use')}</button>
+        </div>
+      `;
+    }).join('');
+    itemsEl.querySelectorAll('.subtitle-item-use-btn').forEach((btn) => {
+      btn.addEventListener('click', async (event) => {
+        const rowEl = event.currentTarget.closest('.subtitle-item-row');
+        const subtitleUrl = rowEl?.dataset?.subtitleUrl || '';
+        if (!subtitleUrl) return;
+        const selected = subtitleItems().find((it) => it.subtitleUrl === subtitleUrl);
+        if (!selected) return;
+        setBusy(true);
+        try {
+          const result = await api(`/api/assets/${asset.id}/subtitles`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              subtitleUrl,
+              label: selected.subtitleLabel,
+              lang: selected.subtitleLang
+            })
+          });
+          applyAssetFromApi(result.asset);
+          applyTrack(asset.subtitleUrl, asset.subtitleLang, asset.subtitleLabel);
+          renderSubtitleItems();
+        } catch (error) {
+          alert(String(error?.message || 'Subtitle selection failed'));
+        } finally {
+          setBusy(false);
+        }
+      });
+    });
+    itemsEl.querySelectorAll('.subtitle-item-remove-btn').forEach((btn) => {
+      btn.addEventListener('click', async (event) => {
+        const rowEl = event.currentTarget.closest('.subtitle-item-row');
+        const subtitleUrl = rowEl?.dataset?.subtitleUrl || '';
+        if (!subtitleUrl) return;
+        if (!confirm(t('subtitle_remove_confirm'))) return;
+        setBusy(true);
+        try {
+          const result = await api(`/api/assets/${asset.id}/subtitles`, {
+            method: 'DELETE',
+            body: JSON.stringify({ subtitleUrl })
+          });
+          applyAssetFromApi(result.asset);
+          applyTrack(asset.subtitleUrl, asset.subtitleLang, asset.subtitleLabel);
+          renderSubtitleItems();
+        } catch (error) {
+          alert(String(error?.message || 'Subtitle remove failed'));
+        } finally {
+          setBusy(false);
+        }
+      });
+    });
+  };
+
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const pollSubtitleJob = async (jobId, maxMs = 3 * 60 * 60 * 1000, intervalMs = 2000) => {
+    const started = Date.now();
+    while (Date.now() - started < maxMs) {
+      const job = await api(`/api/subtitle-jobs/${encodeURIComponent(jobId)}`);
+      if (job.status === 'completed') return job;
+      if (job.status === 'failed') {
+        throw new Error(job.error || t('subtitle_job_failed'));
+      }
+      setStatus(`${t('subtitle_job_started')} (${job.status})`);
+      await wait(intervalMs);
+    }
+    throw new Error('Subtitle generation is still running. Please check again in a moment.');
+  };
+
+  const onUpload = async () => {
+    const file = fileInput.files?.[0];
+    if (!file) {
+      alert(t('subtitle_file_required'));
+      return;
+    }
+    const lowerName = String(file.name || '').toLowerCase();
+    if (!lowerName.endsWith('.vtt') && !lowerName.endsWith('.srt')) {
+      alert(t('subtitle_file_required'));
+      return;
+    }
+    setBusy(true);
+    try {
+      const payload = {
+        fileName: file.name,
+        fileData: await readFileAsBase64(file),
+        lang: getLang()
+      };
+      const result = await api(`/api/assets/${asset.id}/subtitles`, { method: 'POST', body: JSON.stringify(payload) });
+      applyAssetFromApi(result.asset);
+      if (!asset.subtitleLabel) asset.subtitleLabel = result.subtitleLabel || file.name;
+      applyTrack(asset.subtitleUrl, asset.subtitleLang, asset.subtitleLabel);
+      renderSubtitleItems();
+      setStatus(`${t('subtitle_upload_success')} ${asset.subtitleLabel || file.name}`);
+    } catch (error) {
+      alert(String(error?.message || 'Subtitle upload failed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onGenerate = async () => {
+    setBusy(true);
+    try {
+      const requestedLabel = String(labelInput.value || '').trim() || 'auto-whisper';
+      const queued = await api(`/api/assets/${asset.id}/subtitles/generate`, {
+        method: 'POST',
+        body: JSON.stringify({ lang: getLang(), label: requestedLabel, model: 'tiny' })
+      });
+      setStatus(t('subtitle_job_started'));
+      const result = await pollSubtitleJob(queued.jobId);
+      applyAssetFromApi(result.asset);
+      if (!asset.subtitleUrl) asset.subtitleUrl = result.subtitleUrl || '';
+      if (!asset.subtitleLang) asset.subtitleLang = result.subtitleLang || getLang();
+      if (!asset.subtitleLabel) asset.subtitleLabel = result.subtitleLabel || requestedLabel;
+      applyTrack(asset.subtitleUrl, asset.subtitleLang, asset.subtitleLabel);
+      renderSubtitleItems();
+      setStatus(`${t('subtitle_generate_success')} ${asset.subtitleLabel}`.trim());
+    } catch (error) {
+      alert(String(error?.message || 'Subtitle generation failed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onRename = async () => {
+    if (!asset.subtitleUrl) {
+      setStatus(t('subtitle_none'));
+      return;
+    }
+    const nextLabel = String(labelInput.value || '').trim();
+    if (!nextLabel) {
+      alert(t('subtitle_name'));
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await api(`/api/assets/${asset.id}/subtitles`, {
+        method: 'PATCH',
+        body: JSON.stringify({ subtitleUrl: asset.subtitleUrl, label: nextLabel, lang: getLang() })
+      });
+      applyAssetFromApi(result.asset);
+      if (!asset.subtitleUrl) asset.subtitleUrl = result.subtitleUrl;
+      if (!asset.subtitleLang) asset.subtitleLang = result.subtitleLang || getLang();
+      if (!asset.subtitleLabel) asset.subtitleLabel = result.subtitleLabel || nextLabel;
+      applyTrack(asset.subtitleUrl, asset.subtitleLang, asset.subtitleLabel);
+      renderSubtitleItems();
+      setStatus(`${t('subtitle_rename_success')} ${asset.subtitleLabel}`.trim());
+    } catch (error) {
+      alert(String(error?.message || 'Subtitle rename failed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onOverlayChange = () => {
+    subtitleOverlayEnabledByAsset.set(asset.id, Boolean(overlayCheck?.checked));
+    applyTrackMode();
+  };
+
+  renameBtn.addEventListener('click', onRename);
+  uploadBtn.addEventListener('click', onUpload);
+  generateBtn.addEventListener('click', onGenerate);
+  overlayCheck?.addEventListener('change', onOverlayChange);
+
+  if (asset.subtitleUrl) {
+    applyTrack(asset.subtitleUrl, asset.subtitleLang, asset.subtitleLabel);
+  } else {
+    setStatus(t('subtitle_none'));
+  }
+  renderSubtitleItems();
+  if (overlayCheck) overlayCheck.checked = getOverlayEnabled();
+  applyTrackMode();
+
+  return () => {
+    renameBtn.removeEventListener('click', onRename);
+    uploadBtn.removeEventListener('click', onUpload);
+    generateBtn.removeEventListener('click', onGenerate);
+    overlayCheck?.removeEventListener('change', onOverlayChange);
+  };
+}
+
+function openVideoToolsDialog(asset) {
+  const overlay = document.createElement('div');
+  overlay.className = 'clip-modal-backdrop video-tools-backdrop';
+  overlay.innerHTML = `
+    <div class="clip-modal video-tools-modal video-tools-modal-large" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('video_tools_title'))}">
+      <div class="video-tools-modal-head">
+        <h4>${t('video_tools_title')}</h4>
+        <button type="button" id="videoToolsCloseBtn">${t('close')}</button>
+      </div>
+      <div class="video-tools-modal-body">
+        ${mediaViewer(asset, { showVideoToolsButton: false, includeSubtitleTools: true })}
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+  const cleanup = initAssetPlayer(asset, overlay);
+  const close = () => {
+    cleanup?.();
+    overlay.remove();
+  };
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) close();
+  });
+  overlay.querySelector('#videoToolsCloseBtn')?.addEventListener('click', close);
+}
+
+function initAssetPlayer(asset, root = document) {
+  const mediaEl = root.querySelector('#assetMediaEl');
   const cleanups = [];
   if (mediaEl) {
+    // Keep media audible even if previous browser state muted it.
+    mediaEl.muted = false;
+    if (!Number.isFinite(mediaEl.volume) || mediaEl.volume <= 0) mediaEl.volume = 1;
     if (isVideo(asset)) {
       let recoveringProxy = false;
       const onVideoError = async () => {
@@ -1976,14 +2814,17 @@ function initAssetPlayer(asset) {
       cleanups.push(() => mediaEl.removeEventListener('error', onVideoError));
     }
     if (isVideo(asset)) {
-      cleanups.push(initFrameControls(mediaEl, asset));
+      cleanups.push(initFrameControls(mediaEl, asset, root));
+      cleanups.push(initVideoSubtitleTools(mediaEl, asset, root));
     }
     if (isVideo(asset) || isAudio(asset)) {
-      cleanups.push(initAudioTools(mediaEl));
+      cleanups.push(initAudioTools(mediaEl, root));
     }
   }
 
-  if (isDocument(asset) || isPdf(asset)) {
+  if (isPdf(asset)) {
+    cleanups.push(initPdfSearch(asset));
+  } else if (isDocument(asset)) {
     cleanups.push(initDocumentPreview(asset));
   }
 
@@ -2065,7 +2906,7 @@ async function openAsset(id, workflow) {
 
   assetDetail.innerHTML = detailMarkup(asset, workflow);
   assetDetail.classList.toggle('video-detail-mode', isVideo(asset));
-  activePlayerCleanup = initAssetPlayer(asset);
+  activePlayerCleanup = initAssetPlayer(asset, assetDetail);
   const ensureProxyBtn = document.getElementById('ensureProxyBtn');
   ensureProxyBtn?.addEventListener('click', async () => {
     try {
@@ -2075,6 +2916,10 @@ async function openAsset(id, workflow) {
     } catch (error) {
       alert(String(error.message || t('proxy_failed')));
     }
+  });
+  const openVideoToolsModalBtn = document.getElementById('openVideoToolsModalBtn');
+  openVideoToolsModalBtn?.addEventListener('click', () => {
+    openVideoToolsDialog(asset);
   });
 
   document.getElementById('editForm').addEventListener('submit', async (event) => {
@@ -2280,16 +3125,7 @@ ingestForm.addEventListener('submit', async (event) => {
     durationSeconds = await detectDurationSeconds(mediaFile);
   }
 
-  const base64 = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result || '');
-      const content = result.includes(',') ? result.split(',')[1] : result;
-      resolve(content);
-    };
-    reader.onerror = () => reject(reader.error || new Error('Could not read file'));
-    reader.readAsDataURL(mediaFile);
-  });
+  const base64 = await readFileAsBase64(mediaFile);
 
   const payload = {
     title: formData.get('title'),
