@@ -1,6 +1,6 @@
 # MAM Project
 
-A lightweight Media Asset Management starter app inspired by Dalet workflows.
+A lightweight Media Asset Management starter app.
 
 ## Included features
 - Asset ingest with file upload (video/audio/image)
