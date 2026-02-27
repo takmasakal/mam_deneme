@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1f2d3f"/>
+      <stop offset="45%" stop-color="#4b5d72"/>
+      <stop offset="100%" stop-color="#111a29"/>
+    </linearGradient>
+    <filter id="noise" x="0" y="0" width="1" height="1">
+      <feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="2" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.09"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#bg)"/>
+  <g opacity="0.27" stroke="#dce6f6" stroke-width="6" fill="none">
+    <path d="M1020 120 L1540 40"/>
+    <path d="M740 210 L1490 160"/>
+    <path d="M610 420 L1570 430"/>
+    <path d="M890 670 L1570 810"/>
+    <path d="M520 780 L1460 960"/>
+    <circle cx="1280" cy="320" r="170"/>
+    <circle cx="1280" cy="320" r="115"/>
+  </g>
+  <g opacity="0.18" fill="#f5f8ff">
+    <rect x="0" y="720" width="1200" height="20"/>
+    <rect x="230" y="690" width="1080" height="15"/>
+    <rect x="430" y="610" width="1130" height="12"/>
+  </g>
+  <rect width="1600" height="1000" filter="url(#noise)"/>
+</svg>

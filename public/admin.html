@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MAM Admin</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/admin.css" />
+  </head>
+  <body>
+    <main class="admin-wrap">
+      <header class="admin-header">
+        <div>
+          <h1 data-i18n="admin_title">Admin Settings</h1>
+          <p data-i18n="admin_subtitle">Workflow tracking, proxy generation, and system health.</p>
+        </div>
+        <div class="admin-actions">
+          <select id="languageSelectAdmin">
+            <option value="en">English</option>
+            <option value="tr">Türkçe</option>
+          </select>
+          <a href="/" class="back-link" data-i18n="back_to_mam">Back to MAM</a>
+        </div>
+      </header>
+
+      <section class="admin-grid">
+        <article class="admin-card">
+          <h2 data-i18n="system_health">System Health</h2>
+          <div id="ffmpegHealth" class="empty" data-i18n="loading">Loading...</div>
+        </article>
+
+        <article class="admin-card">
+          <h2 data-i18n="settings">Settings</h2>
+          <form id="settingsForm" class="stack">
+            <label class="toggle-row">
+              <input type="checkbox" name="workflowTrackingEnabled" />
+              <span data-i18n="workflow_tracking_enabled">Workflow tracking enabled</span>
+            </label>
+            <label class="toggle-row">
+              <input type="checkbox" name="autoProxyBackfillOnUpload" />
+              <span data-i18n="auto_proxy_backfill">Auto backfill proxies on upload</span>
+            </label>
+            <button type="submit" data-i18n="save_settings">Save Settings</button>
+          </form>
+          <div id="settingsMsg" class="admin-note"></div>
+        </article>
+
+        <article class="admin-card admin-card-wide">
+          <h2 data-i18n="workflow_tracking">Workflow Tracking</h2>
+          <div id="workflowSummary" class="metrics"></div>
+          <div id="workflowRows" class="rows"></div>
+        </article>
+
+        <article class="admin-card admin-card-wide">
+          <h2 data-i18n="proxy_jobs">Proxy Jobs</h2>
+          <div class="proxy-job-actions">
+            <label><input type="checkbox" id="includeTrash" /> <span data-i18n="include_trash">Include trash</span></label>
+            <button id="startProxyJobBtn" type="button" data-i18n="start_proxy_job">Start Proxy Job</button>
+          </div>
+          <div id="proxyJobState" class="admin-note"></div>
+          <div class="progress-wrap"><div id="proxyProgress" class="progress-bar"></div></div>
+          <div id="proxyJobErrors" class="rows"></div>
+        </article>
+      </section>
+    </main>
+
+    <script src="/admin.js"></script>
+  </body>
+</html>

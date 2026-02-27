@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Environment/secrets
+.env
+.env.local
+.env.*.local
+
+# Runtime/generated data
+uploads/
+data/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/

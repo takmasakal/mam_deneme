@@ -1,0 +1,15 @@
+{
+  "name": "dalet-like-mam-mvp",
+  "version": "0.1.0",
+  "description": "Dalet-like MAM MVP with ingest, metadata, search, versions, and workflow",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "nanoid": "^5.0.7",
+    "pg": "^8.19.0"
+  }
+}

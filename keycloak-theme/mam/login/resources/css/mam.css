@@ -1,0 +1,75 @@
+.login-pf body {
+  background: linear-gradient(115deg, rgba(10, 20, 33, 0.88), rgba(20, 35, 58, 0.72)),
+    url('../img/login-bg.jpg') center center / cover no-repeat fixed,
+    url('../img/login-bg.svg') center center / cover no-repeat fixed;
+  min-height: 100vh;
+}
+
+.login-pf-page {
+  min-height: 100vh;
+  padding-top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.card-pf {
+  max-width: 420px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+  background: rgba(7, 16, 28, 0.78);
+  backdrop-filter: blur(4px);
+}
+
+#kc-header-wrapper {
+  color: #eaf2ff;
+  font-size: 28px;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  text-transform: uppercase;
+  text-align: center;
+  position: static;
+  z-index: 2;
+}
+
+#kc-form-wrapper .pf-c-form-control {
+  border-radius: 8px;
+  border: 1px solid rgba(198, 216, 255, 0.35);
+  background: rgba(255, 255, 255, 0.94);
+}
+
+#kc-form-buttons input[type='submit'] {
+  border-radius: 999px;
+  border: 0;
+  background: linear-gradient(90deg, #0b2c56, #0f4a88);
+  color: #fff;
+  font-weight: 700;
+}
+
+#kc-form-buttons input[type='submit']:hover {
+  filter: brightness(1.1);
+}
+
+#kc-page-title,
+#kc-info-wrapper,
+#kc-form-options,
+#kc-form-options a,
+.pf-c-form__label-text {
+  color: #d9e8ff;
+}
+
+/* Keep language menu closed by default; only show when explicitly expanded. */
+#kc-locale ul,
+#kc-locale-links {
+  display: none;
+}
+
+#kc-locale.kc-dropdown-open ul,
+#kc-locale.kc-dropdown-open #kc-locale-links,
+#kc-locale[aria-expanded='true'] ul,
+#kc-locale[aria-expanded='true'] #kc-locale-links {
+  display: block;
+}

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Broadcast MAM Console</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="panel" id="panelIngest">
+        <div class="top-row">
+          <div>
+            <h1 data-i18n="app_title">Broadcast MAM Console</h1>
+          </div>
+          <div class="top-controls">
+            <div class="user-box">
+              <span class="user-box-label" data-i18n="current_user">Current User</span>
+              <button type="button" id="currentUserBtn" class="current-user-btn">-</button>
+              <div id="userMenu" class="user-menu hidden">
+                <div class="user-menu-actions">
+                  <a id="adminMenuLink" class="admin-link hidden" href="/admin.html" data-i18n="admin_page">Admin</a>
+                  <button type="button" id="logoutBtn" class="logout-btn" data-i18n="logout">Logout</button>
+                </div>
+              </div>
+            </div>
+            <label class="lang-box">
+              <span class="lang-box-label" data-i18n="language_label">Language</span>
+              <span class="lang-box-select-wrap">
+                <select id="languageSelect">
+                  <option value="en">English</option>
+                  <option value="tr">Türkçe</option>
+                </select>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <form id="ingestForm" class="stack">
+          <h2 data-i18n="ingest_title">Ingest Asset</h2>
+          <input name="title" data-i18n-placeholder="ph_title" placeholder="Title" required />
+          <select name="type" required>
+            <option value="Video" data-i18n="type_video">Video</option>
+            <option value="Audio" data-i18n="type_audio">Audio</option>
+            <option value="Document" data-i18n="type_document">Document</option>
+            <option value="Photo" data-i18n="type_photo">Photo</option>
+            <option value="Other" data-i18n="type_other">Other</option>
+          </select>
+          <input name="owner" data-i18n-placeholder="ph_owner" placeholder="Owner" required />
+          <div class="file-picker">
+            <input id="mediaFileInput" name="mediaFile" type="file" hidden accept="video/*,audio/*,image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,.csv,.sql,.py,.js,.ts,.tsx,.jsx,.json,.md,.xml,.yaml,.yml,.log,.ini,.cfg,.conf,.sh,.bash,.zsh,.java,.c,.cpp,.h,.hpp,.go,.rs,.rb,.php,.swift,.kt" required />
+            <button type="button" id="mediaFileBtn" class="file-picker-btn" data-i18n="choose_file">Dosya Sec</button>
+            <span id="mediaFileName" class="file-picker-name"></span>
+          </div>
+          <input name="tags" data-i18n-placeholder="ph_tags" placeholder="Tags (comma separated)" />
+          <input name="durationSeconds" type="number" min="0" data-i18n-placeholder="ph_duration_auto" placeholder="Duration auto-detected" readonly />
+          <input name="sourcePath" data-i18n-placeholder="ph_source" placeholder="Source path" />
+          <textarea name="description" data-i18n-placeholder="ph_description" placeholder="Description"></textarea>
+          <button type="submit" data-i18n="btn_upload_create">Upload & Create Asset</button>
+          <div id="uploadProgressWrap" class="upload-progress hidden" aria-live="polite">
+            <div class="upload-progress-track">
+              <div id="uploadProgressBar" class="upload-progress-bar"></div>
+            </div>
+            <div id="uploadProgressText" class="upload-progress-text">0%</div>
+          </div>
+        </form>
+
+        <form id="searchForm" class="stack search">
+          <h2 data-i18n="search_title">Search</h2>
+          <input name="q" data-i18n-placeholder="ph_query" placeholder="Query" />
+          <input name="tag" data-i18n-placeholder="ph_tag" placeholder="Tag" />
+          <input name="type" data-i18n-placeholder="ph_type_simple" placeholder="Type" />
+          <select name="status">
+            <option value="" data-i18n="any_status">Any status</option>
+          </select>
+          <select name="trash">
+            <option value="active" data-i18n="trash_active">Active assets</option>
+            <option value="trash" data-i18n="trash_only">Trash only</option>
+            <option value="all" data-i18n="trash_all">All (active + trash)</option>
+          </select>
+          <button type="submit" data-i18n="btn_apply_filters">Apply Filters</button>
+        </form>
+      </section>
+
+      <div class="panel-splitter" data-splitter="left" title="Drag to resize panels">
+        <button type="button" class="splitter-dot" data-hide-panel="panelIngest" aria-label="Hide search panel"></button>
+        <button type="button" class="splitter-tab splitter-tab-search" data-show-panel="panelIngest" data-i18n="search_upload_tag">SEARCH / UPLOAD</button>
+      </div>
+
+      <section class="panel" id="panelAssets">
+        <div class="panel-head">
+          <h2 data-i18n="assets_title">Assets</h2>
+        </div>
+        <div class="asset-toolbar">
+          <div class="asset-toolbar-row">
+            <strong id="typesSelectAllBtn" class="types-select-all" data-i18n="filter_types">Types</strong>
+            <label><input type="checkbox" class="asset-type-filter" value="video" checked /> <span data-i18n="type_video">Video</span></label>
+            <label><input type="checkbox" class="asset-type-filter" value="audio" checked /> <span data-i18n="type_audio">Audio</span></label>
+            <label><input type="checkbox" class="asset-type-filter" value="document" checked /> <span data-i18n="type_document">Document</span></label>
+            <label><input type="checkbox" class="asset-type-filter" value="photo" checked /> <span data-i18n="type_photo">Photo</span></label>
+            <label><input type="checkbox" class="asset-type-filter" value="other" checked /> <span data-i18n="type_other">Other</span></label>
+          </div>
+          <div class="asset-toolbar-row">
+            <label><input type="checkbox" id="assetTrashOnly" /> <span data-i18n="trash">Trash</span></label>
+          </div>
+        </div>
+        <div id="assetGrid" class="asset-grid"></div>
+      </section>
+
+      <div class="panel-splitter" data-splitter="right" title="Drag to resize panels">
+        <button type="button" class="splitter-dot" data-hide-panel="panelAssets" aria-label="Hide assets panel"></button>
+        <button type="button" class="splitter-tab splitter-tab-assets" data-show-panel="panelAssets" data-i18n="assets_title">Assets</button>
+      </div>
+
+      <section class="panel" id="panelDetail">
+        <div class="panel-head">
+          <h2 data-i18n="asset_detail_title">Asset Detail</h2>
+          <button id="closeDetailBtn" class="close-detail-btn" type="button" aria-label="Close detail panel">×</button>
+        </div>
+        <div id="assetDetail" class="empty" data-i18n="select_asset">Select an asset.</div>
+      </section>
+    </main>
+
+    <script src="/main.js"></script>
+  </body>
+</html>
