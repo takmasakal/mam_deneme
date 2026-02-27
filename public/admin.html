@@ -40,6 +40,35 @@
               <input type="checkbox" name="autoProxyBackfillOnUpload" />
               <span data-i18n="auto_proxy_backfill">Auto backfill proxies on upload</span>
             </label>
+            <label class="toggle-row">
+              <input type="checkbox" name="apiTokenEnabled" />
+              <span data-i18n="api_token_enabled">Require API token (non-SSO API access)</span>
+            </label>
+            <label class="toggle-row">
+              <input type="checkbox" name="oidcBearerEnabled" />
+              <span data-i18n="oidc_bearer_enabled">Accept Keycloak Bearer JWT (preferred for mobile)</span>
+            </label>
+            <label>
+              <span data-i18n="api_token">API Token</span>
+              <input name="apiToken" id="apiTokenInput" data-i18n-placeholder="api_token_placeholder" placeholder="Generate token first" />
+            </label>
+            <label>
+              <span data-i18n="oidc_issuer_url">OIDC Issuer URL</span>
+              <input name="oidcIssuerUrl" id="oidcIssuerUrlInput" data-i18n-placeholder="oidc_issuer_url_ph" placeholder="http://keycloak:8080/realms/mam" />
+            </label>
+            <label>
+              <span data-i18n="oidc_jwks_url">OIDC JWKS URL</span>
+              <input name="oidcJwksUrl" id="oidcJwksUrlInput" data-i18n-placeholder="oidc_jwks_url_ph" placeholder="http://keycloak:8080/realms/mam/protocol/openid-connect/certs" />
+            </label>
+            <label>
+              <span data-i18n="oidc_audience">OIDC Audience (optional, comma separated)</span>
+              <input name="oidcAudience" id="oidcAudienceInput" data-i18n-placeholder="oidc_audience_ph" placeholder="mam-web,account" />
+            </label>
+            <div class="token-actions">
+              <button id="rotateApiTokenBtn" type="button" data-i18n="rotate_token">Rotate Token</button>
+              <button id="copyApiTokenBtn" type="button" data-i18n="copy_token">Copy Token</button>
+            </div>
+            <div class="api-help" id="apiHelpBox"></div>
             <button type="submit" data-i18n="save_settings">Save Settings</button>
           </form>
           <div id="settingsMsg" class="admin-note"></div>
@@ -60,6 +89,11 @@
           <div id="proxyJobState" class="admin-note"></div>
           <div class="progress-wrap"><div id="proxyProgress" class="progress-bar"></div></div>
           <div id="proxyJobErrors" class="rows"></div>
+        </article>
+
+        <article class="admin-card admin-card-wide">
+          <h2 data-i18n="api_help_doc_title">API Help Document</h2>
+          <div id="apiGuideDoc" class="api-guide-doc"></div>
         </article>
       </section>
     </main>

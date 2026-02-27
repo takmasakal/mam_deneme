@@ -1,7 +1,14 @@
+body {
+  height: auto;
+  min-height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 .admin-wrap {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 18px;
+  padding: 18px 18px 48px;
 }
 
 .admin-header {
@@ -122,6 +129,77 @@
 .toggle-row input {
   width: 18px;
   height: 18px;
+}
+
+.token-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.token-actions button {
+  width: auto;
+  min-width: 130px;
+}
+
+.api-help {
+  border: 1px solid #dfd2bf;
+  background: #fff;
+  color: #1a1f2b;
+  border-radius: 10px;
+  padding: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.api-guide-doc {
+  display: grid;
+  gap: 12px;
+}
+
+.api-guide-doc h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.api-guide-doc p {
+  margin: 0;
+  color: #3d4556;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.api-guide-doc > p {
+  color: #dbe6ff;
+  font-size: 15px;
+}
+
+.api-guide-doc .api-guide-section {
+  border: 1px solid #dfd2bf;
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.api-guide-doc pre {
+  margin: 0;
+  background: #1a1f2b;
+  color: #f3f6ff;
+  border-radius: 8px;
+  padding: 10px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.api-guide-doc ul {
+  margin: 0;
+  padding-left: 16px;
+  color: #1a1f2b;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .proxy-job-actions {

@@ -45,6 +45,8 @@ services:
       ELASTIC_URL: http://elasticsearch:9200
       ELASTIC_INDEX: mam_assets
       PORT: 3000
+    ports:
+      - "3001:3000"
     volumes:
       - ./uploads:/app/uploads
     restart: unless-stopped

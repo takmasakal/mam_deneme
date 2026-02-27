@@ -4,6 +4,14 @@ const I18N_PATH = '/i18n.json';
 const ffmpegHealthEl = document.getElementById('ffmpegHealth');
 const settingsForm = document.getElementById('settingsForm');
 const settingsMsg = document.getElementById('settingsMsg');
+const apiTokenInput = document.getElementById('apiTokenInput');
+const oidcIssuerUrlInput = document.getElementById('oidcIssuerUrlInput');
+const oidcJwksUrlInput = document.getElementById('oidcJwksUrlInput');
+const oidcAudienceInput = document.getElementById('oidcAudienceInput');
+const rotateApiTokenBtn = document.getElementById('rotateApiTokenBtn');
+const copyApiTokenBtn = document.getElementById('copyApiTokenBtn');
+const apiHelpBox = document.getElementById('apiHelpBox');
+const apiGuideDoc = document.getElementById('apiGuideDoc');
 const workflowSummary = document.getElementById('workflowSummary');
 const workflowRows = document.getElementById('workflowRows');
 const startProxyJobBtn = document.getElementById('startProxyJobBtn');
@@ -27,6 +35,42 @@ let i18n = {
     loading: 'Loading...',
     workflow_tracking_enabled: 'Workflow tracking enabled',
     auto_proxy_backfill: 'Auto backfill proxies on upload',
+    api_token_enabled: 'Require API token (non-SSO API access)',
+    oidc_bearer_enabled: 'Accept Keycloak Bearer JWT (preferred for mobile)',
+    api_token: 'API Token',
+    api_token_placeholder: 'Generate token first',
+    oidc_issuer_url: 'OIDC Issuer URL',
+    oidc_issuer_url_ph: 'http://keycloak:8080/realms/mam',
+    oidc_jwks_url: 'OIDC JWKS URL',
+    oidc_jwks_url_ph: 'http://keycloak:8080/realms/mam/protocol/openid-connect/certs',
+    oidc_audience: 'OIDC Audience (optional, comma separated)',
+    oidc_audience_ph: 'mam-web,account',
+    rotate_token: 'Rotate Token',
+    copy_token: 'Copy Token',
+    token_rotated: 'API token rotated.',
+    token_copied: 'API token copied.',
+    api_test_title: 'Postman Test',
+    api_test_note: 'Headers: X-API-Token or Authorization: Bearer <token>',
+    api_help_doc_title: 'API Help Document',
+    api_help_intro: 'Use this page to test MAM APIs quickly from Postman or cURL.',
+    api_help_auth_title: 'Authentication Rules',
+    api_help_auth_note: 'UI traffic on port 3000 is handled by SSO proxy. Token tests should use port 3001 direct API.',
+    api_help_bearer_on: 'OIDC Bearer JWT validation is ON.',
+    api_help_bearer_off: 'OIDC Bearer JWT validation is OFF.',
+    api_help_token_on: 'API token protection is currently ON.',
+    api_help_token_off: 'API token protection is currently OFF.',
+    api_help_token_hint: 'Use current token from Settings for direct API tests.',
+    api_help_quick_title: 'Quick Commands',
+    api_help_cmd_workflow: 'List workflow steps',
+    api_help_cmd_assets: 'List active assets',
+    api_help_cmd_asset_by_id: 'Get one asset by ID',
+    api_help_cmd_create_collection: 'Create a collection',
+    api_help_postman_title: 'Postman Setup',
+    api_help_postman_step1: 'Method: GET',
+    api_help_postman_step2: 'URL: {{baseUrl}}/api/workflow (recommended baseUrl: http://localhost:3001)',
+    api_help_postman_step3: 'When token protection is ON, send either X-API-Token or Authorization: Bearer <token>.',
+    api_help_postman_step4: 'Disable auto-follow redirects when testing through port 3000.',
+    api_help_endpoints_title: 'Main Endpoints',
     save_settings: 'Save Settings',
     settings_saved: 'Settings saved.',
     workflow_tracking: 'Workflow Tracking',
@@ -60,6 +104,42 @@ let i18n = {
     loading: 'Yukleniyor...',
     workflow_tracking_enabled: 'Is akisi izleme etkin',
     auto_proxy_backfill: 'Yuklemede proxy backfill otomatik',
+    api_token_enabled: 'API token zorunlu olsun (SSO olmayan API erişimi)',
+    oidc_bearer_enabled: 'Keycloak Bearer JWT kabul et (mobil icin onerilen)',
+    api_token: 'API Token',
+    api_token_placeholder: 'Önce token üretin',
+    oidc_issuer_url: 'OIDC Issuer URL',
+    oidc_issuer_url_ph: 'http://keycloak:8080/realms/mam',
+    oidc_jwks_url: 'OIDC JWKS URL',
+    oidc_jwks_url_ph: 'http://keycloak:8080/realms/mam/protocol/openid-connect/certs',
+    oidc_audience: 'OIDC Audience (opsiyonel, virgul ile)',
+    oidc_audience_ph: 'mam-web,account',
+    rotate_token: 'Token Yenile',
+    copy_token: 'Token Kopyala',
+    token_rotated: 'API token yenilendi.',
+    token_copied: 'API token kopyalandı.',
+    api_test_title: 'Postman Testi',
+    api_test_note: 'Header: X-API-Token veya Authorization: Bearer <token>',
+    api_help_doc_title: 'API Yardim Dokumani',
+    api_help_intro: 'MAM APIlerini Postman veya cURL ile hizli test etmek icin bu bolumu kullanin.',
+    api_help_auth_title: 'Kimlik Dogrulama Kurallari',
+    api_help_auth_note: '3000 portundaki UI trafigi SSO proxy uzerinden calisir. Token testleri icin 3001 direkt API kullanin.',
+    api_help_bearer_on: 'OIDC Bearer JWT dogrulamasi ACIK.',
+    api_help_bearer_off: 'OIDC Bearer JWT dogrulamasi KAPALI.',
+    api_help_token_on: 'API token korumasi su anda ACIK.',
+    api_help_token_off: 'API token korumasi su anda KAPALI.',
+    api_help_token_hint: 'Direkt API testlerinde Settings altindaki guncel tokeni kullanin.',
+    api_help_quick_title: 'Hizli Komutlar',
+    api_help_cmd_workflow: 'Workflow adimlarini listele',
+    api_help_cmd_assets: 'Aktif varliklari listele',
+    api_help_cmd_asset_by_id: 'ID ile tek varlik getir',
+    api_help_cmd_create_collection: 'Koleksiyon olustur',
+    api_help_postman_title: 'Postman Kurulumu',
+    api_help_postman_step1: 'Method: GET',
+    api_help_postman_step2: 'URL: {{baseUrl}}/api/workflow (onerilen baseUrl: http://localhost:3001)',
+    api_help_postman_step3: 'Token korumasi ACIK ise X-API-Token veya Authorization: Bearer <token> gonderin.',
+    api_help_postman_step4: '3000 portunu test ederken otomatik redirect takibini kapatin.',
+    api_help_endpoints_title: 'Temel Endpointler',
     save_settings: 'Ayarlari Kaydet',
     settings_saved: 'Ayarlar kaydedildi.',
     workflow_tracking: 'Is Akisi Izleme',
@@ -120,10 +200,23 @@ function applyI18n() {
     const key = el.getAttribute('data-i18n');
     if (key) el.textContent = t(key);
   });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+    const key = el.getAttribute('data-i18n-placeholder');
+    if (key) el.setAttribute('placeholder', t(key));
+  });
+  renderApiHelp();
+  renderApiGuide();
 }
 
 function row(label, value) {
   return `<div class="row"><strong>${label}</strong><span>${value}</span></div>`;
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 function renderWorkflowTracking(data) {
@@ -173,10 +266,56 @@ function renderProxyJob(job) {
   }
 }
 
+function renderApiHelp() {
+  if (!apiHelpBox) return;
+  const token = String(apiTokenInput?.value || '').trim();
+  const masked = token ? `${token.slice(0, 4)}...${token.slice(-4)}` : '-';
+  apiHelpBox.textContent = [
+    `${t('api_test_title')}:`,
+    `GET http://localhost:3000/api/workflow`,
+    t('api_test_note'),
+    `Current token: ${masked}`
+  ].join('\n');
+}
+
+function renderApiGuide() {
+  if (!apiGuideDoc) return;
+  const token = String(apiTokenInput?.value || '').trim();
+  const masked = token ? `${token.slice(0, 4)}...${token.slice(-4)}` : '-';
+  const tokenEnabled = Boolean(settingsForm?.elements?.apiTokenEnabled?.checked);
+  const bearerEnabled = Boolean(settingsForm?.elements?.oidcBearerEnabled?.checked);
+  const browserBase = window.location.origin;
+  const directBase = browserBase.includes(':3000') ? browserBase.replace(':3000', ':3001') : browserBase;
+  const sampleAssetId = '<asset-id>';
+  const tokenHeader = token || '<api-token>';
+  const postmanUrlStep = t('api_help_postman_step2').replace('{{baseUrl}}', directBase);
+
+  const workflowCmd = `curl -s ${directBase}/api/workflow \\\n  -H "X-API-Token: ${tokenHeader}"`;
+  const assetsCmd = `curl -s "${directBase}/api/assets?trash=active" \\\n  -H "X-API-Token: ${tokenHeader}"`;
+  const oneAssetCmd = `curl -s ${directBase}/api/assets/${sampleAssetId} \\\n  -H "X-API-Token: ${tokenHeader}"`;
+  const collectionCmd = `curl -s -X POST ${directBase}/api/collections \\\n  -H "Content-Type: application/json" \\\n  -H "X-API-Token: ${tokenHeader}" \\\n  -d '{"name":"News Rundown","assetIds":["${sampleAssetId}"]}'`;
+
+  apiGuideDoc.innerHTML = [
+    `<p>${escapeHtml(t('api_help_intro'))}</p>`,
+    `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_auth_title'))}</h3><p>${escapeHtml(t('api_help_auth_note'))}</p><p>${escapeHtml(bearerEnabled ? t('api_help_bearer_on') : t('api_help_bearer_off'))}</p><p>${escapeHtml(tokenEnabled ? t('api_help_token_on') : t('api_help_token_off'))}</p><p>${escapeHtml(t('api_help_token_hint'))} (${escapeHtml(masked)})</p></div>`,
+    `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_quick_title'))}</h3><p><strong>${escapeHtml(t('api_help_cmd_workflow'))}</strong></p><pre>${escapeHtml(workflowCmd)}</pre><p><strong>${escapeHtml(t('api_help_cmd_assets'))}</strong></p><pre>${escapeHtml(assetsCmd)}</pre><p><strong>${escapeHtml(t('api_help_cmd_asset_by_id'))}</strong></p><pre>${escapeHtml(oneAssetCmd)}</pre><p><strong>${escapeHtml(t('api_help_cmd_create_collection'))}</strong></p><pre>${escapeHtml(collectionCmd)}</pre></div>`,
+    `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_postman_title'))}</h3><ul><li>${escapeHtml(t('api_help_postman_step1'))}</li><li>${escapeHtml(postmanUrlStep)}</li><li>${escapeHtml(t('api_help_postman_step3'))}</li><li>${escapeHtml(t('api_help_postman_step4'))}</li></ul></div>`,
+    `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_endpoints_title'))}</h3><pre>${escapeHtml(`GET    /api/workflow\nGET    /api/me\nGET    /api/assets\nPOST   /api/assets\nPOST   /api/assets/upload\nGET    /api/assets/:id\nPATCH  /api/assets/:id\nPOST   /api/assets/:id/transition\nPOST   /api/assets/:id/versions\nPOST   /api/assets/:id/cuts\nPATCH  /api/assets/:id/cuts/:cutId\nDELETE /api/assets/:id/cuts/:cutId\nPOST   /api/assets/:id/trash\nPOST   /api/assets/:id/restore\nDELETE /api/assets/:id\nGET    /api/collections\nPOST   /api/collections`)}</pre></div>`
+  ].join('');
+}
+
 async function loadSettings() {
   const settings = await api('/api/admin/settings');
   settingsForm.elements.workflowTrackingEnabled.checked = Boolean(settings.workflowTrackingEnabled);
   settingsForm.elements.autoProxyBackfillOnUpload.checked = Boolean(settings.autoProxyBackfillOnUpload);
+  settingsForm.elements.apiTokenEnabled.checked = Boolean(settings.apiTokenEnabled);
+  settingsForm.elements.oidcBearerEnabled.checked = Boolean(settings.oidcBearerEnabled);
+  if (apiTokenInput) apiTokenInput.value = String(settings.apiToken || '');
+  if (oidcIssuerUrlInput) oidcIssuerUrlInput.value = String(settings.oidcIssuerUrl || '');
+  if (oidcJwksUrlInput) oidcJwksUrlInput.value = String(settings.oidcJwksUrl || '');
+  if (oidcAudienceInput) oidcAudienceInput.value = String(settings.oidcAudience || '');
+  renderApiHelp();
+  renderApiGuide();
 }
 
 async function refreshTrackingAndHealth() {
@@ -208,10 +347,46 @@ settingsForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const payload = {
     workflowTrackingEnabled: settingsForm.elements.workflowTrackingEnabled.checked,
-    autoProxyBackfillOnUpload: settingsForm.elements.autoProxyBackfillOnUpload.checked
+    autoProxyBackfillOnUpload: settingsForm.elements.autoProxyBackfillOnUpload.checked,
+    apiTokenEnabled: settingsForm.elements.apiTokenEnabled.checked,
+    apiToken: String(settingsForm.elements.apiToken.value || '').trim(),
+    oidcBearerEnabled: settingsForm.elements.oidcBearerEnabled.checked,
+    oidcIssuerUrl: String(settingsForm.elements.oidcIssuerUrl.value || '').trim(),
+    oidcJwksUrl: String(settingsForm.elements.oidcJwksUrl.value || '').trim(),
+    oidcAudience: String(settingsForm.elements.oidcAudience.value || '').trim()
   };
   await api('/api/admin/settings', { method: 'PATCH', body: JSON.stringify(payload) });
   settingsMsg.textContent = t('settings_saved');
+  renderApiHelp();
+  renderApiGuide();
+});
+
+rotateApiTokenBtn?.addEventListener('click', async () => {
+  const result = await api('/api/admin/api-token/rotate', { method: 'POST', body: '{}' });
+  if (apiTokenInput) apiTokenInput.value = String(result.apiToken || '');
+  settingsMsg.textContent = t('token_rotated');
+  renderApiHelp();
+  renderApiGuide();
+});
+
+copyApiTokenBtn?.addEventListener('click', async () => {
+  const token = String(apiTokenInput?.value || '').trim();
+  if (!token) return;
+  await navigator.clipboard.writeText(token);
+  settingsMsg.textContent = t('token_copied');
+});
+
+apiTokenInput?.addEventListener('input', () => {
+  renderApiHelp();
+  renderApiGuide();
+});
+
+settingsForm?.elements?.apiTokenEnabled?.addEventListener('change', () => {
+  renderApiGuide();
+});
+
+settingsForm?.elements?.oidcBearerEnabled?.addEventListener('change', () => {
+  renderApiGuide();
 });
 
 startProxyJobBtn.addEventListener('click', async () => {

@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 const express = require('express');
 const { nanoid } = require('nanoid');
@@ -19,10 +20,18 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 const WORKFLOW = ['Ingested', 'QC', 'Approved', 'Published', 'Archived'];
 const DEFAULT_ADMIN_SETTINGS = {
   workflowTrackingEnabled: true,
-  autoProxyBackfillOnUpload: false
+  autoProxyBackfillOnUpload: false,
+  apiTokenEnabled: false,
+  apiToken: '',
+  oidcBearerEnabled: false,
+  oidcIssuerUrl: process.env.OIDC_ISSUER_URL || 'http://keycloak:8080/realms/mam',
+  oidcJwksUrl: process.env.OIDC_JWKS_URL || 'http://keycloak:8080/realms/mam/protocol/openid-connect/certs',
+  oidcAudience: process.env.OIDC_AUDIENCE || ''
 };
 const ELASTIC_URL = process.env.ELASTIC_URL || 'http://localhost:9200';
 const ELASTIC_INDEX = process.env.ELASTIC_INDEX || 'mam_assets';
+const OIDC_JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
+const oidcJwksCache = new Map();
 
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -905,6 +914,170 @@ async function saveAdminSettings(settings) {
   return settings;
 }
 
+function getBearerFromRequest(req) {
+  return String(req.headers?.authorization || '').replace(/^Bearer\s+/i, '').trim();
+}
+
+function getApiKeyFromRequest(req) {
+  return getHeaderString(req, 'x-api-token');
+}
+
+function hasAuthenticatedUpstreamUser(req) {
+  return Boolean(
+    getHeaderString(req, 'x-forwarded-user') ||
+    getHeaderString(req, 'x-auth-request-user')
+  );
+}
+
+function decodeJwtPart(part) {
+  const b64 = String(part || '').replace(/-/g, '+').replace(/_/g, '/');
+  const padded = b64.padEnd(Math.ceil(b64.length / 4) * 4, '=');
+  return Buffer.from(padded, 'base64').toString('utf8');
+}
+
+function decodeJwt(token) {
+  const raw = String(token || '').trim();
+  if (!raw) return null;
+  const parts = raw.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const header = JSON.parse(decodeJwtPart(parts[0]));
+    const payload = JSON.parse(decodeJwtPart(parts[1]));
+    return {
+      header,
+      payload,
+      signature: parts[2],
+      signedPart: `${parts[0]}.${parts[1]}`
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function getOidcJwks(jwksUrl, forceRefresh = false) {
+  const cacheKey = String(jwksUrl || '').trim();
+  if (!cacheKey) return [];
+
+  const now = Date.now();
+  const cached = oidcJwksCache.get(cacheKey);
+  if (!forceRefresh && cached && now < cached.expiresAt && Array.isArray(cached.keys)) {
+    return cached.keys;
+  }
+
+  const response = await fetch(cacheKey);
+  if (!response.ok) {
+    throw new Error(`JWKS fetch failed (${response.status})`);
+  }
+  const body = await response.json().catch(() => ({}));
+  const keys = Array.isArray(body?.keys) ? body.keys : [];
+  oidcJwksCache.set(cacheKey, {
+    keys,
+    expiresAt: now + OIDC_JWKS_CACHE_TTL_MS
+  });
+  return keys;
+}
+
+function verifyJwtSignatureWithJwk(tokenSignedPart, signatureB64Url, jwk) {
+  try {
+    const publicKey = crypto.createPublicKey({ key: jwk, format: 'jwk' });
+    const verifier = crypto.createVerify('RSA-SHA256');
+    verifier.update(tokenSignedPart);
+    verifier.end();
+    const signatureB64 = String(signatureB64Url || '').replace(/-/g, '+').replace(/_/g, '/');
+    const padded = signatureB64.padEnd(Math.ceil(signatureB64.length / 4) * 4, '=');
+    const signature = Buffer.from(padded, 'base64');
+    return verifier.verify(publicKey, signature);
+  } catch (_error) {
+    return false;
+  }
+}
+
+function validateJwtClaims(payload, settings) {
+  const now = Math.floor(Date.now() / 1000);
+  if (payload?.exp && now >= Number(payload.exp)) return 'Token expired';
+  if (payload?.nbf && now < Number(payload.nbf)) return 'Token not active yet';
+
+  const expectedIssuer = String(settings.oidcIssuerUrl || '').trim();
+  if (expectedIssuer && String(payload?.iss || '') !== expectedIssuer) return 'Invalid token issuer';
+
+  const audienceRaw = String(settings.oidcAudience || '').trim();
+  if (audienceRaw) {
+    const expectedAudiences = audienceRaw.split(',').map((v) => v.trim()).filter(Boolean);
+    const audClaim = payload?.aud;
+    const actualAudiences = Array.isArray(audClaim) ? audClaim.map((v) => String(v)) : [String(audClaim || '')];
+    const hasMatch = expectedAudiences.some((expected) => actualAudiences.includes(expected));
+    if (!hasMatch) return 'Invalid token audience';
+  }
+  return '';
+}
+
+async function verifyOidcBearerToken(token, settings) {
+  const decoded = decodeJwt(token);
+  if (!decoded) throw new Error('Invalid bearer token format');
+  if (String(decoded?.header?.alg || '') !== 'RS256') throw new Error('Unsupported token algorithm');
+  const kid = String(decoded?.header?.kid || '').trim();
+  if (!kid) throw new Error('Missing token key id');
+  const jwksUrl = String(settings.oidcJwksUrl || '').trim();
+  if (!jwksUrl) throw new Error('OIDC JWKS URL is not configured');
+
+  let keys = await getOidcJwks(jwksUrl, false);
+  let jwk = keys.find((k) => String(k?.kid || '') === kid);
+  if (!jwk) {
+    keys = await getOidcJwks(jwksUrl, true);
+    jwk = keys.find((k) => String(k?.kid || '') === kid);
+  }
+  if (!jwk) throw new Error('Token signing key not found');
+
+  const signatureOk = verifyJwtSignatureWithJwk(decoded.signedPart, decoded.signature, jwk);
+  if (!signatureOk) throw new Error('Invalid bearer token signature');
+
+  const claimError = validateJwtClaims(decoded.payload || {}, settings);
+  if (claimError) throw new Error(claimError);
+  return decoded.payload;
+}
+
+async function maybeRequireApiToken(req, res, next) {
+  if (!req.path.startsWith('/api/')) return next();
+  try {
+    const settings = await getAdminSettings();
+    if (!settings.apiTokenEnabled) return next();
+    if (hasAuthenticatedUpstreamUser(req)) return next();
+
+    const bearer = String(getBearerFromRequest(req) || '');
+    if (settings.oidcBearerEnabled && bearer && bearer.includes('.')) {
+      try {
+        await verifyOidcBearerToken(bearer, settings);
+        return next();
+      } catch (error) {
+        return res.status(401).json({ error: String(error.message || 'Invalid bearer token') });
+      }
+    }
+
+    const expected = String(settings.apiToken || '');
+    const apiKey = String(getApiKeyFromRequest(req) || '');
+    const fallback = bearer && !bearer.includes('.') ? bearer : '';
+    const given = apiKey || fallback;
+
+    if (!expected || !given) {
+      return res.status(401).json({ error: 'Missing API token' });
+    }
+    const expectedBuf = Buffer.from(expected);
+    const givenBuf = Buffer.from(given);
+    if (expectedBuf.length !== givenBuf.length || !crypto.timingSafeEqual(expectedBuf, givenBuf)) {
+      return res.status(401).json({ error: 'Invalid API token' });
+    }
+    return next();
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to validate API token' });
+  }
+}
+
+function generateApiToken() {
+  return crypto.randomBytes(24).toString('base64url');
+}
+
+app.use(maybeRequireApiToken);
+
 function createProxyJob() {
   const id = nanoid();
   const job = {
@@ -1617,12 +1790,44 @@ app.patch('/api/admin/settings', async (req, res) => {
         : current.workflowTrackingEnabled,
       autoProxyBackfillOnUpload: Object.prototype.hasOwnProperty.call(req.body, 'autoProxyBackfillOnUpload')
         ? Boolean(req.body.autoProxyBackfillOnUpload)
-        : current.autoProxyBackfillOnUpload
+        : current.autoProxyBackfillOnUpload,
+      apiTokenEnabled: Object.prototype.hasOwnProperty.call(req.body, 'apiTokenEnabled')
+        ? Boolean(req.body.apiTokenEnabled)
+        : current.apiTokenEnabled,
+      apiToken: Object.prototype.hasOwnProperty.call(req.body, 'apiToken')
+        ? String(req.body.apiToken || '').trim()
+        : current.apiToken,
+      oidcBearerEnabled: Object.prototype.hasOwnProperty.call(req.body, 'oidcBearerEnabled')
+        ? Boolean(req.body.oidcBearerEnabled)
+        : current.oidcBearerEnabled,
+      oidcIssuerUrl: Object.prototype.hasOwnProperty.call(req.body, 'oidcIssuerUrl')
+        ? String(req.body.oidcIssuerUrl || '').trim()
+        : current.oidcIssuerUrl,
+      oidcJwksUrl: Object.prototype.hasOwnProperty.call(req.body, 'oidcJwksUrl')
+        ? String(req.body.oidcJwksUrl || '').trim()
+        : current.oidcJwksUrl,
+      oidcAudience: Object.prototype.hasOwnProperty.call(req.body, 'oidcAudience')
+        ? String(req.body.oidcAudience || '').trim()
+        : current.oidcAudience
     };
     const saved = await saveAdminSettings(next);
     return res.json(saved);
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to save settings' });
+  }
+});
+
+app.post('/api/admin/api-token/rotate', async (_req, res) => {
+  try {
+    const current = await getAdminSettings();
+    const next = {
+      ...current,
+      apiToken: generateApiToken()
+    };
+    const saved = await saveAdminSettings(next);
+    return res.json({ apiToken: saved.apiToken });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to rotate API token' });
   }
 });
 
