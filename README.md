@@ -1,4 +1,4 @@
-# Dalet-Like MAM MVP
+# MAM Project
 
 A lightweight Media Asset Management starter app inspired by Dalet workflows.
 
