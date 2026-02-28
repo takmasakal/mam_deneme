@@ -20,6 +20,10 @@ const proxyJobState = document.getElementById('proxyJobState');
 const proxyProgress = document.getElementById('proxyProgress');
 const proxyJobErrors = document.getElementById('proxyJobErrors');
 const languageSelect = document.getElementById('languageSelectAdmin');
+const adminTabs = Array.from(document.querySelectorAll('.admin-tab'));
+const adminPanels = Array.from(document.querySelectorAll('.admin-panel'));
+const userPermissionsRows = document.getElementById('userPermissionsRows');
+const userPermissionsMsg = document.getElementById('userPermissionsMsg');
 
 let currentLang = localStorage.getItem(LOCAL_LANG) || 'en';
 let pollTimer = null;
@@ -93,7 +97,12 @@ let i18n = {
     ffmpeg_ok: 'ffmpeg: available',
     ffmpeg_fail: 'ffmpeg: unavailable',
     ffprobe_ok: 'ffprobe: available',
-    ffprobe_fail: 'ffprobe: unavailable'
+    ffprobe_fail: 'ffprobe: unavailable',
+    user_settings: 'User Settings',
+    perm_admin_access: 'Admin page access',
+    perm_asset_delete: 'Asset delete',
+    user_permissions_saved: 'User permissions saved.',
+    access_denied: 'Access denied.'
   },
   tr: {
     admin_title: 'Yonetici Ayarlari',
@@ -162,7 +171,12 @@ let i18n = {
     ffmpeg_ok: 'ffmpeg: hazir',
     ffmpeg_fail: 'ffmpeg: yok',
     ffprobe_ok: 'ffprobe: hazir',
-    ffprobe_fail: 'ffprobe: yok'
+    ffprobe_fail: 'ffprobe: yok',
+    user_settings: 'Kullanici Ayarlari',
+    perm_admin_access: 'Yonetim sayfasina erisim',
+    perm_asset_delete: 'Varlik silme',
+    user_permissions_saved: 'Kullanici yetkileri kaydedildi.',
+    access_denied: 'Erisim engellendi.'
   }
 };
 
@@ -264,6 +278,51 @@ function renderProxyJob(job) {
   } else if (job.status === 'failed') {
     proxyJobState.textContent = t('proxy_job_failed');
   }
+}
+
+function switchTab(tabName) {
+  adminTabs.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.tab === tabName);
+  });
+  adminPanels.forEach((panel) => {
+    panel.classList.toggle('active', panel.dataset.panel === tabName);
+  });
+}
+
+function renderUserPermissions(users) {
+  if (!userPermissionsRows) return;
+  const list = Array.isArray(users) ? users : [];
+  userPermissionsRows.innerHTML = list.map((user) => {
+    const uname = escapeHtml(user.username || '');
+    return `
+      <div class="row user-perm-row" data-username="${uname}">
+        <strong>${uname}</strong>
+        <label><input type="checkbox" class="perm-admin-access" ${user.adminPageAccess ? 'checked' : ''} /> ${escapeHtml(t('perm_admin_access'))}</label>
+        <label><input type="checkbox" class="perm-asset-delete" ${user.assetDelete ? 'checked' : ''} /> ${escapeHtml(t('perm_asset_delete'))}</label>
+        <button type="button" class="perm-save-btn">${escapeHtml(t('save_settings'))}</button>
+      </div>
+    `;
+  }).join('');
+
+  userPermissionsRows.querySelectorAll('.perm-save-btn').forEach((btn) => {
+    btn.addEventListener('click', async (event) => {
+      const rowEl = event.currentTarget.closest('.user-perm-row');
+      const username = rowEl?.dataset?.username || '';
+      if (!username) return;
+      const adminPageAccess = Boolean(rowEl.querySelector('.perm-admin-access')?.checked);
+      const assetDelete = Boolean(rowEl.querySelector('.perm-asset-delete')?.checked);
+      await api(`/api/admin/user-permissions/${encodeURIComponent(username)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ adminPageAccess, assetDelete })
+      });
+      if (userPermissionsMsg) userPermissionsMsg.textContent = t('user_permissions_saved');
+    });
+  });
+}
+
+async function loadUserPermissions() {
+  const result = await api('/api/admin/user-permissions');
+  renderUserPermissions(result.users || []);
 }
 
 function renderApiHelp() {
@@ -416,11 +475,18 @@ startProxyJobBtn.addEventListener('click', async () => {
   }
 });
 
+adminTabs.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    switchTab(btn.dataset.tab || 'apiHelp');
+  });
+});
+
 languageSelect?.addEventListener('change', async (event) => {
   currentLang = event.target.value === 'tr' ? 'tr' : 'en';
   localStorage.setItem(LOCAL_LANG, currentLang);
   applyI18n();
   await refreshTrackingAndHealth();
+  await loadUserPermissions();
   if (activeJobId) {
     const job = await api(`/api/admin/proxy-jobs/${activeJobId}`);
     renderProxyJob(job);
@@ -429,12 +495,18 @@ languageSelect?.addEventListener('change', async (event) => {
 
 (async () => {
   try {
+    const me = await api('/api/me');
+    if (!me.canAccessAdmin && !me.isAdmin) {
+      window.location.href = '/';
+      return;
+    }
     await loadI18nFile();
     currentLang = currentLang === 'tr' ? 'tr' : 'en';
     if (languageSelect) languageSelect.value = currentLang;
     applyI18n();
     await loadSettings();
     await refreshTrackingAndHealth();
+    await loadUserPermissions();
   } catch (error) {
     ffmpegHealthEl.textContent = error.message;
   }

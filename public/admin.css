@@ -48,10 +48,40 @@ body {
   background: #185640;
 }
 
-.admin-grid {
+.admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.admin-tab {
+  width: auto;
+  padding: 8px 12px;
+  border: 1px solid #d6c8b4;
+  background: #f6ede0;
+  color: #1b212d;
+  border-radius: 10px;
+}
+
+.admin-tab.active {
+  background: #1f6d53;
+  border-color: #1f6d53;
+  color: #fff;
+}
+
+.admin-panels {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 12px;
+}
+
+.admin-panel {
+  display: none;
+}
+
+.admin-panel.active {
+  display: block;
 }
 
 .admin-card {
@@ -118,6 +148,26 @@ body {
 
 .row span {
   color: #2f3646;
+}
+
+.user-perm-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) auto auto auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.user-perm-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #1a1f2b;
+}
+
+.user-perm-row button {
+  width: auto;
+  padding: 6px 10px;
 }
 
 .toggle-row {
@@ -241,11 +291,11 @@ body {
 }
 
 @media (max-width: 900px) {
-  .admin-grid {
-    grid-template-columns: 1fr;
-  }
-
   .metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .user-perm-row {
+    grid-template-columns: 1fr;
   }
 }

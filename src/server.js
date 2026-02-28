@@ -12,8 +12,10 @@ const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
 const PROXIES_DIR = path.join(UPLOADS_DIR, 'proxies');
 const THUMBNAILS_DIR = path.join(UPLOADS_DIR, 'thumbnails');
 const SUBTITLES_DIR = path.join(UPLOADS_DIR, 'subtitles');
+const OCR_DIR = path.join(UPLOADS_DIR, 'ocr');
 const proxyJobs = new Map();
 const subtitleJobs = new Map();
+const videoOcrJobs = new Map();
 
 app.use(express.json({ limit: '300mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -30,6 +32,7 @@ const DEFAULT_ADMIN_SETTINGS = {
   oidcJwksUrl: process.env.OIDC_JWKS_URL || 'http://keycloak:8080/realms/mam/protocol/openid-connect/certs',
   oidcAudience: process.env.OIDC_AUDIENCE || ''
 };
+const DEFAULT_USER_PERMISSIONS = {};
 const ELASTIC_URL = process.env.ELASTIC_URL || 'http://localhost:9200';
 const ELASTIC_INDEX = process.env.ELASTIC_INDEX || 'mam_assets';
 const WHISPER_MODEL = process.env.WHISPER_MODEL || 'small';
@@ -48,6 +51,9 @@ if (!fs.existsSync(THUMBNAILS_DIR)) {
 }
 if (!fs.existsSync(SUBTITLES_DIR)) {
   fs.mkdirSync(SUBTITLES_DIR, { recursive: true });
+}
+if (!fs.existsSync(OCR_DIR)) {
+  fs.mkdirSync(OCR_DIR, { recursive: true });
 }
 
 function escapeElasticId(value) {
@@ -189,6 +195,25 @@ function normalizeSubtitleTime(value) {
   const ss = match[3];
   const mmm = match[4].padEnd(3, '0').slice(0, 3);
   return `${hh}:${mm}:${ss}.${mmm}`;
+}
+
+function formatTimecode(seconds) {
+  const s = Math.max(0, Number(seconds) || 0);
+  const hh = String(Math.floor(s / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+  const ss = String(Math.floor(s % 60)).padStart(2, '0');
+  const mmm = String(Math.floor((s - Math.floor(s)) * 1000)).padStart(3, '0');
+  return `${hh}:${mm}:${ss}.${mmm}`;
+}
+
+function normalizeOcrText(raw) {
+  return String(raw || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join(' ')
+    .trim();
 }
 
 function normalizeVttContent(input) {
@@ -1204,8 +1229,6 @@ async function generateVideoProxy(inputPath, outputPath) {
       'scale=640:-2:force_original_aspect_ratio=decrease',
       '-c:a',
       'aac',
-      '-ac',
-      '2',
       '-b:a',
       '128k',
       '-movflags',
@@ -1298,6 +1321,108 @@ async function transcribeMediaToVtt(inputPath, outputPath, options = {}) {
   return runCommandCapture('python3', args);
 }
 
+async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
+  const intervalSec = Math.max(1, Math.min(30, Number(options.intervalSec) || 4));
+  const ocrLang = String(options.ocrLang || 'eng+tur').trim() || 'eng+tur';
+  const workDir = path.join(OCR_DIR, `${Date.now()}-${nanoid()}-frames`);
+  fs.mkdirSync(workDir, { recursive: true });
+  const framePattern = path.join(workDir, 'frame-%06d.jpg');
+  const ffmpeg = await runCommandCapture('ffmpeg', [
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-i',
+    inputPath,
+    '-vf',
+    `fps=1/${intervalSec}`,
+    '-q:v',
+    '3',
+    framePattern
+  ]);
+  if (!ffmpeg.ok) throw new Error(String(ffmpeg.stderr || 'Could not sample video frames'));
+
+  const files = fs.readdirSync(workDir)
+    .filter((name) => /^frame-\d+\.jpg$/i.test(name))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  if (!files.length) throw new Error('No frames extracted for OCR');
+
+  const lines = [];
+  let prevNorm = '';
+  for (let i = 0; i < files.length; i += 1) {
+    const framePath = path.join(workDir, files[i]);
+    const ocr = await runCommandCapture('tesseract', [framePath, 'stdout', '-l', ocrLang]);
+    if (!ocr.ok) continue;
+    const text = normalizeOcrText(ocr.stdout || '');
+    if (!text) continue;
+    const norm = text.toLocaleLowerCase('tr').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    if (!norm || norm === prevNorm) continue;
+    prevNorm = norm;
+    const sec = i * intervalSec;
+    lines.push(`[${formatTimecode(sec)}] ${text}`);
+  }
+
+  const output = lines.length
+    ? `${lines.join('\n')}\n`
+    : '[00:00:00.000] No OCR text detected.\n';
+  fs.writeFileSync(outputPath, output, 'utf8');
+
+  try {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  } catch (_error) {}
+
+  return { lines: lines.length };
+}
+
+function queueVideoOcrJob(row, options = {}) {
+  const jobId = nanoid();
+  const intervalSec = Math.max(1, Math.min(30, Number(options.intervalSec) || 4));
+  const ocrLang = String(options.ocrLang || 'eng+tur').trim() || 'eng+tur';
+  const now = new Date().toISOString();
+  const job = {
+    jobId,
+    assetId: row.id,
+    status: 'queued',
+    intervalSec,
+    ocrLang,
+    resultUrl: '',
+    resultLabel: '',
+    lineCount: 0,
+    error: '',
+    startedAt: now,
+    updatedAt: now,
+    finishedAt: ''
+  };
+  videoOcrJobs.set(jobId, job);
+
+  setTimeout(async () => {
+    const running = videoOcrJobs.get(jobId);
+    if (!running) return;
+    running.status = 'running';
+    running.updatedAt = new Date().toISOString();
+    try {
+      const inputPath = resolveAssetInputPath(row);
+      if (!inputPath) throw new Error('Source media not found');
+      const base = sanitizeFileName(path.basename(String(row.file_name || row.id), path.extname(String(row.file_name || ''))));
+      const outName = `${Date.now()}-${nanoid()}-${base}-ocr.txt`;
+      const outPath = path.join(OCR_DIR, outName);
+      const result = await extractVideoOcrToText(inputPath, outPath, { intervalSec, ocrLang });
+      running.status = 'completed';
+      running.resultUrl = `/uploads/ocr/${outName}`;
+      running.resultLabel = outName;
+      running.lineCount = Number(result.lines || 0);
+      running.finishedAt = new Date().toISOString();
+      running.updatedAt = running.finishedAt;
+    } catch (error) {
+      running.status = 'failed';
+      running.error = String(error?.message || 'Video OCR failed').slice(0, 900);
+      running.finishedAt = new Date().toISOString();
+      running.updatedAt = running.finishedAt;
+    }
+  }, 10);
+  return job;
+}
+
 function queueSubtitleGenerationJob(row, options = {}) {
   const jobId = nanoid();
   const subtitleLang = normalizeSubtitleLang(options.lang);
@@ -1375,6 +1500,28 @@ async function saveAdminSettings(settings) {
       DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
     `,
     [JSON.stringify(settings), updatedAt]
+  );
+  return settings;
+}
+
+async function getUserPermissionsSettings() {
+  const result = await pool.query("SELECT value FROM admin_settings WHERE key = 'user_permissions' LIMIT 1");
+  if (!result.rowCount) return { ...DEFAULT_USER_PERMISSIONS };
+  const value = result.rows[0].value;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { ...DEFAULT_USER_PERMISSIONS };
+  return value;
+}
+
+async function saveUserPermissionsSettings(settings) {
+  const updatedAt = new Date().toISOString();
+  await pool.query(
+    `
+      INSERT INTO admin_settings (key, value, updated_at)
+      VALUES ('user_permissions', $1::jsonb, $2)
+      ON CONFLICT (key)
+      DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
+    `,
+    [JSON.stringify(settings || {}), updatedAt]
   );
   return settings;
 }
@@ -1807,11 +1954,7 @@ function decodeJwtPayload(token) {
   }
 }
 
-app.get('/api/workflow', (_req, res) => {
-  res.json(WORKFLOW);
-});
-
-app.get('/api/me', (req, res) => {
+function buildUserContextFromRequest(req) {
   const usernameRaw =
     getHeaderString(req, 'x-forwarded-user') ||
     getHeaderString(req, 'x-auth-request-user');
@@ -1848,13 +1991,58 @@ app.get('/api/me', (req, res) => {
   const adminByRole = allRoles.some((r) => r === 'admin' || r === 'realm-admin' || r === 'mam-admin');
   const adminByUser = ['mamadmin', 'admin'].includes(String(username || '').toLowerCase());
   const isAdmin = adminByGroup || adminByRole || adminByUser;
-
-  res.json({
+  return {
     username,
     displayName,
     email: emailRaw || '',
-    isAdmin
-  });
+    baseIsAdmin: isAdmin
+  };
+}
+
+function normalizePermissionEntry(input, fallbackAdmin) {
+  const raw = input && typeof input === 'object' ? input : {};
+  const adminPageAccess = Object.prototype.hasOwnProperty.call(raw, 'adminPageAccess')
+    ? Boolean(raw.adminPageAccess)
+    : Boolean(fallbackAdmin);
+  const assetDelete = Object.prototype.hasOwnProperty.call(raw, 'assetDelete')
+    ? Boolean(raw.assetDelete)
+    : Boolean(fallbackAdmin);
+  return { adminPageAccess, assetDelete };
+}
+
+async function resolveEffectivePermissions(req) {
+  const user = buildUserContextFromRequest(req);
+  const usernameKey = String(user.username || '').trim().toLowerCase();
+  const settings = await getUserPermissionsSettings();
+  const override = usernameKey ? settings[usernameKey] : null;
+  const effective = normalizePermissionEntry(override, user.baseIsAdmin);
+  return {
+    ...user,
+    isAdmin: Boolean(effective.adminPageAccess),
+    canAccessAdmin: Boolean(effective.adminPageAccess),
+    canDeleteAssets: Boolean(effective.assetDelete),
+    permissions: effective
+  };
+}
+
+app.get('/api/workflow', (_req, res) => {
+  res.json(WORKFLOW);
+});
+
+app.get('/api/me', async (req, res) => {
+  try {
+    const effective = await resolveEffectivePermissions(req);
+    res.json({
+      username: effective.username,
+      displayName: effective.displayName,
+      email: effective.email || '',
+      isAdmin: effective.isAdmin,
+      canAccessAdmin: effective.canAccessAdmin,
+      canDeleteAssets: effective.canDeleteAssets
+    });
+  } catch (_error) {
+    res.status(500).json({ error: 'Failed to resolve user profile' });
+  }
 });
 
 app.get('/api/assets', async (req, res) => {
@@ -2196,6 +2384,51 @@ app.get('/api/subtitle-jobs/:jobId', (req, res) => {
   });
 });
 
+app.post('/api/assets/:id/video-ocr/extract', async (req, res) => {
+  try {
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
+    if (!assetResult.rowCount) {
+      return res.status(404).json({ error: 'Asset not found' });
+    }
+    const row = assetResult.rows[0];
+    if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+      return res.status(400).json({ error: 'OCR extraction is supported only for video assets' });
+    }
+
+    const job = queueVideoOcrJob(row, {
+      intervalSec: req.body?.intervalSec,
+      ocrLang: req.body?.ocrLang
+    });
+    return res.status(202).json({
+      jobId: job.jobId,
+      status: job.status,
+      intervalSec: job.intervalSec,
+      ocrLang: job.ocrLang
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to queue video OCR extraction' });
+  }
+});
+
+app.get('/api/video-ocr-jobs/:jobId', (req, res) => {
+  const job = videoOcrJobs.get(String(req.params.jobId || '').trim());
+  if (!job) return res.status(404).json({ error: 'Video OCR job not found' });
+  return res.json({
+    jobId: job.jobId,
+    assetId: job.assetId,
+    status: job.status,
+    intervalSec: job.intervalSec,
+    ocrLang: job.ocrLang,
+    resultUrl: job.resultUrl || '',
+    resultLabel: job.resultLabel || '',
+    lineCount: Number(job.lineCount || 0),
+    error: job.error || '',
+    startedAt: job.startedAt,
+    updatedAt: job.updatedAt,
+    finishedAt: job.finishedAt || ''
+  });
+});
+
 app.patch('/api/assets/:id/subtitles', async (req, res) => {
   try {
     const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
@@ -2254,7 +2487,7 @@ app.patch('/api/assets/:id/subtitles', async (req, res) => {
   }
 });
 
-app.delete('/api/assets/:id/subtitles', async (req, res) => {
+app.delete('/api/assets/:id/subtitles', requireAssetDelete, async (req, res) => {
   try {
     const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
     if (!assetResult.rowCount) {
@@ -2559,6 +2792,30 @@ app.post('/api/assets/backfill-proxies', async (_req, res) => {
   }
 });
 
+async function requireAdminAccess(req, res, next) {
+  try {
+    const effective = await resolveEffectivePermissions(req);
+    if (!effective.canAccessAdmin) return res.status(403).json({ error: 'Forbidden' });
+    req.userPermissions = effective;
+    return next();
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to verify admin permissions' });
+  }
+}
+
+async function requireAssetDelete(req, res, next) {
+  try {
+    const effective = await resolveEffectivePermissions(req);
+    if (!effective.canDeleteAssets) return res.status(403).json({ error: 'Forbidden' });
+    req.userPermissions = effective;
+    return next();
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to verify delete permissions' });
+  }
+}
+
+app.use('/api/admin', requireAdminAccess);
+
 app.get('/api/admin/workflow-tracking', async (_req, res) => {
   try {
     const [statusCounts, typeCounts, totals, proxyRows] = await Promise.all([
@@ -2677,6 +2934,63 @@ app.patch('/api/admin/settings', async (req, res) => {
   }
 });
 
+app.get('/api/admin/user-permissions', async (req, res) => {
+  try {
+    const saved = await getUserPermissionsSettings();
+    const fromAssets = await pool.query('SELECT DISTINCT owner FROM assets WHERE owner IS NOT NULL AND owner <> \'\'');
+    const usernames = new Set(
+      fromAssets.rows.map((r) => String(r.owner || '').trim().toLowerCase()).filter(Boolean)
+    );
+    Object.keys(saved || {}).forEach((k) => usernames.add(String(k || '').trim().toLowerCase()));
+    const me = await resolveEffectivePermissions(req);
+    if (me.username) usernames.add(String(me.username).trim().toLowerCase());
+    usernames.add('admin');
+    usernames.add('mamadmin');
+
+    const users = Array.from(usernames)
+      .sort((a, b) => a.localeCompare(b))
+      .map((username) => {
+        const defaults = ['admin', 'mamadmin'].includes(username);
+        const effective = normalizePermissionEntry(saved?.[username], defaults);
+        return {
+          username,
+          adminPageAccess: effective.adminPageAccess,
+          assetDelete: effective.assetDelete
+        };
+      });
+    return res.json({ users });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load user permissions' });
+  }
+});
+
+app.patch('/api/admin/user-permissions/:username', async (req, res) => {
+  try {
+    const username = String(req.params.username || '').trim().toLowerCase();
+    if (!username) return res.status(400).json({ error: 'username is required' });
+
+    const current = await getUserPermissionsSettings();
+    const nextEntry = normalizePermissionEntry(
+      {
+        adminPageAccess: req.body?.adminPageAccess,
+        assetDelete: req.body?.assetDelete
+      },
+      ['admin', 'mamadmin'].includes(username)
+    );
+    const next = {
+      ...current,
+      [username]: nextEntry
+    };
+    await saveUserPermissionsSettings(next);
+    return res.json({
+      username,
+      ...nextEntry
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to save user permissions' });
+  }
+});
+
 app.post('/api/admin/api-token/rotate', async (_req, res) => {
   try {
     const current = await getAdminSettings();
@@ -2786,7 +3100,7 @@ app.post('/api/assets/:id/cuts', async (req, res) => {
   }
 });
 
-app.delete('/api/assets/:id/cuts/:cutId', async (req, res) => {
+app.delete('/api/assets/:id/cuts/:cutId', requireAssetDelete, async (req, res) => {
   try {
     const result = await pool.query(
       'DELETE FROM asset_cuts WHERE cut_id = $1 AND asset_id = $2 RETURNING cut_id',
@@ -2860,7 +3174,7 @@ app.patch('/api/assets/:id/cuts/:cutId', async (req, res) => {
   }
 });
 
-app.post('/api/assets/:id/trash', async (req, res) => {
+app.post('/api/assets/:id/trash', requireAssetDelete, async (req, res) => {
   try {
     const now = new Date().toISOString();
     const result = await pool.query(
@@ -2894,7 +3208,7 @@ app.post('/api/assets/:id/restore', async (req, res) => {
   }
 });
 
-app.delete('/api/assets/:id', async (req, res) => {
+app.delete('/api/assets/:id', requireAssetDelete, async (req, res) => {
   try {
     const result = await pool.query('DELETE FROM assets WHERE id = $1 RETURNING id', [req.params.id]);
     if (!result.rowCount) {

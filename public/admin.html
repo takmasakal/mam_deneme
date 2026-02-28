@@ -23,13 +23,44 @@
         </div>
       </header>
 
-      <section class="admin-grid">
-        <article class="admin-card">
+      <nav class="admin-tabs" id="adminTabs">
+        <button type="button" class="admin-tab active" data-tab="apiHelp" data-i18n="api_help_doc_title">API Help Document</button>
+        <button type="button" class="admin-tab" data-tab="systemHealth" data-i18n="system_health">System Health</button>
+        <button type="button" class="admin-tab" data-tab="workflowTracking" data-i18n="workflow_tracking">Workflow Tracking</button>
+        <button type="button" class="admin-tab" data-tab="proxyJobs" data-i18n="proxy_jobs">Proxy Jobs</button>
+        <button type="button" class="admin-tab" data-tab="settings" data-i18n="settings">Settings</button>
+        <button type="button" class="admin-tab" data-tab="userSettings" data-i18n="user_settings">User Settings</button>
+      </nav>
+
+      <section class="admin-panels">
+        <article class="admin-card admin-panel active" data-panel="apiHelp">
+          <h2 data-i18n="api_help_doc_title">API Help Document</h2>
+          <div id="apiGuideDoc" class="api-guide-doc"></div>
+        </article>
+
+        <article class="admin-card admin-panel" data-panel="systemHealth">
           <h2 data-i18n="system_health">System Health</h2>
           <div id="ffmpegHealth" class="empty" data-i18n="loading">Loading...</div>
         </article>
 
-        <article class="admin-card">
+        <article class="admin-card admin-panel" data-panel="workflowTracking">
+          <h2 data-i18n="workflow_tracking">Workflow Tracking</h2>
+          <div id="workflowSummary" class="metrics"></div>
+          <div id="workflowRows" class="rows"></div>
+        </article>
+
+        <article class="admin-card admin-panel" data-panel="proxyJobs">
+          <h2 data-i18n="proxy_jobs">Proxy Jobs</h2>
+          <div class="proxy-job-actions">
+            <label><input type="checkbox" id="includeTrash" /> <span data-i18n="include_trash">Include trash</span></label>
+            <button id="startProxyJobBtn" type="button" data-i18n="start_proxy_job">Start Proxy Job</button>
+          </div>
+          <div id="proxyJobState" class="admin-note"></div>
+          <div class="progress-wrap"><div id="proxyProgress" class="progress-bar"></div></div>
+          <div id="proxyJobErrors" class="rows"></div>
+        </article>
+
+        <article class="admin-card admin-panel" data-panel="settings">
           <h2 data-i18n="settings">Settings</h2>
           <form id="settingsForm" class="stack">
             <label class="toggle-row">
@@ -74,26 +105,10 @@
           <div id="settingsMsg" class="admin-note"></div>
         </article>
 
-        <article class="admin-card admin-card-wide">
-          <h2 data-i18n="workflow_tracking">Workflow Tracking</h2>
-          <div id="workflowSummary" class="metrics"></div>
-          <div id="workflowRows" class="rows"></div>
-        </article>
-
-        <article class="admin-card admin-card-wide">
-          <h2 data-i18n="proxy_jobs">Proxy Jobs</h2>
-          <div class="proxy-job-actions">
-            <label><input type="checkbox" id="includeTrash" /> <span data-i18n="include_trash">Include trash</span></label>
-            <button id="startProxyJobBtn" type="button" data-i18n="start_proxy_job">Start Proxy Job</button>
-          </div>
-          <div id="proxyJobState" class="admin-note"></div>
-          <div class="progress-wrap"><div id="proxyProgress" class="progress-bar"></div></div>
-          <div id="proxyJobErrors" class="rows"></div>
-        </article>
-
-        <article class="admin-card admin-card-wide">
-          <h2 data-i18n="api_help_doc_title">API Help Document</h2>
-          <div id="apiGuideDoc" class="api-guide-doc"></div>
+        <article class="admin-card admin-panel" data-panel="userSettings">
+          <h2 data-i18n="user_settings">User Settings</h2>
+          <div id="userPermissionsRows" class="rows"></div>
+          <div id="userPermissionsMsg" class="admin-note"></div>
         </article>
       </section>
     </main>

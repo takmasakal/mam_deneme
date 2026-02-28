@@ -30,6 +30,7 @@ const splitterTabs = Array.from(document.querySelectorAll('.splitter-tab'));
 const LOCAL_PANEL_SIZE = 'mam.panel.sizes';
 const LOCAL_PANEL_VIS = 'mam.panel.visibility';
 const LOCAL_LANG = 'mam.lang';
+const LOCAL_VIDEO_TOOLS_ORDER = 'mam.video.tools.order';
 const I18N_PATH = '/i18n.json';
 const PANELS = [
   { id: 'panelIngest', defaultSize: 1 },
@@ -40,6 +41,7 @@ const PANELS = [
 let currentAssets = [];
 let activePlayerCleanup = null;
 let selectedAssetId = null;
+let currentUserIsAdmin = false;
 const selectedAssetIds = new Set();
 let lastSelectedAssetId = null;
 let currentSearchQuery = '';
@@ -222,6 +224,18 @@ let i18n = {
     subtitle_remove: 'Remove',
     subtitle_remove_confirm: 'Remove this subtitle from the list?',
     subtitle_no_items: 'No subtitle items',
+    video_ocr: 'Video OCR',
+    video_ocr_interval: 'Interval (sec)',
+    video_ocr_lang: 'OCR lang',
+    video_ocr_extract: 'Extract Text',
+    video_ocr_running: 'OCR extraction running...',
+    video_ocr_done: 'OCR extraction completed.',
+    video_ocr_failed: 'OCR extraction failed.',
+    video_ocr_download: 'Download OCR file',
+    hide_section: 'Hide',
+    video_clips: 'Video Clips',
+    move_up: 'Up',
+    move_down: 'Down',
     subtitle_rename_success: 'Subtitle name saved.',
     subtitle_job_started: 'Subtitle generation started. Please wait...',
     subtitle_job_failed: 'Subtitle generation failed.',
@@ -405,6 +419,18 @@ let i18n = {
     subtitle_remove: 'Sil',
     subtitle_remove_confirm: 'Bu altyazi listeden silinsin mi?',
     subtitle_no_items: 'Altyazı yok',
+    video_ocr: 'Video OCR',
+    video_ocr_interval: 'Aralık (sn)',
+    video_ocr_lang: 'OCR dil',
+    video_ocr_extract: 'Metni Çıkar',
+    video_ocr_running: 'OCR çıkarımı çalışıyor...',
+    video_ocr_done: 'OCR çıkarımı tamamlandı.',
+    video_ocr_failed: 'OCR çıkarımı başarısız.',
+    video_ocr_download: 'OCR dosyasını indir',
+    hide_section: 'Gizle',
+    video_clips: 'Video Klipler',
+    move_up: 'Yukari',
+    move_down: 'Asagi',
     subtitle_rename_success: 'Altyazı adı kaydedildi.',
     subtitle_job_started: 'Altyazı üretimi başladı. Lütfen bekleyin...',
     subtitle_job_failed: 'Altyazı üretimi başarısız.',
@@ -467,15 +493,18 @@ async function loadCurrentUser() {
     const username = String(me.username || '').trim();
     const displayName = String(me.displayName || '').trim();
     const email = String(me.email || '').trim();
-    const isAdmin = Boolean(me.isAdmin);
+    const canAccessAdmin = Boolean(me.canAccessAdmin ?? me.isAdmin);
+    const canDeleteAssets = Boolean(me.canDeleteAssets ?? me.isAdmin);
+    currentUserIsAdmin = canDeleteAssets;
     const value = displayName || username || (email.includes('@') ? email.split('@')[0] : '') || t('unknown_user');
     currentUserBtn.dataset.value = value;
     currentUserBtn.textContent = value;
     currentUserBtn.title = value;
     if (adminMenuLink) {
-      adminMenuLink.classList.toggle('hidden', !isAdmin);
+      adminMenuLink.classList.toggle('hidden', !canAccessAdmin);
     }
   } catch (_error) {
+    currentUserIsAdmin = false;
     currentUserBtn.dataset.value = '';
     currentUserBtn.textContent = t('unknown_user');
     currentUserBtn.title = t('unknown_user');
@@ -1220,7 +1249,7 @@ function renderAssets(assets) {
             ${asset.inTrash ? `
               <div class="card-actions">
                 <button type="button" data-card-action="restore" data-id="${asset.id}">${t('restore')}</button>
-                <button type="button" class="danger" data-card-action="delete" data-id="${asset.id}">${t('delete_permanent')}</button>
+                ${currentUserIsAdmin ? `<button type="button" class="danger" data-card-action="delete" data-id="${asset.id}">${t('delete_permanent')}</button>` : ''}
               </div>
             ` : ''}
           </div>
@@ -1267,6 +1296,8 @@ function addShiftRangeSelection(assetId) {
 function mediaViewer(asset, options = {}) {
   const showVideoToolsButton = options.showVideoToolsButton !== false;
   const includeSubtitleTools = options.includeSubtitleTools !== false;
+  const includeSectionHide = options.includeSectionHide === true;
+  const audioSideLayout = options.audioSideLayout === true;
   if (!asset.mediaUrl) return `<div class="empty">${escapeHtml(t('no_media'))}</div>`;
 
   const playbackUrl = escapeHtml(isVideo(asset) ? (asset.proxyUrl || '') : asset.mediaUrl);
@@ -1286,78 +1317,133 @@ function mediaViewer(asset, options = {}) {
           <h4 class="viewer-asset-name">${escapeHtml(asset.title)}</h4>
           <div class="viewer-tc">${t('tc')}: <strong id="currentTimecode">00:00:00:00</strong></div>
         </div>
-        <div class="viewer-resizable video-resizable">
-          <video id="assetMediaEl" class="asset-viewer" controls preload="metadata" src="${playbackUrl}" poster="${escapeHtml(asset.thumbnailUrl || '')}">
-            ${subtitleTrackMarkup(asset)}
-          </video>
-        </div>
-        <div class="player-controls-box control-stickbar">
-          <div class="player-toolbar-row">
-            <div class="player-tools pro-tools">
-              <button type="button" id="playBtn" title="${t('play')}" aria-label="${t('play')}">▶</button>
-              <button type="button" id="stopBtn" title="${t('stop')}" aria-label="${t('stop')}">■</button>
-              <button type="button" id="reverseFrameBtn" title="${t('reverse_frame')}" aria-label="${t('reverse_frame')}">◀◀</button>
-              <button type="button" id="forwardFrameBtn" title="${t('forward_frame')}" aria-label="${t('forward_frame')}">▶▶</button>
+        <div class="video-top-layout${audioSideLayout ? '' : ' no-audio-side'}">
+          <div class="video-main-col">
+            <div class="viewer-resizable video-resizable">
+              <video id="assetMediaEl" class="asset-viewer" controls preload="metadata" src="${playbackUrl}" poster="${escapeHtml(asset.thumbnailUrl || '')}">
+                ${subtitleTrackMarkup(asset)}
+              </video>
             </div>
-            <div class="timecode-bar compact-timecode control-tools">
-              <button type="button" id="markInBtn">${t('set_in')}</button>
-              <button type="button" id="markOutBtn">${t('set_out')}</button>
-              <button type="button" id="goInBtn">${t('go_in')}</button>
-              <button type="button" id="goOutBtn">${t('go_out')}</button>
-              ${showVideoToolsButton ? `<button type="button" id="videoToolsBtn">${t('video_tools')}</button>` : ''}
+            <div class="player-controls-box control-stickbar">
+              <div class="player-toolbar-row">
+                <div class="player-tools pro-tools">
+                  <button type="button" id="playBtn" title="${t('play')}" aria-label="${t('play')}">▶</button>
+                  <button type="button" id="reverseFrameBtn" title="${t('reverse_frame')}" aria-label="${t('reverse_frame')}">◀◀</button>
+                  <button type="button" id="forwardFrameBtn" title="${t('forward_frame')}" aria-label="${t('forward_frame')}">▶▶</button>
+                </div>
+                <div class="timecode-bar compact-timecode control-tools">
+                  <button type="button" id="markInBtn">${t('set_in')}</button>
+                  <button type="button" id="markOutBtn">${t('set_out')}</button>
+                  <button type="button" id="goInBtn">${t('go_in')}</button>
+                  <button type="button" id="goOutBtn">${t('go_out')}</button>
+                  ${showVideoToolsButton ? `<button type="button" id="videoToolsBtn">${t('video_tools')}</button>` : ''}
+                </div>
+              </div>
             </div>
           </div>
+          ${audioSideLayout ? `
+          <div class="audio-side-col">
+            <div class="audio-tools collapsible-section" data-section="audio">
+              <div class="audio-tools-header collapsible-head">
+                <strong>${t('audio_channels')}</strong>
+                <div id="channelControls" class="channel-controls"></div>
+                <label><input type="checkbox" id="groupChannels" checked /> ${t('group_channel_selection')}</label>
+                <label class="compact-toggle"><input type="checkbox" id="toggleGraphInput" checked /> ${t('show_audio_graph')}</label>
+                ${includeSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
+              </div>
+              <div class="collapsible-body">
+                <canvas id="audioGraph" class="audio-graph audio-graph-vertical" width="320" height="320"></canvas>
+              </div>
+            </div>
+          </div>
+          ` : ''}
         </div>
+      </div>
+      <div class="viewer-extra">
         ${includeSubtitleTools ? `
-        <div class="subtitle-tools">
-          <div class="subtitle-tools-header">
+        <div class="subtitle-tools collapsible-section" data-section="subtitles">
+          <div class="collapsible-head">
             <strong>${t('subtitles')}</strong>
-            <span id="subtitleStatus" class="subtitle-status">${asset.subtitleUrl ? `${t('subtitle_loaded')}: ${escapeHtml(asset.subtitleLabel || asset.subtitleLang || '')}` : t('subtitle_none')}</span>
-            <span id="subtitleBusy" class="subtitle-busy hidden"><span class="spinner"></span>${t('processing')}</span>
+            ${includeSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
           </div>
-          <div class="viewer-meta"><strong>${t('subtitle_current')}:</strong> <span id="videoSubtitleCurrent">${escapeHtml(asset.subtitleLabel || asset.subtitleLang || '-')}</span></div>
-          <div class="subtitle-list-wrap">
-            <div class="viewer-meta"><strong>${t('subtitle_list')}:</strong></div>
-            <div id="subtitleItems" class="subtitle-items"></div>
+          <div class="collapsible-body">
+            <div class="subtitle-tools-header">
+              <span id="subtitleStatus" class="subtitle-status">${asset.subtitleUrl ? `${t('subtitle_loaded')}: ${escapeHtml(asset.subtitleLabel || asset.subtitleLang || '')}` : t('subtitle_none')}</span>
+              <span id="subtitleBusy" class="subtitle-busy hidden"><span class="spinner"></span>${t('processing')}</span>
+            </div>
+            <div class="viewer-meta"><strong>${t('subtitle_current')}:</strong> <span id="videoSubtitleCurrent">${escapeHtml(asset.subtitleLabel || asset.subtitleLang || '-')}</span></div>
+            <div class="subtitle-list-wrap">
+              <div class="viewer-meta"><strong>${t('subtitle_list')}:</strong></div>
+              <div id="subtitleItems" class="subtitle-items"></div>
+            </div>
+            <label class="video-tools-check">
+              <input id="subtitleOverlayCheck" type="checkbox" ${subtitleOverlayEnabledByAsset.get(asset.id) !== false ? 'checked' : ''} />
+              ${t('subtitle_overlay_enabled')}
+            </label>
+            <div class="subtitle-tools-row">
+              <label for="subtitleLangInput">${t('subtitle_lang')}</label>
+              <input id="subtitleLangInput" class="subtitle-lang-input" type="text" maxlength="12" value="${escapeHtml(asset.subtitleLang || currentLang || 'tr')}" />
+              <label for="subtitleLabelInput">${t('subtitle_name')}</label>
+              <input id="subtitleLabelInput" class="subtitle-name-input" type="text" maxlength="120" value="${escapeHtml(asset.subtitleLabel || '')}" />
+              <button type="button" id="subtitleRenameBtn">${t('subtitle_save_name')}</button>
+              <input id="subtitleFileInput" type="file" accept=".vtt,.srt,text/vtt,application/x-subrip" />
+              <button type="button" id="subtitleUploadBtn">${t('subtitle_upload')}</button>
+              <button type="button" id="subtitleGenerateBtn">${t('subtitle_generate')}</button>
+            </div>
           </div>
-          <label class="video-tools-check">
-            <input id="subtitleOverlayCheck" type="checkbox" ${subtitleOverlayEnabledByAsset.get(asset.id) !== false ? 'checked' : ''} />
-            ${t('subtitle_overlay_enabled')}
-          </label>
-          <div class="subtitle-tools-row">
-            <label for="subtitleLangInput">${t('subtitle_lang')}</label>
-            <input id="subtitleLangInput" class="subtitle-lang-input" type="text" maxlength="12" value="${escapeHtml(asset.subtitleLang || currentLang || 'tr')}" />
-            <label for="subtitleLabelInput">${t('subtitle_name')}</label>
-            <input id="subtitleLabelInput" class="subtitle-name-input" type="text" maxlength="120" value="${escapeHtml(asset.subtitleLabel || '')}" />
-            <button type="button" id="subtitleRenameBtn">${t('subtitle_save_name')}</button>
-            <input id="subtitleFileInput" type="file" accept=".vtt,.srt,text/vtt,application/x-subrip" />
-            <button type="button" id="subtitleUploadBtn">${t('subtitle_upload')}</button>
-            <button type="button" id="subtitleGenerateBtn">${t('subtitle_generate')}</button>
+        </div>
+        <div class="video-ocr-tools collapsible-section" data-section="ocr">
+          <div class="collapsible-head">
+            <strong>${t('video_ocr')}</strong>
+            ${includeSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
+          </div>
+          <div class="collapsible-body">
+            <div class="subtitle-tools-header">
+              <span id="videoOcrStatus" class="subtitle-status"></span>
+              <span id="videoOcrBusy" class="subtitle-busy hidden"><span class="spinner"></span>${t('processing')}</span>
+            </div>
+            <div class="subtitle-tools-row">
+              <label for="videoOcrIntervalInput">${t('video_ocr_interval')}</label>
+              <input id="videoOcrIntervalInput" class="subtitle-lang-input" type="number" min="1" max="30" step="1" value="4" />
+              <label for="videoOcrLangInput">${t('video_ocr_lang')}</label>
+              <input id="videoOcrLangInput" class="subtitle-name-input" type="text" maxlength="32" value="eng+tur" />
+              <button type="button" id="videoOcrExtractBtn">${t('video_ocr_extract')}</button>
+              <a id="videoOcrDownloadLink" class="subtitle-item-download-btn hidden" href="#" download target="_blank" rel="noreferrer">${t('video_ocr_download')}</a>
+            </div>
           </div>
         </div>
         ` : ''}
-      </div>
-      <div class="viewer-extra">
-        <div class="audio-tools">
-          <div class="audio-tools-header">
+        ${audioSideLayout ? '' : `
+        <div class="audio-tools collapsible-section" data-section="audio">
+          <div class="audio-tools-header collapsible-head">
             <strong>${t('audio_channels')}</strong>
+            <div id="channelControls" class="channel-controls"></div>
             <label><input type="checkbox" id="groupChannels" checked /> ${t('group_channel_selection')}</label>
             <label class="compact-toggle"><input type="checkbox" id="toggleGraphInput" checked /> ${t('show_audio_graph')}</label>
+            ${includeSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
           </div>
-          <div id="channelControls" class="channel-controls"></div>
-          <canvas id="audioGraph" class="audio-graph" width="900" height="240"></canvas>
-        </div>
-        <div class="cut-box">
-        <div class="viewer-meta" id="markSummary">${t('in_label')}: --:--:--:-- | ${t('out_label')}: --:--:--:-- | ${t('segment')}: --:--:--:--</div>
-        <div class="cut-label-row">
-          <label>${t('clip_name')}</label>
-          <input id="cutLabelInput" type="text" placeholder="${escapeHtml(t('ph_clip_name'))}" />
-        </div>
-        <div class="cut-actions">
-          <button type="button" id="saveCutBtn">${t('save_cut')}</button>
-          <button type="button" id="clearMarksBtn">${t('delete_marks')}</button>
+          <div class="collapsible-body">
+            <canvas id="audioGraph" class="audio-graph audio-graph-vertical" width="900" height="260"></canvas>
           </div>
-          <div id="cutsList" class="cuts-list"></div>
+        </div>
+        `}
+        <div class="cut-box collapsible-section" data-section="clips">
+          <div class="collapsible-head">
+            <strong>${t('video_clips')}</strong>
+            ${includeSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
+          </div>
+          <div class="collapsible-body">
+            <div class="viewer-meta" id="markSummary">${t('in_label')}: --:--:--:-- | ${t('out_label')}: --:--:--:-- | ${t('segment')}: --:--:--:--</div>
+            <div class="cut-label-row">
+              <label>${t('clip_name')}</label>
+              <input id="cutLabelInput" type="text" placeholder="${escapeHtml(t('ph_clip_name'))}" />
+            </div>
+            <div class="cut-actions">
+              <button type="button" id="saveCutBtn">${t('save_cut')}</button>
+              <button type="button" id="clearMarksBtn">${t('delete_marks')}</button>
+            </div>
+            <div id="cutsList" class="cuts-list"></div>
+          </div>
         </div>
       </div>
       </div>
@@ -1436,17 +1522,19 @@ function detailMarkup(asset, workflow) {
   const trashActions = asset.inTrash
     ? `
       <button type="button" id="restoreAssetBtn">${t('restore')}</button>
-      <button type="button" id="deleteAssetBtn">${t('delete_permanent')}</button>
+      ${currentUserIsAdmin ? `<button type="button" id="deleteAssetBtn">${t('delete_permanent')}</button>` : ''}
     `
-    : `
-      <button type="button" id="trashAssetBtn">${t('move_to_trash')}</button>
-    `;
+    : (currentUserIsAdmin
+      ? `
+        <button type="button" id="trashAssetBtn">${t('move_to_trash')}</button>
+      `
+      : '');
 
   const viewerSection = isVideo(asset)
     ? `
       <h4>${t('asset_viewer')}</h4>
       <button type="button" id="openVideoToolsModalBtn">${t('video_tools')}</button>
-      ${mediaViewer(asset, { showVideoToolsButton: false, includeSubtitleTools: false })}
+      ${mediaViewer(asset, { showVideoToolsButton: false, includeSubtitleTools: false, includeSectionHide: true, audioSideLayout: false })}
     `
     : `
       <h4>${t('asset_viewer')}</h4>
@@ -1551,7 +1639,7 @@ function multiSelectionDetailMarkup(selectedAssets) {
         ${selectedAssets.slice(0, 40).map((asset) => `<span class="chip multi-chip" style="${assetTagChipStyle(asset)}">${escapeHtml(asset.title)}</span>`).join('')}
       </div>
       <div class="timecode-bar">
-        <button type="button" id="bulkDeleteBtn">${escapeHtml(t('bulk_delete_selected'))}</button>
+        ${currentUserIsAdmin ? `<button type="button" id="bulkDeleteBtn">${escapeHtml(t('bulk_delete_selected'))}</button>` : ''}
         <button type="button" id="bulkClearBtn">${escapeHtml(t('bulk_clear_selection'))}</button>
       </div>
     </div>
@@ -1574,6 +1662,7 @@ async function openMultiSelectionDetail() {
   const bulkClearBtn = document.getElementById('bulkClearBtn');
 
   bulkDeleteBtn?.addEventListener('click', async () => {
+    if (!currentUserIsAdmin) return;
     const ids = [...selectedAssetIds];
     if (!ids.length) return;
     const ok = confirm(tf('bulk_delete_confirm', { count: ids.length }));
@@ -1619,7 +1708,7 @@ function initFrameControls(mediaEl, asset, root = document) {
   const cutLabelInput = byId('cutLabelInput');
   const cutsList = byId('cutsList');
 
-  if (!playBtn || !stopBtn || !reverseFrameBtn || !forwardFrameBtn || !currentTimecodeEl || !markSummary) {
+  if (!playBtn || !reverseFrameBtn || !forwardFrameBtn || !currentTimecodeEl || !markSummary) {
     return () => {};
   }
 
@@ -1662,7 +1751,7 @@ function initFrameControls(mediaEl, asset, root = document) {
             <div class="cut-item-actions">
               <button type="button" data-cut-action="edit" data-cut-id="${cut.cutId}">${t('edit_clip')}</button>
               <button type="button" data-cut-action="jump" data-cut-id="${cut.cutId}">${t('jump_to_cut')}</button>
-              <button type="button" data-cut-action="delete" data-cut-id="${cut.cutId}">${t('delete_cut')}</button>
+              ${currentUserIsAdmin ? `<button type="button" data-cut-action="delete" data-cut-id="${cut.cutId}">${t('delete_cut')}</button>` : ''}
             </div>
           </div>
         `;
@@ -1780,6 +1869,7 @@ function initFrameControls(mediaEl, asset, root = document) {
       return;
     }
     if (action === 'delete') {
+      if (!currentUserIsAdmin) return;
       await deleteApi(`/api/assets/${asset.id}/cuts/${cutId}`);
       const idx = cuts.findIndex((c) => c.cutId === cutId);
       if (idx >= 0) cuts.splice(idx, 1);
@@ -1788,7 +1878,7 @@ function initFrameControls(mediaEl, asset, root = document) {
   };
 
   playBtn.addEventListener('click', onPlay);
-  stopBtn.addEventListener('click', onStop);
+  stopBtn?.addEventListener('click', onStop);
   reverseFrameBtn.addEventListener('click', () => step(-1));
   forwardFrameBtn.addEventListener('click', () => step(1));
   markInBtn?.addEventListener('click', onMarkIn);
@@ -1811,7 +1901,7 @@ function initFrameControls(mediaEl, asset, root = document) {
 
   return () => {
     playBtn.removeEventListener('click', onPlay);
-    stopBtn.removeEventListener('click', onStop);
+    stopBtn?.removeEventListener('click', onStop);
     markInBtn?.removeEventListener('click', onMarkIn);
     markOutBtn?.removeEventListener('click', onMarkOut);
     goInBtn?.removeEventListener('click', onGoIn);
@@ -1846,7 +1936,7 @@ function initAudioTools(mediaEl, root = document) {
 
   const ctx = new AudioContextCtor();
   const source = ctx.createMediaElementSource(mediaEl);
-  const channelCount = Math.max(1, Math.min(8, source.channelCount || 2));
+  const channelCount = Math.max(1, source.channelCount || 2);
   const splitter = ctx.createChannelSplitter(channelCount);
   const merger = ctx.createChannelMerger(channelCount);
   const masterGain = ctx.createGain();
@@ -1946,35 +2036,74 @@ function initAudioTools(mediaEl, root = document) {
   mediaEl.addEventListener('volumechange', onVolumeChange);
   window.addEventListener('pointerdown', ensureAudioContext, { passive: true });
 
+  const peakHold = Array.from({ length: channelCount }, () => 0);
+  const resizeCanvasToDisplay = () => {
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const displayW = Math.max(180, Math.round(graphCanvas.clientWidth || 320));
+    const displayH = Math.max(180, Math.round(graphCanvas.clientHeight || 320));
+    const pixelW = Math.round(displayW * dpr);
+    const pixelH = Math.round(displayH * dpr);
+    if (graphCanvas.width !== pixelW || graphCanvas.height !== pixelH) {
+      graphCanvas.width = pixelW;
+      graphCanvas.height = pixelH;
+    }
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.scale(dpr, dpr);
+    return { width: displayW, height: displayH };
+  };
+
   const draw = () => {
-    const width = graphCanvas.width;
-    const height = graphCanvas.height;
+    const { width, height } = resizeCanvasToDisplay();
     g.clearRect(0, 0, width, height);
     g.fillStyle = '#121212';
     g.fillRect(0, 0, width, height);
 
-    const rowHeight = height / channelCount;
+    const cols = channelCount;
+    const gap = 10;
+    const meterW = Math.max(18, Math.floor((width - ((cols + 1) * gap)) / cols));
+    const meterH = Math.max(80, height - 44);
     analysers.forEach((analyser, channelIndex) => {
-      const freqData = new Uint8Array(analyser.frequencyBinCount);
-      analyser.getByteFrequencyData(freqData);
+      const timeData = new Uint8Array(analyser.fftSize);
+      analyser.getByteTimeDomainData(timeData);
 
-      const yOffset = rowHeight * channelIndex;
-      const bins = 48;
-      const barW = width / bins;
-      g.fillStyle = selected[channelIndex] ? '#58d68d' : '#7f8c8d';
-      for (let i = 0; i < bins; i += 1) {
-        const idx = Math.min(freqData.length - 1, Math.floor((i / bins) * freqData.length));
-        const magnitude = freqData[idx] / 255;
-        const barH = Math.max(1, magnitude * (rowHeight - 20));
-        const x = i * barW;
-        const y = yOffset + rowHeight - barH - 4;
-        g.fillRect(x + 1, y, Math.max(1, barW - 2), barH);
+      let sumSq = 0;
+      for (let i = 0; i < timeData.length; i += 1) {
+        const n = (timeData[i] - 128) / 128;
+        sumSq += n * n;
       }
+      const rms = Math.sqrt(sumSq / timeData.length);
+      const level = Math.max(0, Math.min(1, rms * 3.2));
+      peakHold[channelIndex] = Math.max(level, peakHold[channelIndex] * 0.96);
 
-      g.fillStyle = '#f8f9f9';
-      g.font = '12px IBM Plex Sans';
-      g.fillText(`CH ${channelIndex + 1} ${selected[channelIndex] ? t('channel_on') : t('channel_off')}`, 8, yOffset + 14);
+      const x = gap + (channelIndex * (meterW + gap));
+      const y = 10;
+      g.fillStyle = '#1f2430';
+      g.fillRect(x, y, meterW, meterH);
+
+      const activeH = Math.max(2, Math.round(meterH * level));
+      const py = y + meterH - activeH;
+      const grad = g.createLinearGradient(0, y, 0, y + meterH);
+      if (selected[channelIndex]) {
+        grad.addColorStop(0, '#e74c3c');
+        grad.addColorStop(0.35, '#f1c40f');
+        grad.addColorStop(1, '#2ecc71');
+      } else {
+        grad.addColorStop(0, '#6b7280');
+        grad.addColorStop(1, '#4b5563');
+      }
+      g.fillStyle = grad;
+      g.fillRect(x, py, meterW, activeH);
+
+      const peakY = y + meterH - Math.round(meterH * peakHold[channelIndex]);
+      g.fillStyle = '#ecf0f1';
+      g.fillRect(x, peakY, meterW, 2);
+
+      g.fillStyle = '#dce3f3';
+      g.font = '11px IBM Plex Sans';
+      g.textAlign = 'center';
+      g.fillText(`CH ${channelIndex + 1}`, x + (meterW / 2), y + meterH + 16);
     });
+    g.textAlign = 'left';
 
     rafId = requestAnimationFrame(draw);
   };
@@ -2575,7 +2704,7 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
           <span class="subtitle-item-label">${escapeHtml(item.subtitleLabel || item.subtitleLang || 'subtitle')}</span>
           <span class="subtitle-item-lang">${escapeHtml(item.subtitleLang || '')}</span>
           <a class="subtitle-item-download-btn" href="${escapeHtml(item.subtitleUrl)}" download target="_blank" rel="noreferrer">${t('subtitle_download')}</a>
-          <button type="button" class="subtitle-item-remove-btn">${t('subtitle_remove')}</button>
+          ${currentUserIsAdmin ? `<button type="button" class="subtitle-item-remove-btn">${t('subtitle_remove')}</button>` : ''}
           <button type="button" class="subtitle-item-use-btn">${active ? t('subtitle_active') : t('subtitle_use')}</button>
         </div>
       `;
@@ -2758,6 +2887,205 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
   };
 }
 
+function initVideoOcrTools(asset, root = document) {
+  const byId = (id) => root.querySelector(`#${id}`);
+  const statusEl = byId('videoOcrStatus');
+  const busyEl = byId('videoOcrBusy');
+  const intervalInput = byId('videoOcrIntervalInput');
+  const langInput = byId('videoOcrLangInput');
+  const extractBtn = byId('videoOcrExtractBtn');
+  const downloadLink = byId('videoOcrDownloadLink');
+  if (!statusEl || !busyEl || !intervalInput || !langInput || !extractBtn || !downloadLink) return () => {};
+
+  const setBusy = (busy) => {
+    busyEl.classList.toggle('hidden', !busy);
+    extractBtn.disabled = busy;
+    intervalInput.disabled = busy;
+    langInput.disabled = busy;
+  };
+  const setStatus = (text) => {
+    statusEl.textContent = text;
+  };
+  const setDownload = (url) => {
+    if (!url) {
+      downloadLink.classList.add('hidden');
+      downloadLink.href = '#';
+      return;
+    }
+    downloadLink.classList.remove('hidden');
+    downloadLink.href = url;
+  };
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const poll = async (jobId, maxMs = 3 * 60 * 60 * 1000, intervalMs = 2000) => {
+    const started = Date.now();
+    while (Date.now() - started < maxMs) {
+      const job = await api(`/api/video-ocr-jobs/${encodeURIComponent(jobId)}`);
+      if (job.status === 'completed') return job;
+      if (job.status === 'failed') throw new Error(job.error || t('video_ocr_failed'));
+      setStatus(`${t('video_ocr_running')} (${job.status})`);
+      await wait(intervalMs);
+    }
+    throw new Error('OCR job is still running. Please check again in a moment.');
+  };
+
+  const onExtract = async () => {
+    setBusy(true);
+    setStatus(t('video_ocr_running'));
+    try {
+      const queued = await api(`/api/assets/${asset.id}/video-ocr/extract`, {
+        method: 'POST',
+        body: JSON.stringify({
+          intervalSec: Number(intervalInput.value || 4),
+          ocrLang: String(langInput.value || '').trim() || 'eng+tur'
+        })
+      });
+      const done = await poll(queued.jobId);
+      setDownload(done.resultUrl || '');
+      setStatus(`${t('video_ocr_done')} ${done.lineCount ? `(${done.lineCount})` : ''}`.trim());
+    } catch (error) {
+      setStatus(t('video_ocr_failed'));
+      alert(String(error?.message || 'Video OCR failed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  extractBtn.addEventListener('click', onExtract);
+  setStatus('');
+  setDownload('');
+
+  return () => {
+    extractBtn.removeEventListener('click', onExtract);
+  };
+}
+
+function initCollapsibleSections(root = document) {
+  const rows = Array.from(root.querySelectorAll('.collapsible-section'));
+  if (!rows.length) return () => {};
+  const cleanups = [];
+  rows.forEach((section) => {
+    const check = section.querySelector('.section-hide-check');
+    const apply = () => {
+      section.classList.toggle('collapsed', Boolean(check?.checked));
+    };
+    if (check) {
+      check.addEventListener('change', apply);
+      cleanups.push(() => check.removeEventListener('change', apply));
+    }
+    apply();
+  });
+  return () => {
+    cleanups.forEach((fn) => fn());
+  };
+}
+
+function initVideoToolsSorting(root = document) {
+  const viewerExtra = root.querySelector('.viewer-extra');
+  if (!viewerExtra) return () => {};
+
+  const sectionMap = new Map();
+  viewerExtra.querySelectorAll('.collapsible-section[data-section]').forEach((section) => {
+    const key = String(section.dataset.section || '').trim();
+    if (key) sectionMap.set(key, section);
+  });
+  if (sectionMap.size < 2) return () => {};
+
+  let host = root.querySelector('#videoToolsSortableHost');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'videoToolsSortableHost';
+    host.className = 'video-tools-sortable-host';
+    viewerExtra.prepend(host);
+  }
+
+  const defaultOrder = ['subtitles', 'ocr', 'audio', 'clips'];
+  let savedOrder = [];
+  try {
+    const raw = localStorage.getItem(LOCAL_VIDEO_TOOLS_ORDER);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(parsed)) savedOrder = parsed.map((x) => String(x || '').trim()).filter(Boolean);
+  } catch (_error) {
+    savedOrder = [];
+  }
+  const mergedOrder = Array.from(new Set([...savedOrder, ...defaultOrder, ...Array.from(sectionMap.keys())]));
+  mergedOrder.forEach((key) => {
+    const section = sectionMap.get(key);
+    if (!section) return;
+    host.appendChild(section);
+  });
+
+  const saveOrder = () => {
+    const order = Array.from(host.querySelectorAll('.collapsible-section[data-section]'))
+      .map((el) => String(el.dataset.section || '').trim())
+      .filter(Boolean);
+    localStorage.setItem(LOCAL_VIDEO_TOOLS_ORDER, JSON.stringify(order));
+  };
+
+  const isInteractiveTarget = (target) => Boolean(target?.closest('input, button, a, select, textarea, label'));
+  const sectionElements = Array.from(host.querySelectorAll('.collapsible-section[data-section]'));
+  let dragging = null;
+
+  sectionElements.forEach((section) => {
+    const head = section.querySelector('.collapsible-head');
+    if (!head) return;
+    head.classList.add('section-drag-handle');
+    section.draggable = true;
+
+    const onDragStart = (event) => {
+      if (isInteractiveTarget(event.target)) {
+        event.preventDefault();
+        return;
+      }
+      dragging = section;
+      section.classList.add('dragging');
+      try {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', String(section.dataset.section || ''));
+      } catch (_error) {}
+    };
+    const onDragEnd = () => {
+      section.classList.remove('dragging');
+      dragging = null;
+      saveOrder();
+    };
+
+    section.addEventListener('dragstart', onDragStart);
+    section.addEventListener('dragend', onDragEnd);
+  });
+
+  const onDragOver = (event) => {
+    event.preventDefault();
+    if (!dragging) return;
+    const siblings = Array.from(host.querySelectorAll('.collapsible-section[data-section]:not(.dragging)'));
+    let next = null;
+    for (const item of siblings) {
+      const box = item.getBoundingClientRect();
+      if (event.clientY < box.top + (box.height / 2)) {
+        next = item;
+        break;
+      }
+    }
+    if (next) host.insertBefore(dragging, next);
+    else host.appendChild(dragging);
+  };
+  const onDrop = (event) => {
+    event.preventDefault();
+    saveOrder();
+  };
+
+  host.addEventListener('dragover', onDragOver);
+  host.addEventListener('drop', onDrop);
+
+  return () => {
+    host.removeEventListener('dragover', onDragOver);
+    host.removeEventListener('drop', onDrop);
+    sectionElements.forEach((section) => {
+      section.draggable = false;
+      section.classList.remove('dragging');
+    });
+  };
+}
+
 function openVideoToolsDialog(asset) {
   const overlay = document.createElement('div');
   overlay.className = 'clip-modal-backdrop video-tools-backdrop';
@@ -2768,7 +3096,7 @@ function openVideoToolsDialog(asset) {
         <button type="button" id="videoToolsCloseBtn">${t('close')}</button>
       </div>
       <div class="video-tools-modal-body">
-        ${mediaViewer(asset, { showVideoToolsButton: false, includeSubtitleTools: true })}
+        ${mediaViewer(asset, { showVideoToolsButton: false, includeSubtitleTools: true, includeSectionHide: true, audioSideLayout: true })}
       </div>
     </div>
   `;
@@ -2816,6 +3144,9 @@ function initAssetPlayer(asset, root = document) {
     if (isVideo(asset)) {
       cleanups.push(initFrameControls(mediaEl, asset, root));
       cleanups.push(initVideoSubtitleTools(mediaEl, asset, root));
+      cleanups.push(initVideoOcrTools(asset, root));
+      cleanups.push(initCollapsibleSections(root));
+      cleanups.push(initVideoToolsSorting(root));
     }
     if (isVideo(asset) || isAudio(asset)) {
       cleanups.push(initAudioTools(mediaEl, root));
@@ -2986,6 +3317,7 @@ async function openAsset(id, workflow) {
   });
 
   deleteBtn?.addEventListener('click', async () => {
+    if (!currentUserIsAdmin) return;
     const ok = confirm(t('trash_confirm'));
     if (!ok) return;
     await deleteApi(`/api/assets/${id}`);
@@ -3025,6 +3357,7 @@ assetGrid.addEventListener('click', async (event) => {
       return;
     }
     if (action === 'delete') {
+      if (!currentUserIsAdmin) return;
       const ok = confirm(t('trash_confirm'));
       if (!ok) return;
       await deleteApi(`/api/assets/${id}`);

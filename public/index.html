@@ -10,9 +10,7 @@
     <main class="layout">
       <section class="panel" id="panelIngest">
         <div class="top-row">
-          <div>
-            <h1 data-i18n="app_title">Broadcast MAM Console</h1>
-          </div>
+          <h1 data-i18n="app_title">Broadcast MAM Console</h1>
           <div class="top-controls">
             <div class="user-box">
               <span class="user-box-label" data-i18n="current_user">Current User</span>
@@ -36,48 +34,52 @@
           </div>
         </div>
 
-        <form id="ingestForm" class="stack">
-          <h2 data-i18n="ingest_title">Ingest Asset</h2>
-          <input name="title" data-i18n-placeholder="ph_title" placeholder="Title" required />
-          <select name="type" required>
-            <option value="Video" data-i18n="type_video">Video</option>
-            <option value="Audio" data-i18n="type_audio">Audio</option>
-            <option value="Document" data-i18n="type_document">Document</option>
-            <option value="Photo" data-i18n="type_photo">Photo</option>
-            <option value="Other" data-i18n="type_other">Other</option>
-          </select>
-          <input name="owner" data-i18n-placeholder="ph_owner" placeholder="Owner" required />
-          <div class="file-picker">
-            <input id="mediaFileInput" name="mediaFile" type="file" hidden accept="video/*,audio/*,image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,.csv,.sql,.py,.js,.ts,.tsx,.jsx,.json,.md,.xml,.yaml,.yml,.log,.ini,.cfg,.conf,.sh,.bash,.zsh,.java,.c,.cpp,.h,.hpp,.go,.rs,.rb,.php,.swift,.kt" required />
-            <button type="button" id="mediaFileBtn" class="file-picker-btn" data-i18n="choose_file">Dosya Sec</button>
-            <span id="mediaFileName" class="file-picker-name"></span>
-          </div>
-          <input name="tags" data-i18n-placeholder="ph_tags" placeholder="Tags (comma separated)" />
-          <input name="durationSeconds" type="number" min="0" data-i18n-placeholder="ph_duration_auto" placeholder="Duration auto-detected" readonly />
-          <input name="sourcePath" data-i18n-placeholder="ph_source" placeholder="Source path" />
-          <textarea name="description" data-i18n-placeholder="ph_description" placeholder="Description"></textarea>
-          <button type="submit" data-i18n="btn_upload_create">Upload & Create Asset</button>
-          <div id="uploadProgressWrap" class="upload-progress hidden" aria-live="polite">
-            <span id="uploadProgressSpinner" class="spinner upload-progress-spinner" aria-hidden="true"></span>
-            <div id="uploadProgressText" class="upload-progress-text">0%</div>
-          </div>
-        </form>
+        <div class="ingest-panel-card">
+          <form id="searchForm" class="stack search">
+            <h2 data-i18n="search_title">Search</h2>
+            <input name="q" data-i18n-placeholder="ph_query" placeholder="Query" />
+            <input name="tag" data-i18n-placeholder="ph_tag" placeholder="Tag" />
+            <input name="type" data-i18n-placeholder="ph_type_simple" placeholder="Type" />
+            <select name="status">
+              <option value="" data-i18n="any_status">Any status</option>
+            </select>
+            <select name="trash">
+              <option value="active" data-i18n="trash_active">Active assets</option>
+              <option value="trash" data-i18n="trash_only">Trash only</option>
+              <option value="all" data-i18n="trash_all">All (active + trash)</option>
+            </select>
+            <button type="submit" data-i18n="btn_apply_filters">Apply Filters</button>
+          </form>
+        </div>
 
-        <form id="searchForm" class="stack search">
-          <h2 data-i18n="search_title">Search</h2>
-          <input name="q" data-i18n-placeholder="ph_query" placeholder="Query" />
-          <input name="tag" data-i18n-placeholder="ph_tag" placeholder="Tag" />
-          <input name="type" data-i18n-placeholder="ph_type_simple" placeholder="Type" />
-          <select name="status">
-            <option value="" data-i18n="any_status">Any status</option>
-          </select>
-          <select name="trash">
-            <option value="active" data-i18n="trash_active">Active assets</option>
-            <option value="trash" data-i18n="trash_only">Trash only</option>
-            <option value="all" data-i18n="trash_all">All (active + trash)</option>
-          </select>
-          <button type="submit" data-i18n="btn_apply_filters">Apply Filters</button>
-        </form>
+        <div class="ingest-panel-card">
+          <form id="ingestForm" class="stack">
+            <h2 data-i18n="ingest_title">Ingest Asset</h2>
+            <input name="title" data-i18n-placeholder="ph_title" placeholder="Title" required />
+            <select name="type" required>
+              <option value="Video" data-i18n="type_video">Video</option>
+              <option value="Audio" data-i18n="type_audio">Audio</option>
+              <option value="Document" data-i18n="type_document">Document</option>
+              <option value="Photo" data-i18n="type_photo">Photo</option>
+              <option value="Other" data-i18n="type_other">Other</option>
+            </select>
+            <input name="owner" data-i18n-placeholder="ph_owner" placeholder="Owner" required />
+            <div class="file-picker">
+              <input id="mediaFileInput" name="mediaFile" type="file" hidden accept="video/*,audio/*,image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,.csv,.sql,.py,.js,.ts,.tsx,.jsx,.json,.md,.xml,.yaml,.yml,.log,.ini,.cfg,.conf,.sh,.bash,.zsh,.java,.c,.cpp,.h,.hpp,.go,.rs,.rb,.php,.swift,.kt" required />
+              <button type="button" id="mediaFileBtn" class="file-picker-btn" data-i18n="choose_file">Dosya Sec</button>
+              <span id="mediaFileName" class="file-picker-name"></span>
+            </div>
+            <input name="tags" data-i18n-placeholder="ph_tags" placeholder="Tags (comma separated)" />
+            <input name="durationSeconds" type="number" min="0" data-i18n-placeholder="ph_duration_auto" placeholder="Duration auto-detected" readonly />
+            <input name="sourcePath" data-i18n-placeholder="ph_source" placeholder="Source path" />
+            <textarea name="description" data-i18n-placeholder="ph_description" placeholder="Description"></textarea>
+            <button type="submit" data-i18n="btn_upload_create">Upload & Create Asset</button>
+            <div id="uploadProgressWrap" class="upload-progress hidden" aria-live="polite">
+              <span id="uploadProgressSpinner" class="spinner upload-progress-spinner" aria-hidden="true"></span>
+              <div id="uploadProgressText" class="upload-progress-text">0%</div>
+            </div>
+          </form>
+        </div>
       </section>
 
       <div class="panel-splitter" data-splitter="left" title="Drag to resize panels">

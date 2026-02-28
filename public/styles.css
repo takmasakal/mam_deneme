@@ -95,22 +95,28 @@ body {
 }
 
 .top-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  display: grid;
   gap: 12px;
 }
 
+.top-row h1 {
+  margin: 0;
+}
+
 .top-controls {
-  display: grid;
+  display: flex;
+  align-items: stretch;
+  flex-wrap: nowrap;
   gap: 8px;
-  justify-items: stretch;
+  min-width: 0;
 }
 
 .user-box {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
-  min-width: 220px;
+  flex: 1 1 260px;
+  min-width: 0;
   padding: 8px 10px;
   border: 1px solid #4a5163;
   border-radius: 10px;
@@ -198,11 +204,14 @@ body {
 }
 
 .lang-box {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
   font-size: 11px;
   color: var(--muted);
-  min-width: 170px;
+  flex: 0 1 170px;
+  min-width: 96px;
+  max-width: 220px;
   padding: 8px 10px;
   border: 1px solid #4a5163;
   border-radius: 10px;
@@ -220,6 +229,7 @@ body {
 .lang-box-select-wrap {
   position: relative;
   display: block;
+  min-width: 0;
 }
 
 .lang-box-select-wrap::after {
@@ -343,7 +353,24 @@ p {
 .stack {
   display: grid;
   gap: 8px;
-  margin-bottom: 16px;
+  margin: 0;
+}
+
+.ingest-panel-card {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #3d4353;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #2c3140 0%, #252a36 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.ingest-panel-card .stack h2 {
+  margin-bottom: 2px;
+}
+
+.ingest-panel-card:first-of-type {
+  margin-top: 6px;
 }
 
 .file-picker {
@@ -701,6 +728,12 @@ button:hover {
   margin-top: 0;
 }
 
+.video-tools-modal .viewer-core {
+  position: static;
+  top: auto;
+  z-index: auto;
+}
+
 .video-tools-modal-large {
   width: min(1200px, calc(100vw - 24px));
   max-height: min(92vh, 980px);
@@ -743,6 +776,36 @@ button:hover {
   font-size: 13px;
   color: #d5dded;
   margin: 4px 0 8px;
+}
+
+.collapsible-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  cursor: grab;
+  user-select: none;
+}
+
+.section-drag-handle:active {
+  cursor: grabbing;
+}
+
+.collapsible-section.dragging {
+  opacity: 0.55;
+}
+
+.section-hide-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #cdd7eb;
+}
+
+.collapsible-section.collapsed .collapsible-body {
+  display: none;
 }
 
 .empty {
@@ -833,12 +896,38 @@ button:hover {
   padding: 8px;
 }
 
+.video-top-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 10px;
+  align-items: start;
+}
+
+.video-top-layout.no-audio-side {
+  grid-template-columns: 1fr;
+}
+
+.video-main-col {
+  min-width: 0;
+}
+
+.audio-side-col {
+  min-width: 0;
+  position: sticky;
+  top: 8px;
+}
+
 .viewer-extra {
   margin-top: 8px;
   border: 1px solid #2c2c2c;
   border-radius: 10px;
   background: #111;
   padding: 8px;
+}
+
+.video-tools-sortable-host {
+  display: grid;
+  gap: 8px;
 }
 
 .viewer-asset-name {
@@ -1125,6 +1214,14 @@ button:hover {
   padding: 6px;
 }
 
+.video-ocr-tools {
+  margin-top: 8px;
+  border: 1px solid #2e2e2e;
+  border-radius: 10px;
+  background: #111111;
+  padding: 8px;
+}
+
 .fps-control {
   display: flex;
   gap: 6px;
@@ -1148,12 +1245,24 @@ button:hover {
   background: #151515;
 }
 
+.audio-side-col .audio-tools {
+  margin-top: 0;
+}
+
 .audio-tools-header {
   display: flex;
   flex-wrap: wrap;
   gap: 6px 10px;
   align-items: center;
   margin-bottom: 8px;
+}
+
+.audio-tools .collapsible-head {
+  margin-bottom: 8px;
+}
+
+.audio-tools.collapsible-section.collapsed .collapsible-head {
+  margin-bottom: 0;
 }
 
 .audio-tools-header button {
@@ -1178,6 +1287,11 @@ button:hover {
   gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 8px;
+}
+
+.audio-tools-header .channel-controls {
+  margin-bottom: 0;
+  flex: 1 1 320px;
 }
 
 .channel-pill {
@@ -1289,6 +1403,11 @@ button:hover {
   width: 100%;
   border-radius: 8px;
   border: 1px solid #303030;
+  height: 220px;
+}
+
+.audio-graph-vertical {
+  height: 320px;
 }
 
 .doc-preview-shell {
@@ -1529,6 +1648,14 @@ button:hover {
   .panel-splitter {
     display: none;
   }
+
+  .video-top-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .audio-side-col {
+    position: static;
+  }
 }
 
 @media (max-width: 760px) {
@@ -1557,5 +1684,15 @@ button:hover {
   #panelDetail,
   #assetDetail {
     overflow: visible;
+  }
+
+  .top-controls {
+    flex-wrap: wrap;
+  }
+
+  .user-box,
+  .lang-box {
+    flex: 1 1 100%;
+    max-width: none;
   }
 }
