@@ -7,7 +7,25 @@ REALM_TEMPLATE="${DEPLOY_DIR}/keycloak/mam-realm.template.json"
 REALM_OUT="${DEPLOY_DIR}/keycloak/mam-realm.json"
 ENV_OUT="${DEPLOY_DIR}/.env.easy"
 
-PUBLIC_HOST="${1:-localhost}"
+detect_host() {
+  if command -v ip >/dev/null 2>&1; then
+    ip -4 route get 1.1.1.1 2>/dev/null | awk '/src/ {for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}'
+    return 0
+  fi
+  if command -v hostname >/dev/null 2>&1; then
+    hostname -I 2>/dev/null | awk '{print $1}'
+    return 0
+  fi
+  echo ""
+}
+
+PUBLIC_HOST="${1:-${PUBLIC_HOST:-}}"
+if [[ -z "${PUBLIC_HOST}" ]]; then
+  PUBLIC_HOST="$(detect_host)"
+fi
+if [[ -z "${PUBLIC_HOST}" ]]; then
+  PUBLIC_HOST="localhost"
+fi
 
 rand_hex() {
   local bytes="$1"

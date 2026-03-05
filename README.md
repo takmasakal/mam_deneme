@@ -132,17 +132,21 @@ Image build context excludes local media/metadata paths via `.dockerignore` (`up
 ## One-Command VM Setup (Turnkey)
 Use this when you want a ready stack (app + postgres + elasticsearch + keycloak + oauth2-proxy) with minimal manual Keycloak work.
 
-1. Prepare generated env + realm import (replace `VM_IP` with your server IP):
+1. Prepare generated env + realm import (IP/domain optional):
    ```bash
-   ./deploy/init.sh VM_IP
+   ./deploy/init.sh
+   ```
+   Optional explicit host:
+   ```bash
+   ./deploy/init.sh VM_IP_OR_DOMAIN
    ```
 2. Start turnkey stack:
    ```bash
    docker compose --env-file deploy/.env.easy -f docker-compose.easy.yml up -d
    ```
 3. Open:
-   - MAM login: `http://VM_IP:3000`
-   - Keycloak admin: `http://VM_IP:8081`
+   - MAM login: `http://<detected-host>:3000`
+   - Keycloak admin: `http://<detected-host>:8081`
 
 Generated default users in realm `mam`:
 - `mamadmin / mamadmin` (roles: `admin-access`, `asset-delete`)
