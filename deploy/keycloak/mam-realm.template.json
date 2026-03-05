@@ -1,0 +1,73 @@
+{
+  "realm": "mam",
+  "enabled": true,
+  "displayName": "MAM",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": true,
+  "rememberMe": true,
+  "loginTheme": "mam",
+  "clients": [
+    {
+      "clientId": "mam-web",
+      "name": "mam-web",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "__CLIENT_SECRET__",
+      "redirectUris": [
+        "http://__PUBLIC_HOST__:3000/oauth2/callback"
+      ],
+      "webOrigins": [
+        "http://__PUBLIC_HOST__:3000"
+      ],
+      "baseUrl": "http://__PUBLIC_HOST__:3000",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "attributes": {
+        "post.logout.redirect.uris": "+"
+      }
+    }
+  ],
+  "roles": {
+    "realm": [
+      {
+        "name": "admin-access"
+      },
+      {
+        "name": "asset-delete"
+      }
+    ]
+  },
+  "users": [
+    {
+      "username": "__MAM_ADMIN_USER__",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "__MAM_ADMIN_PASSWORD__",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "admin-access",
+        "asset-delete"
+      ]
+    },
+    {
+      "username": "__MAM_USER__",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "__MAM_USER_PASSWORD__",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

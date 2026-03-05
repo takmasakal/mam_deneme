@@ -19,6 +19,13 @@ const includeTrash = document.getElementById('includeTrash');
 const proxyJobState = document.getElementById('proxyJobState');
 const proxyProgress = document.getElementById('proxyProgress');
 const proxyJobErrors = document.getElementById('proxyJobErrors');
+const proxyToolAssetName = document.getElementById('proxyToolAssetName');
+const proxyToolSuggestList = document.getElementById('proxyToolSuggestList');
+const proxyToolAction = document.getElementById('proxyToolAction');
+const proxyToolTimecodeWrap = document.getElementById('proxyToolTimecodeWrap');
+const proxyToolTimecode = document.getElementById('proxyToolTimecode');
+const runProxyToolBtn = document.getElementById('runProxyToolBtn');
+const proxyToolMsg = document.getElementById('proxyToolMsg');
 const languageSelect = document.getElementById('languageSelectAdmin');
 const adminTabs = Array.from(document.querySelectorAll('.admin-tab'));
 const adminPanels = Array.from(document.querySelectorAll('.admin-panel'));
@@ -28,6 +35,11 @@ const userPermissionsMsg = document.getElementById('userPermissionsMsg');
 let currentLang = localStorage.getItem(LOCAL_LANG) || 'en';
 let pollTimer = null;
 let activeJobId = null;
+let proxySuggestTimer = null;
+let proxySuggestReqSeq = 0;
+let proxySuggestItems = [];
+let proxySuggestActiveIndex = -1;
+let proxySuggestHideTimer = null;
 
 let i18n = {
   en: {
@@ -39,6 +51,12 @@ let i18n = {
     loading: 'Loading...',
     workflow_tracking_enabled: 'Workflow tracking enabled',
     auto_proxy_backfill: 'Auto backfill proxies on upload',
+    player_mode: 'Player Mode',
+    player_mode_native: 'Native player',
+    player_mode_custom: 'Custom player',
+    player_mode_vidstack: 'Vidstack',
+    player_mode_videojs: 'Open-source (Video.js)',
+    player_mode_mpegdash: 'MPEG-DASH (dash.js)',
     api_token_enabled: 'Require API token (non-SSO API access)',
     oidc_bearer_enabled: 'Accept Keycloak Bearer JWT (preferred for mobile)',
     api_token: 'API Token',
@@ -85,6 +103,19 @@ let i18n = {
     proxy_job_done: 'Proxy job completed.',
     proxy_job_running: 'Proxy job running',
     proxy_job_failed: 'Proxy job failed.',
+    proxy_tool_title: 'Asset Generation Tool',
+    proxy_tool_asset_name: 'Asset Name',
+    proxy_tool_asset_name_ph: 'Type asset name',
+    proxy_tool_action: 'Action',
+    proxy_tool_action_thumbnail: 'Generate Thumbnail',
+    proxy_tool_action_preview: 'Generate Preview',
+    proxy_tool_action_proxy: 'Generate Proxy',
+    proxy_tool_timecode: 'Thumbnail Timecode',
+    proxy_tool_timecode_ph: '00:00:12:10 or 12.4',
+    proxy_tool_run: 'Run Action',
+    proxy_tool_name_required: 'Asset name is required.',
+    proxy_tool_done: 'Action completed',
+    proxy_tool_multi_match: 'Multiple assets matched, latest one used',
     processed: 'Processed',
     generated: 'Generated',
     skipped: 'Skipped',
@@ -113,6 +144,12 @@ let i18n = {
     loading: 'Yukleniyor...',
     workflow_tracking_enabled: 'Is akisi izleme etkin',
     auto_proxy_backfill: 'Yuklemede proxy backfill otomatik',
+    player_mode: 'Oynatici Modu',
+    player_mode_native: 'Varsayilan oynatici',
+    player_mode_custom: 'Ozel oynatici',
+    player_mode_vidstack: 'Vidstack',
+    player_mode_videojs: 'Açık kaynak (Video.js)',
+    player_mode_mpegdash: 'MPEG-DASH (dash.js)',
     api_token_enabled: 'API token zorunlu olsun (SSO olmayan API erişimi)',
     oidc_bearer_enabled: 'Keycloak Bearer JWT kabul et (mobil icin onerilen)',
     api_token: 'API Token',
@@ -159,6 +196,19 @@ let i18n = {
     proxy_job_done: 'Proxy gorevi tamamlandi.',
     proxy_job_running: 'Proxy gorevi calisiyor',
     proxy_job_failed: 'Proxy gorevi basarisiz.',
+    proxy_tool_title: 'Varlik Uretim Araci',
+    proxy_tool_asset_name: 'Varlik Adi',
+    proxy_tool_asset_name_ph: 'Varlik adini yazin',
+    proxy_tool_action: 'Islem',
+    proxy_tool_action_thumbnail: 'Thumbnail Uret',
+    proxy_tool_action_preview: 'Onizleme Uret',
+    proxy_tool_action_proxy: 'Proxy Uret',
+    proxy_tool_timecode: 'Thumbnail Timecode',
+    proxy_tool_timecode_ph: '00:00:12:10 veya 12.4',
+    proxy_tool_run: 'Islemi Calistir',
+    proxy_tool_name_required: 'Varlik adi gerekli.',
+    proxy_tool_done: 'Islem tamamlandi',
+    proxy_tool_multi_match: 'Birden fazla varlik bulundu, en guncel olan kullanildi',
     processed: 'Islenen',
     generated: 'Uretilen',
     skipped: 'Atlanan',
@@ -289,6 +339,107 @@ function switchTab(tabName) {
   });
 }
 
+function updateProxyToolUi() {
+  const mode = String(proxyToolAction?.value || 'thumbnail').trim().toLowerCase();
+  const showTimecode = mode === 'thumbnail';
+  if (proxyToolTimecodeWrap) proxyToolTimecodeWrap.classList.toggle('hidden', !showTimecode);
+}
+
+function escapeRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function highlightSuggestion(text, query) {
+  const raw = String(text || '');
+  const q = String(query || '').trim();
+  if (!raw) return '';
+  if (!q) return escapeHtml(raw);
+  const matcher = new RegExp(`(${escapeRegExp(q)})`, 'ig');
+  return escapeHtml(raw).replace(matcher, '<mark>$1</mark>');
+}
+
+function hideProxySuggestions() {
+  if (!proxyToolSuggestList) return;
+  proxyToolSuggestList.classList.add('hidden');
+  proxyToolSuggestList.innerHTML = '';
+  proxySuggestItems = [];
+  proxySuggestActiveIndex = -1;
+}
+
+function setProxySuggestActive(index) {
+  if (!proxyToolSuggestList) return;
+  const buttons = Array.from(proxyToolSuggestList.querySelectorAll('.proxy-suggest-item'));
+  if (!buttons.length) {
+    proxySuggestActiveIndex = -1;
+    return;
+  }
+  const safeIndex = Math.max(0, Math.min(buttons.length - 1, index));
+  proxySuggestActiveIndex = safeIndex;
+  buttons.forEach((btn, idx) => {
+    btn.classList.toggle('active', idx === safeIndex);
+  });
+}
+
+function applyProxySuggestion(item) {
+  if (!item || !proxyToolAssetName) return;
+  const title = String(item.title || '').trim();
+  const fileName = String(item.fileName || '').trim();
+  proxyToolAssetName.value = title || fileName;
+  hideProxySuggestions();
+}
+
+function renderProxySuggestions(items, query) {
+  if (!proxyToolSuggestList) return;
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {
+    hideProxySuggestions();
+    return;
+  }
+  proxySuggestItems = list;
+  proxySuggestActiveIndex = -1;
+  proxyToolSuggestList.innerHTML = list.map((item, index) => {
+    const title = String(item.title || item.fileName || item.id || '');
+    const fileName = String(item.fileName || '');
+    const type = String(item.type || '-');
+    const trashState = item.inTrash ? 'trash' : 'active';
+    return `
+      <button type="button" class="proxy-suggest-item" data-index="${index}">
+        <strong>${highlightSuggestion(title, query)}</strong>
+        <span>${escapeHtml(type)} | ${escapeHtml(fileName || '-')} | ${escapeHtml(trashState)}</span>
+      </button>
+    `;
+  }).join('');
+  proxyToolSuggestList.classList.remove('hidden');
+}
+
+async function requestProxySuggestions() {
+  const query = String(proxyToolAssetName?.value || '').trim();
+  if (query.length < 2) {
+    hideProxySuggestions();
+    return;
+  }
+  const reqId = ++proxySuggestReqSeq;
+  const params = new URLSearchParams();
+  params.set('q', query);
+  params.set('limit', '8');
+  if (includeTrash) params.set('includeTrash', includeTrash.checked ? '1' : '0');
+  try {
+    const result = await api(`/api/admin/assets/suggest?${params.toString()}`);
+    if (reqId !== proxySuggestReqSeq) return;
+    renderProxySuggestions(result, query);
+  } catch (_error) {
+    if (reqId !== proxySuggestReqSeq) return;
+    hideProxySuggestions();
+  }
+}
+
+function queueProxySuggestionRequest() {
+  if (proxySuggestTimer) clearTimeout(proxySuggestTimer);
+  proxySuggestTimer = setTimeout(() => {
+    requestProxySuggestions().catch(() => {});
+  }, 180);
+}
+
 function renderUserPermissions(users) {
   if (!userPermissionsRows) return;
   const list = Array.isArray(users) ? users : [];
@@ -367,6 +518,10 @@ async function loadSettings() {
   const settings = await api('/api/admin/settings');
   settingsForm.elements.workflowTrackingEnabled.checked = Boolean(settings.workflowTrackingEnabled);
   settingsForm.elements.autoProxyBackfillOnUpload.checked = Boolean(settings.autoProxyBackfillOnUpload);
+  {
+    const mode = String(settings.playerUiMode || 'native').toLowerCase();
+    settingsForm.elements.playerUiMode.value = (mode === 'custom' || mode === 'videojs' || mode === 'vidstack' || mode === 'mpegdash') ? mode : 'native';
+  }
   settingsForm.elements.apiTokenEnabled.checked = Boolean(settings.apiTokenEnabled);
   settingsForm.elements.oidcBearerEnabled.checked = Boolean(settings.oidcBearerEnabled);
   if (apiTokenInput) apiTokenInput.value = String(settings.apiToken || '');
@@ -407,6 +562,7 @@ settingsForm.addEventListener('submit', async (event) => {
   const payload = {
     workflowTrackingEnabled: settingsForm.elements.workflowTrackingEnabled.checked,
     autoProxyBackfillOnUpload: settingsForm.elements.autoProxyBackfillOnUpload.checked,
+    playerUiMode: String(settingsForm.elements.playerUiMode.value || 'native'),
     apiTokenEnabled: settingsForm.elements.apiTokenEnabled.checked,
     apiToken: String(settingsForm.elements.apiToken.value || '').trim(),
     oidcBearerEnabled: settingsForm.elements.oidcBearerEnabled.checked,
@@ -475,8 +631,106 @@ startProxyJobBtn.addEventListener('click', async () => {
   }
 });
 
+proxyToolAction?.addEventListener('change', () => {
+  updateProxyToolUi();
+});
+
+runProxyToolBtn?.addEventListener('click', async () => {
+  hideProxySuggestions();
+  const assetName = String(proxyToolAssetName?.value || '').trim();
+  if (!assetName) {
+    if (proxyToolMsg) proxyToolMsg.textContent = t('proxy_tool_name_required');
+    return;
+  }
+
+  const mode = String(proxyToolAction?.value || 'thumbnail').trim().toLowerCase();
+  const payload = { assetName, mode };
+  if (mode === 'thumbnail') payload.timecode = String(proxyToolTimecode?.value || '').trim();
+
+  if (proxyToolMsg) proxyToolMsg.textContent = `${t('loading')}...`;
+  try {
+    const result = await api('/api/admin/proxy-tools/run', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    const extra = [];
+    if (result.timecode) extra.push(`TC ${result.timecode}`);
+    if (Number(result.previewChars) > 0) extra.push(`${result.previewChars} chars`);
+    if (Number(result.matchedCount) > 1) extra.push(t('proxy_tool_multi_match'));
+    const suffix = extra.length ? ` | ${extra.join(' | ')}` : '';
+    if (proxyToolMsg) {
+      proxyToolMsg.textContent = `${t('proxy_tool_done')}: ${result.assetTitle || result.assetId} (${result.mode})${suffix}`;
+    }
+    await refreshTrackingAndHealth();
+  } catch (error) {
+    if (proxyToolMsg) proxyToolMsg.textContent = String(error.message || 'Request failed');
+  }
+});
+
+proxyToolAssetName?.addEventListener('focus', () => {
+  if (proxySuggestHideTimer) {
+    clearTimeout(proxySuggestHideTimer);
+    proxySuggestHideTimer = null;
+  }
+  queueProxySuggestionRequest();
+});
+
+proxyToolAssetName?.addEventListener('input', () => {
+  queueProxySuggestionRequest();
+});
+
+proxyToolAssetName?.addEventListener('blur', () => {
+  if (proxySuggestHideTimer) clearTimeout(proxySuggestHideTimer);
+  proxySuggestHideTimer = setTimeout(() => {
+    hideProxySuggestions();
+    proxySuggestHideTimer = null;
+  }, 120);
+});
+
+proxyToolAssetName?.addEventListener('keydown', (event) => {
+  const isOpen = Boolean(proxyToolSuggestList && !proxyToolSuggestList.classList.contains('hidden'));
+  if (!isOpen && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+    queueProxySuggestionRequest();
+    return;
+  }
+  if (!isOpen) return;
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    setProxySuggestActive((proxySuggestActiveIndex < 0 ? -1 : proxySuggestActiveIndex) + 1);
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    setProxySuggestActive((proxySuggestActiveIndex < 0 ? proxySuggestItems.length : proxySuggestActiveIndex) - 1);
+  } else if (event.key === 'Enter') {
+    if (proxySuggestActiveIndex >= 0 && proxySuggestItems[proxySuggestActiveIndex]) {
+      event.preventDefault();
+      applyProxySuggestion(proxySuggestItems[proxySuggestActiveIndex]);
+    }
+  } else if (event.key === 'Escape') {
+    hideProxySuggestions();
+  }
+});
+
+proxyToolSuggestList?.addEventListener('mousedown', (event) => {
+  event.preventDefault();
+});
+
+proxyToolSuggestList?.addEventListener('click', (event) => {
+  const button = event.target.closest('.proxy-suggest-item');
+  if (!button) return;
+  const index = Number(button.dataset.index);
+  if (!Number.isFinite(index) || index < 0 || index >= proxySuggestItems.length) return;
+  applyProxySuggestion(proxySuggestItems[index]);
+});
+
+includeTrash?.addEventListener('change', () => {
+  if (document.activeElement === proxyToolAssetName) {
+    queueProxySuggestionRequest();
+  }
+});
+
 adminTabs.forEach((btn) => {
   btn.addEventListener('click', () => {
+    hideProxySuggestions();
     switchTab(btn.dataset.tab || 'apiHelp');
   });
 });
@@ -504,6 +758,7 @@ languageSelect?.addEventListener('change', async (event) => {
     currentLang = currentLang === 'tr' ? 'tr' : 'en';
     if (languageSelect) languageSelect.value = currentLang;
     applyI18n();
+    updateProxyToolUi();
     await loadSettings();
     await refreshTrackingAndHealth();
     await loadUserPermissions();

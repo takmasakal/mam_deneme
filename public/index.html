@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Broadcast MAM Console</title>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="https://vjs.zencdn.net/8.20.0/video-js.css" />
   </head>
   <body>
     <main class="layout">
@@ -37,7 +38,10 @@
         <div class="ingest-panel-card">
           <form id="searchForm" class="stack search">
             <h2 data-i18n="search_title">Search</h2>
-            <input name="q" data-i18n-placeholder="ph_query" placeholder="Query" />
+            <div class="search-query-wrap">
+              <input id="searchQueryInput" name="q" autocomplete="off" data-i18n-placeholder="ph_query" placeholder="Query" />
+              <div id="searchSuggestList" class="search-suggest hidden"></div>
+            </div>
             <input name="tag" data-i18n-placeholder="ph_tag" placeholder="Tag" />
             <input name="type" data-i18n-placeholder="ph_type_simple" placeholder="Type" />
             <select name="status">
@@ -90,6 +94,10 @@
       <section class="panel" id="panelAssets">
         <div class="panel-head">
           <h2 data-i18n="assets_title">Assets</h2>
+          <div class="asset-view-switch" role="group" aria-label="Asset view mode">
+            <button type="button" id="assetViewThumbBtn" class="asset-view-btn asset-view-btn-thumb" aria-label="Thumbnail view" title="Thumbnail view"></button>
+            <button type="button" id="assetViewListBtn" class="asset-view-btn asset-view-btn-list" aria-label="List view" title="List view"></button>
+          </div>
         </div>
         <div class="asset-toolbar">
           <div class="asset-toolbar-row">
@@ -99,9 +107,6 @@
             <label><input type="checkbox" class="asset-type-filter" value="document" checked /> <span data-i18n="type_document">Document</span></label>
             <label><input type="checkbox" class="asset-type-filter" value="photo" checked /> <span data-i18n="type_photo">Photo</span></label>
             <label><input type="checkbox" class="asset-type-filter" value="other" checked /> <span data-i18n="type_other">Other</span></label>
-          </div>
-          <div class="asset-toolbar-row">
-            <label><input type="checkbox" id="assetTrashOnly" /> <span data-i18n="trash">Trash</span></label>
           </div>
         </div>
         <div id="assetGrid" class="asset-grid"></div>

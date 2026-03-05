@@ -5,10 +5,12 @@ node_modules/
 .env
 .env.local
 .env.*.local
+deploy/.env.easy
 
 # Runtime/generated data
 uploads/
 data/
+deploy/keycloak/mam-realm.json
 
 # Logs
 npm-debug.log*

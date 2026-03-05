@@ -58,6 +58,33 @@
           <div id="proxyJobState" class="admin-note"></div>
           <div class="progress-wrap"><div id="proxyProgress" class="progress-bar"></div></div>
           <div id="proxyJobErrors" class="rows"></div>
+
+          <div class="proxy-tool-box">
+            <h3 data-i18n="proxy_tool_title">Asset Generation Tool</h3>
+            <div class="proxy-tool-grid">
+              <label class="proxy-tool-asset-field">
+                <span data-i18n="proxy_tool_asset_name">Asset Name</span>
+                <input id="proxyToolAssetName" type="text" autocomplete="off" data-i18n-placeholder="proxy_tool_asset_name_ph" placeholder="Type asset name" />
+                <div id="proxyToolSuggestList" class="proxy-suggest hidden"></div>
+              </label>
+              <label>
+                <span data-i18n="proxy_tool_action">Action</span>
+                <select id="proxyToolAction">
+                  <option value="thumbnail" data-i18n="proxy_tool_action_thumbnail">Generate Thumbnail</option>
+                  <option value="preview" data-i18n="proxy_tool_action_preview">Generate Preview</option>
+                  <option value="proxy" data-i18n="proxy_tool_action_proxy">Generate Proxy</option>
+                </select>
+              </label>
+              <label id="proxyToolTimecodeWrap">
+                <span data-i18n="proxy_tool_timecode">Thumbnail Timecode</span>
+                <input id="proxyToolTimecode" type="text" data-i18n-placeholder="proxy_tool_timecode_ph" placeholder="00:00:12:10 or 12.4" />
+              </label>
+            </div>
+            <div class="proxy-tool-actions">
+              <button id="runProxyToolBtn" type="button" data-i18n="proxy_tool_run">Run Action</button>
+            </div>
+            <div id="proxyToolMsg" class="admin-note"></div>
+          </div>
         </article>
 
         <article class="admin-card admin-panel" data-panel="settings">
@@ -70,6 +97,16 @@
             <label class="toggle-row">
               <input type="checkbox" name="autoProxyBackfillOnUpload" />
               <span data-i18n="auto_proxy_backfill">Auto backfill proxies on upload</span>
+            </label>
+            <label>
+              <span data-i18n="player_mode">Player Mode</span>
+              <select name="playerUiMode" id="playerUiModeSelect">
+                <option value="native" data-i18n="player_mode_native">Native player</option>
+                <option value="custom" data-i18n="player_mode_custom">Custom player</option>
+                <option value="vidstack" data-i18n="player_mode_vidstack">Vidstack</option>
+                <option value="videojs" data-i18n="player_mode_videojs">Open-source (Video.js)</option>
+                <option value="mpegdash" data-i18n="player_mode_mpegdash">MPEG-DASH (dash.js)</option>
+              </select>
             </label>
             <label class="toggle-row">
               <input type="checkbox" name="apiTokenEnabled" />

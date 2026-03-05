@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Doküman Önizleme</title>
+  <style>
+    :root {
+      --bg: #0f1218;
+      --panel: #171c26;
+      --panel-2: #1f2633;
+      --line: #2e3748;
+      --text: #dde6f7;
+      --muted: #a6b3cc;
+      --accent: #59c2ff;
+      --mark: #ffe58a;
+      --mark-active: #8de1a8;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+    }
+
+    .topbar {
+      height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      box-sizing: border-box;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .topbar input[type="text"],
+    .topbar input[type="number"] {
+      height: 32px;
+      border: 1px solid #3a4458;
+      border-radius: 6px;
+      background: #0f1420;
+      color: #e5ecfa;
+      padding: 0 10px;
+      outline: none;
+    }
+
+    .topbar input[type="text"] {
+      flex: 1;
+      min-width: 140px;
+    }
+
+    .topbar input[type="number"] {
+      width: 62px;
+      text-align: center;
+      padding: 0 4px;
+    }
+
+    .topbar button {
+      height: 32px;
+      border: 1px solid #3a4458;
+      border-radius: 6px;
+      background: var(--panel-2);
+      color: #dbe8ff;
+      padding: 0 10px;
+      cursor: pointer;
+    }
+
+    .topbar button:hover {
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .topbar .meta {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .topbar label {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .viewer-wrap {
+      height: calc(100% - 48px);
+      overflow: auto;
+      padding: 10px;
+      box-sizing: border-box;
+      background: #141a23;
+    }
+
+    .pdf-stage {
+      position: relative;
+      margin: 0 auto;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      width: fit-content;
+      max-width: 100%;
+    }
+
+    #pdfCanvas {
+      display: block;
+      max-width: 100%;
+      height: auto;
+    }
+
+    #pdfTextLayer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      color: transparent;
+      line-height: 1;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    #pdfTextLayer span {
+      position: absolute;
+      transform-origin: 0 0;
+      white-space: pre;
+      pointer-events: auto;
+      color: transparent;
+    }
+
+    #pdfTextLayer mark {
+      background: rgba(255, 229, 122, 0.36);
+      color: transparent;
+      border-radius: 2px;
+      padding: 0;
+      box-shadow: inset 0 0 0 1px rgba(170, 130, 20, 0.15);
+    }
+
+    #pdfTextLayer mark.active {
+      background: rgba(141, 225, 168, 0.34);
+      box-shadow: inset 0 0 0 1px rgba(40, 120, 70, 0.35);
+    }
+
+    #textPreview {
+      display: none;
+      width: 100%;
+      height: 100%;
+      box-sizing: border-box;
+      margin: 0;
+      padding: 14px;
+      overflow: auto;
+      background: #f4f7fb;
+      color: #1a2233;
+      font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      white-space: pre-wrap;
+      border: 0;
+      border-radius: 8px;
+    }
+
+    #textPreview mark {
+      background: #ffe48a;
+      color: #111;
+      border-radius: 3px;
+      padding: 0 1px;
+    }
+
+    #errorBox {
+      box-sizing: border-box;
+      max-width: 680px;
+      margin: 40px auto;
+      padding: 16px;
+      border: 1px solid #3a3f4a;
+      border-radius: 8px;
+      background: #171b25;
+      color: #d6deef;
+      line-height: 1.45;
+      display: none;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+</head>
+<body>
+  <div id="topBar" class="topbar">
+    <input id="searchInput" type="text" placeholder="Dokümanda ara" />
+    <button id="searchBtn" type="button">Ara</button>
+    <button id="searchPrevBtn" type="button">&lt;</button>
+    <button id="searchNextBtn" type="button">&gt;</button>
+    <label><input id="caseCheck" type="checkbox" /> Büyük/küçük</label>
+    <button id="zoomOutBtn" type="button">-</button>
+    <button id="zoomInBtn" type="button">+</button>
+    <button id="pagePrevBtn" type="button">◀</button>
+    <input id="pageInput" type="number" min="1" value="1" />
+    <span id="pageTotal" class="meta">/ 1</span>
+    <button id="pageNextBtn" type="button">▶</button>
+    <span id="searchMeta" class="meta"></span>
+  </div>
+
+  <div class="viewer-wrap">
+    <div id="pdfContainer" class="pdf-stage" style="display:none;">
+      <canvas id="pdfCanvas"></canvas>
+      <div id="pdfTextLayer"></div>
+    </div>
+    <pre id="textPreview"></pre>
+    <div id="errorBox"></div>
+  </div>
+
+  <script>
+    (function init() {
+      const params = new URLSearchParams(window.location.search);
+      const file = String(params.get('file') || '');
+      const assetId = String(params.get('assetId') || '');
+      const isPdf = file.toLowerCase().endsWith('.pdf');
+
+      const topBar = document.getElementById('topBar');
+      const searchInput = document.getElementById('searchInput');
+      const searchBtn = document.getElementById('searchBtn');
+      const searchPrevBtn = document.getElementById('searchPrevBtn');
+      const searchNextBtn = document.getElementById('searchNextBtn');
+      const caseCheck = document.getElementById('caseCheck');
+      const pagePrevBtn = document.getElementById('pagePrevBtn');
+      const pageNextBtn = document.getElementById('pageNextBtn');
+      const pageInput = document.getElementById('pageInput');
+      const pageTotal = document.getElementById('pageTotal');
+      const zoomOutBtn = document.getElementById('zoomOutBtn');
+      const zoomInBtn = document.getElementById('zoomInBtn');
+      const searchMeta = document.getElementById('searchMeta');
+
+      const pdfContainer = document.getElementById('pdfContainer');
+      const canvas = document.getElementById('pdfCanvas');
+      const textLayer = document.getElementById('pdfTextLayer');
+      const textPreview = document.getElementById('textPreview');
+      const errorBox = document.getElementById('errorBox');
+      const ctx = canvas.getContext('2d');
+
+      if (!file || !file.startsWith('/uploads/')) {
+        topBar.style.display = 'none';
+        errorBox.style.display = 'block';
+        errorBox.innerHTML = '<strong>Geçersiz dosya yolu.</strong><br>Sadece <code>/uploads/</code> altındaki dosyalar önizlenebilir.';
+        return;
+      }
+
+      const escapeHtml = (v) => String(v || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+      const escapeRegExp = (v) => String(v || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+      if (!isPdf) {
+        // Non-PDF: keep text preview/search in the same module.
+        pdfContainer.style.display = 'none';
+        textPreview.style.display = 'block';
+        let sourceText = '';
+        let activeIndex = -1;
+        let matchCount = 0;
+
+        const renderMatches = (query) => {
+          const q = String(query || '').trim();
+          if (!q) {
+            textPreview.innerHTML = escapeHtml(sourceText);
+            searchMeta.textContent = '';
+            activeIndex = -1;
+            matchCount = 0;
+            return;
+          }
+          const flags = caseCheck.checked ? 'g' : 'gi';
+          const re = new RegExp(escapeRegExp(q), flags);
+          let out = '';
+          let last = 0;
+          let idx = 0;
+          let m;
+          while ((m = re.exec(sourceText)) !== null) {
+            const s = m.index;
+            const e = s + m[0].length;
+            out += escapeHtml(sourceText.slice(last, s));
+            out += `<mark data-idx="${idx}">${escapeHtml(sourceText.slice(s, e))}</mark>`;
+            last = e;
+            idx += 1;
+            if (m[0].length === 0) re.lastIndex += 1;
+          }
+          out += escapeHtml(sourceText.slice(last));
+          textPreview.innerHTML = out;
+          matchCount = idx;
+          activeIndex = matchCount ? 0 : -1;
+          searchMeta.textContent = matchCount ? `1/${matchCount}` : 'Eşleşme yok';
+          if (activeIndex >= 0) textPreview.querySelector('mark[data-idx="0"]')?.scrollIntoView({ block: 'center' });
+        };
+
+        const move = (delta) => {
+          if (!matchCount) return;
+          activeIndex = (activeIndex + delta + matchCount) % matchCount;
+          searchMeta.textContent = `${activeIndex + 1}/${matchCount}`;
+          textPreview.querySelector(`mark[data-idx="${activeIndex}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        };
+
+        searchBtn.addEventListener('click', () => renderMatches(searchInput.value));
+        searchNextBtn.addEventListener('click', () => move(1));
+        searchPrevBtn.addEventListener('click', () => move(-1));
+        searchInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            renderMatches(searchInput.value);
+          }
+        });
+        caseCheck.addEventListener('change', () => renderMatches(searchInput.value));
+
+        pagePrevBtn.disabled = true;
+        pageNextBtn.disabled = true;
+        pageInput.disabled = true;
+        zoomOutBtn.disabled = true;
+        zoomInBtn.disabled = true;
+        pageTotal.textContent = '';
+
+        (async () => {
+          try {
+            if (!assetId) throw new Error('missing asset id');
+            const res = await fetch(`/api/assets/${encodeURIComponent(assetId)}/preview-text`, { credentials: 'include' });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            sourceText = String((data && data.text) || '').trim();
+            textPreview.textContent = sourceText || 'Önizleme mevcut değil.';
+          } catch (_error) {
+            textPreview.textContent = 'Önizleme yüklenemedi.';
+          }
+        })();
+        return;
+      }
+
+      // PDF mode: Phraseanet-like in-document highlights via PDF.js text layer.
+      textPreview.style.display = 'none';
+      pdfContainer.style.display = 'block';
+
+      if (!window.pdfjsLib) {
+        topBar.style.display = 'none';
+        errorBox.style.display = 'block';
+        errorBox.textContent = 'PDF motoru yüklenemedi.';
+        return;
+      }
+
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+
+      let pdfDoc = null;
+      let currentPage = 1;
+      let totalPages = 1;
+      let scale = 1.15;
+      let renderToken = 0;
+      const pageTextCache = new Map();
+      let matches = [];
+      let activeIndex = -1;
+
+      const updatePageUi = () => {
+        pageInput.value = String(currentPage);
+        pageTotal.textContent = `/ ${totalPages}`;
+      };
+
+      const buildRegex = () => {
+        const q = String(searchInput.value || '').trim();
+        if (!q) return null;
+        const flags = caseCheck.checked ? 'g' : 'gi';
+        return new RegExp(escapeRegExp(q), flags);
+      };
+
+      const pageText = async (pageNum) => {
+        if (pageTextCache.has(pageNum)) return pageTextCache.get(pageNum);
+        const page = await pdfDoc.getPage(pageNum);
+        const tc = await page.getTextContent();
+        const text = tc.items.map((it) => String(it.str || '')).join(' ');
+        pageTextCache.set(pageNum, text);
+        return text;
+      };
+
+      const renderHighlightsCurrentPage = () => {
+        const regex = buildRegex();
+        const spans = Array.from(textLayer.querySelectorAll('span'));
+        spans.forEach((sp) => {
+          const original = sp.getAttribute('data-original') || sp.textContent || '';
+          if (!sp.hasAttribute('data-original')) sp.setAttribute('data-original', original);
+          sp.innerHTML = escapeHtml(original);
+        });
+        if (!regex) return;
+
+        spans.forEach((sp) => {
+          const original = sp.getAttribute('data-original') || '';
+          if (!original) return;
+          regex.lastIndex = 0;
+          let out = '';
+          let last = 0;
+          let m;
+          let idx = 0;
+          while ((m = regex.exec(original)) !== null) {
+            const s = m.index;
+            const e = s + m[0].length;
+            out += escapeHtml(original.slice(last, s));
+            out += `<mark data-local-idx="${idx}">${escapeHtml(original.slice(s, e))}</mark>`;
+            last = e;
+            idx += 1;
+            if (m[0].length === 0) regex.lastIndex += 1;
+          }
+          if (idx > 0) {
+            out += escapeHtml(original.slice(last));
+            sp.innerHTML = out;
+          }
+        });
+
+        const pageMatches = matches.filter((m) => m.page === currentPage);
+        const active = matches[activeIndex];
+        if (!active || active.page !== currentPage) return;
+        const localIndexOnPage = pageMatches.findIndex((m) => m.globalIndex === active.globalIndex);
+        if (localIndexOnPage < 0) return;
+        const marks = Array.from(textLayer.querySelectorAll('mark'));
+        const target = marks[localIndexOnPage];
+        if (!target) return;
+        target.classList.add('active');
+        target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+      };
+
+      const renderPage = async (pageNum) => {
+        if (!pdfDoc) return;
+        currentPage = Math.min(totalPages, Math.max(1, Number(pageNum) || 1));
+        updatePageUi();
+        const token = ++renderToken;
+        const page = await pdfDoc.getPage(currentPage);
+        const viewport = page.getViewport({ scale });
+
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        canvas.style.width = `${Math.ceil(viewport.width)}px`;
+        canvas.style.height = `${Math.ceil(viewport.height)}px`;
+
+        textLayer.style.width = `${Math.ceil(viewport.width)}px`;
+        textLayer.style.height = `${Math.ceil(viewport.height)}px`;
+        textLayer.innerHTML = '';
+
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        if (token !== renderToken) return;
+
+        const tc = await page.getTextContent();
+        await window.pdfjsLib.renderTextLayer({
+          textContent: tc,
+          container: textLayer,
+          viewport,
+          textDivs: []
+        }).promise;
+        if (token !== renderToken) return;
+
+        renderHighlightsCurrentPage();
+      };
+
+      const runSearch = async () => {
+        const regex = buildRegex();
+        if (!regex) {
+          matches = [];
+          activeIndex = -1;
+          searchMeta.textContent = '';
+          renderHighlightsCurrentPage();
+          return;
+        }
+
+        const next = [];
+        let global = 0;
+        for (let p = 1; p <= totalPages; p += 1) {
+          const txt = await pageText(p);
+          regex.lastIndex = 0;
+          let m;
+          while ((m = regex.exec(txt)) !== null) {
+            next.push({ page: p, globalIndex: global });
+            global += 1;
+            if (m[0].length === 0) regex.lastIndex += 1;
+          }
+        }
+
+        matches = next;
+        if (!matches.length) {
+          activeIndex = -1;
+          searchMeta.textContent = 'Eşleşme yok';
+          renderHighlightsCurrentPage();
+          return;
+        }
+
+        activeIndex = 0;
+        const first = matches[0];
+        searchMeta.textContent = `${activeIndex + 1}/${matches.length}`;
+        if (first.page !== currentPage) await renderPage(first.page);
+        else renderHighlightsCurrentPage();
+      };
+
+      const moveMatch = async (delta) => {
+        if (!matches.length) {
+          await runSearch();
+          return;
+        }
+        activeIndex = (activeIndex + delta + matches.length) % matches.length;
+        searchMeta.textContent = `${activeIndex + 1}/${matches.length}`;
+        const target = matches[activeIndex];
+        if (target.page !== currentPage) await renderPage(target.page);
+        else renderHighlightsCurrentPage();
+      };
+
+      searchBtn.addEventListener('click', () => { runSearch(); });
+      searchNextBtn.addEventListener('click', () => { moveMatch(1); });
+      searchPrevBtn.addEventListener('click', () => { moveMatch(-1); });
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          runSearch();
+        }
+      });
+      caseCheck.addEventListener('change', () => { runSearch(); });
+
+      pagePrevBtn.addEventListener('click', () => renderPage(currentPage - 1));
+      pageNextBtn.addEventListener('click', () => renderPage(currentPage + 1));
+      pageInput.addEventListener('change', () => renderPage(Number(pageInput.value || 1)));
+      zoomInBtn.addEventListener('click', () => {
+        scale = Math.min(4, scale + 0.15);
+        renderPage(currentPage);
+      });
+      zoomOutBtn.addEventListener('click', () => {
+        scale = Math.max(0.5, scale - 0.15);
+        renderPage(currentPage);
+      });
+
+      window.pdfjsLib.getDocument({ url: file }).promise
+        .then((doc) => {
+          pdfDoc = doc;
+          totalPages = Math.max(1, Number(doc.numPages) || 1);
+          updatePageUi();
+          return renderPage(1);
+        })
+        .catch(() => {
+          topBar.style.display = 'none';
+          pdfContainer.style.display = 'none';
+          errorBox.style.display = 'block';
+          errorBox.textContent = 'PDF yüklenemedi.';
+        });
+    })();
+  </script>
+</body>
+</html>

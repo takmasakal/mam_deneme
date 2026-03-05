@@ -11,12 +11,15 @@ const assetGrid = document.getElementById('assetGrid');
 const assetDetail = document.getElementById('assetDetail');
 const panelIngest = document.getElementById('panelIngest');
 const panelAssets = document.getElementById('panelAssets');
-const assetTrashOnly = document.getElementById('assetTrashOnly');
+const assetViewThumbBtn = document.getElementById('assetViewThumbBtn');
+const assetViewListBtn = document.getElementById('assetViewListBtn');
 const typesSelectAllBtn = document.getElementById('typesSelectAllBtn');
 const assetTypeFilters = Array.from(document.querySelectorAll('.asset-type-filter'));
 const panelDetail = document.getElementById('panelDetail');
 const closeDetailBtn = document.getElementById('closeDetailBtn');
 const statusSelect = searchForm.querySelector('[name="status"]');
+const searchQueryInput = searchForm.querySelector('[name="q"]');
+const searchSuggestList = document.getElementById('searchSuggestList');
 const languageSelect = document.getElementById('languageSelect');
 const currentUserBtn = document.getElementById('currentUserBtn');
 const userMenu = document.getElementById('userMenu');
@@ -31,6 +34,8 @@ const LOCAL_PANEL_SIZE = 'mam.panel.sizes';
 const LOCAL_PANEL_VIS = 'mam.panel.visibility';
 const LOCAL_LANG = 'mam.lang';
 const LOCAL_VIDEO_TOOLS_ORDER = 'mam.video.tools.order';
+const LOCAL_ASSET_VIEW_MODE = 'mam.assets.view.mode';
+const LOCAL_DETAIL_VIDEO_PIN = 'mam.detail.video.pin';
 const I18N_PATH = '/i18n.json';
 const PANELS = [
   { id: 'panelIngest', defaultSize: 1 },
@@ -40,6 +45,11 @@ const PANELS = [
 
 let currentAssets = [];
 let activePlayerCleanup = null;
+let activeDetailPinCleanup = null;
+let playerUiMode = 'native';
+let videoJsLoadPromise = null;
+let dashJsLoadPromise = null;
+let detailVideoPinned = localStorage.getItem(LOCAL_DETAIL_VIDEO_PIN) === '1';
 let selectedAssetId = null;
 let currentUserIsAdmin = false;
 const selectedAssetIds = new Set();
@@ -49,6 +59,12 @@ const cutMarksByAsset = new Map();
 const subtitleOverlayEnabledByAsset = new Map();
 let panelSizes = Object.fromEntries(PANELS.map((p) => [p.id, p.defaultSize]));
 let panelVisibility = { panelIngest: true, panelAssets: true, panelDetail: true };
+let assetViewMode = localStorage.getItem(LOCAL_ASSET_VIEW_MODE) === 'list' ? 'list' : 'grid';
+let searchSuggestTimer = null;
+let searchSuggestReqSeq = 0;
+let searchSuggestItems = [];
+let searchSuggestActiveIndex = -1;
+let searchSuggestHideTimer = null;
 let i18n = {
   en: {
     app_title: 'Broadcast MAM Console',
@@ -81,6 +97,8 @@ let i18n = {
     ph_tag: 'Tag',
     ph_type_simple: 'Type',
     filter_types: 'Types',
+    list_view: 'List View',
+    thumbnail_view: 'Thumbnail View',
     trash_scope: 'Trash',
     any_status: 'Any status',
     trash_active: 'Active assets',
@@ -142,6 +160,20 @@ let i18n = {
     owner: 'Owner',
     type: 'Type',
     duration: 'Duration',
+    technical_info: 'Technical Info',
+    tech_loading: 'Loading technical info...',
+    tech_unavailable: 'Technical info unavailable.',
+    tech_container: 'Container',
+    tech_resolution: 'Resolution',
+    tech_video_codec: 'Video codec',
+    tech_frame_rate: 'Frame rate',
+    tech_pixel_format: 'Pixel format',
+    tech_audio_codec: 'Audio codec',
+    tech_audio_channels: 'Audio channels',
+    tech_sample_rate: 'Sample rate',
+    tech_duration: 'Duration',
+    tech_bitrate: 'Bitrate',
+    tech_file_size: 'File size',
     status: 'Status',
     trash: 'Trash',
     in_trash: 'In Trash',
@@ -227,6 +259,9 @@ let i18n = {
     video_ocr: 'Video OCR',
     video_ocr_interval: 'Interval (sec)',
     video_ocr_lang: 'OCR lang',
+    video_ocr_engine: 'Engine',
+    video_ocr_engine_tesseract: 'Tesseract',
+    video_ocr_engine_paddle: 'PaddleOCR',
     video_ocr_extract: 'Extract Text',
     video_ocr_running: 'OCR extraction running...',
     video_ocr_done: 'OCR extraction completed.',
@@ -241,9 +276,11 @@ let i18n = {
     subtitle_job_failed: 'Subtitle generation failed.',
     video_tools: 'Video Tools',
     video_tools_title: 'Video Tools',
+    pin_video: 'Pin video',
+    unpin_video: 'Unpin video',
     close: 'Close',
     subtitle_current: 'Current subtitle',
-    subtitle_overlay_enabled: 'Show subtitle overlay in preview'
+    subtitle_overlay_enabled: 'Show subtitles'
   },
   tr: {
     app_title: 'Yayın MAM Konsolu',
@@ -276,6 +313,8 @@ let i18n = {
     ph_tag: 'Etiket',
     ph_type_simple: 'Tür',
     filter_types: 'Türler',
+    list_view: 'Liste Görünümü',
+    thumbnail_view: 'Küçük Görsel Görünümü',
     trash_scope: 'Çöp',
     any_status: 'Tüm durumlar',
     trash_active: 'Aktif varlıklar',
@@ -337,6 +376,20 @@ let i18n = {
     owner: 'Sahip',
     type: 'Tür',
     duration: 'Süre',
+    technical_info: 'Teknik Bilgiler',
+    tech_loading: 'Teknik bilgiler yükleniyor...',
+    tech_unavailable: 'Teknik bilgiler alınamadı.',
+    tech_container: 'Kapsayıcı',
+    tech_resolution: 'Çözünürlük',
+    tech_video_codec: 'Video codec',
+    tech_frame_rate: 'Kare hızı',
+    tech_pixel_format: 'Piksel formatı',
+    tech_audio_codec: 'Ses codec',
+    tech_audio_channels: 'Ses kanalı',
+    tech_sample_rate: 'Örnekleme hızı',
+    tech_duration: 'Süre',
+    tech_bitrate: 'Bitrate',
+    tech_file_size: 'Dosya boyutu',
     status: 'Durum',
     trash: 'Çöp',
     in_trash: 'Çöpte',
@@ -422,6 +475,9 @@ let i18n = {
     video_ocr: 'Video OCR',
     video_ocr_interval: 'Aralık (sn)',
     video_ocr_lang: 'OCR dil',
+    video_ocr_engine: 'Motor',
+    video_ocr_engine_tesseract: 'Tesseract',
+    video_ocr_engine_paddle: 'PaddleOCR',
     video_ocr_extract: 'Metni Çıkar',
     video_ocr_running: 'OCR çıkarımı çalışıyor...',
     video_ocr_done: 'OCR çıkarımı tamamlandı.',
@@ -436,9 +492,11 @@ let i18n = {
     subtitle_job_failed: 'Altyazı üretimi başarısız.',
     video_tools: 'Video Araçları',
     video_tools_title: 'Video Araçları',
+    pin_video: 'Videoyu sabitle',
+    unpin_video: 'Video sabitlemeyi kaldır',
     close: 'Kapat',
     subtitle_current: 'Mevcut altyazı',
-    subtitle_overlay_enabled: 'Önizlemede altyazı katmanını göster'
+    subtitle_overlay_enabled: 'Altyazı göster'
   }
 };
 let currentLang = localStorage.getItem(LOCAL_LANG) || 'en';
@@ -472,6 +530,36 @@ function tf(key, vars = {}) {
   return text;
 }
 
+function useCustomPlayerUI() {
+  return String(playerUiMode || 'native') === 'custom';
+}
+
+function useVidstackPlayerUI() {
+  return String(playerUiMode || 'native') === 'vidstack';
+}
+
+function useVideoJsPlayerUI() {
+  return String(playerUiMode || 'native') === 'videojs';
+}
+
+function useMpegDashPlayerUI() {
+  return String(playerUiMode || 'native') === 'mpegdash';
+}
+
+function useCustomLikeTimelineUI() {
+  return useCustomPlayerUI() || useVidstackPlayerUI() || useMpegDashPlayerUI();
+}
+
+async function loadUiSettings() {
+  try {
+    const settings = await api('/api/ui-settings');
+    const mode = String(settings?.playerUiMode || 'native').trim().toLowerCase();
+    playerUiMode = (mode === 'custom' || mode === 'videojs' || mode === 'vidstack' || mode === 'mpegdash') ? mode : 'native';
+  } catch (_error) {
+    playerUiMode = 'native';
+  }
+}
+
 function applyStaticI18n() {
   document.querySelectorAll('[data-i18n]').forEach((el) => {
     const key = el.getAttribute('data-i18n');
@@ -484,6 +572,23 @@ function applyStaticI18n() {
   if (currentUserBtn && !currentUserBtn.dataset.value) {
     currentUserBtn.textContent = t('unknown_user');
   }
+  if (assetViewThumbBtn) {
+    assetViewThumbBtn.title = t('thumbnail_view');
+    assetViewThumbBtn.setAttribute('aria-label', t('thumbnail_view'));
+    assetViewThumbBtn.dataset.tooltip = t('thumbnail_view');
+  }
+  if (assetViewListBtn) {
+    assetViewListBtn.title = t('list_view');
+    assetViewListBtn.setAttribute('aria-label', t('list_view'));
+    assetViewListBtn.dataset.tooltip = t('list_view');
+  }
+}
+
+function applyAssetViewModeUI() {
+  const isList = assetViewMode === 'list';
+  assetGrid.classList.toggle('list-view', isList);
+  assetViewListBtn?.classList.toggle('active', isList);
+  assetViewThumbBtn?.classList.toggle('active', !isList);
 }
 
 async function loadCurrentUser() {
@@ -576,7 +681,7 @@ function applyPanelLayout() {
   const assetsVisible = isPanelVisible('panelAssets');
   const detailVisible = isPanelVisible('panelDetail');
 
-  layout.style.gridTemplateColumns = `${ingestVisible ? `${ingest}fr` : '0px'} 10px ${assetsVisible ? `${assets}fr` : '0px'} 10px ${detailVisible ? `${detail}fr` : '0px'}`;
+  layout.style.gridTemplateColumns = `${ingestVisible ? `${ingest}fr` : '0px'} 5px ${assetsVisible ? `${assets}fr` : '0px'} 5px ${detailVisible ? `${detail}fr` : '0px'}`;
   panelIngest.style.display = ingestVisible ? '' : 'none';
   panelAssets.style.display = assetsVisible ? '' : 'none';
   panelDetail.style.display = detailVisible ? '' : 'none';
@@ -590,9 +695,10 @@ function applyPanelLayout() {
 
 function initPanelSplitters() {
   const isMobile = () => window.matchMedia('(max-width: 760px)').matches;
+  const MIN_INGEST_PX = 235;
+  const MIN_DETAIL_PX = 377;
   const minSize = 0.45;
   const minDetail = 0.22;
-  const minIngestAnyMode = Number((minSize * 0.76).toFixed(2));
 
   const clampPair = (a, b, minA = minSize, minB = minSize) => {
     if (a < minA) {
@@ -640,14 +746,15 @@ function initPanelSplitters() {
         if (kind === 'left') {
           let nextIngest = ingestStart + deltaFr;
           let nextAssets = assetsStart - deltaFr;
-          const minIngest = detailVisible ? minSize : minIngestAnyMode;
+          const minIngest = Math.max(minSize, MIN_INGEST_PX / unitPx);
           [nextIngest, nextAssets] = clampPair(nextIngest, nextAssets, minIngest, minSize);
           panelSizes.panelIngest = nextIngest;
           panelSizes.panelAssets = nextAssets;
         } else {
           let nextAssets = assetsStart + deltaFr;
           let nextDetail = detailStart - deltaFr;
-          [nextAssets, nextDetail] = clampPair(nextAssets, nextDetail, minSize, minDetail);
+          const minDetailFr = Math.max(minDetail, MIN_DETAIL_PX / unitPx);
+          [nextAssets, nextDetail] = clampPair(nextAssets, nextDetail, minSize, minDetailFr);
           panelSizes.panelAssets = nextAssets;
           panelSizes.panelDetail = nextDetail;
         }
@@ -676,12 +783,12 @@ async function api(path, options = {}) {
   });
 
   const textBody = await response.text();
-  let jsonBody = {};
+  let parsedBody = null;
   if (textBody) {
     try {
-      jsonBody = JSON.parse(textBody);
+      parsedBody = JSON.parse(textBody);
     } catch (_error) {
-      jsonBody = {};
+      parsedBody = null;
     }
   }
 
@@ -689,10 +796,15 @@ async function api(path, options = {}) {
     const fallback = textBody
       ? textBody.replace(/\s+/g, ' ').trim().slice(0, 220)
       : '';
-    throw new Error(jsonBody.error || fallback || 'Request failed');
+    const errMsg = parsedBody && typeof parsedBody === 'object' && !Array.isArray(parsedBody)
+      ? parsedBody.error
+      : '';
+    throw new Error(errMsg || fallback || 'Request failed');
   }
 
-  return textBody ? (Object.keys(jsonBody).length ? jsonBody : {}) : {};
+  if (!textBody) return {};
+  if (parsedBody !== null) return parsedBody;
+  return {};
 }
 
 async function deleteApi(path) {
@@ -809,6 +921,180 @@ function serializeForm(form) {
   return Object.fromEntries(data.entries());
 }
 
+function escapeRegexForSuggest(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function highlightSuggestText(text, query) {
+  const raw = String(text || '');
+  const q = String(query || '').trim();
+  if (!raw) return '';
+  if (!q) return escapeHtml(raw);
+  const matcher = new RegExp(`(${escapeRegexForSuggest(q)})`, 'ig');
+  return escapeHtml(raw).replace(matcher, '<mark>$1</mark>');
+}
+
+function normalizeTrashScopeForSuggest(value) {
+  const raw = String(value || 'active').trim().toLowerCase();
+  return ['active', 'trash', 'all'].includes(raw) ? raw : 'active';
+}
+
+function hideSearchSuggestions() {
+  if (!searchSuggestList) return;
+  searchSuggestList.classList.add('hidden');
+  searchSuggestList.innerHTML = '';
+  searchSuggestItems = [];
+  searchSuggestActiveIndex = -1;
+}
+
+function setSearchSuggestionActive(index) {
+  if (!searchSuggestList) return;
+  const buttons = Array.from(searchSuggestList.querySelectorAll('.search-suggest-item'));
+  if (!buttons.length) {
+    searchSuggestActiveIndex = -1;
+    return;
+  }
+  const safeIndex = Math.max(0, Math.min(buttons.length - 1, index));
+  searchSuggestActiveIndex = safeIndex;
+  buttons.forEach((btn, idx) => {
+    btn.classList.toggle('active', idx === safeIndex);
+  });
+}
+
+async function applySearchSuggestion(item, runSearch = true) {
+  if (!item || !searchQueryInput) return;
+  const title = String(item.title || '').trim();
+  const fileName = String(item.fileName || '').trim();
+  searchQueryInput.value = title || fileName;
+  hideSearchSuggestions();
+  if (runSearch) {
+    await loadAssets();
+  }
+}
+
+function renderSearchSuggestions(items, query) {
+  if (!searchSuggestList) return;
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {
+    hideSearchSuggestions();
+    return;
+  }
+  searchSuggestItems = list;
+  searchSuggestActiveIndex = -1;
+  searchSuggestList.innerHTML = list.map((item, index) => {
+    const title = String(item.title || item.fileName || item.id || '');
+    const fileName = String(item.fileName || '');
+    const type = String(item.type || '').trim();
+    const state = item.inTrash ? t('in_trash') : t('active');
+    const meta = [type, fileName, state].filter(Boolean).join(' | ');
+    return `
+      <button type="button" class="search-suggest-item" data-index="${index}">
+        <strong>${highlightSuggestText(title, query)}</strong>
+        <span>${escapeHtml(meta)}</span>
+      </button>
+    `;
+  }).join('');
+  searchSuggestList.classList.remove('hidden');
+}
+
+async function requestSearchSuggestions() {
+  const query = String(searchQueryInput?.value || '').trim();
+  if (query.length < 2) {
+    hideSearchSuggestions();
+    return;
+  }
+
+  const selectedTypes = assetTypeFilters
+    .filter((el) => el.checked)
+    .map((el) => String(el.value || '').toLowerCase())
+    .filter(Boolean);
+  if (!selectedTypes.length) {
+    hideSearchSuggestions();
+    return;
+  }
+
+  const filters = serializeForm(searchForm);
+  const reqId = ++searchSuggestReqSeq;
+  const params = new URLSearchParams();
+  params.set('q', query);
+  params.set('limit', '8');
+  params.set('trash', normalizeTrashScopeForSuggest(filters.trash));
+  if (String(filters.tag || '').trim()) params.set('tag', String(filters.tag).trim());
+  if (String(filters.type || '').trim()) params.set('type', String(filters.type).trim());
+  if (String(filters.status || '').trim()) params.set('status', String(filters.status).trim());
+  if (selectedTypes.length < assetTypeFilters.length) params.set('types', selectedTypes.join(','));
+
+  try {
+    const result = await api(`/api/assets/suggest?${params.toString()}`);
+    if (reqId !== searchSuggestReqSeq) return;
+    renderSearchSuggestions(result, query);
+  } catch (_error) {
+    if (reqId !== searchSuggestReqSeq) return;
+    hideSearchSuggestions();
+  }
+}
+
+function queueSearchSuggestions() {
+  if (searchSuggestTimer) clearTimeout(searchSuggestTimer);
+  searchSuggestTimer = setTimeout(() => {
+    requestSearchSuggestions().catch(() => {});
+  }, 170);
+}
+
+function getSubtitleOverlayEnabled(assetId, fallback = false) {
+  const key = String(assetId || '').trim();
+  if (!key) return false;
+  if (!subtitleOverlayEnabledByAsset.has(key)) {
+    subtitleOverlayEnabledByAsset.set(key, Boolean(fallback));
+  }
+  return subtitleOverlayEnabledByAsset.get(key) === true;
+}
+
+function syncSubtitleOverlayInOpenPlayers(asset) {
+  const assetId = String(asset?.id || '').trim();
+  const subtitleUrl = String(asset?.subtitleUrl || '').trim();
+  if (!assetId) return;
+  const enabled = getSubtitleOverlayEnabled(assetId, false) && Boolean(subtitleUrl);
+  const subtitleLang = String(asset?.subtitleLang || currentLang || 'tr').slice(0, 12);
+  const subtitleLabel = String(asset?.subtitleLabel || t('subtitles'));
+  const players = Array.from(document.querySelectorAll('video[data-asset-id]'))
+    .filter((el) => String(el.dataset.assetId || '').trim() === assetId);
+
+  players.forEach((mediaEl) => {
+    const existing = mediaEl.querySelector('#assetSubtitleTrack');
+    const hideAll = () => {
+      Array.from(mediaEl.textTracks || []).forEach((tt) => {
+        tt.mode = 'hidden';
+      });
+    };
+
+    if (!enabled) {
+      if (existing) existing.remove();
+      hideAll();
+      return;
+    }
+
+    if (existing) existing.remove();
+    const track = document.createElement('track');
+    track.id = 'assetSubtitleTrack';
+    track.kind = 'subtitles';
+    track.default = true;
+    track.label = subtitleLabel;
+    track.srclang = subtitleLang;
+    track.src = `${subtitleUrl}${subtitleUrl.includes('?') ? '&' : '?'}v=${Date.now()}`;
+    mediaEl.appendChild(track);
+
+    const showLastTrack = () => {
+      hideAll();
+      const tracks = Array.from(mediaEl.textTracks || []);
+      const active = tracks[tracks.length - 1];
+      if (active) active.mode = 'showing';
+    };
+    track.addEventListener('load', showLastTrack, { once: true });
+    setTimeout(showLastTrack, 60);
+  });
+}
+
 async function readFileAsBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -823,6 +1109,7 @@ async function readFileAsBase64(file) {
 
 function subtitleTrackMarkup(asset) {
   if (!asset?.subtitleUrl) return '';
+  if (!getSubtitleOverlayEnabled(asset.id, false)) return '';
   const src = `${asset.subtitleUrl}${asset.subtitleUrl.includes('?') ? '&' : '?'}v=${Date.now()}`;
   const lang = String(asset.subtitleLang || currentLang || 'tr').slice(0, 12);
   const label = String(asset.subtitleLabel || t('subtitles'));
@@ -964,6 +1251,135 @@ function formatDuration(seconds) {
   return `${hh}:${mm}:${ss}`;
 }
 
+function formatBitrate(bitsPerSec) {
+  const v = Math.max(0, Number(bitsPerSec) || 0);
+  if (!v) return '-';
+  const kbps = v / 1000;
+  if (kbps >= 1000) return `${(kbps / 1000).toFixed(2)} Mbps`;
+  return `${Math.round(kbps)} kbps`;
+}
+
+function formatFileSize(bytes) {
+  const v = Math.max(0, Number(bytes) || 0);
+  if (!v) return '-';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = v;
+  let idx = 0;
+  while (size >= 1024 && idx < units.length - 1) {
+    size /= 1024;
+    idx += 1;
+  }
+  return `${size.toFixed(idx === 0 ? 0 : 2)} ${units[idx]}`;
+}
+
+function formatFrameRate(fps) {
+  const v = Math.max(0, Number(fps) || 0);
+  if (!v) return '-';
+  return `${v.toFixed(3).replace(/\.?0+$/, '')} fps`;
+}
+
+function techValue(value) {
+  const raw = String(value || '').trim();
+  return raw || '-';
+}
+
+function renderTechnicalCard(title, info) {
+  const unavailable = !info || !info.available;
+  if (unavailable) {
+    return `
+      <div class="tech-card">
+        <h5>${escapeHtml(title)}</h5>
+        <div class="asset-meta">${escapeHtml(t('tech_unavailable'))}</div>
+      </div>
+    `;
+  }
+
+  const container = Array.isArray(info.container) ? info.container.join(', ') : String(info.container || '');
+  const resolution = info.video && Number(info.video.width) > 0 && Number(info.video.height) > 0
+    ? `${Number(info.video.width)}x${Number(info.video.height)}`
+    : '-';
+  const audioCodecs = Array.isArray(info.audio?.codecs) ? info.audio.codecs.join(', ') : '';
+  const sampleRate = Number(info.audio?.sampleRate) > 0 ? `${Number(info.audio.sampleRate)} Hz` : '-';
+  const channels = Number(info.audio?.channels) > 0 ? String(Number(info.audio.channels)) : '-';
+  const videoCodec = [String(info.video?.codec || '').trim(), String(info.video?.profile || '').trim()].filter(Boolean).join(' / ');
+
+  return `
+    <div class="tech-card">
+      <h5>${escapeHtml(title)}</h5>
+      <div class="tech-row"><span>${escapeHtml(t('tech_container'))}</span><strong>${escapeHtml(techValue(container))}</strong></div>
+      <div class="tech-row"><span>${escapeHtml(t('tech_duration'))}</span><strong>${escapeHtml(formatDuration(info.durationSeconds))}</strong></div>
+      <div class="tech-row"><span>${escapeHtml(t('tech_resolution'))}</span><strong>${escapeHtml(resolution)}</strong></div>
+      <div class="tech-row"><span>${escapeHtml(t('tech_video_codec'))}</span><strong>${escapeHtml(techValue(videoCodec))}</strong></div>
+      <div class="tech-row"><span>${escapeHtml(t('tech_frame_rate'))}</span><strong>${escapeHtml(formatFrameRate(info.video?.frameRate))}</strong></div>
+      <div class="tech-row"><span>${escapeHtml(t('tech_pixel_format'))}</span><strong>${escapeHtml(techValue(info.video?.pixelFormat))}</strong></div>
+      <div class="tech-row"><span>${escapeHtml(t('tech_audio_codec'))}</span><strong>${escapeHtml(techValue(audioCodecs))}</strong></div>
+      <div class="tech-row"><span>${escapeHtml(t('tech_audio_channels'))}</span><strong>${escapeHtml(channels)}</strong></div>
+      <div class="tech-row"><span>${escapeHtml(t('tech_sample_rate'))}</span><strong>${escapeHtml(sampleRate)}</strong></div>
+      <div class="tech-row"><span>${escapeHtml(t('tech_bitrate'))}</span><strong>${escapeHtml(formatBitrate(info.bitRate))}</strong></div>
+      <div class="tech-row"><span>${escapeHtml(t('tech_file_size'))}</span><strong>${escapeHtml(formatFileSize(info.fileSize))}</strong></div>
+    </div>
+  `;
+}
+
+function renderTechnicalInfoSection(payload) {
+  const originalLabel = t('original_file');
+  const proxyLabel = t('low_res_proxy');
+  const originalHtml = renderTechnicalCard(originalLabel, payload?.original);
+  const proxyHtml = renderTechnicalCard(proxyLabel, payload?.proxy);
+  return `
+    <div class="tech-tabs">
+      <div class="tech-tab-head" role="tablist" aria-label="${escapeHtml(t('technical_info'))}">
+        <button type="button" class="tech-tab-btn active" data-tech-tab="original" role="tab" aria-selected="true">${escapeHtml(originalLabel)}</button>
+        <button type="button" class="tech-tab-btn" data-tech-tab="proxy" role="tab" aria-selected="false">${escapeHtml(proxyLabel)}</button>
+      </div>
+      <div class="tech-tab-panels">
+        <div class="tech-tab-panel active" data-tech-panel="original" role="tabpanel">${originalHtml}</div>
+        <div class="tech-tab-panel" data-tech-panel="proxy" role="tabpanel">${proxyHtml}</div>
+      </div>
+    </div>
+  `;
+}
+
+function initTechnicalTabs(container) {
+  const host = container || document;
+  const tabButtons = Array.from(host.querySelectorAll('.tech-tab-btn'));
+  const panels = Array.from(host.querySelectorAll('.tech-tab-panel'));
+  if (!tabButtons.length || !panels.length) return;
+
+  const activate = (key) => {
+    const target = String(key || '').trim();
+    tabButtons.forEach((btn) => {
+      const active = btn.dataset.techTab === target;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    panels.forEach((panel) => {
+      const active = panel.dataset.techPanel === target;
+      panel.classList.toggle('active', active);
+    });
+  };
+
+  tabButtons.forEach((btn) => {
+    btn.addEventListener('click', () => activate(btn.dataset.techTab));
+  });
+}
+
+async function loadAssetTechnicalInfo(asset) {
+  if (!asset || !isVideo(asset)) return;
+  const bodyEl = document.getElementById('assetTechnicalInfoBody');
+  if (!bodyEl) return;
+  bodyEl.textContent = t('tech_loading');
+  try {
+    const payload = await api(`/api/assets/${asset.id}/technical`);
+    if (selectedAssetId !== asset.id) return;
+    bodyEl.innerHTML = renderTechnicalInfoSection(payload);
+    initTechnicalTabs(bodyEl);
+  } catch (_error) {
+    if (selectedAssetId !== asset.id) return;
+    bodyEl.textContent = t('tech_unavailable');
+  }
+}
+
 function extractDcMetadataFromPayload(payload) {
   const keyMap = {
     dcTitle: 'title',
@@ -1045,6 +1461,23 @@ function dcHighlightSnippet(asset, query) {
   if (!entries.length) return '';
   return entries
     .map(([key, value]) => `<span class="dc-hit"><strong>${escapeHtml(key)}:</strong> ${highlightMatch(value, query)}</span>`)
+    .join(' ');
+}
+
+function clipHighlightSnippet(asset, query) {
+  const terms = extractHighlightTerms(query);
+  if (!terms.length || !asset || !Array.isArray(asset.cuts)) return '';
+  const clips = asset.cuts
+    .map((cut) => String(cut?.label || '').trim())
+    .filter(Boolean)
+    .filter((label) => {
+      const text = label.toLowerCase();
+      return terms.some((term) => text.includes(term));
+    })
+    .slice(0, 2);
+  if (!clips.length) return '';
+  return clips
+    .map((label) => `<span class="dc-hit"><strong>${escapeHtml(t('clip_name'))}:</strong> ${highlightMatch(label, query)}</span>`)
     .join(' ');
 }
 
@@ -1225,6 +1658,7 @@ function assetTypeIcon(asset) {
 }
 
 function renderAssets(assets) {
+  applyAssetViewModeUI();
   if (!assets.length) {
     assetGrid.innerHTML = `<div class="empty">${escapeHtml(t('no_assets'))}</div>`;
     return;
@@ -1234,6 +1668,8 @@ function renderAssets(assets) {
     .map((asset) => {
       const selected = selectedAssetIds.has(asset.id) ? 'selected' : '';
       const trashClass = asset.inTrash ? 'in-trash' : '';
+      const dcHits = dcHighlightSnippet(asset, currentSearchQuery);
+      const clipHits = clipHighlightSnippet(asset, currentSearchQuery);
       return `
         <article class="asset-card ${selected} ${trashClass}" data-id="${asset.id}">
           ${thumbnailMarkup(asset)}
@@ -1241,7 +1677,8 @@ function renderAssets(assets) {
             <h3><span class="type-icon" aria-hidden="true">${assetTypeIcon(asset)}</span> ${highlightMatch(asset.title, currentSearchQuery)}</h3>
             <div class="asset-meta">${highlightMatch(asset.type, currentSearchQuery)} | ${highlightMatch(asset.owner, currentSearchQuery)}</div>
             <div class="asset-meta">${escapeHtml(workflowLabel(asset.status))}${(isVideo(asset) || isAudio(asset)) ? ` | ${escapeHtml(formatDuration(asset.durationSeconds))}` : ''}</div>
-            ${dcHighlightSnippet(asset, currentSearchQuery) ? `<div class="asset-meta dc-hit-row">${dcHighlightSnippet(asset, currentSearchQuery)}</div>` : ''}
+            ${dcHits ? `<div class="asset-meta dc-hit-row">${dcHits}</div>` : ''}
+            ${clipHits ? `<div class="asset-meta dc-hit-row">${clipHits}</div>` : ''}
             <div class="asset-meta">${escapeHtml(formatDate(asset.updatedAt))}</div>
             <div class="chips">
               ${(asset.tags || []).slice(0, 4).map((tag) => `<button type="button" class="chip chip-tag-filter" data-chip-tag="${escapeHtml(tag)}" style="${tagColorStyle(tag)}">${highlightMatch(tag, currentSearchQuery)}</button>`).join('')}
@@ -1298,12 +1735,25 @@ function mediaViewer(asset, options = {}) {
   const includeSubtitleTools = options.includeSubtitleTools !== false;
   const includeSectionHide = options.includeSectionHide === true;
   const audioSideLayout = options.audioSideLayout === true;
+  const includeDetailPin = options.includeDetailPin === true;
   if (!asset.mediaUrl) return `<div class="empty">${escapeHtml(t('no_media'))}</div>`;
 
   const playbackUrl = escapeHtml(isVideo(asset) ? (asset.proxyUrl || '') : asset.mediaUrl);
   const proxyStatus = escapeHtml(asset.proxyStatus || 'not_applicable');
+  const audioChannelsAttr = Number(asset.audioChannels) > 0 ? ` data-audio-channels="${Number(asset.audioChannels)}"` : '';
 
   if (isVideo(asset)) {
+    const customMode = useCustomLikeTimelineUI();
+    const videoJsMode = useVideoJsPlayerUI();
+    const rawProxyUrl = String(asset.proxyUrl || '').trim();
+    const rawDashManifestUrl = String(asset?.dcMetadata?.dashProxyUrl || '').trim();
+    const dashManifestUrl = useMpegDashPlayerUI()
+      ? (rawDashManifestUrl || (/\.(mpd)(?:[?#].*)?$/i.test(rawProxyUrl) ? rawProxyUrl : ''))
+      : '';
+    const playbackSrc = escapeHtml(dashManifestUrl || rawProxyUrl);
+    const dashManifestAttr = dashManifestUrl ? ` data-dash-manifest="${escapeHtml(dashManifestUrl)}"` : '';
+    const srcAttr = dashManifestUrl ? '' : ` src="${playbackSrc}"`;
+    const nativeControlsAttr = customMode ? '' : ' controls';
     if (!asset.proxyUrl) {
       return `
         <div class="empty">${escapeHtml(t('proxy_required'))}</div>
@@ -1316,15 +1766,38 @@ function mediaViewer(asset, options = {}) {
         <div class="viewer-head">
           <h4 class="viewer-asset-name">${escapeHtml(asset.title)}</h4>
           <div class="viewer-tc">${t('tc')}: <strong id="currentTimecode">00:00:00:00</strong></div>
+          ${includeDetailPin ? `<button type="button" id="detailVideoPinBtn" class="viewer-pin-btn" title="${escapeHtml(detailVideoPinned ? t('unpin_video') : t('pin_video'))}" aria-label="${escapeHtml(detailVideoPinned ? t('unpin_video') : t('pin_video'))}" aria-pressed="${detailVideoPinned ? 'true' : 'false'}">📌</button>` : ''}
         </div>
         <div class="video-top-layout${audioSideLayout ? '' : ' no-audio-side'}">
           <div class="video-main-col">
             <div class="viewer-resizable video-resizable">
-              <video id="assetMediaEl" class="asset-viewer" controls preload="metadata" src="${playbackUrl}" poster="${escapeHtml(asset.thumbnailUrl || '')}">
+              <video id="assetMediaEl" data-asset-id="${escapeHtml(asset.id)}" class="asset-viewer${videoJsMode ? ' video-js vjs-default-skin' : ''}"${nativeControlsAttr} preload="metadata"${srcAttr}${dashManifestAttr} poster="${escapeHtml(asset.thumbnailUrl || '')}"${audioChannelsAttr}>
                 ${subtitleTrackMarkup(asset)}
               </video>
             </div>
+            ${customMode ? `
+            <div class="custom-player-bar" id="customPlayerBar">
+              <button type="button" id="customPlayPauseBtn" title="${t('play')}">▶</button>
+              <span id="customCurrentTime" class="custom-time">00:00:00</span>
+              <div class="custom-seek-wrap">
+                <input type="range" id="customSeekRange" class="custom-seek" min="0" max="1000" step="1" value="0" />
+                <span id="customMarkInTick" class="custom-seek-tick custom-seek-tick-in hidden" data-label="IN" title="IN"></span>
+                <span id="customMarkOutTick" class="custom-seek-tick custom-seek-tick-out hidden" data-label="OUT" title="OUT"></span>
+              </div>
+              <span id="customDurationTime" class="custom-time">00:00:00</span>
+              <button type="button" id="customMuteBtn" title="Mute">🔊</button>
+              <input type="range" id="customVolumeRange" class="custom-volume" min="0" max="1" step="0.01" value="1" />
+            </div>
+            ` : ''}
             <div class="player-controls-box control-stickbar">
+              ${customMode ? '' : `
+              <div class="mark-rail-wrap">
+                <div class="mark-rail" id="markRail">
+                  <span id="markInTick" class="mark-tick mark-tick-in hidden" data-label="IN" title="IN"></span>
+                  <span id="markOutTick" class="mark-tick mark-tick-out hidden" data-label="OUT" title="OUT"></span>
+                </div>
+              </div>
+              `}
               <div class="player-toolbar-row">
                 <div class="player-tools pro-tools">
                   <button type="button" id="playBtn" title="${t('play')}" aria-label="${t('play')}">▶</button>
@@ -1364,31 +1837,33 @@ function mediaViewer(asset, options = {}) {
         <div class="subtitle-tools collapsible-section" data-section="subtitles">
           <div class="collapsible-head">
             <strong>${t('subtitles')}</strong>
-            ${includeSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
+            <div class="subtitle-head-toggles">
+              <label class="video-tools-check subtitle-overlay-head-check">
+                <input id="subtitleOverlayCheck" type="checkbox" ${getSubtitleOverlayEnabled(asset.id, false) ? 'checked' : ''} />
+                ${t('subtitle_overlay_enabled')}
+              </label>
+              ${includeSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
+            </div>
           </div>
           <div class="collapsible-body">
             <div class="subtitle-tools-header">
               <span id="subtitleStatus" class="subtitle-status">${asset.subtitleUrl ? `${t('subtitle_loaded')}: ${escapeHtml(asset.subtitleLabel || asset.subtitleLang || '')}` : t('subtitle_none')}</span>
+              <span class="subtitle-current-inline"><strong>${t('subtitle_current')}:</strong> <span id="videoSubtitleCurrent">${escapeHtml(asset.subtitleLabel || asset.subtitleLang || '-')}</span></span>
               <span id="subtitleBusy" class="subtitle-busy hidden"><span class="spinner"></span>${t('processing')}</span>
             </div>
-            <div class="viewer-meta"><strong>${t('subtitle_current')}:</strong> <span id="videoSubtitleCurrent">${escapeHtml(asset.subtitleLabel || asset.subtitleLang || '-')}</span></div>
             <div class="subtitle-list-wrap">
               <div class="viewer-meta"><strong>${t('subtitle_list')}:</strong></div>
               <div id="subtitleItems" class="subtitle-items"></div>
             </div>
-            <label class="video-tools-check">
-              <input id="subtitleOverlayCheck" type="checkbox" ${subtitleOverlayEnabledByAsset.get(asset.id) !== false ? 'checked' : ''} />
-              ${t('subtitle_overlay_enabled')}
-            </label>
             <div class="subtitle-tools-row">
               <label for="subtitleLangInput">${t('subtitle_lang')}</label>
               <input id="subtitleLangInput" class="subtitle-lang-input" type="text" maxlength="12" value="${escapeHtml(asset.subtitleLang || currentLang || 'tr')}" />
               <label for="subtitleLabelInput">${t('subtitle_name')}</label>
               <input id="subtitleLabelInput" class="subtitle-name-input" type="text" maxlength="120" value="${escapeHtml(asset.subtitleLabel || '')}" />
+              <button type="button" id="subtitleGenerateBtn">${t('subtitle_generate')}</button>
               <button type="button" id="subtitleRenameBtn">${t('subtitle_save_name')}</button>
               <input id="subtitleFileInput" type="file" accept=".vtt,.srt,text/vtt,application/x-subrip" />
               <button type="button" id="subtitleUploadBtn">${t('subtitle_upload')}</button>
-              <button type="button" id="subtitleGenerateBtn">${t('subtitle_generate')}</button>
             </div>
           </div>
         </div>
@@ -1407,6 +1882,11 @@ function mediaViewer(asset, options = {}) {
               <input id="videoOcrIntervalInput" class="subtitle-lang-input" type="number" min="1" max="30" step="1" value="4" />
               <label for="videoOcrLangInput">${t('video_ocr_lang')}</label>
               <input id="videoOcrLangInput" class="subtitle-name-input" type="text" maxlength="32" value="eng+tur" />
+              <label for="videoOcrEngineSelect">${t('video_ocr_engine')}</label>
+              <select id="videoOcrEngineSelect" class="subtitle-lang-input">
+                <option value="tesseract">${t('video_ocr_engine_tesseract')}</option>
+                <option value="paddle">${t('video_ocr_engine_paddle')}</option>
+              </select>
               <button type="button" id="videoOcrExtractBtn">${t('video_ocr_extract')}</button>
               <a id="videoOcrDownloadLink" class="subtitle-item-download-btn hidden" href="#" download target="_blank" rel="noreferrer">${t('video_ocr_download')}</a>
             </div>
@@ -1433,7 +1913,7 @@ function mediaViewer(asset, options = {}) {
             ${includeSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
           </div>
           <div class="collapsible-body">
-            <div class="viewer-meta" id="markSummary">${t('in_label')}: --:--:--:-- | ${t('out_label')}: --:--:--:-- | ${t('segment')}: --:--:--:--</div>
+            <div class="viewer-meta" id="markSummary"><span class="tc-in-label">${t('in_label')}</span>: --:--:--:-- | <span class="tc-out-label">${t('out_label')}</span>: --:--:--:-- | ${t('segment')}: --:--:--:--</div>
             <div class="cut-label-row">
               <label>${t('clip_name')}</label>
               <input id="cutLabelInput" type="text" placeholder="${escapeHtml(t('ph_clip_name'))}" />
@@ -1453,7 +1933,7 @@ function mediaViewer(asset, options = {}) {
   if (isAudio(asset)) {
     return `
       <div class="viewer-resizable">
-        <audio id="assetMediaEl" class="asset-viewer" controls src="${playbackUrl}"></audio>
+        <audio id="assetMediaEl" class="asset-viewer" controls src="${playbackUrl}"${audioChannelsAttr}></audio>
       </div>
       <div class="audio-tools">
         <div class="audio-tools-header">
@@ -1472,48 +1952,126 @@ function mediaViewer(asset, options = {}) {
   }
 
   if (isPdf(asset)) {
+    const viewerSrc = `/pdf-viewer.html?file=${encodeURIComponent(String(asset.mediaUrl || '').split('#')[0])}&assetId=${encodeURIComponent(asset.id)}`;
     return `
       <div class="viewer-resizable">
-        <div id="pdfRenderViewport" class="pdf-render-viewport asset-viewer">
-          <canvas id="pdfCanvas" class="pdf-canvas"></canvas>
-          <div id="pdfTextLayer" class="pdf-text-layer"></div>
-          <div id="pdfOcrLayer" class="pdf-ocr-layer"></div>
-        </div>
+        <iframe id="pdfViewerFrame" class="asset-viewer pdf-viewer-frame" src="${escapeHtml(viewerSrc)}" title="PDF Viewer" loading="lazy"></iframe>
       </div>
       <div class="doc-preview-shell">
         <div class="viewer-meta">${t('open_pdf')}: <a id="pdfOpenFileLink" href="${playbackUrl}" target="_blank" rel="noreferrer">${t('open_file')}</a></div>
-        <div class="pdf-toolbar-row">
-          <button type="button" id="pdfPagePrevBtn" class="doc-search-nav">&lt;</button>
-          <span id="pdfPageInfo" class="viewer-meta"></span>
-          <button type="button" id="pdfPageNextBtn" class="doc-search-nav">&gt;</button>
-          <button type="button" id="pdfOpenPageBtn" class="doc-search-nav">${t('open_file')}</button>
-        </div>
-        ${documentSearchControls()}
-        <div id="pdfSearchResults" class="pdf-search-results"></div>
       </div>
     `;
   }
 
   if (isDocument(asset)) {
-    if (isTextPreviewable(asset)) {
-      return `
-        <div class="doc-preview-shell">
-          <div class="viewer-meta">${t('open_document')}: <a href="${playbackUrl}" target="_blank" rel="noreferrer">${t('open_file')}</a></div>
-          ${documentSearchControls()}
-          <pre id="docPreviewBox" class="doc-preview">${escapeHtml(t('preview_loading'))}</pre>
-        </div>
-      `;
-    }
+    const viewerSrc = `/pdf-viewer.html?file=${encodeURIComponent(String(asset.mediaUrl || '').split('#')[0])}&assetId=${encodeURIComponent(asset.id)}`;
     return `
+      <div class="viewer-resizable">
+        <iframe id="docViewerFrame" class="asset-viewer pdf-viewer-frame" src="${escapeHtml(viewerSrc)}" title="Document Viewer" loading="lazy"></iframe>
+      </div>
       <div class="doc-preview-shell">
-        <div class="viewer-meta">${t('open_document')}: <a href="${playbackUrl}" target="_blank" rel="noreferrer">${t('open_file')}</a></div>
-        ${documentSearchControls()}
-        <pre id="docPreviewBox" class="doc-preview">${escapeHtml(t('preview_loading'))}</pre>
+        <div class="viewer-meta">${t('open_document')}: <a id="docOpenFileLink" href="${playbackUrl}" target="_blank" rel="noreferrer">${t('open_file')}</a></div>
       </div>
     `;
   }
 
   return `<a href="${playbackUrl}" target="_blank" rel="noreferrer">${t('open_attached')}</a>`;
+}
+
+function loadVideoJs() {
+  if (window.videojs) return Promise.resolve(true);
+  if (videoJsLoadPromise) return videoJsLoadPromise;
+  videoJsLoadPromise = new Promise((resolve) => {
+    const script = document.createElement('script');
+    script.src = 'https://vjs.zencdn.net/8.20.0/video.min.js';
+    script.async = true;
+    script.onload = () => resolve(Boolean(window.videojs));
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+  });
+  return videoJsLoadPromise;
+}
+
+function loadDashJs() {
+  if (window.dashjs) return Promise.resolve(true);
+  if (dashJsLoadPromise) return dashJsLoadPromise;
+  dashJsLoadPromise = new Promise((resolve) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.dashjs.org/latest/dash.all.min.js';
+    script.async = true;
+    script.onload = () => resolve(Boolean(window.dashjs?.MediaPlayer));
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+  });
+  return dashJsLoadPromise;
+}
+
+function initMpegDashPlayer(mediaEl, _asset, _root = document) {
+  if (!mediaEl || !useMpegDashPlayerUI()) return () => {};
+  const manifestFromData = String(mediaEl.dataset?.dashManifest || '').trim();
+  const srcAttr = String(mediaEl.getAttribute('src') || '').trim();
+  const manifestUrl = manifestFromData || (/\.(mpd)(?:[?#].*)?$/i.test(srcAttr) ? srcAttr : '');
+  // Keep native playback for non-MPD proxies.
+  if (!manifestUrl) return () => {};
+
+  let disposed = false;
+  let player = null;
+
+  (async () => {
+    const ready = await loadDashJs();
+    if (!ready || disposed || !window.dashjs?.MediaPlayer) return;
+    try {
+      player = window.dashjs.MediaPlayer().create();
+      player.initialize(mediaEl, manifestUrl, false);
+    } catch (_error) {
+      player = null;
+    }
+  })();
+
+  return () => {
+    disposed = true;
+    if (player && typeof player.reset === 'function') {
+      try {
+        player.reset();
+      } catch (_error) {
+        // ignore reset failures
+      }
+    }
+  };
+}
+
+function initVideoJsPlayer(mediaEl, _root = document) {
+  if (!mediaEl || !useVideoJsPlayerUI()) return () => {};
+  let disposed = false;
+  let player = null;
+
+  (async () => {
+    const ready = await loadVideoJs();
+    if (!ready || disposed || !window.videojs) return;
+    try {
+      player = window.videojs(mediaEl, {
+        controls: true,
+        preload: 'metadata',
+        fluid: true,
+        controlBar: {
+          pictureInPictureToggle: true
+        }
+      });
+    } catch (_error) {
+      player = null;
+    }
+  })();
+
+  return () => {
+    disposed = true;
+    if (player && typeof player.dispose === 'function') {
+      try {
+        if (typeof player.isDisposed !== 'function' || !player.isDisposed()) player.dispose();
+      } catch (_error) {
+        // ignore dispose failures
+      }
+    }
+  };
 }
 
 function detailMarkup(asset, workflow) {
@@ -1534,14 +2092,14 @@ function detailMarkup(asset, workflow) {
     ? `
       <h4>${t('asset_viewer')}</h4>
       <button type="button" id="openVideoToolsModalBtn">${t('video_tools')}</button>
-      ${mediaViewer(asset, { showVideoToolsButton: false, includeSubtitleTools: false, includeSectionHide: true, audioSideLayout: false })}
+      ${mediaViewer(asset, { showVideoToolsButton: false, includeSubtitleTools: false, includeSectionHide: true, audioSideLayout: false, includeDetailPin: true })}
     `
     : `
       <h4>${t('asset_viewer')}</h4>
       ${mediaViewer(asset)}
     `;
 
-  const metadataSection = `
+  const metadataTopSection = `
     <h3>${highlightMatch(asset.title, currentSearchQuery)}</h3>
     <p>${highlightMatch(asset.description || t('no_description'), currentSearchQuery)}</p>
     <div class="asset-meta">${t('owner')}: ${highlightMatch(asset.owner, currentSearchQuery)} | ${t('type')}: ${highlightMatch(asset.type, currentSearchQuery)} | ${t('duration')}: ${escapeHtml(asset.durationSeconds)}s</div>
@@ -1552,7 +2110,15 @@ function detailMarkup(asset, workflow) {
       ${asset.mediaUrl ? `<button type="button" id="downloadAssetBtn">${t('download_asset')}</button>` : ''}
       ${trashActions}
     </div>
-    <div class="chips">${asset.tags.map((tag) => `<span class="chip" style="${tagColorStyle(tag)}color:#141922;">${highlightMatch(tag, currentSearchQuery)}</span>`).join('')}</div>
+    <div class="chips">
+      ${asset.tags.map((tag) => `<button type="button" class="chip chip-tag-filter" data-chip-tag="${escapeHtml(tag)}" style="${tagColorStyle(tag)}">${highlightMatch(tag, currentSearchQuery)}</button>`).join('')}
+    </div>
+    ${isVideo(asset) ? `
+      <div class="tech-info-box">
+        <h4>${t('technical_info')}</h4>
+        <div id="assetTechnicalInfoBody" class="asset-meta">${t('tech_loading')}</div>
+      </div>
+    ` : ''}
 
     <form id="editForm" class="inline-grid">
       <h4>${t('edit_metadata')}</h4>
@@ -1594,7 +2160,9 @@ function detailMarkup(asset, workflow) {
       </select>
       <button type="submit">${t('move_status')}</button>
     </form>
+  `;
 
+  const versionSection = `
     <form id="versionForm" class="inline-grid">
       <h4>${t('add_version')}</h4>
       <input name="label" placeholder="${escapeHtml(t('ph_version_label'))}" />
@@ -1615,6 +2183,12 @@ function detailMarkup(asset, workflow) {
       .join('')}
   `;
 
+  const metadataSection = `
+    ${isVideo(asset) ? metadataTopSection : viewerSection}
+    ${isVideo(asset) ? '' : metadataTopSection}
+    ${versionSection}
+  `;
+
   if (isVideo(asset)) {
     return `
       <div class="detail-video-layout">
@@ -1626,7 +2200,6 @@ function detailMarkup(asset, workflow) {
 
   return `
     ${metadataSection}
-    ${viewerSection}
   `;
 }
 
@@ -1655,6 +2228,11 @@ async function openMultiSelectionDetail() {
     activePlayerCleanup();
     activePlayerCleanup = null;
   }
+  if (activeDetailPinCleanup) {
+    activeDetailPinCleanup();
+    activeDetailPinCleanup = null;
+  }
+  assetDetail.classList.remove('detail-video-pinned');
 
   assetDetail.innerHTML = multiSelectionDetailMarkup(selectedAssets);
   assetDetail.classList.remove('video-detail-mode');
@@ -1699,6 +2277,11 @@ function initFrameControls(mediaEl, asset, root = document) {
   const forwardFrameBtn = byId('forwardFrameBtn');
   const currentTimecodeEl = byId('currentTimecode');
   const markSummary = byId('markSummary');
+  const markInTick = byId('markInTick');
+  const markOutTick = byId('markOutTick');
+  const customMarkInTick = byId('customMarkInTick');
+  const customMarkOutTick = byId('customMarkOutTick');
+  const customSeekRange = byId('customSeekRange');
   const markInBtn = byId('markInBtn');
   const markOutBtn = byId('markOutBtn');
   const goInBtn = byId('goInBtn');
@@ -1715,11 +2298,20 @@ function initFrameControls(mediaEl, asset, root = document) {
   const marks = cutMarksByAsset.get(asset.id) || { in: null, out: null };
   cutMarksByAsset.set(asset.id, marks);
   const cuts = Array.isArray(asset.cuts) ? [...asset.cuts] : [];
+  let activeCutId = null;
+  let showActiveCutTicks = false;
 
   const getFps = () => PLAYER_FPS;
+  const snapToFrame = (seconds) => {
+    const fps = getFps();
+    const raw = Number(seconds);
+    if (!Number.isFinite(raw) || fps <= 0) return 0;
+    return Math.max(0, Math.round(raw * fps) / fps);
+  };
 
   const updateTimecode = () => {
     currentTimecodeEl.textContent = secondsToTimecode(mediaEl.currentTime, getFps());
+    syncMarkTicks();
   };
 
   const updateMarks = () => {
@@ -1728,7 +2320,52 @@ function initFrameControls(mediaEl, asset, root = document) {
     const segment = marks.in != null && marks.out != null && marks.out >= marks.in
       ? secondsToTimecode(marks.out - marks.in, getFps())
       : '--:--:--:--';
-    markSummary.textContent = `${t('in_label')}: ${inTc} | ${t('out_label')}: ${outTc} | ${t('segment')}: ${segment}`;
+    markSummary.innerHTML = `<span class="tc-in-label">${escapeHtml(t('in_label'))}</span>: ${escapeHtml(inTc)} | <span class="tc-out-label">${escapeHtml(t('out_label'))}</span>: ${escapeHtml(outTc)} | ${escapeHtml(t('segment'))}: ${escapeHtml(segment)}`;
+    syncMarkTicks();
+  };
+
+  const syncMarkTicks = () => {
+    const duration = Number.isFinite(mediaEl.duration) && mediaEl.duration > 0 ? mediaEl.duration : 0;
+    const activeCut = cuts.find((c) => c.cutId === activeCutId) || null;
+    const fallbackIn = marks.in;
+    const fallbackOut = marks.out;
+    const tickIn = activeCut ? activeCut.inPointSeconds : fallbackIn;
+    const tickOut = activeCut ? activeCut.outPointSeconds : fallbackOut;
+    const updateTick = (el, value, label) => {
+      if (!el) return;
+      if (value == null || duration <= 0 || !showActiveCutTicks) {
+        el.classList.add('hidden');
+        el.dataset.tickPx = '';
+        el.dataset.timecode = '';
+        return;
+      }
+      const timecode = secondsToTimecode(value, getFps());
+      const fps = getFps();
+      const totalFrames = Math.max(1, Math.floor(duration * fps));
+      const maxFrame = Math.max(0, totalFrames - 1);
+      const frame = Math.max(0, Math.min(maxFrame, Math.round(Number(value) * fps)));
+      const ratio = maxFrame > 0 ? (frame / maxFrame) : 0;
+      if (el.classList.contains('custom-seek-tick')) {
+        const width = customSeekRange?.getBoundingClientRect().width || 0;
+        const wrap = el.parentElement;
+        const rawThumb = wrap ? getComputedStyle(wrap).getPropertyValue('--seek-thumb-size') : '';
+        const thumbPx = Math.max(0, parseFloat(rawThumb) || 14);
+        const leftPx = width > 0 ? (thumbPx / 2) + ((width - thumbPx) * ratio) : 0;
+        el.style.left = width > 0 ? `${leftPx}px` : `${ratio * 100}%`;
+        el.dataset.tickPx = String(leftPx);
+      } else {
+        el.style.left = `${ratio * 100}%`;
+        el.dataset.tickPx = '';
+      }
+      el.dataset.timecode = timecode;
+      el.title = `${label}: ${timecode}`;
+      el.classList.remove('hidden');
+    };
+    updateTick(markInTick, tickIn, t('in_label'));
+    updateTick(markOutTick, tickOut, t('out_label'));
+    updateTick(customMarkInTick, tickIn, t('in_label'));
+    updateTick(customMarkOutTick, tickOut, t('out_label'));
+
   };
 
   const renderCuts = () => {
@@ -1741,12 +2378,14 @@ function initFrameControls(mediaEl, asset, root = document) {
       .map((cut) => {
         const seg = Math.max(0, Number(cut.outPointSeconds) - Number(cut.inPointSeconds));
         return `
-          <div class="cut-item" data-cut-id="${cut.cutId}">
+          <div class="cut-item ${activeCutId === cut.cutId ? 'active' : ''}" data-cut-id="${cut.cutId}">
             <div class="cut-item-meta">
               <strong>${highlightMatch(cut.label || 'Cut', currentSearchQuery)}</strong>
-              <span>${t('in_label')}: ${secondsToTimecode(cut.inPointSeconds, getFps())}</span>
-              <span>${t('out_label')}: ${secondsToTimecode(cut.outPointSeconds, getFps())}</span>
-              <span>${t('segment')}: ${secondsToTimecode(seg, getFps())}</span>
+              <div class="cut-item-tc-row">
+                <span class="tc-in-label">${t('in_label')}: ${secondsToTimecode(cut.inPointSeconds, getFps())}</span>
+                <span class="tc-out-label">${t('out_label')}: ${secondsToTimecode(cut.outPointSeconds, getFps())}</span>
+                <span>${t('segment')}: ${secondsToTimecode(seg, getFps())}</span>
+              </div>
             </div>
             <div class="cut-item-actions">
               <button type="button" data-cut-action="edit" data-cut-id="${cut.cutId}">${t('edit_clip')}</button>
@@ -1789,26 +2428,45 @@ function initFrameControls(mediaEl, asset, root = document) {
   };
 
   const onMarkIn = () => {
-    marks.in = mediaEl.currentTime;
+    // Starting a new clip: drop active clip focus and previous OUT mark.
+    activeCutId = null;
+    marks.in = snapToFrame(mediaEl.currentTime);
+    marks.out = null;
+    showActiveCutTicks = true;
+    renderCuts();
     updateMarks();
   };
 
   const onMarkOut = () => {
-    marks.out = mediaEl.currentTime;
+    marks.out = snapToFrame(mediaEl.currentTime);
+    showActiveCutTicks = true;
     updateMarks();
   };
 
   const onGoIn = () => {
-    if (marks.in != null) mediaEl.currentTime = marks.in;
+    const activeCut = cuts.find((c) => c.cutId === activeCutId) || null;
+    const target = activeCut ? Number(activeCut.inPointSeconds) : marks.in;
+    if (target != null && Number.isFinite(Number(target))) {
+      showActiveCutTicks = true;
+      mediaEl.currentTime = snapToFrame(Number(target));
+      syncMarkTicks();
+    }
   };
 
   const onGoOut = () => {
-    if (marks.out != null) mediaEl.currentTime = marks.out;
+    const activeCut = cuts.find((c) => c.cutId === activeCutId) || null;
+    const target = activeCut ? Number(activeCut.outPointSeconds) : marks.out;
+    if (target != null && Number.isFinite(Number(target))) {
+      showActiveCutTicks = true;
+      mediaEl.currentTime = snapToFrame(Number(target));
+      syncMarkTicks();
+    }
   };
 
   const onClear = () => {
     marks.in = null;
     marks.out = null;
+    showActiveCutTicks = false;
     updateMarks();
   };
 
@@ -1820,7 +2478,10 @@ function initFrameControls(mediaEl, asset, root = document) {
       body: JSON.stringify({ inPointSeconds: marks.in, outPointSeconds: marks.out, label: clipLabel })
     });
     cuts.unshift(created);
+    activeCutId = created?.cutId || activeCutId;
+    showActiveCutTicks = false;
     renderCuts();
+    syncMarkTicks();
     if (cutLabelInput) cutLabelInput.value = '';
   };
 
@@ -1833,7 +2494,11 @@ function initFrameControls(mediaEl, asset, root = document) {
     if (!cut) return;
 
     if (action === 'jump') {
+      activeCutId = cut.cutId;
+      showActiveCutTicks = true;
+      renderCuts();
       mediaEl.currentTime = Number(cut.inPointSeconds) || 0;
+      syncMarkTicks();
       return;
     }
     if (action === 'edit') {
@@ -1865,7 +2530,9 @@ function initFrameControls(mediaEl, asset, root = document) {
       });
       const idx = cuts.findIndex((c) => c.cutId === cutId);
       if (idx >= 0) cuts[idx] = { ...cuts[idx], ...updated };
+      showActiveCutTicks = false;
       renderCuts();
+      syncMarkTicks();
       return;
     }
     if (action === 'delete') {
@@ -1873,7 +2540,10 @@ function initFrameControls(mediaEl, asset, root = document) {
       await deleteApi(`/api/assets/${asset.id}/cuts/${cutId}`);
       const idx = cuts.findIndex((c) => c.cutId === cutId);
       if (idx >= 0) cuts.splice(idx, 1);
+      if (activeCutId === cutId) activeCutId = null;
+      showActiveCutTicks = false;
       renderCuts();
+      syncMarkTicks();
     }
   };
 
@@ -1891,6 +2561,9 @@ function initFrameControls(mediaEl, asset, root = document) {
 
   mediaEl.addEventListener('timeupdate', updateTimecode);
   mediaEl.addEventListener('seeked', updateTimecode);
+  mediaEl.addEventListener('loadedmetadata', syncMarkTicks);
+  mediaEl.addEventListener('durationchange', syncMarkTicks);
+  window.addEventListener('resize', syncMarkTicks);
   mediaEl.addEventListener('play', syncPlayButton);
   mediaEl.addEventListener('pause', syncPlayButton);
   mediaEl.addEventListener('ended', syncPlayButton);
@@ -1911,9 +2584,184 @@ function initFrameControls(mediaEl, asset, root = document) {
     cutsList?.removeEventListener('click', onCutsAction);
     mediaEl.removeEventListener('timeupdate', updateTimecode);
     mediaEl.removeEventListener('seeked', updateTimecode);
+    mediaEl.removeEventListener('loadedmetadata', syncMarkTicks);
+    mediaEl.removeEventListener('durationchange', syncMarkTicks);
+    window.removeEventListener('resize', syncMarkTicks);
     mediaEl.removeEventListener('play', syncPlayButton);
     mediaEl.removeEventListener('pause', syncPlayButton);
     mediaEl.removeEventListener('ended', syncPlayButton);
+  };
+}
+
+function initDetailVideoPin(root = document) {
+  const pinBtn = root.querySelector('#detailVideoPinBtn');
+  if (!pinBtn) return () => {};
+  const mediaEl = root.querySelector('#assetMediaEl');
+  const customLikeMode = useCustomLikeTimelineUI();
+
+  const applyPinUi = () => {
+    root.classList.toggle('detail-video-pinned', detailVideoPinned);
+    pinBtn.classList.toggle('active', detailVideoPinned);
+    const label = detailVideoPinned ? t('unpin_video') : t('pin_video');
+    pinBtn.title = label;
+    pinBtn.setAttribute('aria-label', label);
+    pinBtn.setAttribute('aria-pressed', detailVideoPinned ? 'true' : 'false');
+    if (mediaEl && customLikeMode) {
+      if (detailVideoPinned) mediaEl.setAttribute('controls', 'controls');
+      else mediaEl.removeAttribute('controls');
+    }
+  };
+
+  const onPinToggle = () => {
+    detailVideoPinned = !detailVideoPinned;
+    localStorage.setItem(LOCAL_DETAIL_VIDEO_PIN, detailVideoPinned ? '1' : '0');
+    applyPinUi();
+  };
+
+  pinBtn.addEventListener('click', onPinToggle);
+  applyPinUi();
+  return () => {
+    pinBtn.removeEventListener('click', onPinToggle);
+  };
+}
+
+function initCustomVideoControls(mediaEl, root = document) {
+  const byId = (id) => root.querySelector(`#${id}`);
+  const bar = byId('customPlayerBar');
+  const playBtn = byId('customPlayPauseBtn');
+  const currentEl = byId('customCurrentTime');
+  const durationEl = byId('customDurationTime');
+  const seek = byId('customSeekRange');
+  const muteBtn = byId('customMuteBtn');
+  const vol = byId('customVolumeRange');
+  if (!bar || !playBtn || !currentEl || !durationEl || !seek || !muteBtn || !vol) return () => {};
+
+  let isSeeking = false;
+  const fps = PLAYER_FPS;
+  let totalFrames = 1;
+  let maxFrame = 0;
+  const getDuration = () => (Number.isFinite(mediaEl.duration) && mediaEl.duration > 0 ? mediaEl.duration : 0);
+  const rebuildSeekScale = () => {
+    const duration = getDuration();
+    totalFrames = Math.max(1, Math.floor(duration * fps));
+    maxFrame = Math.max(0, totalFrames - 1);
+    seek.min = '0';
+    seek.step = '1';
+    seek.max = String(maxFrame);
+  };
+  const secondsToFrame = (sec) => {
+    const duration = getDuration();
+    if (duration <= 0) return 0;
+    return Math.max(0, Math.min(maxFrame, Math.round(Number(sec || 0) * fps)));
+  };
+  const frameToSeconds = (frame) => {
+    const duration = getDuration();
+    if (duration <= 0) return 0;
+    const safe = Math.max(0, Math.min(maxFrame, Number(frame || 0)));
+    return Math.max(0, Math.min(duration, safe / fps));
+  };
+  const toClock = (sec) => {
+    const s = Math.max(0, Number(sec) || 0);
+    const hh = String(Math.floor(s / 3600)).padStart(2, '0');
+    const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+    const ss = String(Math.floor(s % 60)).padStart(2, '0');
+    return `${hh}:${mm}:${ss}`;
+  };
+
+  const syncButtons = () => {
+    const paused = mediaEl.paused || mediaEl.ended;
+    playBtn.textContent = paused ? '▶' : '⏸';
+    muteBtn.textContent = mediaEl.muted || mediaEl.volume <= 0 ? '🔇' : '🔊';
+  };
+
+  const syncTimeline = () => {
+    const duration = getDuration();
+    currentEl.textContent = toClock(mediaEl.currentTime);
+    durationEl.textContent = toClock(duration);
+    if (!isSeeking && duration > 0) {
+      seek.value = String(secondsToFrame(mediaEl.currentTime));
+    }
+    if (!isSeeking && duration <= 0) {
+      seek.value = '0';
+    }
+  };
+
+  const onPlayPause = async () => {
+    if (mediaEl.paused || mediaEl.ended) {
+      await mediaEl.play().catch(() => {});
+    } else {
+      mediaEl.pause();
+    }
+    syncButtons();
+  };
+  const onSeekStart = () => { isSeeking = true; };
+  const onSeekEnd = () => {
+    isSeeking = false;
+    const duration = getDuration();
+    if (duration <= 0) return;
+    mediaEl.currentTime = frameToSeconds(Number(seek.value || 0));
+    syncTimeline();
+  };
+  const onSeekInput = () => {
+    if (!isSeeking) return;
+    const duration = getDuration();
+    const preview = duration > 0 ? frameToSeconds(Number(seek.value || 0)) : 0;
+    currentEl.textContent = toClock(preview);
+  };
+  const onMute = () => {
+    mediaEl.muted = !mediaEl.muted;
+    syncButtons();
+  };
+  const onVolume = () => {
+    mediaEl.volume = Math.max(0, Math.min(1, Number(vol.value || 1)));
+    if (mediaEl.volume > 0 && mediaEl.muted) mediaEl.muted = false;
+    syncButtons();
+  };
+  const onVolumeSync = () => {
+    vol.value = String(Number.isFinite(mediaEl.volume) ? mediaEl.volume : 1);
+    syncButtons();
+  };
+
+  playBtn.addEventListener('click', onPlayPause);
+  seek.addEventListener('mousedown', onSeekStart);
+  seek.addEventListener('touchstart', onSeekStart, { passive: true });
+  seek.addEventListener('input', onSeekInput);
+  seek.addEventListener('change', onSeekEnd);
+  muteBtn.addEventListener('click', onMute);
+  vol.addEventListener('input', onVolume);
+
+  mediaEl.addEventListener('timeupdate', syncTimeline);
+  mediaEl.addEventListener('loadedmetadata', rebuildSeekScale);
+  mediaEl.addEventListener('loadedmetadata', syncTimeline);
+  mediaEl.addEventListener('durationchange', rebuildSeekScale);
+  mediaEl.addEventListener('durationchange', syncTimeline);
+  mediaEl.addEventListener('play', syncButtons);
+  mediaEl.addEventListener('pause', syncButtons);
+  mediaEl.addEventListener('ended', syncButtons);
+  mediaEl.addEventListener('volumechange', onVolumeSync);
+
+  rebuildSeekScale();
+  onVolumeSync();
+  syncTimeline();
+  syncButtons();
+
+  return () => {
+    playBtn.removeEventListener('click', onPlayPause);
+    seek.removeEventListener('mousedown', onSeekStart);
+    seek.removeEventListener('touchstart', onSeekStart);
+    seek.removeEventListener('input', onSeekInput);
+    seek.removeEventListener('change', onSeekEnd);
+    muteBtn.removeEventListener('click', onMute);
+    vol.removeEventListener('input', onVolume);
+    mediaEl.removeEventListener('timeupdate', syncTimeline);
+    mediaEl.removeEventListener('loadedmetadata', rebuildSeekScale);
+    mediaEl.removeEventListener('loadedmetadata', syncTimeline);
+    mediaEl.removeEventListener('durationchange', rebuildSeekScale);
+    mediaEl.removeEventListener('durationchange', syncTimeline);
+    mediaEl.removeEventListener('play', syncButtons);
+    mediaEl.removeEventListener('pause', syncButtons);
+    mediaEl.removeEventListener('ended', syncButtons);
+    mediaEl.removeEventListener('volumechange', onVolumeSync);
   };
 }
 
@@ -1936,9 +2784,29 @@ function initAudioTools(mediaEl, root = document) {
 
   const ctx = new AudioContextCtor();
   const source = ctx.createMediaElementSource(mediaEl);
-  const channelCount = Math.max(1, source.channelCount || 2);
+  const hintedChannels = Number(mediaEl.dataset.audioChannels || 0);
+  const channelCount = Math.max(1, Math.min(64, hintedChannels || source.channelCount || 2));
+  // For 8ch merged proxies, channel order differs by browser decoder behavior.
+  const ua = String(navigator.userAgent || '');
+  const isSafari = /Safari/i.test(ua) && !/(Chrome|Chromium|Edg|OPR|CriOS|FxiOS)/i.test(ua);
+  const isChromeLike = /(Chrome|Chromium|CriOS)/i.test(ua) && !/(Edg|OPR)/i.test(ua);
+  const displayToDecoded = channelCount === 8
+    ? (isSafari
+      ? [1, 2, 0, 7, 5, 6, 3, 4]
+      : (isChromeLike
+        ? [0, 1, 2, 3, 4, 5, 6, 7]
+        : [1, 2, 0, 7, 5, 6, 3, 4]))
+    : Array.from({ length: channelCount }, (_v, i) => i);
+  const decodedToDisplay = Array.from({ length: channelCount }, () => 0);
+  displayToDecoded.forEach((decodedIndex, displayIndex) => {
+    if (decodedIndex >= 0 && decodedIndex < channelCount) {
+      decodedToDisplay[decodedIndex] = displayIndex;
+    }
+  });
   const splitter = ctx.createChannelSplitter(channelCount);
-  const merger = ctx.createChannelMerger(channelCount);
+  const leftBus = ctx.createGain();
+  const rightBus = ctx.createGain();
+  const stereoOut = ctx.createChannelMerger(2);
   const masterGain = ctx.createGain();
   const gains = [];
   const analysers = [];
@@ -1954,7 +2822,9 @@ function initAudioTools(mediaEl, root = document) {
     analyser.fftSize = 2048;
 
     splitter.connect(gain, i, 0);
-    gain.connect(merger, 0, i);
+    // Always mix to stereo output for browser compatibility.
+    if (i % 2 === 0) gain.connect(leftBus);
+    else gain.connect(rightBus);
     splitter.connect(analyser, i, 0);
 
     gains.push(gain);
@@ -1966,25 +2836,39 @@ function initAudioTools(mediaEl, root = document) {
     const base = clamp01(Number.isFinite(mediaEl.volume) ? mediaEl.volume : 1);
     masterGain.gain.value = mediaEl.muted ? 0 : base;
   };
-  merger.connect(masterGain);
+  leftBus.connect(stereoOut, 0, 0);
+  rightBus.connect(stereoOut, 0, 1);
+  stereoOut.connect(masterGain);
   masterGain.connect(ctx.destination);
   applyMasterVolume();
 
   controlsWrap.innerHTML = selected
     .map(
-      (_enabled, index) => `
+      (_enabled, displayIndex) => `
         <label class="channel-pill">
-          <input type="checkbox" data-channel-index="${index}" checked />
-          CH ${index + 1}
+          <input type="checkbox" data-channel-index="${displayIndex}" checked />
+          <span class="channel-pill-text">CH ${displayIndex + 1}</span>
         </label>
       `
     )
     .join('');
 
   const applyGains = () => {
-    gains.forEach((gain, index) => {
-      gain.gain.value = selected[index] ? 1 : 0;
+    gains.forEach((gain, decodedIndex) => {
+      const displayIndex = decodedToDisplay[decodedIndex] ?? decodedIndex;
+      gain.gain.value = selected[displayIndex] ? 1 : 0;
     });
+    // Avoid clipping when many channels are active on same side.
+    const activeLeft = gains.reduce((acc, _gain, decodedIndex) => {
+      const displayIndex = decodedToDisplay[decodedIndex] ?? decodedIndex;
+      return acc + ((decodedIndex % 2 === 0 && selected[displayIndex]) ? 1 : 0);
+    }, 0);
+    const activeRight = gains.reduce((acc, _gain, decodedIndex) => {
+      const displayIndex = decodedToDisplay[decodedIndex] ?? decodedIndex;
+      return acc + ((decodedIndex % 2 === 1 && selected[displayIndex]) ? 1 : 0);
+    }, 0);
+    leftBus.gain.value = 1 / Math.max(1, activeLeft);
+    rightBus.gain.value = 1 / Math.max(1, activeRight);
   };
 
   const onChannelChange = (event) => {
@@ -2006,13 +2890,16 @@ function initAudioTools(mediaEl, root = document) {
 
     applyGains();
   };
+  applyGains();
 
   const g = graphCanvas.getContext('2d');
   if (!g) {
     controlsWrap.innerHTML = `<div class="empty">${escapeHtml(t('audiograph_unsupported'))}</div>`;
     source.disconnect();
     splitter.disconnect();
-    merger.disconnect();
+    leftBus.disconnect();
+    rightBus.disconnect();
+    stereoOut.disconnect();
     gains.forEach((node) => node.disconnect());
     analysers.forEach((node) => node.disconnect());
     ctx.close().catch(() => {});
@@ -2062,7 +2949,8 @@ function initAudioTools(mediaEl, root = document) {
     const gap = 10;
     const meterW = Math.max(18, Math.floor((width - ((cols + 1) * gap)) / cols));
     const meterH = Math.max(80, height - 44);
-    analysers.forEach((analyser, channelIndex) => {
+    analysers.forEach((analyser, decodedIndex) => {
+      const channelIndex = decodedToDisplay[decodedIndex] ?? decodedIndex;
       const timeData = new Uint8Array(analyser.fftSize);
       analyser.getByteTimeDomainData(timeData);
 
@@ -2128,7 +3016,9 @@ function initAudioTools(mediaEl, root = document) {
     if (rafId) cancelAnimationFrame(rafId);
     source.disconnect();
     splitter.disconnect();
-    merger.disconnect();
+    leftBus.disconnect();
+    rightBus.disconnect();
+    stereoOut.disconnect();
     masterGain.disconnect();
     gains.forEach((node) => node.disconnect());
     analysers.forEach((node) => node.disconnect());
@@ -2292,7 +3182,6 @@ function initPdfSearch(asset) {
   const pdfViewport = document.getElementById('pdfRenderViewport');
   const pdfCanvas = document.getElementById('pdfCanvas');
   const pdfTextLayer = document.getElementById('pdfTextLayer');
-  const pdfOcrLayer = document.getElementById('pdfOcrLayer');
   const openFileLink = document.getElementById('pdfOpenFileLink');
   const openPageBtn = document.getElementById('pdfOpenPageBtn');
   const pagePrevBtn = document.getElementById('pdfPagePrevBtn');
@@ -2303,8 +3192,7 @@ function initPdfSearch(asset) {
   const prevBtn = document.getElementById('docSearchPrevBtn');
   const nextBtn = document.getElementById('docSearchNextBtn');
   const searchMeta = document.getElementById('docSearchMeta');
-  const resultsBox = document.getElementById('pdfSearchResults');
-  if (!pdfViewport || !pdfCanvas || !pdfTextLayer || !pdfOcrLayer || !searchInput || !runBtn || !nextBtn || !resultsBox) return () => {};
+  if (!pdfViewport || !pdfCanvas || !pdfTextLayer || !searchInput || !runBtn || !nextBtn) return () => {};
   if (!window.pdfjsLib) {
     if (searchMeta) searchMeta.textContent = t('pdf_preview_unavailable');
     return () => {};
@@ -2319,8 +3207,6 @@ function initPdfSearch(asset) {
   let renderToken = 0;
   let pdfDoc = null;
   let pageTextCache = new Map();
-  let currentOcrWidth = 0;
-  let ocrBoxesByPage = new Map();
   let totalPages = 1;
   let currentPage = 1;
   let matches = [];
@@ -2329,29 +3215,6 @@ function initPdfSearch(asset) {
   const renderPageInfo = () => {
     if (!pageInfo) return;
     pageInfo.textContent = `${currentPage}/${totalPages}`;
-  };
-
-  const clearOcrBoxes = () => {
-    pdfOcrLayer.innerHTML = '';
-  };
-
-  const renderOcrBoxesForPage = (pageNum) => {
-    clearOcrBoxes();
-    const boxes = ocrBoxesByPage.get(pageNum) || [];
-    if (!boxes.length) return;
-    const pageWidth = pdfCanvas.width || 1;
-    const pageHeight = pdfCanvas.height || 1;
-    const srcWidth = Math.max(1, Number(currentOcrWidth) || pageWidth);
-    const scale = pageWidth / srcWidth;
-    boxes.forEach((b, idx) => {
-      const el = document.createElement('div');
-      el.className = `pdf-ocr-box${idx === 0 ? ' active' : ''}`;
-      el.style.left = `${Math.max(0, Math.round((Number(b.left) || 0) * scale))}px`;
-      el.style.top = `${Math.max(0, Math.round((Number(b.top) || 0) * scale))}px`;
-      el.style.width = `${Math.max(1, Math.round((Number(b.width) || 0) * scale))}px`;
-      el.style.height = `${Math.max(1, Math.round((Number(b.height) || 0) * scale))}px`;
-      pdfOcrLayer.appendChild(el);
-    });
   };
 
   const refreshOpenLink = () => {
@@ -2379,30 +3242,6 @@ function initPdfSearch(asset) {
     const pageText = `p.${current.page}`;
     const snippet = String(current.snippet || '').trim();
     searchMeta.textContent = snippet ? `${pos} | ${pageText} | ${snippet}` : `${pos} | ${pageText}`;
-  };
-
-  const highlightSnippet = (text, query) => {
-    const source = String(text || '');
-    const ranges = findMatchRanges(source, query);
-    if (!ranges.length) return escapeHtml(source);
-    const [hitStart, hitEnd] = ranges[0];
-    const start = Math.max(0, hitStart - 48);
-    const end = Math.min(source.length, hitEnd + 72);
-    const prefix = start > 0 ? '...' : '';
-    const suffix = end < source.length ? '...' : '';
-    const clipped = source.slice(start, end);
-    const clippedRanges = ranges
-      .map(([a, b]) => [a - start, b - start])
-      .filter(([a, b]) => a >= 0 && b <= clipped.length);
-    return `${prefix}${highlightTextByRanges(clipped, clippedRanges)}${suffix}`;
-  };
-
-  const renderResultsList = () => {
-    resultsBox.innerHTML = '';
-  };
-
-  const countOccurrences = (source, needle) => {
-    return findMatchRanges(source, needle).length;
   };
 
   const pageText = async (pageNum) => {
@@ -2439,7 +3278,6 @@ function initPdfSearch(asset) {
     });
     const ranges = findMatchRanges(full, query);
     if (!ranges.length) return;
-
     const activeSpanSet = new Set();
     segments.forEach((seg) => {
       const localRanges = [];
@@ -2454,8 +3292,20 @@ function initPdfSearch(asset) {
       activeSpanSet.add(seg.span);
     });
 
-    const firstActive = Array.from(activeSpanSet)[0];
-    if (firstActive) firstActive.classList.add('search-hit-active');
+    const currentMatch = matches[activeIndex];
+    const activeOccurrence = currentMatch && Number(currentMatch.page) === currentPage
+      ? Math.max(0, Number(currentMatch.occurrence) || 0)
+      : 0;
+    const marks = Array.from(pdfTextLayer.querySelectorAll('mark.search-hit'));
+    const activeMark = marks[Math.min(activeOccurrence, Math.max(0, marks.length - 1))];
+    const activeSpan = activeMark?.closest('span');
+    if (activeSpan) {
+      activeSpan.classList.add('search-hit-active');
+      activeSpan.scrollIntoView({ block: 'center', inline: 'nearest' });
+    } else {
+      const firstActive = Array.from(activeSpanSet)[0];
+      if (firstActive) firstActive.classList.add('search-hit-active');
+    }
   };
 
   const renderPage = async (pageNum) => {
@@ -2473,10 +3323,7 @@ function initPdfSearch(asset) {
     pdfCanvas.style.height = `${Math.ceil(viewport.height)}px`;
     pdfTextLayer.style.width = `${Math.ceil(viewport.width)}px`;
     pdfTextLayer.style.height = `${Math.ceil(viewport.height)}px`;
-    pdfOcrLayer.style.width = `${Math.ceil(viewport.width)}px`;
-    pdfOcrLayer.style.height = `${Math.ceil(viewport.height)}px`;
     pdfTextLayer.innerHTML = '';
-    clearOcrBoxes();
 
     await page.render({ canvasContext: canvasCtx, viewport }).promise;
     if (destroyed || token !== renderToken) return;
@@ -2491,15 +3338,26 @@ function initPdfSearch(asset) {
     if (destroyed || token !== renderToken) return;
 
     applyTextHighlights();
-    renderOcrBoxesForPage(pageNum);
   };
 
   const moveMatch = (delta) => {
     if (!matches.length) return;
     activeIndex = (activeIndex + delta + matches.length) % matches.length;
-    setPage(matches[activeIndex].page);
+    const targetPage = Number(matches[activeIndex].page) || 1;
+    if (targetPage !== currentPage) setPage(targetPage);
+    else applyTextHighlights();
     renderActiveMatch();
-    renderResultsList();
+  };
+
+  const buildSnippet = (text, start, end) => {
+    const source = String(text || '');
+    const a = Math.max(0, Number(start) || 0);
+    const b = Math.max(a, Number(end) || a);
+    const left = Math.max(0, a - 48);
+    const right = Math.min(source.length, b + 72);
+    const prefix = left > 0 ? '...' : '';
+    const suffix = right < source.length ? '...' : '';
+    return `${prefix}${source.slice(left, right).replace(/\s+/g, ' ').trim()}${suffix}`;
   };
 
   const runSearch = async () => {
@@ -2508,43 +3366,37 @@ function initPdfSearch(asset) {
       matches = [];
       activeIndex = -1;
       if (searchMeta) searchMeta.textContent = '';
-      resultsBox.innerHTML = '';
+      applyTextHighlights();
       return;
     }
     try {
-      const searchWidth = Math.max(900, Math.round(pdfViewport.clientWidth || 1200));
-      const result = await api(`/api/assets/${asset.id}/pdf-search-ocr?q=${encodeURIComponent(query)}&lang=tur+eng&width=${searchWidth}`);
-      currentOcrWidth = Number(result.ocrWidth) || searchWidth;
-      const rawMatches = Array.isArray(result.matches) ? result.matches : [];
-      ocrBoxesByPage = new Map();
-      rawMatches.forEach((m) => {
-        const p = Number(m.page) || 1;
-        if (!ocrBoxesByPage.has(p)) ocrBoxesByPage.set(p, []);
-        if (m.box) ocrBoxesByPage.get(p).push(m.box);
-      });
-      matches = rawMatches.map((m) => ({
-        page: Number(m.page) || 1,
-        count: Number(m.count) || 1,
-        snippet: String(m.snippet || ''),
-        box: m.box || null
-      }));
+      const nextMatches = [];
+      for (let p = 1; p <= totalPages; p += 1) {
+        const text = await pageText(p);
+        const ranges = findMatchRanges(text, query);
+        ranges.forEach(([start, end], idx) => {
+          nextMatches.push({
+            page: p,
+            occurrence: idx,
+            snippet: buildSnippet(text, start, end)
+          });
+        });
+      }
+      matches = nextMatches;
       if (!matches.length) {
         activeIndex = -1;
         renderActiveMatch();
-        renderResultsList();
-        clearOcrBoxes();
+        applyTextHighlights();
         return;
       }
       activeIndex = 0;
       setPage(matches[0].page);
       renderActiveMatch();
-      renderResultsList();
     } catch (_error) {
       matches = [];
       activeIndex = -1;
       if (searchMeta) searchMeta.textContent = t('preview_search_error');
-      resultsBox.innerHTML = '';
-      clearOcrBoxes();
+      applyTextHighlights();
     }
   };
 
@@ -2596,14 +3448,6 @@ function initPdfSearch(asset) {
     if (searchMeta) searchMeta.textContent = t('preview_search_error');
   });
 
-  (async () => {
-    try {
-      await api(`/api/assets/${asset.id}/pdf-meta`);
-    } catch (_error) {
-      // metadata call kept for backwards compatibility; viewer uses pdf.js page count.
-    }
-  })();
-
   return () => {
     destroyed = true;
     searchInput.removeEventListener('keydown', onKeyDown);
@@ -2637,8 +3481,7 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
   if (!statusEl || !itemsEl || !langInput || !labelInput || !renameBtn || !fileInput || !uploadBtn || !generateBtn) return () => {};
 
   const getLang = () => String(langInput.value || '').trim().toLowerCase().slice(0, 12) || 'tr';
-  const getOverlayEnabled = () => subtitleOverlayEnabledByAsset.get(asset.id) !== false;
-  if (!subtitleOverlayEnabledByAsset.has(asset.id)) subtitleOverlayEnabledByAsset.set(asset.id, Boolean(asset.subtitleUrl));
+  const getOverlayEnabled = () => getSubtitleOverlayEnabled(asset.id, false);
 
   const setStatus = (text) => {
     statusEl.textContent = text;
@@ -2652,36 +3495,21 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
   };
 
   const applyTrackMode = () => {
-    const enabled = getOverlayEnabled();
-    const tracks = Array.from(mediaEl.textTracks || []);
-    tracks.forEach((tt) => {
-      tt.mode = 'hidden';
-    });
-    if (!enabled) return;
-    const active = tracks[tracks.length - 1];
-    if (active) active.mode = 'showing';
+    syncSubtitleOverlayInOpenPlayers(asset);
   };
 
   const applyTrack = (subtitleUrl, subtitleLang, subtitleLabel) => {
-    const previous = mediaEl.querySelector('#assetSubtitleTrack');
-    if (previous) previous.remove();
-    if (!subtitleUrl) {
+    asset.subtitleUrl = String(subtitleUrl || '').trim();
+    asset.subtitleLang = String(subtitleLang || getLang()).trim();
+    asset.subtitleLabel = String(subtitleLabel || '').trim();
+    if (!asset.subtitleUrl) {
       setStatus(t('subtitle_none'));
       applyTrackMode();
       return;
     }
-    const track = document.createElement('track');
-    track.id = 'assetSubtitleTrack';
-    track.kind = 'subtitles';
-    track.default = true;
-    track.label = subtitleLabel || t('subtitles');
-    track.srclang = subtitleLang || getLang();
-    track.src = `${subtitleUrl}${subtitleUrl.includes('?') ? '&' : '?'}v=${Date.now()}`;
-    mediaEl.appendChild(track);
-    track.addEventListener('load', applyTrackMode, { once: true });
-    setTimeout(applyTrackMode, 60);
-    if (labelInput && subtitleLabel) labelInput.value = subtitleLabel;
-    setStatus(`${t('subtitle_loaded')}: ${subtitleLabel || subtitleLang || ''}`);
+    if (labelInput && asset.subtitleLabel) labelInput.value = asset.subtitleLabel;
+    setStatus(`${t('subtitle_loaded')}: ${asset.subtitleLabel || asset.subtitleLang || ''}`);
+    applyTrackMode();
   };
   const subtitleItems = () => Array.isArray(asset.subtitleItems) ? asset.subtitleItems : [];
   const applyAssetFromApi = (mappedAsset) => {
@@ -2893,27 +3721,29 @@ function initVideoOcrTools(asset, root = document) {
   const busyEl = byId('videoOcrBusy');
   const intervalInput = byId('videoOcrIntervalInput');
   const langInput = byId('videoOcrLangInput');
+  const engineSelect = byId('videoOcrEngineSelect');
   const extractBtn = byId('videoOcrExtractBtn');
   const downloadLink = byId('videoOcrDownloadLink');
-  if (!statusEl || !busyEl || !intervalInput || !langInput || !extractBtn || !downloadLink) return () => {};
+  if (!statusEl || !busyEl || !intervalInput || !langInput || !engineSelect || !extractBtn || !downloadLink) return () => {};
 
   const setBusy = (busy) => {
     busyEl.classList.toggle('hidden', !busy);
     extractBtn.disabled = busy;
     intervalInput.disabled = busy;
     langInput.disabled = busy;
+    engineSelect.disabled = busy;
   };
   const setStatus = (text) => {
     statusEl.textContent = text;
   };
-  const setDownload = (url) => {
-    if (!url) {
+  const setDownload = (jobId) => {
+    if (!jobId) {
       downloadLink.classList.add('hidden');
       downloadLink.href = '#';
       return;
     }
     downloadLink.classList.remove('hidden');
-    downloadLink.href = url;
+    downloadLink.href = `/api/video-ocr-jobs/${encodeURIComponent(String(jobId))}/download`;
   };
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const poll = async (jobId, maxMs = 3 * 60 * 60 * 1000, intervalMs = 2000) => {
@@ -2936,12 +3766,17 @@ function initVideoOcrTools(asset, root = document) {
         method: 'POST',
         body: JSON.stringify({
           intervalSec: Number(intervalInput.value || 4),
-          ocrLang: String(langInput.value || '').trim() || 'eng+tur'
+          ocrLang: String(langInput.value || '').trim() || 'eng+tur',
+          ocrEngine: String(engineSelect.value || 'tesseract')
         })
       });
       const done = await poll(queued.jobId);
-      setDownload(done.resultUrl || '');
-      setStatus(`${t('video_ocr_done')} ${done.lineCount ? `(${done.lineCount})` : ''}`.trim());
+      setDownload(done.jobId || queued.jobId);
+      const engineTag = String(done.ocrEngine || engineSelect.value || '').trim();
+      const lineTag = done.lineCount ? `(${done.lineCount})` : '';
+      const warnTag = String(done.warning || '').trim();
+      setStatus(`${t('video_ocr_done')} ${engineTag ? `[${engineTag}]` : ''} ${lineTag}`.trim());
+      if (warnTag) alert(warnTag);
     } catch (error) {
       setStatus(t('video_ocr_failed'));
       alert(String(error?.message || 'Video OCR failed'));
@@ -2963,14 +3798,50 @@ function initCollapsibleSections(root = document) {
   const rows = Array.from(root.querySelectorAll('.collapsible-section'));
   if (!rows.length) return () => {};
   const cleanups = [];
+  const isVideoToolsModal = Boolean(root.querySelector('.video-tools-modal-body'));
+  const defaultCollapsedInVideoTools = new Set(['subtitles', 'ocr', 'clips']);
   rows.forEach((section) => {
     const check = section.querySelector('.section-hide-check');
+    const head = section.querySelector('.collapsible-head');
+    const sectionKey = String(section.dataset.section || '').trim().toLowerCase();
+    if (isVideoToolsModal && check && defaultCollapsedInVideoTools.has(sectionKey)) {
+      check.checked = true;
+    }
     const apply = () => {
       section.classList.toggle('collapsed', Boolean(check?.checked));
     };
     if (check) {
       check.addEventListener('change', apply);
       cleanups.push(() => check.removeEventListener('change', apply));
+
+      // Allow toggling from the section "tab bar" (header) by click.
+      if (head && !isVideoToolsModal) {
+        const onHeadClick = (event) => {
+          const target = event.target;
+          if (!(target instanceof Element)) return;
+          // Do not collapse when user interacts with checkbox/pill regions.
+          if (target.closest('input, button, a, select, textarea, label, .channel-controls, .channel-pill')) return;
+          check.checked = !check.checked;
+          apply();
+        };
+        head.addEventListener('click', onHeadClick);
+        cleanups.push(() => head.removeEventListener('click', onHeadClick));
+      }
+
+      // In video tools, clicking anywhere on a collapsed section opens it
+      // without requiring manual checkbox untick.
+      if (isVideoToolsModal) {
+        const onSectionClick = (event) => {
+          if (!section.classList.contains('collapsed')) return;
+          const target = event.target;
+          if (!(target instanceof Element)) return;
+          if (target.closest('input, button, a, select, textarea')) return;
+          check.checked = false;
+          apply();
+        };
+        section.addEventListener('click', onSectionClick);
+        cleanups.push(() => section.removeEventListener('click', onSectionClick));
+      }
     }
     apply();
   });
@@ -3086,7 +3957,7 @@ function initVideoToolsSorting(root = document) {
   };
 }
 
-function openVideoToolsDialog(asset) {
+function openVideoToolsDialog(asset, options = {}) {
   const overlay = document.createElement('div');
   overlay.className = 'clip-modal-backdrop video-tools-backdrop';
   overlay.innerHTML = `
@@ -3102,7 +3973,9 @@ function openVideoToolsDialog(asset) {
   `;
 
   document.body.appendChild(overlay);
-  const cleanup = initAssetPlayer(asset, overlay);
+  const cleanup = initAssetPlayer(asset, overlay, {
+    startAtSeconds: Number(options.startAtSeconds) || 0
+  });
   const close = () => {
     cleanup?.();
     overlay.remove();
@@ -3113,7 +3986,7 @@ function openVideoToolsDialog(asset) {
   overlay.querySelector('#videoToolsCloseBtn')?.addEventListener('click', close);
 }
 
-function initAssetPlayer(asset, root = document) {
+function initAssetPlayer(asset, root = document, options = {}) {
   const mediaEl = root.querySelector('#assetMediaEl');
   const cleanups = [];
   if (mediaEl) {
@@ -3142,7 +4015,10 @@ function initAssetPlayer(asset, root = document) {
       cleanups.push(() => mediaEl.removeEventListener('error', onVideoError));
     }
     if (isVideo(asset)) {
+      if (useMpegDashPlayerUI()) cleanups.push(initMpegDashPlayer(mediaEl, asset, root));
+      if (useVideoJsPlayerUI()) cleanups.push(initVideoJsPlayer(mediaEl, root));
       cleanups.push(initFrameControls(mediaEl, asset, root));
+      if (useCustomLikeTimelineUI()) cleanups.push(initCustomVideoControls(mediaEl, root));
       cleanups.push(initVideoSubtitleTools(mediaEl, asset, root));
       cleanups.push(initVideoOcrTools(asset, root));
       cleanups.push(initCollapsibleSections(root));
@@ -3151,11 +4027,25 @@ function initAssetPlayer(asset, root = document) {
     if (isVideo(asset) || isAudio(asset)) {
       cleanups.push(initAudioTools(mediaEl, root));
     }
+    const startAt = Math.max(0, Number(options.startAtSeconds) || 0);
+    if (startAt > 0) {
+      const seekToStart = () => {
+        try {
+          mediaEl.currentTime = Math.min(startAt, Number.isFinite(mediaEl.duration) ? mediaEl.duration : startAt);
+        } catch (_error) {
+          // ignore seek failures
+        }
+      };
+      if (mediaEl.readyState >= 1) {
+        seekToStart();
+      } else {
+        mediaEl.addEventListener('loadedmetadata', seekToStart, { once: true });
+        cleanups.push(() => mediaEl.removeEventListener('loadedmetadata', seekToStart));
+      }
+    }
   }
 
-  if (isPdf(asset)) {
-    cleanups.push(initPdfSearch(asset));
-  } else if (isDocument(asset)) {
+  if (isDocument(asset)) {
     cleanups.push(initDocumentPreview(asset));
   }
 
@@ -3180,7 +4070,8 @@ async function loadAssets() {
   const filters = serializeForm(searchForm);
   const params = new URLSearchParams();
   const selectedTypes = assetTypeFilters.filter((el) => el.checked).map((el) => String(el.value || '').toLowerCase());
-  const trashScope = assetTrashOnly?.checked ? 'all' : 'active';
+  const trashScopeRaw = String(filters.trash || 'active').trim().toLowerCase();
+  const trashScope = ['active', 'trash', 'all'].includes(trashScopeRaw) ? trashScopeRaw : 'active';
 
   if (selectedTypes.length === 0) {
     currentAssets = [];
@@ -3234,10 +4125,20 @@ async function openAsset(id, workflow) {
     activePlayerCleanup();
     activePlayerCleanup = null;
   }
+  if (activeDetailPinCleanup) {
+    activeDetailPinCleanup();
+    activeDetailPinCleanup = null;
+  }
 
   assetDetail.innerHTML = detailMarkup(asset, workflow);
   assetDetail.classList.toggle('video-detail-mode', isVideo(asset));
+  if (isVideo(asset)) {
+    activeDetailPinCleanup = initDetailVideoPin(assetDetail);
+  } else {
+    assetDetail.classList.remove('detail-video-pinned');
+  }
   activePlayerCleanup = initAssetPlayer(asset, assetDetail);
+  loadAssetTechnicalInfo(asset).catch(() => {});
   const ensureProxyBtn = document.getElementById('ensureProxyBtn');
   ensureProxyBtn?.addEventListener('click', async () => {
     try {
@@ -3250,7 +4151,9 @@ async function openAsset(id, workflow) {
   });
   const openVideoToolsModalBtn = document.getElementById('openVideoToolsModalBtn');
   openVideoToolsModalBtn?.addEventListener('click', () => {
-    openVideoToolsDialog(asset);
+    const panelMedia = assetDetail.querySelector('#assetMediaEl');
+    const startAtSeconds = panelMedia ? Number(panelMedia.currentTime || 0) : 0;
+    openVideoToolsDialog(asset, { startAtSeconds });
   });
 
   document.getElementById('editForm').addEventListener('submit', async (event) => {
@@ -3323,10 +4226,27 @@ async function openAsset(id, workflow) {
     await deleteApi(`/api/assets/${id}`);
     selectedAssetIds.delete(id);
     selectedAssetId = null;
+    if (activeDetailPinCleanup) {
+      activeDetailPinCleanup();
+      activeDetailPinCleanup = null;
+    }
     assetDetail.innerHTML = escapeHtml(t('select_asset'));
     assetDetail.classList.remove('video-detail-mode');
+    assetDetail.classList.remove('detail-video-pinned');
     await loadAssets();
   });
+}
+
+async function applyTagChipFilterToggle(clickedTag) {
+  const nextTag = String(clickedTag || '').trim();
+  if (!nextTag) return;
+  const tagInput = searchForm.querySelector('[name="tag"]');
+  const queryInput = searchForm.querySelector('[name="q"]');
+  const currentTag = String(tagInput?.value || '').trim();
+  const isSameTag = currentTag.localeCompare(nextTag, undefined, { sensitivity: 'base' }) === 0;
+  if (tagInput) tagInput.value = isSameTag ? '' : nextTag;
+  if (queryInput) queryInput.value = '';
+  await loadAssets();
 }
 
 assetGrid.addEventListener('click', async (event) => {
@@ -3334,15 +4254,7 @@ assetGrid.addEventListener('click', async (event) => {
   if (tagChip) {
     event.preventDefault();
     event.stopPropagation();
-    const clickedTag = String(tagChip.dataset.chipTag || '').trim();
-    if (!clickedTag) return;
-    const tagInput = searchForm.querySelector('[name="tag"]');
-    const queryInput = searchForm.querySelector('[name="q"]');
-    const currentTag = String(tagInput?.value || '').trim();
-    const isSameTag = currentTag.localeCompare(clickedTag, undefined, { sensitivity: 'base' }) === 0;
-    if (tagInput) tagInput.value = isSameTag ? '' : clickedTag;
-    if (queryInput) queryInput.value = '';
-    await loadAssets();
+    await applyTagChipFilterToggle(tagChip.dataset.chipTag);
     return;
   }
 
@@ -3364,8 +4276,13 @@ assetGrid.addEventListener('click', async (event) => {
       selectedAssetIds.delete(id);
       if (selectedAssetId === id) {
         selectedAssetId = null;
+        if (activeDetailPinCleanup) {
+          activeDetailPinCleanup();
+          activeDetailPinCleanup = null;
+        }
         assetDetail.textContent = t('select_asset');
         assetDetail.classList.remove('video-detail-mode');
+        assetDetail.classList.remove('detail-video-pinned');
       }
       await loadAssets();
       return;
@@ -3387,8 +4304,19 @@ assetGrid.addEventListener('click', async (event) => {
   openAsset(card.dataset.id, workflow).catch((err) => alert(err.message));
 });
 
+assetDetail.addEventListener('click', async (event) => {
+  const tagChip = event.target.closest('[data-chip-tag]');
+  if (!tagChip) return;
+  event.preventDefault();
+  event.stopPropagation();
+  await applyTagChipFilterToggle(tagChip.dataset.chipTag);
+});
+
 assetTypeFilters.forEach((input) => {
   input.addEventListener('change', () => {
+    if (document.activeElement === searchQueryInput) {
+      queueSearchSuggestions();
+    }
     loadAssets().catch((error) => alert(error.message));
   });
 });
@@ -3399,12 +4327,22 @@ typesSelectAllBtn?.addEventListener('click', () => {
   assetTypeFilters.forEach((input) => {
     input.checked = nextChecked;
   });
+  if (document.activeElement === searchQueryInput) {
+    queueSearchSuggestions();
+  }
   loadAssets().catch((error) => alert(error.message));
 });
 
-assetTrashOnly?.addEventListener('change', async () => {
-  searchForm.querySelector('[name="trash"]').value = assetTrashOnly.checked ? 'all' : 'active';
-  await loadAssets();
+assetViewListBtn?.addEventListener('click', () => {
+  assetViewMode = 'list';
+  localStorage.setItem(LOCAL_ASSET_VIEW_MODE, assetViewMode);
+  renderAssets(currentAssets);
+});
+
+assetViewThumbBtn?.addEventListener('click', () => {
+  assetViewMode = 'grid';
+  localStorage.setItem(LOCAL_ASSET_VIEW_MODE, assetViewMode);
+  renderAssets(currentAssets);
 });
 
 async function detectDurationSeconds(file) {
@@ -3507,16 +4445,87 @@ ingestForm.addEventListener('submit', async (event) => {
 
 searchForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  if (assetTrashOnly) {
-    const trashValue = searchForm.querySelector('[name="trash"]').value || 'active';
-    assetTrashOnly.checked = trashValue === 'all';
-  }
+  hideSearchSuggestions();
   await loadAssets();
+});
+
+searchQueryInput?.addEventListener('focus', () => {
+  if (searchSuggestHideTimer) {
+    clearTimeout(searchSuggestHideTimer);
+    searchSuggestHideTimer = null;
+  }
+  queueSearchSuggestions();
+});
+
+searchQueryInput?.addEventListener('input', () => {
+  queueSearchSuggestions();
+});
+
+searchQueryInput?.addEventListener('blur', () => {
+  if (searchSuggestHideTimer) clearTimeout(searchSuggestHideTimer);
+  searchSuggestHideTimer = setTimeout(() => {
+    hideSearchSuggestions();
+    searchSuggestHideTimer = null;
+  }, 120);
+});
+
+searchQueryInput?.addEventListener('keydown', async (event) => {
+  const isOpen = Boolean(searchSuggestList && !searchSuggestList.classList.contains('hidden'));
+  if (!isOpen && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+    queueSearchSuggestions();
+    return;
+  }
+  if (!isOpen) return;
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    setSearchSuggestionActive((searchSuggestActiveIndex < 0 ? -1 : searchSuggestActiveIndex) + 1);
+    return;
+  }
+  if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    setSearchSuggestionActive((searchSuggestActiveIndex < 0 ? searchSuggestItems.length : searchSuggestActiveIndex) - 1);
+    return;
+  }
+  if (event.key === 'Escape') {
+    hideSearchSuggestions();
+    return;
+  }
+  if (event.key === 'Enter' && searchSuggestActiveIndex >= 0 && searchSuggestItems[searchSuggestActiveIndex]) {
+    event.preventDefault();
+    await applySearchSuggestion(searchSuggestItems[searchSuggestActiveIndex], true);
+  }
+});
+
+searchSuggestList?.addEventListener('mousedown', (event) => {
+  event.preventDefault();
+});
+
+searchSuggestList?.addEventListener('click', async (event) => {
+  const button = event.target.closest('.search-suggest-item');
+  if (!button) return;
+  const index = Number(button.dataset.index);
+  if (!Number.isFinite(index) || index < 0 || index >= searchSuggestItems.length) return;
+  await applySearchSuggestion(searchSuggestItems[index], true);
+});
+
+['tag', 'type'].forEach((name) => {
+  const el = searchForm.querySelector(`[name="${name}"]`);
+  el?.addEventListener('input', () => {
+    if (document.activeElement === searchQueryInput) queueSearchSuggestions();
+  });
+});
+
+['status', 'trash'].forEach((name) => {
+  const el = searchForm.querySelector(`[name="${name}"]`);
+  el?.addEventListener('change', () => {
+    if (document.activeElement === searchQueryInput) queueSearchSuggestions();
+  });
 });
 
 languageSelect?.addEventListener('change', async (event) => {
   currentLang = event.target.value === 'tr' ? 'tr' : 'en';
   localStorage.setItem(LOCAL_LANG, currentLang);
+  hideSearchSuggestions();
   applyStaticI18n();
   await loadWorkflow();
   await loadAssets();
@@ -3528,8 +4537,13 @@ languageSelect?.addEventListener('change', async (event) => {
     const workflow = await api('/api/workflow');
     await openAsset(selectedAssetId, workflow);
   } else {
+    if (activeDetailPinCleanup) {
+      activeDetailPinCleanup();
+      activeDetailPinCleanup = null;
+    }
     assetDetail.textContent = t('select_asset');
     assetDetail.classList.remove('video-detail-mode');
+    assetDetail.classList.remove('detail-video-pinned');
   }
 });
 
@@ -3580,6 +4594,7 @@ logoutBtn?.addEventListener('click', () => {
 (async () => {
   try {
     await loadI18nFile();
+    await loadUiSettings();
     currentLang = currentLang === 'tr' ? 'tr' : 'en';
     if (languageSelect) languageSelect.value = currentLang;
     applyStaticI18n();
@@ -3589,6 +4604,7 @@ logoutBtn?.addEventListener('click', () => {
     initPanelSplitters();
     await loadCurrentUser();
     await loadWorkflow();
+    applyAssetViewModeUI();
     await loadAssets();
   } catch (error) {
     alert(error.message);

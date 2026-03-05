@@ -1,7 +1,14 @@
 node_modules
-npm-debug.log
+npm-debug.log*
 .git
 .gitignore
 .DS_Store
 uploads
+uploads/**
 data
+data/**
+.env
+.env.*
+docker-compose.yml
+Bilgiler
+keycloak-theme

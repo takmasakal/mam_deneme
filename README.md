@@ -72,6 +72,86 @@ docker compose logs -f postgres
 docker compose logs -f elasticsearch
 ```
 
+## Docker Hub Release (Multi-Arch, Media-Free)
+This project now includes a release flow for:
+- `linux/amd64` (x86_64)
+- `linux/arm64` (ARM)
+
+Image build context excludes local media/metadata paths via `.dockerignore` (`uploads/`, `data/`, `.env`, etc.).
+
+1. Sign in to Docker Hub:
+   ```bash
+   docker login
+   ```
+2. (Optional) Build locally without push:
+   ```bash
+   PUSH=0 DOCKERHUB_NAMESPACE=takmasakal IMAGE_NAME=mam IMAGE_TAG=latest ./scripts/publish-dockerhub.sh
+   ```
+3. Verify image does not contain local media/data:
+   ```bash
+   ./scripts/verify-image-clean.sh takmasakal/mam:latest
+   ```
+4. Publish multi-arch image:
+   ```bash
+   DOCKERHUB_NAMESPACE=takmasakal IMAGE_NAME=mam IMAGE_TAG=latest ./scripts/publish-dockerhub.sh
+   ```
+
+## Quick Start (Docker + Keycloak)
+### EN
+1. Start full stack:
+   ```bash
+   docker compose up --build -d
+   ```
+2. Open MAM login: `http://localhost:3000`
+3. Open Keycloak admin: `http://localhost:8081`
+4. Login to Keycloak admin (default): `admin / admin`
+5. In Keycloak, create/select realm `mam`, then create user and set password:
+   - Users -> Add user
+   - Credentials -> Set password (`Temporary = OFF`)
+6. (Optional) Assign roles:
+   - `admin-access`
+   - `asset-delete`
+7. Login to MAM with that user.
+
+### TR
+1. Tüm servisi başlat:
+   ```bash
+   docker compose up --build -d
+   ```
+2. MAM giriş sayfasını aç: `http://localhost:3000`
+3. Keycloak admin panelini aç: `http://localhost:8081`
+4. Varsayılan admin ile giriş yap: `admin / admin`
+5. Keycloak'ta `mam` realm'ini seç/oluştur, kullanıcı oluştur ve şifre ver:
+   - Users -> Add user
+   - Credentials -> Şifre belirle (`Temporary = OFF`)
+6. (Opsiyonel) Rol ata:
+   - `admin-access`
+   - `asset-delete`
+7. Bu kullanıcı ile MAM'e giriş yap.
+
+## One-Command VM Setup (Turnkey)
+Use this when you want a ready stack (app + postgres + elasticsearch + keycloak + oauth2-proxy) with minimal manual Keycloak work.
+
+1. Prepare generated env + realm import (replace `VM_IP` with your server IP):
+   ```bash
+   ./deploy/init.sh VM_IP
+   ```
+2. Start turnkey stack:
+   ```bash
+   docker compose --env-file deploy/.env.easy -f docker-compose.easy.yml up -d
+   ```
+3. Open:
+   - MAM login: `http://VM_IP:3000`
+   - Keycloak admin: `http://VM_IP:8081`
+
+Generated default users in realm `mam`:
+- `mamadmin / mamadmin` (roles: `admin-access`, `asset-delete`)
+- `mamuser / mamuser`
+
+Note:
+- Keycloak admin console account comes from `deploy/.env.easy` (`KEYCLOAK_ADMIN`, `KEYCLOAK_ADMIN_PASSWORD`).
+- If you re-run `./deploy/init.sh`, it regenerates the realm import and `.env.easy`.
+
 ## Login + LDAP (Keycloak)
 Keycloak is a good fit here because it gives you:
 - A ready login page and MFA/session management
@@ -107,6 +187,58 @@ This Compose setup uses:
    ```
 
 After this, open `http://localhost:3000`. You will be redirected to Keycloak login (which authenticates against LDAP once federation is configured).
+
+### Keycloak admin quick summary (EN)
+Use this checklist when preparing a fresh Docker deployment:
+
+1. Open admin console: `http://localhost:8081` and login with admin user.
+2. Create/select realm `mam` (do not stay on `master` for app users).
+3. Create or verify client `mam-web`:
+   - Redirect URI: `http://localhost:3000/oauth2/callback`
+   - Web origin: `http://localhost:3000`
+4. Create roles (recommended):
+   - `admin-access` (admin page access)
+   - `asset-delete` (delete permission)
+5. Create user:
+   - Users -> Add user
+   - Set username/email and save
+   - Credentials -> Set password (turn Temporary OFF)
+6. Assign roles to user:
+   - Role mapping -> add needed roles (`admin-access`, `asset-delete`, or basic user only)
+7. (Optional) Configure LDAP:
+   - User federation -> LDAP
+   - Set LDAP URL, bind DN/password, users DN, and sync settings
+8. Restart auth proxy if client secret/env changed:
+   ```bash
+   docker compose up -d oauth2-proxy
+   ```
+9. Test login from `http://localhost:3000`.
+
+### Keycloak admin hızlı özet (TR)
+Yeni bir Docker kurulumu için kısa kontrol listesi:
+
+1. Admin panelini aç: `http://localhost:8081` ve admin hesabı ile giriş yap.
+2. `mam` realm'ini oluştur/seç (`master` realm üzerinde uygulama kullanıcılarını yönetme).
+3. `mam-web` client'ını oluştur veya doğrula:
+   - Redirect URI: `http://localhost:3000/oauth2/callback`
+   - Web origin: `http://localhost:3000`
+4. Rolleri oluştur (önerilir):
+   - `admin-access` (yönetim sayfası erişimi)
+   - `asset-delete` (silme yetkisi)
+5. Kullanıcı oluştur:
+   - Users -> Add user
+   - Kullanıcı adı/e-posta gir ve kaydet
+   - Credentials -> Şifre belirle (Temporary kapalı)
+6. Kullanıcıya rol ata:
+   - Role mapping -> gerekli rolleri ekle (`admin-access`, `asset-delete` veya sadece normal kullanıcı)
+7. (Opsiyonel) LDAP bağla:
+   - User federation -> LDAP
+   - LDAP URL, bind DN/şifre, users DN ve senkron ayarlarını gir
+8. Client secret/env değiştiyse auth proxy'yi yeniden başlat:
+   ```bash
+   docker compose up -d oauth2-proxy
+   ```
+9. `http://localhost:3000` üzerinden giriş testi yap.
 
 ## API quick reference
 - `GET /api/workflow`

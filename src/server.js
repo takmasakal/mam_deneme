@@ -13,6 +13,9 @@ const PROXIES_DIR = path.join(UPLOADS_DIR, 'proxies');
 const THUMBNAILS_DIR = path.join(UPLOADS_DIR, 'thumbnails');
 const SUBTITLES_DIR = path.join(UPLOADS_DIR, 'subtitles');
 const OCR_DIR = path.join(UPLOADS_DIR, 'ocr');
+const OCR_FRAMES_DIR = path.join(OCR_DIR, '_frames');
+const PADDLE_CACHE_DIR = process.env.PADDLE_PDX_CACHE_HOME || path.join(UPLOADS_DIR, '.paddlex');
+const ALLOW_PADDLE_OCR_FALLBACK = String(process.env.PADDLE_OCR_ALLOW_FALLBACK || 'false').trim().toLowerCase() === 'true';
 const proxyJobs = new Map();
 const subtitleJobs = new Map();
 const videoOcrJobs = new Map();
@@ -25,6 +28,7 @@ const WORKFLOW = ['Ingested', 'QC', 'Approved', 'Published', 'Archived'];
 const DEFAULT_ADMIN_SETTINGS = {
   workflowTrackingEnabled: true,
   autoProxyBackfillOnUpload: false,
+  playerUiMode: 'native',
   apiTokenEnabled: false,
   apiToken: '',
   oidcBearerEnabled: false,
@@ -32,6 +36,12 @@ const DEFAULT_ADMIN_SETTINGS = {
   oidcJwksUrl: process.env.OIDC_JWKS_URL || 'http://keycloak:8080/realms/mam/protocol/openid-connect/certs',
   oidcAudience: process.env.OIDC_AUDIENCE || ''
 };
+
+function normalizePlayerUiMode(value) {
+  const mode = String(value || '').trim().toLowerCase();
+  if (mode === 'custom' || mode === 'videojs' || mode === 'vidstack' || mode === 'mpegdash') return mode;
+  return 'native';
+}
 const DEFAULT_USER_PERMISSIONS = {};
 const ELASTIC_URL = process.env.ELASTIC_URL || 'http://localhost:9200';
 const ELASTIC_INDEX = process.env.ELASTIC_INDEX || 'mam_assets';
@@ -54,6 +64,12 @@ if (!fs.existsSync(SUBTITLES_DIR)) {
 }
 if (!fs.existsSync(OCR_DIR)) {
   fs.mkdirSync(OCR_DIR, { recursive: true });
+}
+if (!fs.existsSync(OCR_FRAMES_DIR)) {
+  fs.mkdirSync(OCR_FRAMES_DIR, { recursive: true });
+}
+if (!fs.existsSync(PADDLE_CACHE_DIR)) {
+  fs.mkdirSync(PADDLE_CACHE_DIR, { recursive: true });
 }
 
 function escapeElasticId(value) {
@@ -148,12 +164,41 @@ async function searchAssetIdsElastic(queryText, limit = 500) {
   return hits.map((h) => String(h._id || '')).filter(Boolean);
 }
 
+async function suggestAssetIdsElastic(queryText, limit = 10) {
+  const q = String(queryText || '').trim();
+  if (!q) return [];
+  await ensureElasticIndex();
+  const result = await elasticRequest('POST', `/${ELASTIC_INDEX}/_search`, {
+    size: Math.max(1, Math.min(20, Number(limit) || 10)),
+    query: {
+      bool: {
+        should: [
+          { match_phrase_prefix: { title: { query: q, boost: 8 } } },
+          { match: { title: { query: q, fuzziness: 'AUTO', boost: 5 } } },
+          { match_phrase_prefix: { owner: { query: q, boost: 2 } } },
+          { match_phrase_prefix: { tags: { query: q, boost: 2 } } }
+        ],
+        minimum_should_match: 1
+      }
+    },
+    _source: false
+  });
+  if (!result.ok) return null;
+  const hits = result.payload?.hits?.hits;
+  if (!Array.isArray(hits)) return [];
+  return hits.map((h) => String(h._id || '')).filter(Boolean);
+}
+
 async function backfillElasticIndex() {
   await ensureElasticIndex();
   const result = await pool.query('SELECT id FROM assets');
   for (const row of result.rows) {
     await indexAssetToElastic(row.id).catch(() => {});
   }
+}
+
+function sqlTagFold(expression) {
+  return `REPLACE(LOWER(TRANSLATE(${expression}, 'İIı', 'iii')), U&'\\0307', '')`;
 }
 
 function sanitizeFileName(fileName) {
@@ -204,6 +249,38 @@ function formatTimecode(seconds) {
   const ss = String(Math.floor(s % 60)).padStart(2, '0');
   const mmm = String(Math.floor((s - Math.floor(s)) * 1000)).padStart(3, '0');
   return `${hh}:${mm}:${ss}.${mmm}`;
+}
+
+function parseAdminTimecodeToSeconds(value, fps = 25) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (/^\d+(\.\d+)?$/.test(raw)) {
+    const sec = Number(raw);
+    if (!Number.isFinite(sec) || sec < 0) throw new Error('Invalid timecode');
+    return sec;
+  }
+
+  const normalized = raw.replace(',', '.');
+  const frameMatch = normalized.match(/^(\d{1,2}):(\d{2}):(\d{2}):(\d{1,2})$/);
+  if (frameMatch) {
+    const hh = Number(frameMatch[1]);
+    const mm = Number(frameMatch[2]);
+    const ss = Number(frameMatch[3]);
+    const ff = Number(frameMatch[4]);
+    if (mm > 59 || ss > 59 || ff >= fps) throw new Error('Invalid timecode');
+    return (hh * 3600) + (mm * 60) + ss + (ff / fps);
+  }
+
+  const basicMatch = normalized.match(/^(\d{1,2}):(\d{2}):(\d{2}(?:\.\d+)?)$/);
+  if (basicMatch) {
+    const hh = Number(basicMatch[1]);
+    const mm = Number(basicMatch[2]);
+    const ss = Number(basicMatch[3]);
+    if (mm > 59 || ss >= 60) throw new Error('Invalid timecode');
+    return (hh * 3600) + (mm * 60) + ss;
+  }
+
+  throw new Error('Invalid timecode');
 }
 
 function normalizeOcrText(raw) {
@@ -338,6 +415,43 @@ function getIngestStoragePath({ type, mimeType, fileName }) {
   const absoluteDir = path.join(UPLOADS_DIR, relativeDir);
   fs.mkdirSync(absoluteDir, { recursive: true });
   return { absoluteDir, relativeDir };
+}
+
+function getDatePart(value) {
+  const d = value ? new Date(value) : new Date();
+  if (!Number.isFinite(d.getTime())) return new Date().toISOString().slice(0, 10);
+  return d.toISOString().slice(0, 10);
+}
+
+function artifactRoot(kind) {
+  if (kind === 'proxies') return PROXIES_DIR;
+  if (kind === 'thumbnails') return THUMBNAILS_DIR;
+  if (kind === 'subtitles') return SUBTITLES_DIR;
+  if (kind === 'ocr') return OCR_DIR;
+  throw new Error(`Unknown artifact kind: ${kind}`);
+}
+
+function buildArtifactPath(kind, storedName, dateValue) {
+  const datePart = getDatePart(dateValue);
+  const safeName = sanitizeFileName(storedName);
+  const dir = path.join(artifactRoot(kind), datePart);
+  fs.mkdirSync(dir, { recursive: true });
+  const absolutePath = path.join(dir, safeName);
+  const publicUrl = `/uploads/${kind}/${datePart}/${safeName}`;
+  return { absolutePath, publicUrl, datePart };
+}
+
+function createOcrFrameWorkDir(dateValue) {
+  const datePart = getDatePart(dateValue);
+  const dir = path.join(OCR_FRAMES_DIR, datePart, `${Date.now()}-${nanoid()}-frames`);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function safeRmDir(target) {
+  try {
+    if (target && fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
+  } catch (_error) {}
 }
 
 function inferAssetType(inputType, mimeType) {
@@ -519,17 +633,17 @@ async function ensureDocumentThumbnailForRow(row) {
   }
 
   const thumbStoredName = `${Date.now()}-${nanoid()}-doc-thumb-v2.svg`;
-  const thumbAbsolutePath = path.join(THUMBNAILS_DIR, thumbStoredName);
+  const thumbOut = buildArtifactPath('thumbnails', thumbStoredName, row.created_at);
   const extLabel = (ext || 'DOC').toUpperCase();
 
   try {
-    await generateDocumentThumbnail(inputPath, thumbAbsolutePath, {
+    await generateDocumentThumbnail(inputPath, thumbOut.absolutePath, {
       fileName: row.file_name,
       title: row.title || row.file_name || 'Document',
       extLabel,
       includeContent: isTextDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name })
     });
-    const thumbnailUrl = `/uploads/thumbnails/${thumbStoredName}`;
+    const thumbnailUrl = thumbOut.publicUrl;
     await pool.query(
       'UPDATE assets SET thumbnail_url = $2, updated_at = $3 WHERE id = $1',
       [row.id, thumbnailUrl, new Date().toISOString()]
@@ -561,10 +675,10 @@ async function ensurePdfThumbnailForRow(row) {
 
   if (inputPath && fs.existsSync(inputPath)) {
     const pdfThumbName = `${Date.now()}-${nanoid()}-pdf-thumb.jpg`;
-    const pdfThumbPath = path.join(THUMBNAILS_DIR, pdfThumbName);
+    const pdfThumbOut = buildArtifactPath('thumbnails', pdfThumbName, row.created_at);
     try {
-      await generatePdfThumbnail(inputPath, pdfThumbPath);
-      thumbnailUrl = `/uploads/thumbnails/${pdfThumbName}`;
+      await generatePdfThumbnail(inputPath, pdfThumbOut.absolutePath);
+      thumbnailUrl = pdfThumbOut.publicUrl;
     } catch (_error) {
       thumbnailUrl = '';
     }
@@ -572,13 +686,13 @@ async function ensurePdfThumbnailForRow(row) {
 
   if (!thumbnailUrl) {
     const fallbackName = `${Date.now()}-${nanoid()}-pdf-thumb.svg`;
-    const fallbackPath = path.join(THUMBNAILS_DIR, fallbackName);
+    const fallbackOut = buildArtifactPath('thumbnails', fallbackName, row.created_at);
     try {
-      await generatePdfFallbackThumbnail(fallbackPath, {
+      await generatePdfFallbackThumbnail(fallbackOut.absolutePath, {
         fileName: row.file_name,
         title: row.title || row.file_name || 'PDF Document'
       });
-      thumbnailUrl = `/uploads/thumbnails/${fallbackName}`;
+      thumbnailUrl = fallbackOut.publicUrl;
     } catch (_error) {
       return row;
     }
@@ -1074,6 +1188,16 @@ function mapAssetRow(row) {
       createdAt: row.updated_at || row.created_at || new Date().toISOString()
     }];
   }
+  const listCuts = Array.isArray(row.cuts)
+    ? row.cuts
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null;
+        const label = String(item.label || '').trim();
+        if (!label) return null;
+        return { label };
+      })
+      .filter(Boolean)
+    : [];
   return {
     id: row.id,
     title: row.title,
@@ -1090,10 +1214,12 @@ function mapAssetRow(row) {
     fileName: row.file_name,
     mimeType: row.mime_type,
     dcMetadata,
+    audioChannels: Number(dcMetadata.audioChannels) || 0,
     subtitleUrl: String(dcMetadata.subtitleUrl || '').trim(),
     subtitleLang: dcMetadata.subtitleUrl ? normalizeSubtitleLang(dcMetadata.subtitleLang) : '',
     subtitleLabel: String(dcMetadata.subtitleLabel || '').trim(),
     subtitleItems,
+    cuts: listCuts,
     status: row.status,
     deletedAt: row.deleted_at,
     inTrash: Boolean(row.deleted_at),
@@ -1204,6 +1330,7 @@ async function createAssetRecord(input) {
 }
 
 async function generateVideoProxy(inputPath, outputPath) {
+  const audioStreams = await getMediaAudioStreams(inputPath);
   await new Promise((resolve, reject) => {
     const args = [
       '-y',
@@ -1211,8 +1338,6 @@ async function generateVideoProxy(inputPath, outputPath) {
       inputPath,
       '-map',
       '0:v:0',
-      '-map',
-      '0:a?',
       '-c:v',
       'libx264',
       '-preset',
@@ -1226,15 +1351,41 @@ async function generateVideoProxy(inputPath, outputPath) {
       '-level',
       '4.0',
       '-vf',
-      'scale=640:-2:force_original_aspect_ratio=decrease',
-      '-c:a',
-      'aac',
-      '-b:a',
-      '128k',
+      'scale=640:-2:force_original_aspect_ratio=decrease'
+    ];
+
+    if (audioStreams.length === 1) {
+      const channels = Math.max(1, Number(audioStreams[0].channels) || 2);
+      args.push(
+        '-map',
+        '0:a:0',
+        '-c:a',
+        'aac',
+        '-b:a',
+        channels > 2 ? '256k' : '128k'
+      );
+    } else if (audioStreams.length > 1) {
+      const inputs = audioStreams.map((_s, idx) => `[0:a:${idx}]`).join('');
+      const mergedChannels = audioStreams.reduce((acc, s) => acc + Math.max(1, Number(s.channels) || 1), 0);
+      args.push(
+        '-filter_complex',
+        `${inputs}amerge=inputs=${audioStreams.length}[aout]`,
+        '-map',
+        '[aout]',
+        '-c:a',
+        'aac',
+        '-ac',
+        String(Math.max(2, mergedChannels)),
+        '-b:a',
+        mergedChannels > 2 ? '384k' : '128k'
+      );
+    }
+
+    args.push(
       '-movflags',
       '+faststart',
       outputPath
-    ];
+    );
 
     const ffmpeg = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
@@ -1266,9 +1417,11 @@ async function runFfmpeg(args) {
   });
 }
 
-function runCommandCapture(cmd, args) {
+function runCommandCapture(cmd, args, options = {}) {
+  const env = options?.env ? { ...process.env, ...options.env } : process.env;
+  const cwd = options?.cwd || undefined;
   return new Promise((resolve) => {
-    const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], env, cwd });
     let stdout = '';
     let stderr = '';
     p.stdout.on('data', (chunk) => {
@@ -1324,7 +1477,8 @@ async function transcribeMediaToVtt(inputPath, outputPath, options = {}) {
 async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
   const intervalSec = Math.max(1, Math.min(30, Number(options.intervalSec) || 4));
   const ocrLang = String(options.ocrLang || 'eng+tur').trim() || 'eng+tur';
-  const workDir = path.join(OCR_DIR, `${Date.now()}-${nanoid()}-frames`);
+  const ocrEngine = normalizeOcrEngine(options.ocrEngine);
+  const workDir = String(options.workDir || '').trim() || createOcrFrameWorkDir();
   fs.mkdirSync(workDir, { recursive: true });
   const framePattern = path.join(workDir, 'frame-%06d.jpg');
   const ffmpeg = await runCommandCapture('ffmpeg', [
@@ -1347,6 +1501,21 @@ async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
 
   if (!files.length) throw new Error('No frames extracted for OCR');
 
+  if (ocrEngine === 'paddle') {
+    const result = await extractVideoOcrToTextPaddle({ workDir, files, outputPath, intervalSec, ocrLang });
+    return { ...result, workDir };
+  }
+
+  const result = await extractVideoOcrToTextTesseract({ workDir, files, outputPath, intervalSec, ocrLang });
+  return { ...result, workDir };
+}
+
+function normalizeOcrEngine(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  return raw === 'paddle' ? 'paddle' : 'tesseract';
+}
+
+async function extractVideoOcrToTextTesseract({ workDir, files, outputPath, intervalSec, ocrLang }) {
   const lines = [];
   let prevNorm = '';
   for (let i = 0; i < files.length; i += 1) {
@@ -1367,17 +1536,93 @@ async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
     : '[00:00:00.000] No OCR text detected.\n';
   fs.writeFileSync(outputPath, output, 'utf8');
 
-  try {
-    fs.rmSync(workDir, { recursive: true, force: true });
-  } catch (_error) {}
+  return { lines: lines.length, engine: 'tesseract' };
+}
 
-  return { lines: lines.length };
+async function extractVideoOcrToTextPaddle({ workDir, files, outputPath, intervalSec, ocrLang }) {
+  const sanitizeErr = (value) => String(value || '')
+    .replace(/\x1B\[[0-9;]*[A-Za-z]/g, '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-8)
+    .join(' | ')
+    .slice(0, 700);
+
+  const scriptPath = path.join(__dirname, 'video_ocr_paddle.py');
+  let payload = { items: [] };
+  let lastErr = '';
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const run = await runCommandCapture('python3', [
+      scriptPath,
+      '--frames-dir',
+      workDir,
+      '--lang',
+      ocrLang
+    ], {
+      env: {
+        PYTHONWARNINGS: 'ignore',
+        PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: 'True',
+        PADDLE_PDX_CACHE_HOME: PADDLE_CACHE_DIR,
+        PADDLE_HOME: PADDLE_CACHE_DIR
+      }
+    });
+    if (!run.ok) {
+      lastErr = sanitizeErr(run.stderr || run.stdout || '');
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        continue;
+      }
+      throw new Error(lastErr ? `PaddleOCR init failed: ${lastErr}` : 'PaddleOCR init failed');
+    }
+
+    try {
+      const rawOut = String(run.stdout || '');
+      const enginePos = rawOut.lastIndexOf('"engine"');
+      const start = enginePos >= 0 ? rawOut.lastIndexOf('{', enginePos) : rawOut.indexOf('{');
+      const end = rawOut.lastIndexOf('}');
+      payload = JSON.parse(start >= 0 && end >= start ? rawOut.slice(start, end + 1) : '{}');
+      break;
+    } catch (_error) {
+      lastErr = sanitizeErr(run.stdout || run.stderr || 'Could not parse PaddleOCR output');
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        continue;
+      }
+      throw new Error(lastErr ? `PaddleOCR output parse failed: ${lastErr}` : 'PaddleOCR output parse failed');
+    }
+  }
+
+  const itemMap = new Map(
+    (Array.isArray(payload.items) ? payload.items : [])
+      .map((item) => [String(item?.name || ''), normalizeOcrText(String(item?.text || ''))])
+      .filter(([name]) => Boolean(name))
+  );
+
+  const lines = [];
+  let prevNorm = '';
+  for (let i = 0; i < files.length; i += 1) {
+    const text = String(itemMap.get(files[i]) || '');
+    if (!text) continue;
+    const norm = text.toLocaleLowerCase('tr').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    if (!norm || norm === prevNorm) continue;
+    prevNorm = norm;
+    const sec = i * intervalSec;
+    lines.push(`[${formatTimecode(sec)}] ${text}`);
+  }
+
+  const output = lines.length
+    ? `${lines.join('\n')}\n`
+    : '[00:00:00.000] No OCR text detected.\n';
+  fs.writeFileSync(outputPath, output, 'utf8');
+  return { lines: lines.length, engine: 'paddle' };
 }
 
 function queueVideoOcrJob(row, options = {}) {
   const jobId = nanoid();
   const intervalSec = Math.max(1, Math.min(30, Number(options.intervalSec) || 4));
   const ocrLang = String(options.ocrLang || 'eng+tur').trim() || 'eng+tur';
+  const ocrEngine = normalizeOcrEngine(options.ocrEngine);
   const now = new Date().toISOString();
   const job = {
     jobId,
@@ -1385,9 +1630,14 @@ function queueVideoOcrJob(row, options = {}) {
     status: 'queued',
     intervalSec,
     ocrLang,
+    ocrEngine,
+    requestedEngine: ocrEngine,
     resultUrl: '',
+    resultPath: '',
     resultLabel: '',
     lineCount: 0,
+    frameDir: '',
+    warning: '',
     error: '',
     startedAt: now,
     updatedAt: now,
@@ -1404,18 +1654,46 @@ function queueVideoOcrJob(row, options = {}) {
       const inputPath = resolveAssetInputPath(row);
       if (!inputPath) throw new Error('Source media not found');
       const base = sanitizeFileName(path.basename(String(row.file_name || row.id), path.extname(String(row.file_name || ''))));
-      const outName = `${Date.now()}-${nanoid()}-${base}-ocr.txt`;
-      const outPath = path.join(OCR_DIR, outName);
-      const result = await extractVideoOcrToText(inputPath, outPath, { intervalSec, ocrLang });
+      let selectedEngine = ocrEngine;
+      let outName = `${Date.now()}-${nanoid()}-${base}-ocr-${selectedEngine}.txt`;
+      let out = buildArtifactPath('ocr', outName, row.created_at);
+      const frameDir = createOcrFrameWorkDir(row.created_at);
+      running.frameDir = frameDir;
+      let result;
+      try {
+        result = await extractVideoOcrToText(inputPath, out.absolutePath, {
+          intervalSec,
+          ocrLang,
+          ocrEngine: selectedEngine,
+          workDir: frameDir
+        });
+      } catch (primaryError) {
+        if (selectedEngine !== 'paddle' || !ALLOW_PADDLE_OCR_FALLBACK) throw primaryError;
+        // Paddle can crash in some host/container combinations; fallback to tesseract.
+        selectedEngine = 'tesseract';
+        outName = `${Date.now()}-${nanoid()}-${base}-ocr-${selectedEngine}.txt`;
+        out = buildArtifactPath('ocr', outName, row.created_at);
+        result = await extractVideoOcrToText(inputPath, out.absolutePath, {
+          intervalSec,
+          ocrLang,
+          ocrEngine: selectedEngine,
+          workDir: frameDir
+        });
+        running.warning = `PaddleOCR failed, fallback engine used: tesseract. (${String(primaryError?.message || 'unknown error').slice(0, 220)})`;
+      }
       running.status = 'completed';
-      running.resultUrl = `/uploads/ocr/${outName}`;
+      running.resultUrl = out.publicUrl;
+      running.resultPath = out.absolutePath;
       running.resultLabel = outName;
       running.lineCount = Number(result.lines || 0);
+      running.ocrEngine = normalizeOcrEngine(result.engine || selectedEngine);
       running.finishedAt = new Date().toISOString();
       running.updatedAt = running.finishedAt;
     } catch (error) {
       running.status = 'failed';
       running.error = String(error?.message || 'Video OCR failed').slice(0, 900);
+      safeRmDir(running.frameDir);
+      running.frameDir = '';
       running.finishedAt = new Date().toISOString();
       running.updatedAt = running.finishedAt;
     }
@@ -1454,15 +1732,15 @@ function queueSubtitleGenerationJob(row, options = {}) {
       const inputPath = resolveAssetInputPath(row);
       if (!inputPath) throw new Error('Source media not found for transcription');
       const storedName = `${Date.now()}-${nanoid()}-auto-${sanitizeFileName(row.id)}.vtt`;
-      const absolutePath = path.join(SUBTITLES_DIR, storedName);
-      const transcription = await transcribeMediaToVtt(inputPath, absolutePath, {
+      const subtitleOut = buildArtifactPath('subtitles', storedName, row.created_at);
+      const transcription = await transcribeMediaToVtt(inputPath, subtitleOut.absolutePath, {
         lang: subtitleLang,
         model
       });
-      if (!transcription.ok || !fs.existsSync(absolutePath) || fs.statSync(absolutePath).size < 16) {
+      if (!transcription.ok || !fs.existsSync(subtitleOut.absolutePath) || fs.statSync(subtitleOut.absolutePath).size < 16) {
         throw new Error(String(transcription.stderr || transcription.stdout || 'Subtitle transcription failed'));
       }
-      const subtitleUrl = `/uploads/subtitles/${storedName}`;
+      const subtitleUrl = subtitleOut.publicUrl;
       const updatedRow = await saveAssetSubtitleMetadata(row.id, row, subtitleUrl, subtitleLang, subtitleLabel);
       running.status = 'completed';
       running.subtitleUrl = subtitleUrl;
@@ -1778,7 +2056,153 @@ async function getVideoDurationSeconds(inputPath) {
   });
 }
 
-async function generateVideoThumbnail(inputPath, outputPath) {
+async function getMediaAudioStreams(inputPath) {
+  if (!inputPath || !fs.existsSync(inputPath)) return [];
+  const probe = await runCommandCapture('ffprobe', [
+    '-v',
+    'error',
+    '-select_streams',
+    'a',
+    '-show_entries',
+    'stream=index,channels',
+    '-of',
+    'json',
+    inputPath
+  ]);
+  if (!probe.ok) return [];
+  try {
+    const parsed = JSON.parse(String(probe.stdout || '{}'));
+    const streams = Array.isArray(parsed?.streams) ? parsed.streams : [];
+    return streams
+      .map((s) => ({
+        index: Number.isFinite(Number(s?.index)) ? Number(s.index) : null,
+        channels: Number.isFinite(Number(s?.channels)) ? Math.max(0, Math.floor(Number(s.channels))) : 0
+      }))
+      .filter((s) => Number.isFinite(s.index));
+  } catch (_error) {
+    return [];
+  }
+}
+
+async function getMediaAudioChannelCount(inputPath) {
+  const streams = await getMediaAudioStreams(inputPath);
+  if (!streams.length) return 0;
+  const sum = streams.reduce((acc, s) => acc + Math.max(0, Number(s.channels) || 0), 0);
+  if (sum > 0) return sum;
+  return Math.max(0, Number(streams[0]?.channels) || 0);
+}
+
+function parseFfprobeFraction(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return 0;
+  if (!raw.includes('/')) {
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  }
+  const [a, b] = raw.split('/');
+  const na = Number(a);
+  const nb = Number(b);
+  if (!Number.isFinite(na) || !Number.isFinite(nb) || nb === 0) return 0;
+  return na / nb;
+}
+
+async function probeMediaTechnicalInfo(inputPath) {
+  if (!inputPath || !fs.existsSync(inputPath)) return { available: false };
+  const probe = await runCommandCapture('ffprobe', [
+    '-v',
+    'error',
+    '-print_format',
+    'json',
+    '-show_format',
+    '-show_streams',
+    inputPath
+  ]);
+  if (!probe.ok) return { available: false };
+
+  try {
+    const parsed = JSON.parse(String(probe.stdout || '{}'));
+    const format = parsed?.format && typeof parsed.format === 'object' ? parsed.format : {};
+    const streams = Array.isArray(parsed?.streams) ? parsed.streams : [];
+    const video = streams.find((s) => String(s?.codec_type || '') === 'video') || null;
+    const audioStreams = streams.filter((s) => String(s?.codec_type || '') === 'audio');
+    const audioPrimary = audioStreams[0] || null;
+    const fps = video ? parseFfprobeFraction(video.avg_frame_rate || video.r_frame_rate) : 0;
+
+    return {
+      available: true,
+      container: String(format.format_name || '').split(',').filter(Boolean),
+      durationSeconds: Number.isFinite(Number(format.duration)) ? Math.max(0, Number(format.duration)) : 0,
+      bitRate: Number.isFinite(Number(format.bit_rate)) ? Math.max(0, Number(format.bit_rate)) : 0,
+      fileSize: Number.isFinite(Number(format.size)) ? Math.max(0, Number(format.size)) : 0,
+      video: video ? {
+        codec: String(video.codec_name || '').trim(),
+        profile: String(video.profile || '').trim(),
+        width: Number.isFinite(Number(video.width)) ? Math.max(0, Number(video.width)) : 0,
+        height: Number.isFinite(Number(video.height)) ? Math.max(0, Number(video.height)) : 0,
+        pixelFormat: String(video.pix_fmt || '').trim(),
+        frameRate: fps > 0 ? fps : 0
+      } : null,
+      audio: {
+        streamCount: audioStreams.length,
+        codecs: Array.from(new Set(audioStreams.map((s) => String(s.codec_name || '').trim()).filter(Boolean))),
+        channels: audioPrimary && Number.isFinite(Number(audioPrimary.channels)) ? Math.max(0, Number(audioPrimary.channels)) : 0,
+        sampleRate: audioPrimary && Number.isFinite(Number(audioPrimary.sample_rate)) ? Math.max(0, Number(audioPrimary.sample_rate)) : 0
+      }
+    };
+  } catch (_error) {
+    return { available: false };
+  }
+}
+
+function resolvePlaybackInputPath(row) {
+  const proxyPath = publicUploadUrlToAbsolutePath(resolveStoredUrl(row?.proxy_url, 'proxies'));
+  if (proxyPath && fs.existsSync(proxyPath)) return proxyPath;
+  return resolveAssetInputPath(row);
+}
+
+async function generateVideoThumbnail(inputPath, outputPath, options = {}) {
+  const requestedSeek = Number(options?.seekSeconds);
+  if (Number.isFinite(requestedSeek) && requestedSeek >= 0) {
+    const duration = await getVideoDurationSeconds(inputPath);
+    const maxSeek = duration > 0 ? Math.max(0, duration - 0.04) : requestedSeek;
+    const seek = Math.max(0, Math.min(requestedSeek, maxSeek));
+    try {
+      await runFfmpeg([
+        '-y',
+        '-i',
+        inputPath,
+        '-ss',
+        String(seek),
+        '-frames:v',
+        '1',
+        '-vf',
+        'scale=480:-1',
+        '-q:v',
+        '4',
+        outputPath
+      ]);
+      if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) return;
+    } catch (_error) {
+      // retry below with alternative seek ordering
+    }
+    await runFfmpeg([
+      '-y',
+      '-ss',
+      String(seek),
+      '-i',
+      inputPath,
+      '-frames:v',
+      '1',
+      '-vf',
+      'scale=480:-1',
+      '-q:v',
+      '4',
+      outputPath
+    ]);
+    if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) return;
+    throw new Error('Could not capture thumbnail at requested timecode');
+  }
+
   try {
     await runFfmpeg([
       '-y',
@@ -1815,6 +2239,39 @@ async function generateVideoThumbnail(inputPath, outputPath) {
     '4',
     outputPath
   ]);
+}
+
+async function regenerateVideoThumbnailForAsset(row, options = {}) {
+  if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+    throw new Error('Thumbnail generation with timecode is supported only for video assets');
+  }
+  const inputPath = resolveAssetInputPath(row);
+  if (!inputPath || !fs.existsSync(inputPath)) {
+    throw new Error('Source media not found');
+  }
+
+  const tcRaw = String(options.timecode || '').trim();
+  const timecodeSeconds = parseAdminTimecodeToSeconds(tcRaw, 25);
+  const thumbStoredName = `${Date.now()}-${nanoid()}-thumb.jpg`;
+  const thumbOut = buildArtifactPath('thumbnails', thumbStoredName, row.created_at);
+  await generateVideoThumbnail(inputPath, thumbOut.absolutePath, { seekSeconds: timecodeSeconds });
+
+  const now = new Date().toISOString();
+  const updated = await pool.query(
+    `
+      UPDATE assets
+      SET thumbnail_url = $2,
+          updated_at = $3
+      WHERE id = $1
+      RETURNING *
+    `,
+    [row.id, thumbOut.publicUrl, now]
+  );
+  return {
+    row: updated.rows[0],
+    thumbnailUrl: thumbOut.publicUrl,
+    timecodeSeconds
+  };
 }
 
 async function generatePdfThumbnail(inputPath, outputPath) {
@@ -1871,6 +2328,7 @@ async function ensureVideoProxyAndThumbnail(row, options = {}) {
   let proxyUrl = resolveStoredUrl(row.proxy_url, 'proxies');
   let proxyStatus = row.proxy_status || 'not_applicable';
   let thumbnailUrl = resolveStoredUrl(row.thumbnail_url, 'thumbnails');
+  let detectedAudioChannels = Number(row?.dc_metadata?.audioChannels) || 0;
   const now = new Date().toISOString();
 
   if (forceProxy && proxyUrl) {
@@ -1888,18 +2346,21 @@ async function ensureVideoProxyAndThumbnail(row, options = {}) {
 
   if (!proxyUrl) {
     const proxyStoredName = `${Date.now()}-${nanoid()}-proxy.mp4`;
-    const proxyAbsolutePath = path.join(PROXIES_DIR, proxyStoredName);
-    await generateVideoProxy(inputPath, proxyAbsolutePath);
-    proxyUrl = `/uploads/proxies/${proxyStoredName}`;
+    const proxyOut = buildArtifactPath('proxies', proxyStoredName, row.created_at);
+    await generateVideoProxy(inputPath, proxyOut.absolutePath);
+    proxyUrl = proxyOut.publicUrl;
     proxyStatus = 'ready';
+    detectedAudioChannels = await getMediaAudioChannelCount(proxyOut.absolutePath);
+  } else if (!detectedAudioChannels) {
+    detectedAudioChannels = await getMediaAudioChannelCount(publicUploadUrlToAbsolutePath(proxyUrl));
   }
 
   if (!thumbnailUrl) {
     const thumbStoredName = `${Date.now()}-${nanoid()}-thumb.jpg`;
-    const thumbAbsolutePath = path.join(THUMBNAILS_DIR, thumbStoredName);
+    const thumbOut = buildArtifactPath('thumbnails', thumbStoredName, row.created_at);
     try {
-      await generateVideoThumbnail(inputPath, thumbAbsolutePath);
-      thumbnailUrl = `/uploads/thumbnails/${thumbStoredName}`;
+      await generateVideoThumbnail(inputPath, thumbOut.absolutePath);
+      thumbnailUrl = thumbOut.publicUrl;
     } catch (_error) {
       // Do not fail proxy generation if thumbnail fails.
       thumbnailUrl = row.thumbnail_url || '';
@@ -1912,11 +2373,12 @@ async function ensureVideoProxyAndThumbnail(row, options = {}) {
       SET proxy_url = $2,
           proxy_status = $3,
           thumbnail_url = $4,
-          updated_at = $5
+          dc_metadata = jsonb_set(COALESCE(dc_metadata, '{}'::jsonb), '{audioChannels}', to_jsonb($5::int), true),
+          updated_at = $6
       WHERE id = $1
       RETURNING *
     `,
-    [row.id, proxyUrl, proxyStatus, thumbnailUrl, now]
+    [row.id, proxyUrl, proxyStatus, thumbnailUrl, Math.max(0, Number(detectedAudioChannels) || 0), now]
   );
   return updated.rows[0];
 }
@@ -2045,6 +2507,145 @@ app.get('/api/me', async (req, res) => {
   }
 });
 
+app.get('/api/ui-settings', async (_req, res) => {
+  try {
+    const settings = await getAdminSettings();
+    const playerUiMode = normalizePlayerUiMode(settings.playerUiMode);
+    return res.json({ playerUiMode });
+  } catch (_error) {
+    return res.json({ playerUiMode: 'native' });
+  }
+});
+
+function normalizeTrashScope(value, fallback = 'active') {
+  const raw = String(value || fallback).trim().toLowerCase();
+  return ['active', 'trash', 'all'].includes(raw) ? raw : fallback;
+}
+
+function normalizeTypesInput(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function mapAssetSuggestionRow(row) {
+  return {
+    id: row.id,
+    title: String(row.title || row.file_name || row.id || ''),
+    fileName: String(row.file_name || ''),
+    type: String(row.type || ''),
+    status: String(row.status || ''),
+    inTrash: Boolean(row.deleted_at),
+    updatedAt: row.updated_at
+  };
+}
+
+async function queryAssetSuggestions(options = {}) {
+  const q = String(options.q || '').trim();
+  if (!q) return [];
+  const limit = Math.max(1, Math.min(15, Number(options.limit) || 8));
+  const trash = normalizeTrashScope(options.trash, 'active');
+  const tag = String(options.tag || '').trim();
+  const type = String(options.type || '').trim();
+  const status = String(options.status || '').trim();
+  const types = Array.isArray(options.types)
+    ? options.types.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean)
+    : normalizeTypesInput(options.types);
+  const qLower = q.toLowerCase();
+
+  const baseWhere = [];
+  const baseValues = [];
+  if (trash === 'trash') {
+    baseWhere.push('deleted_at IS NOT NULL');
+  } else if (trash !== 'all') {
+    baseWhere.push('deleted_at IS NULL');
+  }
+  if (tag) {
+    baseValues.push(tag);
+    const tagParam = `$${baseValues.length}`;
+    baseWhere.push(`EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE ${sqlTagFold('t')} = ${sqlTagFold(tagParam)})`);
+  }
+  if (type) {
+    baseValues.push(type.toLowerCase());
+    baseWhere.push(`LOWER(type) = $${baseValues.length}`);
+  }
+  if (types.length) {
+    baseValues.push(types);
+    baseWhere.push(`
+      (
+        CASE
+          WHEN LOWER(type) = 'image' THEN 'photo'
+          WHEN LOWER(type) = 'file' THEN 'other'
+          ELSE LOWER(type)
+        END
+      ) = ANY($${baseValues.length}::text[])
+    `);
+  }
+  if (status) {
+    baseValues.push(status.toLowerCase());
+    baseWhere.push(`LOWER(status) = $${baseValues.length}`);
+  }
+
+  let rows = [];
+  const rankedIds = await suggestAssetIdsElastic(q, limit * 3);
+  if (Array.isArray(rankedIds) && rankedIds.length) {
+    const rankedValues = [...baseValues];
+    rankedValues.push(rankedIds);
+    const rankedIdsIdx = rankedValues.length;
+    const rankedWhere = [...baseWhere, `id = ANY($${rankedIdsIdx}::text[])`];
+    rankedValues.push(limit);
+    const rankedLimitIdx = rankedValues.length;
+    const sql = `
+      SELECT id, title, file_name, type, status, updated_at, deleted_at
+      FROM assets
+      ${rankedWhere.length ? `WHERE ${rankedWhere.join(' AND ')}` : ''}
+      ORDER BY array_position($${rankedIdsIdx}::text[], id), updated_at DESC
+      LIMIT $${rankedLimitIdx}
+    `;
+    const ranked = await pool.query(sql, rankedValues);
+    rows = ranked.rows;
+  }
+
+  if (!rows.length) {
+    const fallbackValues = [...baseValues];
+    fallbackValues.push(`%${qLower}%`);
+    const likeIdx = fallbackValues.length;
+    fallbackValues.push(qLower);
+    const eqIdx = fallbackValues.length;
+    fallbackValues.push(`${qLower}%`);
+    const prefixIdx = fallbackValues.length;
+    fallbackValues.push(limit);
+    const fallbackLimitIdx = fallbackValues.length;
+
+    const fallbackWhere = [
+      ...baseWhere,
+      `(LOWER(title) LIKE $${likeIdx} OR LOWER(file_name) LIKE $${likeIdx} OR LOWER(owner) LIKE $${likeIdx})`
+    ];
+    const fallback = await pool.query(
+      `
+        SELECT id, title, file_name, type, status, updated_at, deleted_at
+        FROM assets
+        WHERE ${fallbackWhere.join(' AND ')}
+        ORDER BY
+          CASE
+            WHEN LOWER(title) = $${eqIdx} THEN 0
+            WHEN LOWER(file_name) = $${eqIdx} THEN 1
+            WHEN LOWER(title) LIKE $${prefixIdx} THEN 2
+            WHEN LOWER(file_name) LIKE $${prefixIdx} THEN 3
+            ELSE 4
+          END,
+          updated_at DESC
+        LIMIT $${fallbackLimitIdx}
+      `,
+      fallbackValues
+    );
+    rows = fallback.rows;
+  }
+
+  return rows.map(mapAssetSuggestionRow);
+}
+
 app.get('/api/assets', async (req, res) => {
   try {
     const q = (req.query.q || '').toString().trim();
@@ -2090,8 +2691,9 @@ app.get('/api/assets', async (req, res) => {
       }
     }
     if (tag) {
-      values.push(tag.toLowerCase());
-      where.push(`EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE LOWER(t) = $${values.length})`);
+      values.push(tag);
+      const tagParam = `$${values.length}`;
+      where.push(`EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE ${sqlTagFold('t')} = ${sqlTagFold(tagParam)})`);
     }
     if (type) {
       values.push(type.toLowerCase());
@@ -2121,7 +2723,19 @@ app.get('/api/assets', async (req, res) => {
     }
 
     const sql = `
-      SELECT *
+      SELECT
+        assets.*,
+        (
+          SELECT COALESCE(
+            json_agg(
+              json_build_object('label', c.label)
+              ORDER BY c.created_at DESC
+            ),
+            '[]'::json
+          )
+          FROM asset_cuts c
+          WHERE c.asset_id = assets.id
+        ) AS cuts
       FROM assets
       ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
       ORDER BY ${orderClause}
@@ -2137,6 +2751,23 @@ app.get('/api/assets', async (req, res) => {
     res.json(hydratedRows.map(mapAssetRow));
   } catch (error) {
     res.status(500).json({ error: 'Failed to load assets' });
+  }
+});
+
+app.get('/api/assets/suggest', async (req, res) => {
+  try {
+    const suggestions = await queryAssetSuggestions({
+      q: req.query.q,
+      limit: req.query.limit,
+      trash: req.query.trash,
+      tag: req.query.tag,
+      type: req.query.type,
+      types: req.query.types,
+      status: req.query.status
+    });
+    return res.json(suggestions);
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to suggest assets' });
   }
 });
 
@@ -2171,63 +2802,69 @@ app.post('/api/assets/upload', async (req, res) => {
   let proxyUrl = '';
   let proxyStatus = 'not_applicable';
   let thumbnailUrl = '';
+  let detectedAudioChannels = 0;
 
   if (isVideoCandidate({ mimeType, fileName: safeName, declaredType: metadata.type })) {
     proxyStatus = 'pending';
     const proxyStoredName = `${Date.now()}-${nanoid()}-proxy.mp4`;
-    const proxyAbsolutePath = path.join(PROXIES_DIR, proxyStoredName);
+    const proxyOut = buildArtifactPath('proxies', proxyStoredName, new Date());
 
     try {
-      await generateVideoProxy(absolutePath, proxyAbsolutePath);
-      proxyUrl = `/uploads/proxies/${proxyStoredName}`;
+      await generateVideoProxy(absolutePath, proxyOut.absolutePath);
+      proxyUrl = proxyOut.publicUrl;
       proxyStatus = 'ready';
+      detectedAudioChannels = await getMediaAudioChannelCount(proxyOut.absolutePath);
     } catch (error) {
       return res.status(500).json({ error: `Proxy generation failed for uploaded video: ${String(error.message || '').slice(0, 240)}` });
     }
 
     const thumbStoredName = `${Date.now()}-${nanoid()}-thumb.jpg`;
-    const thumbAbsolutePath = path.join(THUMBNAILS_DIR, thumbStoredName);
+    const thumbOut = buildArtifactPath('thumbnails', thumbStoredName, new Date());
     try {
-      await generateVideoThumbnail(absolutePath, thumbAbsolutePath);
-      thumbnailUrl = `/uploads/thumbnails/${thumbStoredName}`;
+      await generateVideoThumbnail(absolutePath, thumbOut.absolutePath);
+      thumbnailUrl = thumbOut.publicUrl;
     } catch (_error) {
       thumbnailUrl = '';
     }
   } else if (isPdfCandidate({ mimeType, fileName: safeName })) {
     const pdfThumbName = `${Date.now()}-${nanoid()}-pdf-thumb.jpg`;
-    const pdfThumbPath = path.join(THUMBNAILS_DIR, pdfThumbName);
+    const pdfThumbOut = buildArtifactPath('thumbnails', pdfThumbName, new Date());
     try {
-      await generatePdfThumbnail(absolutePath, pdfThumbPath);
-      thumbnailUrl = `/uploads/thumbnails/${pdfThumbName}`;
+      await generatePdfThumbnail(absolutePath, pdfThumbOut.absolutePath);
+      thumbnailUrl = pdfThumbOut.publicUrl;
     } catch (_error) {
       const fallbackName = `${Date.now()}-${nanoid()}-pdf-thumb.svg`;
-      const fallbackPath = path.join(THUMBNAILS_DIR, fallbackName);
+      const fallbackOut = buildArtifactPath('thumbnails', fallbackName, new Date());
       try {
-        await generatePdfFallbackThumbnail(fallbackPath, {
+        await generatePdfFallbackThumbnail(fallbackOut.absolutePath, {
           fileName: safeName,
           title: String(metadata.title || safeName)
         });
-        thumbnailUrl = `/uploads/thumbnails/${fallbackName}`;
+        thumbnailUrl = fallbackOut.publicUrl;
       } catch (_fallbackError) {
         thumbnailUrl = '';
       }
     }
   } else if (isDocumentCandidate({ mimeType, fileName: safeName, declaredType: metadata.type })) {
     const docThumbName = `${Date.now()}-${nanoid()}-doc-thumb-v2.svg`;
-    const docThumbPath = path.join(THUMBNAILS_DIR, docThumbName);
+    const docThumbOut = buildArtifactPath('thumbnails', docThumbName, new Date());
     try {
-      await generateDocumentThumbnail(absolutePath, docThumbPath, {
+      await generateDocumentThumbnail(absolutePath, docThumbOut.absolutePath, {
         fileName: safeName,
         title: String(metadata.title || safeName),
         extLabel: (getFileExtension(safeName) || 'DOC').toUpperCase(),
         includeContent: isTextDocumentCandidate({ mimeType, fileName: safeName })
       });
-      thumbnailUrl = `/uploads/thumbnails/${docThumbName}`;
+      thumbnailUrl = docThumbOut.publicUrl;
     } catch (_error) {
       thumbnailUrl = '';
     }
   } else if (String(mimeType || '').toLowerCase().startsWith('image/')) {
     thumbnailUrl = mediaUrl;
+  }
+
+  if (!detectedAudioChannels && String(mimeType || '').toLowerCase().startsWith('audio/')) {
+    detectedAudioChannels = await getMediaAudioChannelCount(absolutePath);
   }
 
   const payload = {
@@ -2238,6 +2875,10 @@ app.post('/api/assets/upload', async (req, res) => {
     proxyUrl,
     proxyStatus,
     thumbnailUrl,
+    dcMetadata: {
+      ...(metadata?.dcMetadata && typeof metadata.dcMetadata === 'object' ? metadata.dcMetadata : {}),
+      ...(detectedAudioChannels > 0 ? { audioChannels: detectedAudioChannels } : {})
+    },
     sourcePath: absolutePath
   };
   if ((isVideoCandidate({ mimeType, fileName: safeName, declaredType: metadata.type }) || String(mimeType || '').toLowerCase().startsWith('audio/'))
@@ -2271,11 +2912,61 @@ app.get('/api/assets/:id', async (req, res) => {
     );
 
     const asset = mapAssetRow(assetResult.rows[0]);
+    const audioCandidate = isVideoCandidate({
+      mimeType: assetResult.rows[0].mime_type,
+      fileName: assetResult.rows[0].file_name,
+      declaredType: assetResult.rows[0].type
+    }) || String(assetResult.rows[0].mime_type || '').toLowerCase().startsWith('audio/');
+    if (audioCandidate && Number(asset.audioChannels || 0) <= 0) {
+      const playbackPath = resolvePlaybackInputPath(assetResult.rows[0]);
+      asset.audioChannels = await getMediaAudioChannelCount(playbackPath);
+    }
     asset.versions = versionsResult.rows.map(mapVersionRow);
     asset.cuts = cutsResult.rows.map(mapCutRow);
     res.json(asset);
   } catch (_error) {
     res.status(500).json({ error: 'Failed to load asset' });
+  }
+});
+
+app.get('/api/assets/:id/technical', async (req, res) => {
+  try {
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
+    if (!assetResult.rowCount) {
+      return res.status(404).json({ error: 'Asset not found' });
+    }
+    const row = assetResult.rows[0];
+
+    const sourcePath = (() => {
+      let p = String(row.source_path || '').trim();
+      if (p && fs.existsSync(p)) return p;
+      const media = publicUploadUrlToAbsolutePath(row.media_url);
+      if (media && fs.existsSync(media)) return media;
+      return '';
+    })();
+
+    const proxyPath = publicUploadUrlToAbsolutePath(resolveStoredUrl(row.proxy_url, 'proxies'));
+
+    const [original, proxy] = await Promise.all([
+      probeMediaTechnicalInfo(sourcePath),
+      probeMediaTechnicalInfo(proxyPath)
+    ]);
+
+    return res.json({
+      assetId: row.id,
+      original: {
+        label: 'original',
+        url: String(row.media_url || ''),
+        ...original
+      },
+      proxy: {
+        label: 'proxy',
+        url: String(resolveStoredUrl(row.proxy_url, 'proxies') || ''),
+        ...proxy
+      }
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load technical info' });
   }
 });
 
@@ -2311,10 +3002,10 @@ app.post('/api/assets/:id/subtitles', async (req, res) => {
     const subtitleVtt = ext === '.srt' ? convertSrtToVtt(rawText) : normalizeVttContent(rawText);
     const base = path.basename(safeName, ext) || 'subtitle';
     const storedName = `${Date.now()}-${nanoid()}-${sanitizeFileName(base)}.vtt`;
-    const absolutePath = path.join(SUBTITLES_DIR, storedName);
-    fs.writeFileSync(absolutePath, subtitleVtt, 'utf8');
+    const subtitleOut = buildArtifactPath('subtitles', storedName, row.created_at);
+    fs.writeFileSync(subtitleOut.absolutePath, subtitleVtt, 'utf8');
 
-    const subtitleUrl = `/uploads/subtitles/${storedName}`;
+    const subtitleUrl = subtitleOut.publicUrl;
     const updatedRow = await saveAssetSubtitleMetadata(
       req.params.id,
       row,
@@ -2397,13 +3088,15 @@ app.post('/api/assets/:id/video-ocr/extract', async (req, res) => {
 
     const job = queueVideoOcrJob(row, {
       intervalSec: req.body?.intervalSec,
-      ocrLang: req.body?.ocrLang
+      ocrLang: req.body?.ocrLang,
+      ocrEngine: req.body?.ocrEngine
     });
     return res.status(202).json({
       jobId: job.jobId,
       status: job.status,
       intervalSec: job.intervalSec,
-      ocrLang: job.ocrLang
+      ocrLang: job.ocrLang,
+      ocrEngine: job.ocrEngine
     });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to queue video OCR extraction' });
@@ -2419,13 +3112,39 @@ app.get('/api/video-ocr-jobs/:jobId', (req, res) => {
     status: job.status,
     intervalSec: job.intervalSec,
     ocrLang: job.ocrLang,
+    ocrEngine: job.ocrEngine,
+    requestedEngine: job.requestedEngine,
     resultUrl: job.resultUrl || '',
+    downloadUrl: job.resultUrl ? `/api/video-ocr-jobs/${encodeURIComponent(job.jobId)}/download` : '',
     resultLabel: job.resultLabel || '',
     lineCount: Number(job.lineCount || 0),
+    warning: job.warning || '',
     error: job.error || '',
     startedAt: job.startedAt,
     updatedAt: job.updatedAt,
     finishedAt: job.finishedAt || ''
+  });
+});
+
+app.get('/api/video-ocr-jobs/:jobId/download', (req, res) => {
+  const jobId = String(req.params.jobId || '').trim();
+  const job = videoOcrJobs.get(jobId);
+  if (!job) return res.status(404).json({ error: 'Video OCR job not found' });
+  if (String(job.status || '') !== 'completed') {
+    return res.status(409).json({ error: 'OCR file is not ready yet' });
+  }
+
+  const filePath = String(job.resultPath || '').trim() || publicUploadUrlToAbsolutePath(job.resultUrl);
+  if (!filePath || !fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'OCR file not found' });
+  }
+  const fileName = String(job.resultLabel || path.basename(filePath) || 'video-ocr.txt').trim() || 'video-ocr.txt';
+
+  return res.download(filePath, fileName, (error) => {
+    if (error) return;
+    safeRmDir(job.frameDir);
+    job.frameDir = '';
+    job.updatedAt = new Date().toISOString();
   });
 });
 
@@ -2908,6 +3627,9 @@ app.patch('/api/admin/settings', async (req, res) => {
       autoProxyBackfillOnUpload: Object.prototype.hasOwnProperty.call(req.body, 'autoProxyBackfillOnUpload')
         ? Boolean(req.body.autoProxyBackfillOnUpload)
         : current.autoProxyBackfillOnUpload,
+      playerUiMode: Object.prototype.hasOwnProperty.call(req.body, 'playerUiMode')
+        ? normalizePlayerUiMode(req.body.playerUiMode)
+        : normalizePlayerUiMode(current.playerUiMode),
       apiTokenEnabled: Object.prototype.hasOwnProperty.call(req.body, 'apiTokenEnabled')
         ? Boolean(req.body.apiTokenEnabled)
         : current.apiTokenEnabled,
@@ -3059,6 +3781,110 @@ app.get('/api/admin/proxy-jobs/:id', async (req, res) => {
 app.get('/api/admin/proxy-jobs', async (_req, res) => {
   const jobs = Array.from(proxyJobs.values()).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   return res.json(jobs.slice(0, 20));
+});
+
+app.get('/api/admin/assets/suggest', async (req, res) => {
+  try {
+    const includeTrashRaw = String(req.query.includeTrash || '1').trim().toLowerCase();
+    const includeTrash = !['0', 'false', 'no'].includes(includeTrashRaw);
+    const suggestions = await queryAssetSuggestions({
+      q: req.query.q,
+      limit: req.query.limit,
+      trash: includeTrash ? 'all' : 'active'
+    });
+    return res.json(
+      suggestions.map((row) => ({
+        id: row.id,
+        title: row.title,
+        fileName: row.fileName,
+        type: row.type,
+        inTrash: row.inTrash,
+        updatedAt: row.updatedAt
+      }))
+    );
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to suggest assets' });
+  }
+});
+
+app.post('/api/admin/proxy-tools/run', async (req, res) => {
+  try {
+    const assetName = String(req.body?.assetName || '').trim();
+    const mode = String(req.body?.mode || '').trim().toLowerCase();
+    if (!assetName) return res.status(400).json({ error: 'assetName is required' });
+    if (!['thumbnail', 'preview', 'proxy'].includes(mode)) {
+      return res.status(400).json({ error: 'mode must be one of: thumbnail, preview, proxy' });
+    }
+
+    const like = `%${assetName}%`;
+    const match = await pool.query(
+      `
+        SELECT *
+        FROM assets
+        WHERE title ILIKE $1 OR file_name ILIKE $1
+        ORDER BY
+          CASE
+            WHEN LOWER(title) = LOWER($2) THEN 0
+            WHEN LOWER(file_name) = LOWER($2) THEN 1
+            ELSE 2
+          END,
+          updated_at DESC
+        LIMIT 20
+      `,
+      [like, assetName]
+    );
+    if (!match.rowCount) return res.status(404).json({ error: 'Asset not found by name' });
+
+    let row = match.rows[0];
+    let info = {};
+
+    if (mode === 'proxy') {
+      if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+        return res.status(400).json({ error: 'Proxy generation is supported only for video assets' });
+      }
+      row = await ensureVideoProxyAndThumbnail(row, { forceProxy: true });
+      info = {
+        proxyUrl: resolveStoredUrl(row.proxy_url, 'proxies'),
+        thumbnailUrl: resolveStoredUrl(row.thumbnail_url, 'thumbnails')
+      };
+    } else if (mode === 'thumbnail') {
+      const result = await regenerateVideoThumbnailForAsset(row, { timecode: req.body?.timecode });
+      row = result.row;
+      info = {
+        thumbnailUrl: result.thumbnailUrl,
+        timecode: result.timecodeSeconds == null ? '' : formatTimecode(result.timecodeSeconds)
+      };
+    } else if (mode === 'preview') {
+      if (!isDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+        return res.status(400).json({ error: 'Preview generation is supported for document assets in this tool' });
+      }
+      const inputPath = resolveAssetInputPath(row);
+      if (!inputPath || !fs.existsSync(inputPath)) return res.status(404).json({ error: 'Source file not found' });
+      if (isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+        row = await ensurePdfThumbnailForRow(row);
+      } else {
+        row = await ensureDocumentThumbnailForRow(row);
+      }
+      const preview = await extractPreviewContentFromFile(row, inputPath);
+      info = {
+        previewMode: String(preview.mode || 'text'),
+        previewChars: Math.max(0, String(preview.html || preview.text || '').length),
+        thumbnailUrl: resolveStoredUrl(row.thumbnail_url, 'thumbnails')
+      };
+    }
+
+    return res.json({
+      ok: true,
+      mode,
+      matchedCount: match.rowCount,
+      assetId: row.id,
+      assetTitle: String(row.title || row.file_name || row.id),
+      ...info,
+      asset: mapAssetRow(row)
+    });
+  } catch (error) {
+    return res.status(500).json({ error: `Failed to run proxy tool action: ${String(error?.message || 'unknown error').slice(0, 260)}` });
+  }
 });
 
 app.post('/api/assets/:id/cuts', async (req, res) => {
