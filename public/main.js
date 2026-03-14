@@ -20,6 +20,11 @@ const closeDetailBtn = document.getElementById('closeDetailBtn');
 const statusSelect = searchForm.querySelector('[name="status"]');
 const searchQueryInput = searchForm.querySelector('[name="q"]');
 const searchSuggestList = document.getElementById('searchSuggestList');
+// OCR ve Altyazi aramalari 1. kolonda birbirinden bagimsiz iki ayri kutu olarak calisir.
+const ocrQueryInput = searchForm.querySelector('[name="ocrQ"]');
+const ocrSuggestList = document.getElementById('ocrSuggestList');
+const subtitleQueryInput = searchForm.querySelector('[name="subtitleQ"]');
+const subtitleSuggestList = document.getElementById('subtitleSuggestList');
 const languageSelect = document.getElementById('languageSelect');
 const currentUserBtn = document.getElementById('currentUserBtn');
 const userMenu = document.getElementById('userMenu');
@@ -52,9 +57,13 @@ let dashJsLoadPromise = null;
 let detailVideoPinned = localStorage.getItem(LOCAL_DETAIL_VIDEO_PIN) === '1';
 let selectedAssetId = null;
 let currentUserIsAdmin = false;
+let currentUserCanAccessAdmin = false;
+let currentUserCanUsePdfAdvancedTools = false;
 const selectedAssetIds = new Set();
 let lastSelectedAssetId = null;
 let currentSearchQuery = '';
+let currentOcrQuery = '';
+let currentSubtitleQuery = '';
 const cutMarksByAsset = new Map();
 const subtitleOverlayEnabledByAsset = new Map();
 let panelSizes = Object.fromEntries(PANELS.map((p) => [p.id, p.defaultSize]));
@@ -65,6 +74,26 @@ let searchSuggestReqSeq = 0;
 let searchSuggestItems = [];
 let searchSuggestActiveIndex = -1;
 let searchSuggestHideTimer = null;
+let ocrSuggestTimer = null;
+let ocrSuggestReqSeq = 0;
+let ocrSuggestItems = [];
+let ocrSuggestActiveIndex = -1;
+let ocrSuggestHideTimer = null;
+let subtitleSuggestTimer = null;
+let subtitleSuggestReqSeq = 0;
+let subtitleSuggestItems = [];
+let subtitleSuggestActiveIndex = -1;
+let subtitleSuggestHideTimer = null;
+
+function getActiveOcrQueryInput() {
+  return ocrQueryInput;
+}
+
+function syncOcrQueryInputs(source) {
+  if (!source || source === ocrQueryInput) return;
+  if (ocrQueryInput) ocrQueryInput.value = String(source.value || '');
+}
+
 let i18n = {
   en: {
     app_title: 'Broadcast MAM Console',
@@ -94,6 +123,8 @@ let i18n = {
     ph_source: 'Source path',
     ph_description: 'Description',
     ph_query: 'Query',
+    ph_ocr_query: 'OCR Search',
+    ph_subtitle_query: 'Subtitle Search',
     ph_tag: 'Tag',
     ph_type_simple: 'Type',
     filter_types: 'Types',
@@ -146,6 +177,7 @@ let i18n = {
     clip_editor_cancel: 'Cancel',
     clip_editor_save: 'Save',
     jump_to_cut: 'Jump',
+    play_cut: 'Play Clip',
     original_master: 'Original master',
     open_file: 'Open file',
     audio_channels: 'Audio Channels',
@@ -209,6 +241,32 @@ let i18n = {
     ph_inline_tags: 'tag1, tag2',
     ph_version_label: 'v2',
     versions: 'Versions',
+    restore_pdf_version: 'Restore PDF',
+    restore_pdf_original: 'Restore Original PDF',
+    restore_pdf_confirm: 'Restore this PDF version? Current PDF state will be saved as a new restore version.',
+    restore_pdf_original_confirm: 'Restore the original PDF snapshot?',
+    restore_pdf_unavailable: 'No snapshot',
+    delete_pdf_version: 'Delete PDF Edit',
+    delete_pdf_version_confirm: 'Delete this PDF edit version entry?',
+    delete_version: 'Delete Version',
+    delete_version_confirm: 'Delete this version entry?',
+    edit_version_name: 'Rename Version',
+    edit_version_name_prompt: 'New version name',
+    edit_version_note_prompt: 'Version note (optional)',
+    version_actor: 'By',
+    version_action: 'Action',
+    version_change_type: 'Change Type',
+    action_ingest: 'Ingest',
+    action_manual: 'Manual',
+    action_pdf_save: 'PDF Save',
+    action_pdf_restore: 'PDF Restore',
+    action_pdf_restore_original: 'PDF Original Restore',
+    action_file_replace: 'File Replace',
+    pdf_change_redaction: 'Redaction',
+    pdf_change_text_insert: 'Text Insert',
+    pdf_change_annotation: 'Annotation',
+    pdf_change_mixed: 'Mixed',
+    pdf_change_unknown: 'Unknown',
     multi_selected: 'Multiple assets selected',
     selected_count: 'Selected count',
     bulk_delete_selected: 'Delete Selected Permanently',
@@ -244,6 +302,7 @@ let i18n = {
     subtitle_loaded: 'Subtitle loaded',
     subtitle_upload: 'Upload Subtitle',
     subtitle_generate: 'Generate Subtitle',
+    subtitle_use_whisperx: 'Use WhisperX align',
     subtitle_upload_success: 'Subtitle uploaded.',
     subtitle_generate_success: 'Subtitle generated.',
     subtitle_file_required: 'Please choose a .srt or .vtt subtitle file first.',
@@ -256,17 +315,39 @@ let i18n = {
     subtitle_remove: 'Remove',
     subtitle_remove_confirm: 'Remove this subtitle from the list?',
     subtitle_no_items: 'No subtitle items',
+    subtitle_search_ph: 'Search in subtitle text',
+    subtitle_search_btn: 'Search Subtitle',
+    subtitle_search_empty: 'No subtitle match.',
+    subtitle_search_results: 'Subtitle Matches',
+    subtitle_jump: 'Jump',
+    ocr_hit: 'OCR',
     video_ocr: 'Video OCR',
     video_ocr_interval: 'Interval (sec)',
     video_ocr_lang: 'OCR lang',
     video_ocr_engine: 'Engine',
-    video_ocr_engine_tesseract: 'Tesseract',
+    video_ocr_preprocess: 'Preprocess',
+    video_ocr_preprocess_off: 'Off',
+    video_ocr_preprocess_light: 'Light',
+    video_ocr_preprocess_strong: 'Strong',
+    video_ocr_blur_filter: 'Blur filter',
+    video_ocr_blur_threshold: 'Blur threshold',
+    video_ocr_region_mode: 'Ticker mode',
+    video_ocr_ticker_height: 'Ticker height (%)',
     video_ocr_engine_paddle: 'PaddleOCR',
+    video_ocr_advanced: 'Advanced OCR',
+    video_ocr_ai_correct: 'Turkish offline correction',
+    video_ocr_static_filter: 'Filter static overlays',
+    video_ocr_ignore_phrases: 'Ignore phrases',
+    video_ocr_ignore_phrases_ph: 'NotebookLM, watermark',
+    video_ocr_min_display: 'Min visible (sec)',
+    video_ocr_merge_gap: 'Merge gap (sec)',
     video_ocr_extract: 'Extract Text',
     video_ocr_running: 'OCR extraction running...',
     video_ocr_done: 'OCR extraction completed.',
     video_ocr_failed: 'OCR extraction failed.',
     video_ocr_download: 'Download OCR file',
+    video_ocr_save_db: 'Save to database',
+    video_ocr_saved: 'OCR result saved to database.',
     hide_section: 'Hide',
     video_clips: 'Video Clips',
     move_up: 'Up',
@@ -310,6 +391,8 @@ let i18n = {
     ph_source: 'Kaynak yolu',
     ph_description: 'Açıklama',
     ph_query: 'Sorgu',
+    ph_ocr_query: 'OCR Arama',
+    ph_subtitle_query: 'Altyazı Arama',
     ph_tag: 'Etiket',
     ph_type_simple: 'Tür',
     filter_types: 'Türler',
@@ -362,6 +445,7 @@ let i18n = {
     clip_editor_cancel: 'Iptal',
     clip_editor_save: 'Kaydet',
     jump_to_cut: 'Git',
+    play_cut: 'Klip Oynat',
     original_master: 'Orijinal master',
     open_file: 'Dosyayı Aç',
     audio_channels: 'Ses Kanalları',
@@ -425,6 +509,32 @@ let i18n = {
     ph_inline_tags: 'etiket1, etiket2',
     ph_version_label: 'v2',
     versions: 'Versiyonlar',
+    restore_pdf_version: 'PDF Geri Yükle',
+    restore_pdf_original: "Orijinal PDF'ye Dön",
+    restore_pdf_confirm: 'Bu PDF sürümüne geri dönülsün mü? Mevcut PDF durumu yeni bir restore sürümü olarak kaydedilir.',
+    restore_pdf_original_confirm: 'Orijinal PDF snapshotına geri dönülsün mü?',
+    restore_pdf_unavailable: 'Snapshot yok',
+    delete_pdf_version: 'PDF Edit Sürümünü Sil',
+    delete_pdf_version_confirm: 'Bu PDF edit sürüm kaydı silinsin mi?',
+    delete_version: 'Versiyonu Sil',
+    delete_version_confirm: 'Bu versiyon kaydı silinsin mi?',
+    edit_version_name: 'Versiyon Adını Düzenle',
+    edit_version_name_prompt: 'Yeni versiyon adı',
+    edit_version_note_prompt: 'Versiyon notu (opsiyonel)',
+    version_actor: 'Yapan',
+    version_action: 'İşlem',
+    version_change_type: 'Değişiklik Türü',
+    action_ingest: 'Yükleme',
+    action_manual: 'Manuel',
+    action_pdf_save: 'PDF Kaydetme',
+    action_pdf_restore: 'PDF Geri Yükleme',
+    action_pdf_restore_original: 'PDF Orijinaline Dönüş',
+    action_file_replace: 'Dosya Değiştirme',
+    pdf_change_redaction: 'Karartma',
+    pdf_change_text_insert: 'Yazı Ekleme',
+    pdf_change_annotation: 'Not/Şekil',
+    pdf_change_mixed: 'Karma',
+    pdf_change_unknown: 'Bilinmiyor',
     multi_selected: 'Birden fazla varlık seçildi',
     selected_count: 'Seçili adet',
     bulk_delete_selected: 'Seçilileri Kalıcı Sil',
@@ -460,6 +570,7 @@ let i18n = {
     subtitle_loaded: 'Altyazı yüklendi',
     subtitle_upload: 'Altyazı Yükle',
     subtitle_generate: 'Altyazı Oluştur',
+    subtitle_use_whisperx: 'WhisperX hizalama kullan',
     subtitle_upload_success: 'Altyazı yüklendi.',
     subtitle_generate_success: 'Altyazı oluşturuldu.',
     subtitle_file_required: 'Önce bir .srt veya .vtt altyazı dosyası seçin.',
@@ -472,17 +583,39 @@ let i18n = {
     subtitle_remove: 'Sil',
     subtitle_remove_confirm: 'Bu altyazi listeden silinsin mi?',
     subtitle_no_items: 'Altyazı yok',
+    subtitle_search_ph: 'Altyazıda ara',
+    subtitle_search_btn: 'Altyazıda Ara',
+    subtitle_search_empty: 'Altyazıda eşleşme yok.',
+    subtitle_search_results: 'Altyazı Eşleşmeleri',
+    subtitle_jump: 'Git',
+    ocr_hit: 'OCR',
     video_ocr: 'Video OCR',
     video_ocr_interval: 'Aralık (sn)',
     video_ocr_lang: 'OCR dil',
     video_ocr_engine: 'Motor',
-    video_ocr_engine_tesseract: 'Tesseract',
+    video_ocr_preprocess: 'Ön işlem',
+    video_ocr_preprocess_off: 'Kapalı',
+    video_ocr_preprocess_light: 'Hafif',
+    video_ocr_preprocess_strong: 'Güçlü',
+    video_ocr_blur_filter: 'Bulanıklık filtresi',
+    video_ocr_blur_threshold: 'Bulanıklık eşiği',
+    video_ocr_region_mode: 'Ticker modu',
+    video_ocr_ticker_height: 'Ticker yüksekliği (%)',
     video_ocr_engine_paddle: 'PaddleOCR',
+    video_ocr_advanced: 'Gelişmiş OCR',
+    video_ocr_ai_correct: 'Türkçe çevrimdışı düzeltme',
+    video_ocr_static_filter: 'Sabit yazıları filtrele',
+    video_ocr_ignore_phrases: 'Hariç kelimeler',
+    video_ocr_ignore_phrases_ph: 'NotebookLM, filigran',
+    video_ocr_min_display: 'Min görünme (sn)',
+    video_ocr_merge_gap: 'Birleşme aralığı (sn)',
     video_ocr_extract: 'Metni Çıkar',
     video_ocr_running: 'OCR çıkarımı çalışıyor...',
     video_ocr_done: 'OCR çıkarımı tamamlandı.',
     video_ocr_failed: 'OCR çıkarımı başarısız.',
     video_ocr_download: 'OCR dosyasını indir',
+    video_ocr_save_db: 'Veritabanına kaydet',
+    video_ocr_saved: 'OCR sonucu veritabanına kaydedildi.',
     hide_section: 'Gizle',
     video_clips: 'Video Klipler',
     move_up: 'Yukari',
@@ -520,6 +653,17 @@ async function loadI18nFile() {
 
 function t(key) {
   return i18n[currentLang]?.[key] || i18n.en[key] || key;
+}
+
+function toStrictBool(value, fallback = false) {
+  if (value == null) return Boolean(fallback);
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  const raw = String(value).trim().toLowerCase();
+  if (!raw) return Boolean(fallback);
+  if (['true', '1', 'yes', 'y', 'on'].includes(raw)) return true;
+  if (['false', '0', 'no', 'n', 'off', 'null', 'undefined'].includes(raw)) return false;
+  return Boolean(fallback);
 }
 
 function tf(key, vars = {}) {
@@ -569,6 +713,14 @@ function applyStaticI18n() {
     const key = el.getAttribute('data-i18n-placeholder');
     if (key) el.setAttribute('placeholder', t(key));
   });
+  document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+    const key = el.getAttribute('data-i18n-title');
+    if (key) el.setAttribute('title', t(key));
+  });
+  document.querySelectorAll('[data-i18n-aria]').forEach((el) => {
+    const key = el.getAttribute('data-i18n-aria');
+    if (key) el.setAttribute('aria-label', t(key));
+  });
   if (currentUserBtn && !currentUserBtn.dataset.value) {
     currentUserBtn.textContent = t('unknown_user');
   }
@@ -598,9 +750,12 @@ async function loadCurrentUser() {
     const username = String(me.username || '').trim();
     const displayName = String(me.displayName || '').trim();
     const email = String(me.email || '').trim();
-    const canAccessAdmin = Boolean(me.canAccessAdmin ?? me.isAdmin);
-    const canDeleteAssets = Boolean(me.canDeleteAssets ?? me.isAdmin);
+    const canAccessAdmin = toStrictBool(me.canAccessAdmin, toStrictBool(me.isAdmin, false));
+    const canDeleteAssets = toStrictBool(me.canDeleteAssets, toStrictBool(me.isAdmin, false));
+    const canUsePdfAdvancedTools = toStrictBool(me.canUsePdfAdvancedTools, toStrictBool(me.isAdmin, false));
+    currentUserCanAccessAdmin = canAccessAdmin;
     currentUserIsAdmin = canDeleteAssets;
+    currentUserCanUsePdfAdvancedTools = canUsePdfAdvancedTools;
     const value = displayName || username || (email.includes('@') ? email.split('@')[0] : '') || t('unknown_user');
     currentUserBtn.dataset.value = value;
     currentUserBtn.textContent = value;
@@ -609,7 +764,9 @@ async function loadCurrentUser() {
       adminMenuLink.classList.toggle('hidden', !canAccessAdmin);
     }
   } catch (_error) {
+    currentUserCanAccessAdmin = false;
     currentUserIsAdmin = false;
+    currentUserCanUsePdfAdvancedTools = false;
     currentUserBtn.dataset.value = '';
     currentUserBtn.textContent = t('unknown_user');
     currentUserBtn.title = t('unknown_user');
@@ -880,6 +1037,21 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+function extractPdfChangeKindFromNote(note) {
+  const m = String(note || '').match(/\[change:([a-z_]+)\]/i);
+  return m ? String(m[1] || '').trim().toLowerCase() : '';
+}
+
+function renderPdfChangeKindLabel(version) {
+  const kind = extractPdfChangeKindFromNote(version?.note);
+  if (!kind) return '';
+  return t(`pdf_change_${kind}`) || kind;
+}
+
+function cleanVersionNoteText(note) {
+  return String(note || '').replace(/\s*\[change:[a-z_]+\]\s*/ig, ' ').replace(/\s{2,}/g, ' ').trim();
+}
+
 function normalizeForSearch(value) {
   return String(value || '')
     .normalize('NFC')
@@ -1038,6 +1210,202 @@ function queueSearchSuggestions() {
   if (searchSuggestTimer) clearTimeout(searchSuggestTimer);
   searchSuggestTimer = setTimeout(() => {
     requestSearchSuggestions().catch(() => {});
+  }, 170);
+}
+
+function hideOcrSuggestions() {
+  if (!ocrSuggestList) return;
+  ocrSuggestList.classList.add('hidden');
+  ocrSuggestList.innerHTML = '';
+  ocrSuggestItems = [];
+  ocrSuggestActiveIndex = -1;
+}
+
+function setOcrSuggestionActive(index) {
+  if (!ocrSuggestList) return;
+  const buttons = Array.from(ocrSuggestList.querySelectorAll('.search-suggest-item'));
+  if (!buttons.length) {
+    ocrSuggestActiveIndex = -1;
+    return;
+  }
+  const safeIndex = Math.max(0, Math.min(buttons.length - 1, index));
+  ocrSuggestActiveIndex = safeIndex;
+  buttons.forEach((btn, idx) => btn.classList.toggle('active', idx === safeIndex));
+}
+
+async function applyOcrSuggestion(item, runSearch = true) {
+  if (!item || !ocrQueryInput) return;
+  hideOcrSuggestions();
+  const id = String(item.id || '').trim();
+  const startAtSeconds = Math.max(0, Number(item.startSec || 0));
+  if (id) {
+    setSingleSelection(id);
+    const workflow = await api('/api/workflow');
+    await openAsset(id, workflow, { startAtSeconds });
+    return;
+  }
+  if (runSearch) await loadAssets();
+}
+
+function renderOcrSuggestions(items, query) {
+  if (!ocrSuggestList) return;
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {
+    hideOcrSuggestions();
+    return;
+  }
+  ocrSuggestItems = list;
+  ocrSuggestActiveIndex = -1;
+  ocrSuggestList.innerHTML = list.map((item, index) => {
+    const title = String(item.title || item.fileName || item.id || '');
+    const hit = String(item.ocrHitText || '').trim();
+    return `
+      <button type="button" class="search-suggest-item" data-index="${index}">
+        <strong>${highlightSuggestText(title, query)}</strong>
+        <span>${highlightSuggestText(hit || title, query)}</span>
+      </button>
+    `;
+  }).join('');
+  ocrSuggestList.classList.remove('hidden');
+}
+
+async function requestOcrSuggestions() {
+  const query = String(getActiveOcrQueryInput()?.value || '').trim();
+  if (query.length < 2) {
+    hideOcrSuggestions();
+    return;
+  }
+  const selectedTypes = assetTypeFilters
+    .filter((el) => el.checked)
+    .map((el) => String(el.value || '').toLowerCase())
+    .filter(Boolean);
+  if (!selectedTypes.length) {
+    hideOcrSuggestions();
+    return;
+  }
+  const filters = serializeForm(searchForm);
+  const reqId = ++ocrSuggestReqSeq;
+  const params = new URLSearchParams();
+  params.set('q', query);
+  params.set('limit', '8');
+  params.set('trash', normalizeTrashScopeForSuggest(filters.trash));
+  if (String(filters.tag || '').trim()) params.set('tag', String(filters.tag).trim());
+  if (String(filters.type || '').trim()) params.set('type', String(filters.type).trim());
+  if (String(filters.status || '').trim()) params.set('status', String(filters.status).trim());
+  if (selectedTypes.length < assetTypeFilters.length) params.set('types', selectedTypes.join(','));
+  try {
+    const result = await api(`/api/assets/ocr-suggest?${params.toString()}`);
+    if (reqId !== ocrSuggestReqSeq) return;
+    renderOcrSuggestions(result, query);
+  } catch (_error) {
+    if (reqId !== ocrSuggestReqSeq) return;
+    hideOcrSuggestions();
+  }
+}
+
+function queueOcrSuggestions() {
+  if (ocrSuggestTimer) clearTimeout(ocrSuggestTimer);
+  ocrSuggestTimer = setTimeout(() => {
+    requestOcrSuggestions().catch(() => {});
+  }, 170);
+}
+
+function hideSubtitleSuggestions() {
+  if (!subtitleSuggestList) return;
+  subtitleSuggestList.classList.add('hidden');
+  subtitleSuggestList.innerHTML = '';
+  subtitleSuggestItems = [];
+  subtitleSuggestActiveIndex = -1;
+}
+
+function setSubtitleSuggestionActive(index) {
+  if (!subtitleSuggestList) return;
+  const buttons = Array.from(subtitleSuggestList.querySelectorAll('.search-suggest-item'));
+  if (!buttons.length) {
+    subtitleSuggestActiveIndex = -1;
+    return;
+  }
+  const safeIndex = Math.max(0, Math.min(buttons.length - 1, index));
+  subtitleSuggestActiveIndex = safeIndex;
+  buttons.forEach((btn, idx) => btn.classList.toggle('active', idx === safeIndex));
+}
+
+async function applySubtitleSuggestion(item, runSearch = true) {
+  if (!item || !subtitleQueryInput) return;
+  hideSubtitleSuggestions();
+  const id = String(item.id || '').trim();
+  const startAtSeconds = Math.max(0, Number(item.startSec || 0));
+  if (id) {
+    // Oneri secildiginde ilgili asset acilir ve video o eslesme TC'sine sarar.
+    setSingleSelection(id);
+    const workflow = await api('/api/workflow');
+    await openAsset(id, workflow, { startAtSeconds });
+    return;
+  }
+  if (runSearch) await loadAssets();
+}
+
+function renderSubtitleSuggestions(items, query) {
+  if (!subtitleSuggestList) return;
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {
+    hideSubtitleSuggestions();
+    return;
+  }
+  subtitleSuggestItems = list;
+  subtitleSuggestActiveIndex = -1;
+  subtitleSuggestList.innerHTML = list.map((item, index) => {
+    const title = String(item.title || item.fileName || item.id || '');
+    const hit = String(item.subtitleHitText || '').trim();
+    return `
+      <button type="button" class="search-suggest-item" data-index="${index}">
+        <strong>${highlightSuggestText(title, query)}</strong>
+        <span>${highlightSuggestText(hit || title, query)}</span>
+      </button>
+    `;
+  }).join('');
+  subtitleSuggestList.classList.remove('hidden');
+}
+
+async function requestSubtitleSuggestions() {
+  const query = String(subtitleQueryInput?.value || '').trim();
+  if (query.length < 2) {
+    hideSubtitleSuggestions();
+    return;
+  }
+  const selectedTypes = assetTypeFilters
+    .filter((el) => el.checked)
+    .map((el) => String(el.value || '').toLowerCase())
+    .filter(Boolean);
+  if (!selectedTypes.length) {
+    hideSubtitleSuggestions();
+    return;
+  }
+  const filters = serializeForm(searchForm);
+  const reqId = ++subtitleSuggestReqSeq;
+  const params = new URLSearchParams();
+  params.set('q', query);
+  params.set('limit', '8');
+  params.set('trash', normalizeTrashScopeForSuggest(filters.trash));
+  if (String(filters.tag || '').trim()) params.set('tag', String(filters.tag).trim());
+  if (String(filters.type || '').trim()) params.set('type', String(filters.type).trim());
+  if (String(filters.status || '').trim()) params.set('status', String(filters.status).trim());
+  if (selectedTypes.length < assetTypeFilters.length) params.set('types', selectedTypes.join(','));
+  try {
+    // Sadece altyazi metinlerinden gelen onerileri getirir (OCR ile karismaz).
+    const result = await api(`/api/assets/subtitle-suggest?${params.toString()}`);
+    if (reqId !== subtitleSuggestReqSeq) return;
+    renderSubtitleSuggestions(result, query);
+  } catch (_error) {
+    if (reqId !== subtitleSuggestReqSeq) return;
+    hideSubtitleSuggestions();
+  }
+}
+
+function queueSubtitleSuggestions() {
+  if (subtitleSuggestTimer) clearTimeout(subtitleSuggestTimer);
+  subtitleSuggestTimer = setTimeout(() => {
+    requestSubtitleSuggestions().catch(() => {});
   }, 170);
 }
 
@@ -1452,9 +1820,17 @@ function highlightMatch(value, query) {
 function dcHighlightSnippet(asset, query) {
   const terms = extractHighlightTerms(query);
   if (!terms.length || !asset || !asset.dcMetadata || typeof asset.dcMetadata !== 'object') return '';
+  const ignoredKeys = new Set([
+    'subtitleurl', 'subtitlelang', 'subtitlelabel', 'subtitleitems',
+    'videoocrurl', 'videoocrlabel', 'videoocrengine', 'videoocrlinecount', 'videoocrsegmentcount', 'videoocritems'
+  ]);
   const entries = Object.entries(asset.dcMetadata)
-    .filter(([, value]) => {
-      const text = String(value || '').toLowerCase();
+    .filter(([key, value]) => {
+      const foldedKey = String(key || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (ignoredKeys.has(foldedKey)) return false;
+      if (value === null || value === undefined) return false;
+      if (typeof value === 'object') return false;
+      const text = String(value).toLowerCase();
       return terms.some((term) => text.includes(term));
     })
     .slice(0, 2);
@@ -1668,10 +2044,26 @@ function renderAssets(assets) {
     .map((asset) => {
       const selected = selectedAssetIds.has(asset.id) ? 'selected' : '';
       const trashClass = asset.inTrash ? 'in-trash' : '';
+      const styleClass = 'card-art-glass';
       const dcHits = dcHighlightSnippet(asset, currentSearchQuery);
       const clipHits = clipHighlightSnippet(asset, currentSearchQuery);
+      const ocrHitQuery = String(asset?.ocrSearchHit?.query || currentOcrQuery || '').trim();
+      const ocrHitText = String(asset?.ocrSearchHit?.text || '').trim();
+      const ocrHitSec = Number(asset?.ocrSearchHit?.startSec || 0);
+      const ocrHitTc = secondsToTimecode(ocrHitSec, PLAYER_FPS);
+      const ocrHit = ocrHitText
+        ? `<button type="button" class="asset-meta dc-hit-row ocr-hit-jump" data-ocr-jump="1" data-id="${asset.id}" data-start-sec="${escapeHtml(String(ocrHitSec))}"><strong>${escapeHtml(t('ocr_hit'))} TC ${escapeHtml(ocrHitTc)}:</strong> ${highlightMatch(ocrHitText, ocrHitQuery)}</button>`
+        : '';
+      const subtitleHitQuery = String(asset?.subtitleSearchHit?.query || currentSubtitleQuery || '').trim();
+      const subtitleHitText = String(asset?.subtitleSearchHit?.text || '').trim();
+      const subtitleHitSec = Number(asset?.subtitleSearchHit?.startSec || 0);
+      const subtitleHitTc = secondsToTimecode(subtitleHitSec, PLAYER_FPS);
+      // Kart uzerindeki altyazi eslesmesine tiklaninca ilgili timecode'a gidilir.
+      const subtitleHit = subtitleHitText
+        ? `<button type="button" class="asset-meta dc-hit-row ocr-hit-jump" data-ocr-jump="1" data-id="${asset.id}" data-start-sec="${escapeHtml(String(subtitleHitSec))}"><strong>${escapeHtml(t('subtitles'))} TC ${escapeHtml(subtitleHitTc)}:</strong> ${highlightMatch(subtitleHitText, subtitleHitQuery)}</button>`
+        : '';
       return `
-        <article class="asset-card ${selected} ${trashClass}" data-id="${asset.id}">
+        <article class="asset-card ${selected} ${trashClass} ${styleClass}" data-id="${asset.id}">
           ${thumbnailMarkup(asset)}
           <div class="asset-card-body">
             <h3><span class="type-icon" aria-hidden="true">${assetTypeIcon(asset)}</span> ${highlightMatch(asset.title, currentSearchQuery)}</h3>
@@ -1679,6 +2071,8 @@ function renderAssets(assets) {
             <div class="asset-meta">${escapeHtml(workflowLabel(asset.status))}${(isVideo(asset) || isAudio(asset)) ? ` | ${escapeHtml(formatDuration(asset.durationSeconds))}` : ''}</div>
             ${dcHits ? `<div class="asset-meta dc-hit-row">${dcHits}</div>` : ''}
             ${clipHits ? `<div class="asset-meta dc-hit-row">${clipHits}</div>` : ''}
+            ${subtitleHit}
+            ${ocrHit}
             <div class="asset-meta">${escapeHtml(formatDate(asset.updatedAt))}</div>
             <div class="chips">
               ${(asset.tags || []).slice(0, 4).map((tag) => `<button type="button" class="chip chip-tag-filter" data-chip-tag="${escapeHtml(tag)}" style="${tagColorStyle(tag)}">${highlightMatch(tag, currentSearchQuery)}</button>`).join('')}
@@ -1730,12 +2124,39 @@ function addShiftRangeSelection(assetId) {
   lastSelectedAssetId = assetId;
 }
 
+function toggleMultiSelection(assetId) {
+  const id = String(assetId || '').trim();
+  if (!id) return;
+  if (selectedAssetIds.has(id)) {
+    selectedAssetIds.delete(id);
+  } else {
+    selectedAssetIds.add(id);
+  }
+
+  if (selectedAssetIds.size === 0) {
+    selectedAssetId = null;
+    lastSelectedAssetId = null;
+    return;
+  }
+
+  if (selectedAssetIds.has(id)) {
+    selectedAssetId = id;
+    lastSelectedAssetId = id;
+    return;
+  }
+
+  const fallbackId = [...selectedAssetIds][selectedAssetIds.size - 1] || null;
+  selectedAssetId = fallbackId;
+  lastSelectedAssetId = fallbackId;
+}
+
 function mediaViewer(asset, options = {}) {
   const showVideoToolsButton = options.showVideoToolsButton !== false;
   const includeSubtitleTools = options.includeSubtitleTools !== false;
   const includeSectionHide = options.includeSectionHide === true;
   const audioSideLayout = options.audioSideLayout === true;
   const includeDetailPin = options.includeDetailPin === true;
+  const tcInControlBar = options.tcInControlBar === true;
   if (!asset.mediaUrl) return `<div class="empty">${escapeHtml(t('no_media'))}</div>`;
 
   const playbackUrl = escapeHtml(isVideo(asset) ? (asset.proxyUrl || '') : asset.mediaUrl);
@@ -1765,7 +2186,7 @@ function mediaViewer(asset, options = {}) {
       <div class="viewer-core">
         <div class="viewer-head">
           <h4 class="viewer-asset-name">${escapeHtml(asset.title)}</h4>
-          <div class="viewer-tc">${t('tc')}: <strong id="currentTimecode">00:00:00:00</strong></div>
+          ${tcInControlBar ? '' : `<div class="viewer-tc">${t('tc')}: <strong id="currentTimecode">00:00:00:00</strong></div>`}
           ${includeDetailPin ? `<button type="button" id="detailVideoPinBtn" class="viewer-pin-btn" title="${escapeHtml(detailVideoPinned ? t('unpin_video') : t('pin_video'))}" aria-label="${escapeHtml(detailVideoPinned ? t('unpin_video') : t('pin_video'))}" aria-pressed="${detailVideoPinned ? 'true' : 'false'}">📌</button>` : ''}
         </div>
         <div class="video-top-layout${audioSideLayout ? '' : ' no-audio-side'}">
@@ -1785,8 +2206,12 @@ function mediaViewer(asset, options = {}) {
                 <span id="customMarkOutTick" class="custom-seek-tick custom-seek-tick-out hidden" data-label="OUT" title="OUT"></span>
               </div>
               <span id="customDurationTime" class="custom-time">00:00:00</span>
-              <button type="button" id="customMuteBtn" title="Mute">🔊</button>
-              <input type="range" id="customVolumeRange" class="custom-volume" min="0" max="1" step="0.01" value="1" />
+              <div class="custom-volume-wrap" id="customVolumeWrap">
+                <button type="button" id="customMuteBtn" title="Volume" aria-label="Volume">🔊</button>
+                <div class="custom-volume-popover" id="customVolumePopover">
+                  <input type="range" id="customVolumeRange" class="custom-volume custom-volume-vertical" min="0" max="1" step="0.01" value="1" />
+                </div>
+              </div>
             </div>
             ` : ''}
             <div class="player-controls-box control-stickbar">
@@ -1809,6 +2234,7 @@ function mediaViewer(asset, options = {}) {
                   <button type="button" id="markOutBtn">${t('set_out')}</button>
                   <button type="button" id="goInBtn">${t('go_in')}</button>
                   <button type="button" id="goOutBtn">${t('go_out')}</button>
+                  ${tcInControlBar ? `<div class="viewer-tc viewer-tc-inline">${t('tc')}: <strong id="currentTimecode">00:00:00:00</strong></div>` : ''}
                   ${showVideoToolsButton ? `<button type="button" id="videoToolsBtn">${t('video_tools')}</button>` : ''}
                 </div>
               </div>
@@ -1855,11 +2281,23 @@ function mediaViewer(asset, options = {}) {
               <div class="viewer-meta"><strong>${t('subtitle_list')}:</strong></div>
               <div id="subtitleItems" class="subtitle-items"></div>
             </div>
+            <div class="subtitle-list-wrap">
+              <div class="viewer-meta"><strong>${t('subtitle_search_results')}:</strong></div>
+              <div class="subtitle-tools-row">
+                <div class="search-query-wrap">
+                  <input id="subtitleSearchInput" class="subtitle-name-input" type="text" placeholder="${escapeHtml(t('subtitle_search_ph'))}" />
+                  <div id="subtitleSearchSuggest" class="search-suggest hidden"></div>
+                </div>
+                <button type="button" id="subtitleSearchBtn">${t('subtitle_search_btn')}</button>
+              </div>
+              <div id="subtitleSearchResults" class="subtitle-items"></div>
+            </div>
             <div class="subtitle-tools-row">
               <label for="subtitleLangInput">${t('subtitle_lang')}</label>
               <input id="subtitleLangInput" class="subtitle-lang-input" type="text" maxlength="12" value="${escapeHtml(asset.subtitleLang || currentLang || 'tr')}" />
               <label for="subtitleLabelInput">${t('subtitle_name')}</label>
               <input id="subtitleLabelInput" class="subtitle-name-input" type="text" maxlength="120" value="${escapeHtml(asset.subtitleLabel || '')}" />
+              <label class="video-tools-check subtitle-backend-check"><input id="subtitleWhisperxCheck" type="checkbox" /> ${t('subtitle_use_whisperx')}</label>
               <button type="button" id="subtitleGenerateBtn">${t('subtitle_generate')}</button>
               <button type="button" id="subtitleRenameBtn">${t('subtitle_save_name')}</button>
               <input id="subtitleFileInput" type="file" accept=".vtt,.srt,text/vtt,application/x-subrip" />
@@ -1884,11 +2322,32 @@ function mediaViewer(asset, options = {}) {
               <input id="videoOcrLangInput" class="subtitle-name-input" type="text" maxlength="32" value="eng+tur" />
               <label for="videoOcrEngineSelect">${t('video_ocr_engine')}</label>
               <select id="videoOcrEngineSelect" class="subtitle-lang-input">
-                <option value="tesseract">${t('video_ocr_engine_tesseract')}</option>
                 <option value="paddle">${t('video_ocr_engine_paddle')}</option>
               </select>
+              <label for="videoOcrPreprocessSelect">${t('video_ocr_preprocess')}</label>
+              <select id="videoOcrPreprocessSelect" class="subtitle-lang-input">
+                <option value="off">${t('video_ocr_preprocess_off')}</option>
+                <option value="light" selected>${t('video_ocr_preprocess_light')}</option>
+                <option value="strong">${t('video_ocr_preprocess_strong')}</option>
+              </select>
+              <label class="video-tools-check"><input id="videoOcrAdvancedCheck" type="checkbox" checked /> ${t('video_ocr_advanced')}</label>
+              <label class="video-tools-check"><input id="videoOcrAiCorrectCheck" type="checkbox" checked /> ${t('video_ocr_ai_correct')}</label>
+              <label class="video-tools-check"><input id="videoOcrBlurFilterCheck" type="checkbox" checked /> ${t('video_ocr_blur_filter')}</label>
+              <label for="videoOcrBlurThresholdInput">${t('video_ocr_blur_threshold')}</label>
+              <input id="videoOcrBlurThresholdInput" class="subtitle-lang-input" type="number" min="0" max="300" step="1" value="80" />
+              <label class="video-tools-check"><input id="videoOcrRegionModeCheck" type="checkbox" /> ${t('video_ocr_region_mode')}</label>
+              <label for="videoOcrTickerHeightInput">${t('video_ocr_ticker_height')}</label>
+              <input id="videoOcrTickerHeightInput" class="subtitle-lang-input" type="number" min="10" max="40" step="1" value="20" />
+              <label class="video-tools-check"><input id="videoOcrStaticFilterCheck" type="checkbox" checked /> ${t('video_ocr_static_filter')}</label>
+              <label for="videoOcrIgnorePhrasesInput">${t('video_ocr_ignore_phrases')}</label>
+              <input id="videoOcrIgnorePhrasesInput" class="subtitle-name-input" type="text" maxlength="220" placeholder="${escapeHtml(t('video_ocr_ignore_phrases_ph'))}" />
+              <label for="videoOcrMinDisplayInput">${t('video_ocr_min_display')}</label>
+              <input id="videoOcrMinDisplayInput" class="subtitle-lang-input" type="number" min="1" max="60" step="1" value="8" />
+              <label for="videoOcrMergeGapInput">${t('video_ocr_merge_gap')}</label>
+              <input id="videoOcrMergeGapInput" class="subtitle-lang-input" type="number" min="0" max="30" step="1" value="4" />
               <button type="button" id="videoOcrExtractBtn">${t('video_ocr_extract')}</button>
               <a id="videoOcrDownloadLink" class="subtitle-item-download-btn hidden" href="#" download target="_blank" rel="noreferrer">${t('video_ocr_download')}</a>
+              <button type="button" id="videoOcrSaveBtn" class="hidden">${t('video_ocr_save_db')}</button>
             </div>
           </div>
         </div>
@@ -1952,7 +2411,7 @@ function mediaViewer(asset, options = {}) {
   }
 
   if (isPdf(asset)) {
-    const viewerSrc = `/pdf-viewer.html?file=${encodeURIComponent(String(asset.mediaUrl || '').split('#')[0])}&assetId=${encodeURIComponent(asset.id)}`;
+    const viewerSrc = `/pdf-viewer.html?file=${encodeURIComponent(String(asset.mediaUrl || '').split('#')[0])}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&pdfAdvanced=${currentUserCanUsePdfAdvancedTools ? '1' : '0'}`;
     return `
       <div class="viewer-resizable">
         <iframe id="pdfViewerFrame" class="asset-viewer pdf-viewer-frame" src="${escapeHtml(viewerSrc)}" title="PDF Viewer" loading="lazy"></iframe>
@@ -1964,7 +2423,7 @@ function mediaViewer(asset, options = {}) {
   }
 
   if (isDocument(asset)) {
-    const viewerSrc = `/pdf-viewer.html?file=${encodeURIComponent(String(asset.mediaUrl || '').split('#')[0])}&assetId=${encodeURIComponent(asset.id)}`;
+    const viewerSrc = `/pdf-viewer.html?file=${encodeURIComponent(String(asset.mediaUrl || '').split('#')[0])}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&pdfAdvanced=${currentUserCanUsePdfAdvancedTools ? '1' : '0'}`;
     return `
       <div class="viewer-resizable">
         <iframe id="docViewerFrame" class="asset-viewer pdf-viewer-frame" src="${escapeHtml(viewerSrc)}" title="Document Viewer" loading="lazy"></iframe>
@@ -2162,7 +2621,9 @@ function detailMarkup(asset, workflow) {
     </form>
   `;
 
-  const versionSection = `
+  const assetIsPdf = String(asset.mimeType || '').toLowerCase().includes('pdf');
+  const canManageVersions = Boolean(currentUserCanAccessAdmin && (!assetIsPdf || currentUserCanUsePdfAdvancedTools));
+  const versionSection = canManageVersions ? `
     <form id="versionForm" class="inline-grid">
       <h4>${t('add_version')}</h4>
       <input name="label" placeholder="${escapeHtml(t('ph_version_label'))}" />
@@ -2171,17 +2632,45 @@ function detailMarkup(asset, workflow) {
     </form>
 
     <h4>${t('versions')}</h4>
+    ${(
+      currentUserCanAccessAdmin
+      && currentUserCanUsePdfAdvancedTools
+      && assetIsPdf
+    ) ? `
+      <div class="timecode-bar" style="margin: 0 0 8px 0;">
+        <button type="button" id="restorePdfOriginalBtn">${escapeHtml(t('restore_pdf_original'))}</button>
+      </div>
+    ` : ''}
     ${asset.versions
-      .map(
-        (v) => `
-          <div class="version">
-            <strong>${escapeHtml(v.label)}</strong> - ${escapeHtml(v.note)}<br />
-            <span class="asset-meta">${new Date(v.createdAt).toLocaleString()}</span>
+      .map((v) => {
+        const isPdfAsset = assetIsPdf;
+        const actionType = String(v.actionType || 'manual').toLowerCase();
+        if (actionType === 'pdf_original') return '';
+        const hasSnapshot = String(v.snapshotMediaUrl || '').startsWith('/uploads/');
+        const canRestore = Boolean(currentUserCanAccessAdmin && isPdfAsset && hasSnapshot);
+        const canDeleteVersion = Boolean(currentUserCanAccessAdmin);
+        const changeKindLabel = actionType === 'pdf_save' ? renderPdfChangeKindLabel(v) : '';
+        const cleanNote = cleanVersionNoteText(v.note);
+        return `
+          <div class="version ${canRestore ? 'version-restorable' : ''}" ${canRestore ? `data-restore-version-id="${escapeHtml(v.versionId)}"` : ''}>
+            <strong>${escapeHtml(v.label)}</strong> - ${escapeHtml(cleanNote)}<br />
+            <span class="asset-meta">${new Date(v.createdAt).toLocaleString()}</span><br />
+            <span class="asset-meta">${escapeHtml(t('version_action'))}: ${escapeHtml(t(`action_${actionType}`) || String(v.actionType || 'manual'))} | ${escapeHtml(t('version_actor'))}: ${escapeHtml(v.actorUsername || '-')}</span>
+            ${changeKindLabel ? `<br /><span class="asset-meta">${escapeHtml(t('version_change_type'))}: ${escapeHtml(changeKindLabel)}</span>` : ''}
+            ${(
+              currentUserCanAccessAdmin
+            ) ? `
+              <div class="timecode-bar" style="margin-top:8px;">
+                ${isPdfAsset ? `<button type="button" class="restorePdfVersionBtn" data-version-id="${escapeHtml(v.versionId)}" ${canRestore ? '' : 'disabled'}>${escapeHtml(canRestore ? t('restore_pdf_version') : t('restore_pdf_unavailable'))}</button>` : ''}
+                <button type="button" class="editVersionBtn" data-version-id="${escapeHtml(v.versionId)}">${escapeHtml(t('edit_version_name'))}</button>
+                ${canDeleteVersion ? `<button type="button" class="deleteVersionBtn danger" data-version-id="${escapeHtml(v.versionId)}">${escapeHtml(t('delete_version'))}</button>` : ''}
+              </div>
+            ` : ''}
           </div>
-        `
-      )
+        `;
+      })
       .join('')}
-  `;
+  ` : '';
 
   const metadataSection = `
     ${isVideo(asset) ? metadataTopSection : viewerSection}
@@ -2300,6 +2789,7 @@ function initFrameControls(mediaEl, asset, root = document) {
   const cuts = Array.isArray(asset.cuts) ? [...asset.cuts] : [];
   let activeCutId = null;
   let showActiveCutTicks = false;
+  let activeCutPlayOutSec = null;
 
   const getFps = () => PLAYER_FPS;
   const snapToFrame = (seconds) => {
@@ -2310,6 +2800,15 @@ function initFrameControls(mediaEl, asset, root = document) {
   };
 
   const updateTimecode = () => {
+    if (activeCutPlayOutSec != null && Number.isFinite(activeCutPlayOutSec)) {
+      const stopAt = snapToFrame(activeCutPlayOutSec);
+      const eps = 1 / Math.max(1, getFps() * 2);
+      if (Number(mediaEl.currentTime) >= (stopAt - eps)) {
+        mediaEl.pause();
+        mediaEl.currentTime = stopAt;
+        activeCutPlayOutSec = null;
+      }
+    }
     currentTimecodeEl.textContent = secondsToTimecode(mediaEl.currentTime, getFps());
     syncMarkTicks();
   };
@@ -2390,6 +2889,7 @@ function initFrameControls(mediaEl, asset, root = document) {
             <div class="cut-item-actions">
               <button type="button" data-cut-action="edit" data-cut-id="${cut.cutId}">${t('edit_clip')}</button>
               <button type="button" data-cut-action="jump" data-cut-id="${cut.cutId}">${t('jump_to_cut')}</button>
+              <button type="button" data-cut-action="play-cut" data-cut-id="${cut.cutId}">${t('play_cut')}</button>
               ${currentUserIsAdmin ? `<button type="button" data-cut-action="delete" data-cut-id="${cut.cutId}">${t('delete_cut')}</button>` : ''}
             </div>
           </div>
@@ -2421,6 +2921,7 @@ function initFrameControls(mediaEl, asset, root = document) {
   };
 
   const onStop = () => {
+    activeCutPlayOutSec = null;
     mediaEl.pause();
     mediaEl.currentTime = 0;
     updateTimecode();
@@ -2432,6 +2933,7 @@ function initFrameControls(mediaEl, asset, root = document) {
     activeCutId = null;
     marks.in = snapToFrame(mediaEl.currentTime);
     marks.out = null;
+    activeCutPlayOutSec = null;
     showActiveCutTicks = true;
     renderCuts();
     updateMarks();
@@ -2439,6 +2941,7 @@ function initFrameControls(mediaEl, asset, root = document) {
 
   const onMarkOut = () => {
     marks.out = snapToFrame(mediaEl.currentTime);
+    activeCutPlayOutSec = null;
     showActiveCutTicks = true;
     updateMarks();
   };
@@ -2448,6 +2951,7 @@ function initFrameControls(mediaEl, asset, root = document) {
     const target = activeCut ? Number(activeCut.inPointSeconds) : marks.in;
     if (target != null && Number.isFinite(Number(target))) {
       showActiveCutTicks = true;
+      activeCutPlayOutSec = null;
       mediaEl.currentTime = snapToFrame(Number(target));
       syncMarkTicks();
     }
@@ -2458,6 +2962,7 @@ function initFrameControls(mediaEl, asset, root = document) {
     const target = activeCut ? Number(activeCut.outPointSeconds) : marks.out;
     if (target != null && Number.isFinite(Number(target))) {
       showActiveCutTicks = true;
+      activeCutPlayOutSec = null;
       mediaEl.currentTime = snapToFrame(Number(target));
       syncMarkTicks();
     }
@@ -2466,6 +2971,7 @@ function initFrameControls(mediaEl, asset, root = document) {
   const onClear = () => {
     marks.in = null;
     marks.out = null;
+    activeCutPlayOutSec = null;
     showActiveCutTicks = false;
     updateMarks();
   };
@@ -2496,9 +3002,22 @@ function initFrameControls(mediaEl, asset, root = document) {
     if (action === 'jump') {
       activeCutId = cut.cutId;
       showActiveCutTicks = true;
+      activeCutPlayOutSec = null;
       renderCuts();
       mediaEl.currentTime = Number(cut.inPointSeconds) || 0;
       syncMarkTicks();
+      return;
+    }
+    if (action === 'play-cut') {
+      const inPoint = snapToFrame(Number(cut.inPointSeconds) || 0);
+      const outPoint = snapToFrame(Number(cut.outPointSeconds) || 0);
+      activeCutId = cut.cutId;
+      showActiveCutTicks = true;
+      activeCutPlayOutSec = outPoint >= inPoint ? outPoint : null;
+      renderCuts();
+      mediaEl.currentTime = inPoint;
+      syncMarkTicks();
+      mediaEl.play().catch(() => {});
       return;
     }
     if (action === 'edit') {
@@ -2633,6 +3152,7 @@ function initCustomVideoControls(mediaEl, root = document) {
   const durationEl = byId('customDurationTime');
   const seek = byId('customSeekRange');
   const muteBtn = byId('customMuteBtn');
+  const volumeWrap = byId('customVolumeWrap');
   const vol = byId('customVolumeRange');
   if (!bar || !playBtn || !currentEl || !durationEl || !seek || !muteBtn || !vol) return () => {};
 
@@ -2708,9 +3228,10 @@ function initCustomVideoControls(mediaEl, root = document) {
     const preview = duration > 0 ? frameToSeconds(Number(seek.value || 0)) : 0;
     currentEl.textContent = toClock(preview);
   };
-  const onMute = () => {
-    mediaEl.muted = !mediaEl.muted;
-    syncButtons();
+  const onMute = (event) => {
+    if (event) event.preventDefault();
+    if (!volumeWrap) return;
+    volumeWrap.classList.toggle('open');
   };
   const onVolume = () => {
     mediaEl.volume = Math.max(0, Math.min(1, Number(vol.value || 1)));
@@ -2722,6 +3243,17 @@ function initCustomVideoControls(mediaEl, root = document) {
     syncButtons();
   };
 
+  const onDocumentPointer = (event) => {
+    if (!volumeWrap || !volumeWrap.classList.contains('open')) return;
+    const target = event.target;
+    if (target instanceof Node && volumeWrap.contains(target)) return;
+    volumeWrap.classList.remove('open');
+  };
+  const onVolumeWrapLeave = () => {
+    if (!volumeWrap) return;
+    volumeWrap.classList.remove('open');
+  };
+
   playBtn.addEventListener('click', onPlayPause);
   seek.addEventListener('mousedown', onSeekStart);
   seek.addEventListener('touchstart', onSeekStart, { passive: true });
@@ -2729,6 +3261,8 @@ function initCustomVideoControls(mediaEl, root = document) {
   seek.addEventListener('change', onSeekEnd);
   muteBtn.addEventListener('click', onMute);
   vol.addEventListener('input', onVolume);
+  volumeWrap?.addEventListener('mouseleave', onVolumeWrapLeave);
+  document.addEventListener('pointerdown', onDocumentPointer);
 
   mediaEl.addEventListener('timeupdate', syncTimeline);
   mediaEl.addEventListener('loadedmetadata', rebuildSeekScale);
@@ -2753,6 +3287,8 @@ function initCustomVideoControls(mediaEl, root = document) {
     seek.removeEventListener('change', onSeekEnd);
     muteBtn.removeEventListener('click', onMute);
     vol.removeEventListener('input', onVolume);
+    volumeWrap?.removeEventListener('mouseleave', onVolumeWrapLeave);
+    document.removeEventListener('pointerdown', onDocumentPointer);
     mediaEl.removeEventListener('timeupdate', syncTimeline);
     mediaEl.removeEventListener('loadedmetadata', rebuildSeekScale);
     mediaEl.removeEventListener('loadedmetadata', syncTimeline);
@@ -3474,11 +4010,19 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
   const overlayCheck = byId('subtitleOverlayCheck');
   const langInput = byId('subtitleLangInput');
   const labelInput = byId('subtitleLabelInput');
+  const whisperxCheck = byId('subtitleWhisperxCheck');
   const renameBtn = byId('subtitleRenameBtn');
   const fileInput = byId('subtitleFileInput');
   const uploadBtn = byId('subtitleUploadBtn');
   const generateBtn = byId('subtitleGenerateBtn');
-  if (!statusEl || !itemsEl || !langInput || !labelInput || !renameBtn || !fileInput || !uploadBtn || !generateBtn) return () => {};
+  const searchInput = byId('subtitleSearchInput');
+  const searchBtn = byId('subtitleSearchBtn');
+  const searchSuggestEl = byId('subtitleSearchSuggest');
+  const searchResultsEl = byId('subtitleSearchResults');
+  if (!statusEl || !itemsEl || !langInput || !labelInput || !renameBtn || !fileInput || !uploadBtn || !generateBtn || !searchInput || !searchBtn || !searchResultsEl || !searchSuggestEl || !whisperxCheck) return () => {};
+  let subtitleSuggestItems = [];
+  let subtitleSuggestActive = -1;
+  let subtitleSuggestTimer = null;
 
   const getLang = () => String(langInput.value || '').trim().toLowerCase().slice(0, 12) || 'tr';
   const getOverlayEnabled = () => getSubtitleOverlayEnabled(asset.id, false);
@@ -3492,6 +4036,8 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     renameBtn.disabled = busy;
     uploadBtn.disabled = busy;
     generateBtn.disabled = busy;
+    whisperxCheck.disabled = busy;
+    searchBtn.disabled = busy;
   };
 
   const applyTrackMode = () => {
@@ -3518,6 +4064,77 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     asset.subtitleLang = mappedAsset.subtitleLang || asset.subtitleLang || getLang();
     asset.subtitleLabel = mappedAsset.subtitleLabel || asset.subtitleLabel || '';
     asset.subtitleItems = Array.isArray(mappedAsset.subtitleItems) ? mappedAsset.subtitleItems : (asset.subtitleItems || []);
+  };
+  const renderSearchResults = (matches = []) => {
+    if (!Array.isArray(matches) || !matches.length) {
+      searchResultsEl.innerHTML = `<div class="subtitle-item-empty">${escapeHtml(t('subtitle_search_empty'))}</div>`;
+      return;
+    }
+    searchResultsEl.innerHTML = matches.map((item) => `
+      <div class="subtitle-item-row">
+        <span class="subtitle-item-label">[${escapeHtml(String(item.startTc || '').slice(0, 12))}] ${escapeHtml(item.text || '')}</span>
+        <button type="button" class="subtitle-item-use-btn" data-jump-sec="${escapeHtml(String(item.startSec || 0))}">${t('subtitle_jump')}</button>
+      </div>
+    `).join('');
+    searchResultsEl.querySelectorAll('.subtitle-item-use-btn').forEach((btn) => {
+      btn.addEventListener('click', (event) => {
+        const sec = Number(event.currentTarget?.dataset?.jumpSec || 0);
+        const video = mediaEl || root.querySelector('#assetVideo') || document.querySelector('#assetVideo');
+        if (!video || !Number.isFinite(sec)) return;
+        video.currentTime = Math.max(0, sec);
+        video.play().catch(() => {});
+      });
+    });
+  };
+  const hideSubtitleSuggest = () => {
+    searchSuggestEl.classList.add('hidden');
+    searchSuggestEl.innerHTML = '';
+    subtitleSuggestItems = [];
+    subtitleSuggestActive = -1;
+  };
+  const setSubtitleSuggestActive = (index) => {
+    const buttons = Array.from(searchSuggestEl.querySelectorAll('.search-suggest-item'));
+    if (!buttons.length) {
+      subtitleSuggestActive = -1;
+      return;
+    }
+    subtitleSuggestActive = Math.max(0, Math.min(buttons.length - 1, index));
+    buttons.forEach((btn, idx) => btn.classList.toggle('active', idx === subtitleSuggestActive));
+  };
+  const renderSubtitleSuggest = (items, query) => {
+    const list = Array.isArray(items) ? items : [];
+    if (!list.length) {
+      hideSubtitleSuggest();
+      return;
+    }
+    subtitleSuggestItems = list;
+    subtitleSuggestActive = -1;
+    searchSuggestEl.innerHTML = list.map((item, index) => `
+      <button type="button" class="search-suggest-item" data-index="${index}">
+        <strong>[${escapeHtml(String(item.startTc || '').slice(0, 12))}]</strong>
+        <span>${highlightSuggestText(String(item.text || ''), query)}</span>
+      </button>
+    `).join('');
+    searchSuggestEl.classList.remove('hidden');
+  };
+  const requestSubtitleSuggest = async () => {
+    const q = String(searchInput.value || '').trim();
+    if (q.length < 2) {
+      hideSubtitleSuggest();
+      return;
+    }
+    try {
+      const result = await api(`/api/assets/${asset.id}/subtitles/suggest?q=${encodeURIComponent(q)}&limit=8`);
+      renderSubtitleSuggest(result, q);
+    } catch (_error) {
+      hideSubtitleSuggest();
+    }
+  };
+  const queueSubtitleSuggest = () => {
+    if (subtitleSuggestTimer) clearTimeout(subtitleSuggestTimer);
+    subtitleSuggestTimer = setTimeout(() => {
+      requestSubtitleSuggest().catch(() => {});
+    }, 170);
   };
   const renderSubtitleItems = () => {
     const items = subtitleItems();
@@ -3640,10 +4257,20 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
       const requestedLabel = String(labelInput.value || '').trim() || 'auto-whisper';
       const queued = await api(`/api/assets/${asset.id}/subtitles/generate`, {
         method: 'POST',
-        body: JSON.stringify({ lang: getLang(), label: requestedLabel, model: 'tiny' })
+        body: JSON.stringify({
+          lang: getLang(),
+          label: requestedLabel,
+          model: 'tiny',
+          useWhisperX: Boolean(whisperxCheck.checked),
+          turkishAiCorrect: String(getLang() || '').toLowerCase().startsWith('tr'),
+          useZemberekLexicon: String(getLang() || '').toLowerCase().startsWith('tr')
+        })
       });
       setStatus(t('subtitle_job_started'));
       const result = await pollSubtitleJob(queued.jobId);
+      if (String(result.warning || '').trim()) {
+        alert(String(result.warning));
+      }
       applyAssetFromApi(result.asset);
       if (!asset.subtitleUrl) asset.subtitleUrl = result.subtitleUrl || '';
       if (!asset.subtitleLang) asset.subtitleLang = result.subtitleLang || getLang();
@@ -3692,10 +4319,74 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     subtitleOverlayEnabledByAsset.set(asset.id, Boolean(overlayCheck?.checked));
     applyTrackMode();
   };
+  const onSubtitleSearch = async () => {
+    const q = String(searchInput.value || '').trim();
+    if (q.length < 2) {
+      renderSearchResults([]);
+      return;
+    }
+    searchBtn.disabled = true;
+    hideSubtitleSuggest();
+    try {
+      const result = await api(`/api/assets/${asset.id}/subtitles/search?q=${encodeURIComponent(q)}&limit=30`);
+      renderSearchResults(Array.isArray(result.matches) ? result.matches : []);
+    } catch (error) {
+      alert(String(error?.message || 'Subtitle search failed'));
+    } finally {
+      searchBtn.disabled = false;
+    }
+  };
+  const onSubtitleSearchEnter = (event) => {
+    const isOpen = !searchSuggestEl.classList.contains('hidden');
+    if (isOpen && event.key === 'ArrowDown') {
+      event.preventDefault();
+      setSubtitleSuggestActive((subtitleSuggestActive < 0 ? -1 : subtitleSuggestActive) + 1);
+      return;
+    }
+    if (isOpen && event.key === 'ArrowUp') {
+      event.preventDefault();
+      setSubtitleSuggestActive((subtitleSuggestActive < 0 ? subtitleSuggestItems.length : subtitleSuggestActive) - 1);
+      return;
+    }
+    if (isOpen && event.key === 'Escape') {
+      hideSubtitleSuggest();
+      return;
+    }
+    if (isOpen && event.key === 'Enter' && subtitleSuggestActive >= 0 && subtitleSuggestItems[subtitleSuggestActive]) {
+      event.preventDefault();
+      const selected = subtitleSuggestItems[subtitleSuggestActive];
+      searchInput.value = String(selected.text || searchInput.value || '').trim();
+      hideSubtitleSuggest();
+      onSubtitleSearch();
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      onSubtitleSearch();
+    }
+  };
 
   renameBtn.addEventListener('click', onRename);
   uploadBtn.addEventListener('click', onUpload);
   generateBtn.addEventListener('click', onGenerate);
+  searchBtn.addEventListener('click', onSubtitleSearch);
+  searchInput.addEventListener('keydown', onSubtitleSearchEnter);
+  searchInput.addEventListener('input', queueSubtitleSuggest);
+  searchInput.addEventListener('focus', queueSubtitleSuggest);
+  searchInput.addEventListener('blur', () => {
+    setTimeout(() => hideSubtitleSuggest(), 120);
+  });
+  searchSuggestEl.addEventListener('mousedown', (event) => event.preventDefault());
+  searchSuggestEl.addEventListener('click', (event) => {
+    const btn = event.target.closest('.search-suggest-item');
+    if (!btn) return;
+    const idx = Number(btn.dataset.index);
+    if (!Number.isFinite(idx) || idx < 0 || idx >= subtitleSuggestItems.length) return;
+    const selected = subtitleSuggestItems[idx];
+    searchInput.value = String(selected.text || searchInput.value || '').trim();
+    hideSubtitleSuggest();
+    onSubtitleSearch();
+  });
   overlayCheck?.addEventListener('change', onOverlayChange);
 
   if (asset.subtitleUrl) {
@@ -3704,6 +4395,8 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     setStatus(t('subtitle_none'));
   }
   renderSubtitleItems();
+  renderSearchResults([]);
+  hideSubtitleSuggest();
   if (overlayCheck) overlayCheck.checked = getOverlayEnabled();
   applyTrackMode();
 
@@ -3711,6 +4404,10 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     renameBtn.removeEventListener('click', onRename);
     uploadBtn.removeEventListener('click', onUpload);
     generateBtn.removeEventListener('click', onGenerate);
+    searchBtn.removeEventListener('click', onSubtitleSearch);
+    searchInput.removeEventListener('keydown', onSubtitleSearchEnter);
+    searchInput.removeEventListener('input', queueSubtitleSuggest);
+    searchInput.removeEventListener('focus', queueSubtitleSuggest);
     overlayCheck?.removeEventListener('change', onOverlayChange);
   };
 }
@@ -3722,9 +4419,42 @@ function initVideoOcrTools(asset, root = document) {
   const intervalInput = byId('videoOcrIntervalInput');
   const langInput = byId('videoOcrLangInput');
   const engineSelect = byId('videoOcrEngineSelect');
+  const preprocessSelect = byId('videoOcrPreprocessSelect');
+  const advancedCheck = byId('videoOcrAdvancedCheck');
+  const aiCorrectCheck = byId('videoOcrAiCorrectCheck');
+  const blurFilterCheck = byId('videoOcrBlurFilterCheck');
+  const blurThresholdInput = byId('videoOcrBlurThresholdInput');
+  const regionModeCheck = byId('videoOcrRegionModeCheck');
+  const tickerHeightInput = byId('videoOcrTickerHeightInput');
+  const staticFilterCheck = byId('videoOcrStaticFilterCheck');
+  const ignorePhrasesInput = byId('videoOcrIgnorePhrasesInput');
+  const minDisplayInput = byId('videoOcrMinDisplayInput');
+  const mergeGapInput = byId('videoOcrMergeGapInput');
   const extractBtn = byId('videoOcrExtractBtn');
   const downloadLink = byId('videoOcrDownloadLink');
-  if (!statusEl || !busyEl || !intervalInput || !langInput || !engineSelect || !extractBtn || !downloadLink) return () => {};
+  const saveBtn = byId('videoOcrSaveBtn');
+  if (!statusEl
+    || !busyEl
+    || !intervalInput
+    || !langInput
+    || !engineSelect
+    || !preprocessSelect
+    || !advancedCheck
+    || !aiCorrectCheck
+    || !blurFilterCheck
+    || !blurThresholdInput
+    || !regionModeCheck
+    || !tickerHeightInput
+    || !staticFilterCheck
+    || !ignorePhrasesInput
+    || !minDisplayInput
+    || !mergeGapInput
+    || !extractBtn
+    || !downloadLink
+    || !saveBtn) return () => {};
+
+  let disposed = false;
+  let saveTargetJobId = '';
 
   const setBusy = (busy) => {
     busyEl.classList.toggle('hidden', !busy);
@@ -3732,34 +4462,105 @@ function initVideoOcrTools(asset, root = document) {
     intervalInput.disabled = busy;
     langInput.disabled = busy;
     engineSelect.disabled = busy;
+    preprocessSelect.disabled = busy;
+    advancedCheck.disabled = busy;
+    aiCorrectCheck.disabled = busy;
+    blurFilterCheck.disabled = busy;
+    blurThresholdInput.disabled = busy;
+    regionModeCheck.disabled = busy;
+    tickerHeightInput.disabled = busy;
+    staticFilterCheck.disabled = busy;
+    ignorePhrasesInput.disabled = busy;
+    minDisplayInput.disabled = busy;
+    mergeGapInput.disabled = busy;
+    saveBtn.disabled = busy;
   };
   const setStatus = (text) => {
     statusEl.textContent = text;
   };
-  const setDownload = (jobId) => {
-    if (!jobId) {
+  const setDownload = (url = '') => {
+    if (!url) {
       downloadLink.classList.add('hidden');
       downloadLink.href = '#';
       return;
     }
     downloadLink.classList.remove('hidden');
-    downloadLink.href = `/api/video-ocr-jobs/${encodeURIComponent(String(jobId))}/download`;
+    downloadLink.href = String(url);
+  };
+  const setSaveVisible = (visible, jobId = '') => {
+    saveTargetJobId = visible ? String(jobId || '') : '';
+    saveBtn.classList.toggle('hidden', !visible);
+  };
+  const applyJobStatus = (job, options = {}) => {
+    const status = String(job?.status || '').trim();
+    if (status === 'failed') {
+      setStatus(`${t('video_ocr_failed')} ${String(job?.error || '').trim()}`.trim());
+      setDownload('');
+      setSaveVisible(false, '');
+      return;
+    }
+    const isDone = status === 'completed';
+    const engineTag = String(job?.ocrEngine || engineSelect.value || '').trim();
+    const lineTag = job?.lineCount ? `(${job.lineCount})` : '';
+    const segmentTag = job?.segmentCount ? `segments:${job.segmentCount}` : '';
+    const modeTag = String(job?.mode || '').trim();
+    const url = String(job?.downloadUrl || '').trim() || String(job?.resultUrl || '').trim();
+    setDownload(isDone ? url : '');
+    const isDbSaved = Boolean(job?.saved) || String(job?.source || '') === 'db';
+    setSaveVisible(isDone && !isDbSaved && String(job?.jobId || '').trim(), String(job?.jobId || '').trim());
+    if (isDone) {
+      setStatus(`${t('video_ocr_done')} ${engineTag ? `[${engineTag}]` : ''} ${modeTag ? `[${modeTag}]` : ''} ${lineTag} ${segmentTag}`.trim());
+      if (options.showSavedToast) setStatus(t('video_ocr_saved'));
+      return;
+    }
+    setStatus(`${t('video_ocr_running')} (${status || 'running'})`);
   };
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const poll = async (jobId, maxMs = 3 * 60 * 60 * 1000, intervalMs = 2000) => {
     const started = Date.now();
     while (Date.now() - started < maxMs) {
+      if (disposed) return null;
       const job = await api(`/api/video-ocr-jobs/${encodeURIComponent(jobId)}`);
       if (job.status === 'completed') return job;
       if (job.status === 'failed') throw new Error(job.error || t('video_ocr_failed'));
-      setStatus(`${t('video_ocr_running')} (${job.status})`);
+      applyJobStatus(job);
       await wait(intervalMs);
     }
     throw new Error('OCR job is still running. Please check again in a moment.');
   };
+  const watchJob = async (jobId) => {
+    if (!jobId || disposed) return;
+    setBusy(true);
+    try {
+      const done = await poll(jobId);
+      if (!done || disposed) return;
+      applyJobStatus(done);
+      const warnTag = String(done.warning || '').trim();
+      if (warnTag) alert(warnTag);
+    } catch (error) {
+      if (disposed) return;
+      setStatus(t('video_ocr_failed'));
+      alert(String(error?.message || 'Video OCR failed'));
+    } finally {
+      if (!disposed) setBusy(false);
+    }
+  };
+  const restoreLatest = async () => {
+    try {
+      const latest = await api(`/api/assets/${asset.id}/video-ocr/latest`);
+      if (disposed || !latest) return;
+      applyJobStatus(latest);
+      if (latest.status === 'queued' || latest.status === 'running') {
+        watchJob(latest.jobId);
+      }
+    } catch (_error) {
+      // no job yet
+    }
+  };
 
   const onExtract = async () => {
     setBusy(true);
+    setSaveVisible(false, '');
     setStatus(t('video_ocr_running'));
     try {
       const queued = await api(`/api/assets/${asset.id}/video-ocr/extract`, {
@@ -3767,30 +4568,55 @@ function initVideoOcrTools(asset, root = document) {
         body: JSON.stringify({
           intervalSec: Number(intervalInput.value || 4),
           ocrLang: String(langInput.value || '').trim() || 'eng+tur',
-          ocrEngine: String(engineSelect.value || 'tesseract')
+          ocrEngine: String(engineSelect.value || 'paddle'),
+          preprocessProfile: String(preprocessSelect.value || 'light'),
+          advancedMode: Boolean(advancedCheck.checked),
+          turkishAiCorrect: Boolean(aiCorrectCheck.checked),
+          enableBlurFilter: Boolean(blurFilterCheck.checked),
+          blurThreshold: Number(blurThresholdInput.value || 80),
+          enableRegionMode: Boolean(regionModeCheck.checked),
+          tickerHeightPct: Number(tickerHeightInput.value || 20),
+          ignoreStaticOverlays: Boolean(staticFilterCheck.checked),
+          ignorePhrases: String(ignorePhrasesInput.value || '').trim(),
+          minDisplaySec: Number(minDisplayInput.value || 8),
+          mergeGapSec: Number(mergeGapInput.value || 4)
         })
       });
-      const done = await poll(queued.jobId);
-      setDownload(done.jobId || queued.jobId);
-      const engineTag = String(done.ocrEngine || engineSelect.value || '').trim();
-      const lineTag = done.lineCount ? `(${done.lineCount})` : '';
-      const warnTag = String(done.warning || '').trim();
-      setStatus(`${t('video_ocr_done')} ${engineTag ? `[${engineTag}]` : ''} ${lineTag}`.trim());
-      if (warnTag) alert(warnTag);
+      watchJob(queued.jobId);
     } catch (error) {
       setStatus(t('video_ocr_failed'));
       alert(String(error?.message || 'Video OCR failed'));
-    } finally {
       setBusy(false);
+    }
+  };
+  const onSave = async () => {
+    if (!saveTargetJobId) return;
+    saveBtn.disabled = true;
+    try {
+      await api(`/api/assets/${asset.id}/video-ocr/save`, {
+        method: 'POST',
+        body: JSON.stringify({ jobId: saveTargetJobId })
+      });
+      setSaveVisible(false, '');
+      setStatus(t('video_ocr_saved'));
+    } catch (error) {
+      alert(String(error?.message || 'Failed to save OCR result'));
+    } finally {
+      saveBtn.disabled = false;
     }
   };
 
   extractBtn.addEventListener('click', onExtract);
+  saveBtn.addEventListener('click', onSave);
   setStatus('');
   setDownload('');
+  setSaveVisible(false, '');
+  restoreLatest();
 
   return () => {
+    disposed = true;
     extractBtn.removeEventListener('click', onExtract);
+    saveBtn.removeEventListener('click', onSave);
   };
 }
 
@@ -3967,7 +4793,7 @@ function openVideoToolsDialog(asset, options = {}) {
         <button type="button" id="videoToolsCloseBtn">${t('close')}</button>
       </div>
       <div class="video-tools-modal-body">
-        ${mediaViewer(asset, { showVideoToolsButton: false, includeSubtitleTools: true, includeSectionHide: true, audioSideLayout: true })}
+        ${mediaViewer(asset, { showVideoToolsButton: false, includeSubtitleTools: true, includeSectionHide: true, audioSideLayout: true, tcInControlBar: true })}
       </div>
     </div>
   `;
@@ -4072,15 +4898,27 @@ async function loadAssets() {
   const selectedTypes = assetTypeFilters.filter((el) => el.checked).map((el) => String(el.value || '').toLowerCase());
   const trashScopeRaw = String(filters.trash || 'active').trim().toLowerCase();
   const trashScope = ['active', 'trash', 'all'].includes(trashScopeRaw) ? trashScopeRaw : 'active';
+  currentSearchQuery = String(filters.q || '').trim();
+  currentOcrQuery = String(filters.ocrQ || '').trim();
+  currentSubtitleQuery = String(filters.subtitleQ || '').trim();
 
   if (selectedTypes.length === 0) {
-    currentAssets = [];
-    renderAssets(currentAssets);
-    return;
+    if (!currentOcrQuery && !currentSubtitleQuery) {
+      currentAssets = [];
+      renderAssets(currentAssets);
+      return;
+    }
   }
 
-  currentSearchQuery = String(filters.q || '').trim();
+  if (currentOcrQuery) {
+    syncOcrQueryInputs(ocrQueryInput);
+  } else if (ocrQueryInput) {
+    ocrQueryInput.value = '';
+  }
   if (currentSearchQuery) params.set('q', currentSearchQuery);
+  // OCR ve Altyazi sorgulari backend'e ayri parametrelerle gonderilir.
+  if (currentOcrQuery) params.set('ocrQ', currentOcrQuery);
+  if (currentSubtitleQuery) params.set('subtitleQ', currentSubtitleQuery);
   if (String(filters.tag || '').trim()) params.set('tag', String(filters.tag).trim());
   if (String(filters.status || '').trim()) params.set('status', String(filters.status).trim());
   params.set('trash', trashScope);
@@ -4102,7 +4940,7 @@ async function loadAssets() {
   renderAssets(currentAssets);
 }
 
-async function openAsset(id, workflow) {
+async function openAsset(id, workflow, options = {}) {
   setPanelVisible('panelDetail', true);
 
   let asset = await api(`/api/assets/${id}`);
@@ -4137,7 +4975,9 @@ async function openAsset(id, workflow) {
   } else {
     assetDetail.classList.remove('detail-video-pinned');
   }
-  activePlayerCleanup = initAssetPlayer(asset, assetDetail);
+  activePlayerCleanup = initAssetPlayer(asset, assetDetail, {
+    startAtSeconds: Number(options.startAtSeconds) || 0
+  });
   loadAssetTechnicalInfo(asset).catch(() => {});
   const ensureProxyBtn = document.getElementById('ensureProxyBtn');
   ensureProxyBtn?.addEventListener('click', async () => {
@@ -4152,6 +4992,9 @@ async function openAsset(id, workflow) {
   const openVideoToolsModalBtn = document.getElementById('openVideoToolsModalBtn');
   openVideoToolsModalBtn?.addEventListener('click', () => {
     const panelMedia = assetDetail.querySelector('#assetMediaEl');
+    if (panelMedia && typeof panelMedia.pause === 'function') {
+      try { panelMedia.pause(); } catch (_error) {}
+    }
     const startAtSeconds = panelMedia ? Number(panelMedia.currentTime || 0) : 0;
     openVideoToolsDialog(asset, { startAtSeconds });
   });
@@ -4182,12 +5025,90 @@ async function openAsset(id, workflow) {
     await openAsset(id, workflow);
   });
 
-  document.getElementById('versionForm').addEventListener('submit', async (event) => {
+  const versionFormEl = document.getElementById('versionForm');
+  versionFormEl?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const payload = serializeForm(event.target);
     await api(`/api/assets/${id}/versions`, { method: 'POST', body: JSON.stringify(payload) });
     await loadAssets();
     await openAsset(id, workflow);
+  });
+
+  Array.from(document.querySelectorAll('.restorePdfVersionBtn')).forEach((btn) => {
+    btn.addEventListener('click', async (event) => {
+      if (!currentUserCanAccessAdmin || !currentUserCanUsePdfAdvancedTools) return;
+      const versionId = String(event.currentTarget?.dataset?.versionId || '').trim();
+      if (!versionId) return;
+      const ok = confirm(t('restore_pdf_confirm'));
+      if (!ok) return;
+      await api(`/api/assets/${id}/pdf-restore`, {
+        method: 'POST',
+        body: JSON.stringify({ versionId })
+      });
+      await loadAssets();
+      await openAsset(id, workflow);
+    });
+  });
+
+  const restorePdfOriginalBtn = document.getElementById('restorePdfOriginalBtn');
+  restorePdfOriginalBtn?.addEventListener('click', async () => {
+    if (!currentUserCanAccessAdmin || !currentUserCanUsePdfAdvancedTools) return;
+    const ok = confirm(t('restore_pdf_original_confirm'));
+    if (!ok) return;
+    await api(`/api/assets/${id}/pdf-restore-original`, { method: 'POST', body: '{}' });
+    await loadAssets();
+    await openAsset(id, workflow);
+  });
+
+  Array.from(document.querySelectorAll('.deleteVersionBtn')).forEach((btn) => {
+    btn.addEventListener('click', async (event) => {
+      if (!currentUserCanAccessAdmin || (assetIsPdf && !currentUserCanUsePdfAdvancedTools)) return;
+      const versionId = String(event.currentTarget?.dataset?.versionId || '').trim();
+      if (!versionId) return;
+      const ok = confirm(t('delete_version_confirm'));
+      if (!ok) return;
+      await api(`/api/assets/${id}/versions/${encodeURIComponent(versionId)}`, { method: 'DELETE' });
+      await loadAssets();
+      await openAsset(id, workflow);
+    });
+  });
+
+  Array.from(document.querySelectorAll('.editVersionBtn')).forEach((btn) => {
+    btn.addEventListener('click', async (event) => {
+      if (!currentUserCanAccessAdmin || (assetIsPdf && !currentUserCanUsePdfAdvancedTools)) return;
+      const versionId = String(event.currentTarget?.dataset?.versionId || '').trim();
+      if (!versionId) return;
+      const current = (asset.versions || []).find((v) => String(v.versionId || '') === versionId);
+      const currentLabel = String(current?.label || '').trim();
+      const currentNote = cleanVersionNoteText(String(current?.note || ''));
+      const nextLabel = String(prompt(t('edit_version_name_prompt'), currentLabel) || '').trim();
+      if (!nextLabel) return;
+      const nextNote = String(prompt(t('edit_version_note_prompt'), currentNote) || '').trim();
+      await api(`/api/assets/${id}/versions/${encodeURIComponent(versionId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ label: nextLabel, note: nextNote })
+      });
+      await loadAssets();
+      await openAsset(id, workflow);
+    });
+  });
+
+  Array.from(document.querySelectorAll('.version-restorable[data-restore-version-id]')).forEach((row) => {
+    row.addEventListener('click', async (event) => {
+      const ignore = event.target?.closest?.('button, a, input, textarea, select, label');
+      if (ignore) return;
+      if (!currentUserCanAccessAdmin || !currentUserCanUsePdfAdvancedTools) return;
+      const versionId = String(row.dataset.restoreVersionId || '').trim();
+      if (!versionId) return;
+      const ok = confirm(t('restore_pdf_confirm'));
+      if (!ok) return;
+      await api(`/api/assets/${id}/pdf-restore`, {
+        method: 'POST',
+        body: JSON.stringify({ versionId })
+      });
+      await loadAssets();
+      await openAsset(id, workflow);
+    });
   });
 
   const trashBtn = document.getElementById('trashAssetBtn');
@@ -4258,6 +5179,19 @@ assetGrid.addEventListener('click', async (event) => {
     return;
   }
 
+  const ocrJumpBtn = event.target.closest('[data-ocr-jump]');
+  if (ocrJumpBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const id = String(ocrJumpBtn.dataset.id || '').trim();
+    const startAtSeconds = Math.max(0, Number(ocrJumpBtn.dataset.startSec || 0));
+    if (!id) return;
+    setSingleSelection(id);
+    const workflow = await api('/api/workflow');
+    await openAsset(id, workflow, { startAtSeconds });
+    return;
+  }
+
   const actionBtn = event.target.closest('button[data-card-action]');
   if (actionBtn) {
     const id = actionBtn.dataset.id;
@@ -4291,17 +5225,48 @@ assetGrid.addEventListener('click', async (event) => {
 
   const card = event.target.closest('.asset-card');
   if (!card) return;
+  const cardId = String(card.dataset.id || '').trim();
+  if (!cardId) return;
+
+  if (event.metaKey || event.ctrlKey) {
+    toggleMultiSelection(cardId);
+    renderAssets(currentAssets);
+    if (selectedAssetIds.size > 1) {
+      await openMultiSelectionDetail();
+      return;
+    }
+    if (selectedAssetIds.size === 1) {
+      const onlySelectedId = selectedAssetId || [...selectedAssetIds][0];
+      if (!onlySelectedId) return;
+      const workflow = await api('/api/workflow');
+      openAsset(onlySelectedId, workflow).catch((err) => alert(err.message));
+      return;
+    }
+    if (activeDetailPinCleanup) {
+      activeDetailPinCleanup();
+      activeDetailPinCleanup = null;
+    }
+    if (activePlayerCleanup) {
+      activePlayerCleanup();
+      activePlayerCleanup = null;
+    }
+    assetDetail.classList.remove('detail-video-pinned');
+    assetDetail.classList.remove('video-detail-mode');
+    assetDetail.textContent = t('select_asset');
+    return;
+  }
+
   if (event.shiftKey) {
-    addShiftRangeSelection(card.dataset.id);
+    addShiftRangeSelection(cardId);
     renderAssets(currentAssets);
     await openMultiSelectionDetail();
     return;
   }
 
-  setSingleSelection(card.dataset.id);
+  setSingleSelection(cardId);
 
   const workflow = await api('/api/workflow');
-  openAsset(card.dataset.id, workflow).catch((err) => alert(err.message));
+  openAsset(cardId, workflow).catch((err) => alert(err.message));
 });
 
 assetDetail.addEventListener('click', async (event) => {
@@ -4314,9 +5279,8 @@ assetDetail.addEventListener('click', async (event) => {
 
 assetTypeFilters.forEach((input) => {
   input.addEventListener('change', () => {
-    if (document.activeElement === searchQueryInput) {
-      queueSearchSuggestions();
-    }
+    if (document.activeElement === searchQueryInput) queueSearchSuggestions();
+    if (document.activeElement === ocrQueryInput) queueOcrSuggestions();
     loadAssets().catch((error) => alert(error.message));
   });
 });
@@ -4327,9 +5291,8 @@ typesSelectAllBtn?.addEventListener('click', () => {
   assetTypeFilters.forEach((input) => {
     input.checked = nextChecked;
   });
-  if (document.activeElement === searchQueryInput) {
-    queueSearchSuggestions();
-  }
+  if (document.activeElement === searchQueryInput) queueSearchSuggestions();
+  if (document.activeElement === ocrQueryInput) queueOcrSuggestions();
   loadAssets().catch((error) => alert(error.message));
 });
 
@@ -4375,9 +5338,6 @@ mediaFileBtn?.addEventListener('click', () => {
 mediaFileInput?.addEventListener('change', async (event) => {
   const file = event.target.files?.[0];
   if (mediaFileName) mediaFileName.textContent = file?.name || '';
-  if (!file) return;
-  const duration = await detectDurationSeconds(file);
-  ingestForm.querySelector('[name="durationSeconds"]').value = String(duration);
 });
 
 ingestForm.addEventListener('submit', async (event) => {
@@ -4391,20 +5351,12 @@ ingestForm.addEventListener('submit', async (event) => {
     return;
   }
 
-  let durationSeconds = Number(formData.get('durationSeconds')) || 0;
-  if (!durationSeconds) {
-    durationSeconds = await detectDurationSeconds(mediaFile);
-  }
-
   const base64 = await readFileAsBase64(mediaFile);
 
   const payload = {
     title: formData.get('title'),
     type: formData.get('type'),
-    owner: formData.get('owner'),
     tags: formData.get('tags'),
-    durationSeconds,
-    sourcePath: formData.get('sourcePath'),
     description: formData.get('description'),
     fileName: mediaFile.name,
     mimeType: mediaFile.type || 'application/octet-stream',
@@ -4412,11 +5364,9 @@ ingestForm.addEventListener('submit', async (event) => {
   };
   payload.dcMetadata = {
     title: String(payload.title || ''),
-    creator: String(payload.owner || ''),
     subject: String(payload.tags || ''),
     description: String(payload.description || ''),
     type: String(payload.type || ''),
-    source: String(payload.sourcePath || ''),
     format: String(payload.mimeType || ''),
     identifier: String(payload.fileName || '')
   };
@@ -4431,7 +5381,6 @@ ingestForm.addEventListener('submit', async (event) => {
     setUploadProgress(96, t('processing'));
     ingestForm.reset();
     ingestForm.querySelector('[name="type"]').value = 'Video';
-    ingestForm.querySelector('[name="durationSeconds"]').value = '';
     if (mediaFileName) mediaFileName.textContent = '';
     await waitUntilAssetVisible(created?.id || null);
     setUploadProgress(100, t('processing'));
@@ -4446,6 +5395,8 @@ ingestForm.addEventListener('submit', async (event) => {
 searchForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   hideSearchSuggestions();
+  hideOcrSuggestions();
+  hideSubtitleSuggestions();
   await loadAssets();
 });
 
@@ -4457,8 +5408,31 @@ searchQueryInput?.addEventListener('focus', () => {
   queueSearchSuggestions();
 });
 
+ocrQueryInput?.addEventListener('focus', () => {
+  if (ocrSuggestHideTimer) {
+    clearTimeout(ocrSuggestHideTimer);
+    ocrSuggestHideTimer = null;
+  }
+  queueOcrSuggestions();
+});
+
+subtitleQueryInput?.addEventListener('focus', () => {
+  if (subtitleSuggestHideTimer) {
+    clearTimeout(subtitleSuggestHideTimer);
+    subtitleSuggestHideTimer = null;
+  }
+  queueSubtitleSuggestions();
+});
+
 searchQueryInput?.addEventListener('input', () => {
   queueSearchSuggestions();
+});
+
+ocrQueryInput?.addEventListener('input', () => {
+  queueOcrSuggestions();
+});
+subtitleQueryInput?.addEventListener('input', () => {
+  queueSubtitleSuggestions();
 });
 
 searchQueryInput?.addEventListener('blur', () => {
@@ -4469,8 +5443,33 @@ searchQueryInput?.addEventListener('blur', () => {
   }, 120);
 });
 
+ocrQueryInput?.addEventListener('blur', () => {
+  if (ocrSuggestHideTimer) clearTimeout(ocrSuggestHideTimer);
+  ocrSuggestHideTimer = setTimeout(() => {
+    hideOcrSuggestions();
+    ocrSuggestHideTimer = null;
+  }, 120);
+});
+
+subtitleQueryInput?.addEventListener('blur', () => {
+  if (subtitleSuggestHideTimer) clearTimeout(subtitleSuggestHideTimer);
+  subtitleSuggestHideTimer = setTimeout(() => {
+    hideSubtitleSuggestions();
+    subtitleSuggestHideTimer = null;
+  }, 120);
+});
+
 searchQueryInput?.addEventListener('keydown', async (event) => {
   const isOpen = Boolean(searchSuggestList && !searchSuggestList.classList.contains('hidden'));
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    if (isOpen && searchSuggestActiveIndex >= 0 && searchSuggestItems[searchSuggestActiveIndex]) {
+      await applySearchSuggestion(searchSuggestItems[searchSuggestActiveIndex], true);
+    } else {
+      await loadAssets();
+    }
+    return;
+  }
   if (!isOpen && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
     queueSearchSuggestions();
     return;
@@ -4490,13 +5489,79 @@ searchQueryInput?.addEventListener('keydown', async (event) => {
     hideSearchSuggestions();
     return;
   }
-  if (event.key === 'Enter' && searchSuggestActiveIndex >= 0 && searchSuggestItems[searchSuggestActiveIndex]) {
+});
+
+ocrQueryInput?.addEventListener('keydown', async (event) => {
+  const isOpen = Boolean(ocrSuggestList && !ocrSuggestList.classList.contains('hidden'));
+  if (event.key === 'Enter') {
     event.preventDefault();
-    await applySearchSuggestion(searchSuggestItems[searchSuggestActiveIndex], true);
+    if (isOpen && ocrSuggestActiveIndex >= 0 && ocrSuggestItems[ocrSuggestActiveIndex]) {
+      await applyOcrSuggestion(ocrSuggestItems[ocrSuggestActiveIndex], true);
+    } else {
+      await loadAssets();
+    }
+    return;
+  }
+  if (!isOpen && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+    queueOcrSuggestions();
+    return;
+  }
+  if (!isOpen) return;
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    setOcrSuggestionActive((ocrSuggestActiveIndex < 0 ? -1 : ocrSuggestActiveIndex) + 1);
+    return;
+  }
+  if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    setOcrSuggestionActive((ocrSuggestActiveIndex < 0 ? ocrSuggestItems.length : ocrSuggestActiveIndex) - 1);
+    return;
+  }
+  if (event.key === 'Escape') {
+    hideOcrSuggestions();
+    return;
+  }
+});
+
+subtitleQueryInput?.addEventListener('keydown', async (event) => {
+  const isOpen = Boolean(subtitleSuggestList && !subtitleSuggestList.classList.contains('hidden'));
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    if (isOpen && subtitleSuggestActiveIndex >= 0 && subtitleSuggestItems[subtitleSuggestActiveIndex]) {
+      await applySubtitleSuggestion(subtitleSuggestItems[subtitleSuggestActiveIndex], true);
+    } else {
+      await loadAssets();
+    }
+    return;
+  }
+  if (!isOpen && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+    queueSubtitleSuggestions();
+    return;
+  }
+  if (!isOpen) return;
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    setSubtitleSuggestionActive((subtitleSuggestActiveIndex < 0 ? -1 : subtitleSuggestActiveIndex) + 1);
+    return;
+  }
+  if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    setSubtitleSuggestionActive((subtitleSuggestActiveIndex < 0 ? subtitleSuggestItems.length : subtitleSuggestActiveIndex) - 1);
+    return;
+  }
+  if (event.key === 'Escape') {
+    hideSubtitleSuggestions();
+    return;
   }
 });
 
 searchSuggestList?.addEventListener('mousedown', (event) => {
+  event.preventDefault();
+});
+ocrSuggestList?.addEventListener('mousedown', (event) => {
+  event.preventDefault();
+});
+subtitleSuggestList?.addEventListener('mousedown', (event) => {
   event.preventDefault();
 });
 
@@ -4508,10 +5573,28 @@ searchSuggestList?.addEventListener('click', async (event) => {
   await applySearchSuggestion(searchSuggestItems[index], true);
 });
 
+ocrSuggestList?.addEventListener('click', async (event) => {
+  const button = event.target.closest('.search-suggest-item');
+  if (!button) return;
+  const index = Number(button.dataset.index);
+  if (!Number.isFinite(index) || index < 0 || index >= ocrSuggestItems.length) return;
+  await applyOcrSuggestion(ocrSuggestItems[index], true);
+});
+
+subtitleSuggestList?.addEventListener('click', async (event) => {
+  const button = event.target.closest('.search-suggest-item');
+  if (!button) return;
+  const index = Number(button.dataset.index);
+  if (!Number.isFinite(index) || index < 0 || index >= subtitleSuggestItems.length) return;
+  await applySubtitleSuggestion(subtitleSuggestItems[index], true);
+});
+
 ['tag', 'type'].forEach((name) => {
   const el = searchForm.querySelector(`[name="${name}"]`);
   el?.addEventListener('input', () => {
     if (document.activeElement === searchQueryInput) queueSearchSuggestions();
+    if (getActiveOcrQueryInput() === ocrQueryInput) queueOcrSuggestions();
+    if (document.activeElement === subtitleQueryInput) queueSubtitleSuggestions();
   });
 });
 
@@ -4519,6 +5602,8 @@ searchSuggestList?.addEventListener('click', async (event) => {
   const el = searchForm.querySelector(`[name="${name}"]`);
   el?.addEventListener('change', () => {
     if (document.activeElement === searchQueryInput) queueSearchSuggestions();
+    if (getActiveOcrQueryInput() === ocrQueryInput) queueOcrSuggestions();
+    if (document.activeElement === subtitleQueryInput) queueSubtitleSuggestions();
   });
 });
 
@@ -4526,6 +5611,8 @@ languageSelect?.addEventListener('change', async (event) => {
   currentLang = event.target.value === 'tr' ? 'tr' : 'en';
   localStorage.setItem(LOCAL_LANG, currentLang);
   hideSearchSuggestions();
+  hideOcrSuggestions();
+  hideSubtitleSuggestions();
   applyStaticI18n();
   await loadWorkflow();
   await loadAssets();
@@ -4583,12 +5670,20 @@ document.addEventListener('click', (event) => {
   userMenu.classList.add('hidden');
 });
 
-logoutBtn?.addEventListener('click', () => {
+logoutBtn?.addEventListener('click', async () => {
   userMenu?.classList.add('hidden');
-  const postLogout = encodeURIComponent(`${window.location.origin}/oauth2/sign_out`);
-  const keycloakLogout =
-    `http://localhost:8081/realms/mam/protocol/openid-connect/logout?client_id=mam-web&post_logout_redirect_uri=${postLogout}`;
-  window.location.assign(keycloakLogout);
+  try {
+    const logoutEndpoint = `/api/logout-url?ts=${Date.now()}`;
+    const response = await fetch(logoutEndpoint, {
+      credentials: 'include',
+      cache: 'no-store'
+    });
+    const payload = await response.json().catch(() => ({}));
+    const url = String(payload?.url || '').trim();
+    window.location.assign(url || '/oauth2/sign_out?rd=%2Foauth2%2Fstart%3Frd%3D%252F');
+  } catch (_error) {
+    window.location.assign('/oauth2/sign_out?rd=%2Foauth2%2Fstart%3Frd%3D%252F');
+  }
 });
 
 (async () => {

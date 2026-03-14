@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OCR Test Lab</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="left-panel card">
+        <div class="panel-title">OCR / Subtitle Lab</div>
+        <p class="panel-subtitle">Sadece altyazı ve OCR testleri için mini konsol</p>
+
+        <label class="field-label">Video Ara</label>
+        <input id="assetSearchInput" type="text" class="text-input" placeholder="Asset adı..." />
+
+        <button id="refreshAssetsBtn" class="btn secondary" type="button">Listeyi Yenile</button>
+
+        <div class="upload-box">
+          <div class="upload-title">Video Yükle (Ingest)</div>
+          <input id="ingestFileInput" type="file" accept="video/*" class="text-input" />
+          <input id="ingestTitleInput" type="text" class="text-input" placeholder="Başlık (opsiyonel)" />
+          <input id="ingestDescInput" type="text" class="text-input" placeholder="Açıklama (opsiyonel)" />
+          <input id="ingestTagsInput" type="text" class="text-input" placeholder="Etiketler (virgülle)" />
+          <button id="ingestUploadBtn" class="btn" type="button">Video Yükle</button>
+          <div id="ingestStatus" class="muted">Yükleme yapılmadı.</div>
+        </div>
+
+        <div id="assetList" class="asset-list"></div>
+      </aside>
+
+      <main class="main-panel card">
+        <header class="main-header">
+          <div>
+            <h1 id="assetTitle">Video seçin</h1>
+            <p id="assetMeta" class="asset-meta">-</p>
+          </div>
+          <div id="appStatus" class="status-pill">Hazır</div>
+        </header>
+
+        <section class="player-wrap">
+          <video id="videoPlayer" controls preload="metadata"></video>
+          <div class="player-bar">
+            <div>TC: <span id="currentTc">00:00:00.000</span></div>
+            <div id="playerSourceHint" class="muted">Kaynak: -</div>
+          </div>
+        </section>
+
+        <section class="tools-area card">
+          <div class="tool-tab-head" role="tablist" aria-label="Araç sekmeleri">
+            <button id="toolTabSubtitle" type="button" class="tool-tab-btn tool-tab-btn-sub active" data-tab="subtitle" role="tab" aria-selected="true" title="Altyazı">
+              <span class="tool-tab-text">Altyazı</span>
+            </button>
+            <button id="toolTabOcr" type="button" class="tool-tab-btn tool-tab-btn-ocr" data-tab="ocr" role="tab" aria-selected="false" title="OCR">
+              <span class="tool-tab-text">OCR</span>
+            </button>
+          </div>
+
+          <div class="tool-tab-panels">
+            <div id="toolPanelSubtitle" class="tool-tab-panel active" role="tabpanel">
+              <div class="section-card">
+                <div class="section-title">Altyazı</div>
+            <div class="row">
+              <label class="field-label inline">Mevcut Altyazılar</label>
+              <select id="subtitleSelect" class="text-input"></select>
+              <button id="applySubtitleBtn" class="btn secondary" type="button">Uygula</button>
+            </div>
+
+            <div class="row wrap">
+              <input id="subtitleUploadInput" type="file" accept=".vtt,.srt" class="text-input" />
+              <input id="subtitleLangInput" type="text" class="text-input narrow" value="tr" placeholder="Dil" />
+              <button id="subtitleUploadBtn" class="btn" type="button">Yükle</button>
+            </div>
+
+            <div class="row wrap">
+              <input id="subtitleModelInput" type="text" class="text-input" value="small" placeholder="Whisper model" />
+              <input id="subtitleGenLangInput" type="text" class="text-input narrow" value="tr" placeholder="Dil" />
+              <input id="subtitleGenerateLabelInput" type="text" class="text-input" placeholder="Altyazı adı (opsiyonel)" />
+              <label class="checkbox-inline"><input id="subtitleWhisperxCheck" type="checkbox" /> WhisperX</label>
+              <label class="checkbox-inline"><input id="subtitleTurkishFixCheck" type="checkbox" checked /> Zemberek + Özel Sözlük</label>
+              <button id="subtitleGenerateBtn" class="btn" type="button">Altyazı Üret + Kaydet</button>
+            </div>
+
+            <div class="row wrap">
+              <input id="subtitleSearchInput" type="text" class="text-input" placeholder="Aktif altyazıda ara..." />
+              <button id="subtitleSearchBtn" class="btn secondary" type="button">Ara</button>
+              <button id="subtitleEditContentBtn" class="btn ghost" type="button">İçeriği Düzenle</button>
+            </div>
+            <div id="subtitleSearchResults" class="result-list"></div>
+              </div>
+            </div>
+
+            <div id="toolPanelOcr" class="tool-tab-panel" role="tabpanel" aria-hidden="true">
+              <div class="section-card">
+                <div class="section-title">OCR</div>
+
+            <div class="row wrap">
+              <input id="ocrIntervalInput" type="number" class="text-input narrow" value="4" min="1" max="30" />
+              <input id="ocrLangInput" type="text" class="text-input narrow" value="eng+tur" />
+              <select id="ocrEngineSelect" class="text-input narrow">
+                <option value="paddle">paddle</option>
+                <option value="tesseract">tesseract</option>
+              </select>
+              <select id="ocrPreprocessSelect" class="text-input narrow">
+                <option value="light">light</option>
+                <option value="strong">strong</option>
+                <option value="off">off</option>
+              </select>
+            </div>
+
+            <div class="row wrap">
+              <label class="checkbox-inline"><input id="ocrAdvancedCheck" type="checkbox" checked /> Advanced</label>
+              <label class="checkbox-inline"><input id="ocrTurkishFixCheck" type="checkbox" checked /> Türkçe düzelt</label>
+              <label class="checkbox-inline"><input id="ocrBlurCheck" type="checkbox" checked /> Blur filter</label>
+              <label class="checkbox-inline"><input id="ocrStaticOverlayCheck" type="checkbox" checked /> Static overlay filter</label>
+              <button id="ocrExtractBtn" class="btn" type="button">OCR Başlat</button>
+              <button id="ocrSaveBtn" class="btn secondary hidden" type="button">DB'ye Kaydet</button>
+              <a id="ocrDownloadLink" class="btn ghost hidden" href="#" target="_blank" rel="noopener">OCR İndir</a>
+            </div>
+
+            <div id="ocrJobInfo" class="job-box">Henüz OCR işi yok.</div>
+
+            <div class="row wrap">
+              <input id="ocrSearchInput" type="text" class="text-input" placeholder="Aktif OCR çıktısında ara..." />
+              <button id="ocrSearchBtn" class="btn secondary" type="button">Ara</button>
+              <button id="ocrEditContentBtn" class="btn ghost" type="button">İçeriği Düzenle</button>
+            </div>
+            <div id="ocrSearchResults" class="result-list"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>

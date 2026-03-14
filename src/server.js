@@ -14,8 +14,10 @@ const THUMBNAILS_DIR = path.join(UPLOADS_DIR, 'thumbnails');
 const SUBTITLES_DIR = path.join(UPLOADS_DIR, 'subtitles');
 const OCR_DIR = path.join(UPLOADS_DIR, 'ocr');
 const OCR_FRAMES_DIR = path.join(OCR_DIR, '_frames');
+const OCR_FRAME_CACHE_DIR = path.join(OCR_FRAMES_DIR, '_cache');
+const OCR_FRAME_CACHE_ENABLED = String(process.env.OCR_FRAME_CACHE_ENABLE || 'false').trim().toLowerCase() === 'true';
+const OCR_FRAME_CACHE_TTL_DAYS = Math.max(1, Math.min(30, Number(process.env.OCR_FRAME_CACHE_TTL_DAYS) || 3));
 const PADDLE_CACHE_DIR = process.env.PADDLE_PDX_CACHE_HOME || path.join(UPLOADS_DIR, '.paddlex');
-const ALLOW_PADDLE_OCR_FALLBACK = String(process.env.PADDLE_OCR_ALLOW_FALLBACK || 'false').trim().toLowerCase() === 'true';
 const proxyJobs = new Map();
 const subtitleJobs = new Map();
 const videoOcrJobs = new Map();
@@ -29,6 +31,11 @@ const DEFAULT_ADMIN_SETTINGS = {
   workflowTrackingEnabled: true,
   autoProxyBackfillOnUpload: false,
   playerUiMode: 'native',
+  ocrDefaultAdvancedMode: true,
+  ocrDefaultTurkishAiCorrect: true,
+  ocrDefaultEnableBlurFilter: true,
+  ocrDefaultEnableRegionMode: false,
+  ocrDefaultIgnoreStaticOverlays: true,
   apiTokenEnabled: false,
   apiToken: '',
   oidcBearerEnabled: false,
@@ -46,9 +53,42 @@ const DEFAULT_USER_PERMISSIONS = {};
 const ELASTIC_URL = process.env.ELASTIC_URL || 'http://localhost:9200';
 const ELASTIC_INDEX = process.env.ELASTIC_INDEX || 'mam_assets';
 const WHISPER_MODEL = process.env.WHISPER_MODEL || 'small';
+const DATA_DIR = path.join(__dirname, '..', 'data');
+const RUNTIME_CONFIG_DIR = path.join(UPLOADS_DIR, '_config');
+const LEARNED_TURKISH_CORRECTIONS_PATH = process.env.LEARNED_TURKISH_CORRECTIONS_PATH
+  || path.join(RUNTIME_CONFIG_DIR, 'turkish_learned_corrections.json');
+const TURKISH_WORDLIST_PATH = process.env.TURKISH_WORDLIST_PATH || '';
+const KEYCLOAK_INTERNAL_URL = process.env.KEYCLOAK_INTERNAL_URL || 'http://keycloak:8080';
+const KEYCLOAK_PUBLIC_URL = String(process.env.KEYCLOAK_PUBLIC_URL || '').trim();
+const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM || 'mam';
+const KEYCLOAK_REALMS = String(process.env.KEYCLOAK_REALMS || '').trim();
+const KEYCLOAK_ADMIN_REALM = process.env.KEYCLOAK_ADMIN_REALM || 'master';
+const KEYCLOAK_ADMIN_USERNAME = process.env.KEYCLOAK_ADMIN_USERNAME || process.env.KEYCLOAK_ADMIN || '';
+const KEYCLOAK_ADMIN_PASSWORD = process.env.KEYCLOAK_ADMIN_PASSWORD || '';
+const KEYCLOAK_ADMIN_CLIENT_ID = process.env.KEYCLOAK_ADMIN_CLIENT_ID || 'admin-cli';
+const USE_OAUTH2_PROXY = String(process.env.USE_OAUTH2_PROXY || 'false').trim().toLowerCase() === 'true';
 const OIDC_JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
 const oidcJwksCache = new Map();
 const pdfOcrCache = new Map();
+
+function resolveRequestProtocol(req) {
+  const xfProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+  if (xfProto === 'https' || xfProto === 'http') return xfProto;
+  return (req.protocol === 'https') ? 'https' : 'http';
+}
+
+function resolveRequestHost(req) {
+  const xfHost = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
+  if (xfHost) return xfHost;
+  return String(req.get('host') || 'localhost').trim() || 'localhost';
+}
+
+function buildLogoutUrl(req) {
+  if (!USE_OAUTH2_PROXY) return '/';
+  // Force return to oauth2 start page after local sign_out.
+  // oauth2-proxy will also call backend logout URL (Keycloak) with id_token_hint.
+  return '/oauth2/sign_out?rd=%2Foauth2%2Fstart%3Frd%3D%252F';
+}
 
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -68,9 +108,22 @@ if (!fs.existsSync(OCR_DIR)) {
 if (!fs.existsSync(OCR_FRAMES_DIR)) {
   fs.mkdirSync(OCR_FRAMES_DIR, { recursive: true });
 }
+if (!fs.existsSync(OCR_FRAME_CACHE_DIR)) {
+  fs.mkdirSync(OCR_FRAME_CACHE_DIR, { recursive: true });
+}
 if (!fs.existsSync(PADDLE_CACHE_DIR)) {
   fs.mkdirSync(PADDLE_CACHE_DIR, { recursive: true });
 }
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+if (!fs.existsSync(RUNTIME_CONFIG_DIR)) {
+  fs.mkdirSync(RUNTIME_CONFIG_DIR, { recursive: true });
+}
+
+const learnedTurkishCorrections = new Map();
+let learnedTurkishCorrectionsCompiled = [];
+const turkishWordSet = new Set();
 
 function escapeElasticId(value) {
   return encodeURIComponent(String(value || '').trim());
@@ -213,6 +266,11 @@ function normalizeSubtitleLang(value) {
   return lang;
 }
 
+function normalizeSubtitleBackend(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  return raw === 'whisperx' ? 'whisperx' : 'whisper';
+}
+
 function sanitizeSubtitleItems(value) {
   if (!Array.isArray(value)) return [];
   return value
@@ -229,6 +287,206 @@ function sanitizeSubtitleItems(value) {
       };
     })
     .filter(Boolean);
+}
+
+function sanitizeVideoOcrItems(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const ocrUrl = String(item.ocrUrl || '').trim();
+      if (!ocrUrl) return null;
+      return {
+        id: String(item.id || nanoid()).trim() || nanoid(),
+        ocrUrl,
+        ocrLabel: String(item.ocrLabel || '').trim() || 'video-ocr',
+        ocrEngine: normalizeOcrEngine(item.ocrEngine),
+        lineCount: Math.max(0, Number(item.lineCount) || 0),
+        segmentCount: Math.max(0, Number(item.segmentCount) || 0),
+        createdAt: String(item.createdAt || new Date().toISOString())
+      };
+    })
+    .filter(Boolean);
+}
+
+function pickLatestVideoOcrUrlFromDc(dcMetadata) {
+  const dc = dcMetadata && typeof dcMetadata === 'object' ? dcMetadata : {};
+  const direct = String(dc.videoOcrUrl || '').trim();
+  if (direct) return direct;
+  const items = sanitizeVideoOcrItems(dc.videoOcrItems);
+  if (!items.length) return '';
+  const last = items[items.length - 1];
+  return String(last.ocrUrl || '').trim();
+}
+
+function listOcrFilesRecursive(dirPath) {
+  const out = [];
+  const walk = (dir) => {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (_error) {
+      return;
+    }
+    entries.forEach((entry) => {
+      const abs = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(abs);
+        return;
+      }
+      if (entry.isFile() && entry.name.toLowerCase().endsWith('.txt')) out.push(abs);
+    });
+  };
+  walk(dirPath);
+  return out;
+}
+
+function getCandidateOcrFilePathsForRow(row) {
+  const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+  const directUrl = pickLatestVideoOcrUrlFromDc(dc);
+  const directPath = directUrl ? publicUploadUrlToAbsolutePath(directUrl) : '';
+  const paths = [];
+  if (directPath && fs.existsSync(directPath)) paths.push(directPath);
+  if (paths.length) return paths;
+
+  const titleSlug = sanitizeFileName(String(row?.title || '').trim().toLowerCase());
+  const fileSlug = sanitizeFileName(path.basename(String(row?.file_name || ''), path.extname(String(row?.file_name || ''))).toLowerCase());
+  const createdDay = getDatePart(row?.created_at);
+  const allTxt = listOcrFilesRecursive(OCR_DIR);
+  const ranked = allTxt
+    .map((p) => {
+      const base = path.basename(p).toLowerCase();
+      const rel = path.relative(OCR_DIR, p).replace(/\\/g, '/');
+      const hasFile = fileSlug && fileSlug.length >= 4 && base.includes(fileSlug);
+      const hasTitle = titleSlug && titleSlug.length >= 5 && base.includes(titleSlug);
+      const inSameDay = createdDay && rel.startsWith(`${createdDay}/`);
+      const hasAssetId = String(row?.id || '').trim() && base.includes(String(row?.id || '').trim().toLowerCase());
+      let score = 0;
+      if (hasFile) score += 6;
+      if (hasTitle) score += 4;
+      if (hasAssetId) score += 8;
+      if (inSameDay) score += 1;
+      return { p, score, hasFile, hasTitle, hasAssetId, inSameDay };
+    })
+    // Strict fallback: only consider files that match asset filename/title/id.
+    .filter((x) => x.score > 0 && (x.hasFile || x.hasTitle || x.hasAssetId))
+    .sort((a, b) => b.score - a.score);
+  if (ranked.length) return ranked.slice(0, 8).map((x) => x.p);
+  // Alakasiz OCR dosyalarina geri dusmemek icin burada "recent fallback" yok.
+  // Boylece farkli asset'lerde ayni OCR satirinin gorunmesi engellenir.
+  return [];
+}
+
+function extractOcrMatchLine(content, queryNorm) {
+  const lines = String(content || '').replace(/\r\n?/g, '\n').split('\n');
+  for (const raw of lines) {
+    const line = String(raw || '').trim();
+    if (!line) continue;
+    const comparable = normalizeComparableOcr(line);
+    if (comparable && comparable.includes(queryNorm)) {
+      return line;
+    }
+  }
+  return '';
+}
+
+function parseTimecodePrefixToSec(line) {
+  const raw = String(line || '');
+  const match = raw.match(/\[(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})\]/);
+  const parse = (v) => {
+    const m = String(v || '').match(/^(\d{2}):(\d{2}):(\d{2})\.(\d{3})$/);
+    if (!m) return null;
+    return (Number(m[1]) * 3600) + (Number(m[2]) * 60) + Number(m[3]) + (Number(m[4]) / 1000);
+  };
+  if (match) {
+    const start = parse(match[1]);
+    const end = parse(match[2]);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+    return { startSec: start, endSec: end };
+  }
+  const single = raw.match(/\[(\d{2}:\d{2}:\d{2}\.\d{3})\]/);
+  if (!single) return null;
+  const at = parse(single[1]);
+  if (!Number.isFinite(at)) return null;
+  return { startSec: at, endSec: at };
+}
+
+function findOcrMatchInRow(row, queryRaw) {
+  const qNorm = normalizeComparableOcr(queryRaw);
+  if (!qNorm) return null;
+  const candidates = getCandidateOcrFilePathsForRow(row);
+  for (const filePath of candidates) {
+    let raw = '';
+    try {
+      raw = fs.readFileSync(filePath, 'utf8');
+    } catch (_error) {
+      continue;
+    }
+    const line = extractOcrMatchLine(raw, qNorm);
+    if (!line) continue;
+    const tc = parseTimecodePrefixToSec(line);
+    const relative = path.relative(UPLOADS_DIR, filePath).replace(/\\/g, '/');
+    const ocrUrl = relative ? `/uploads/${relative}` : '';
+    return {
+      ocrUrl,
+      line,
+      startSec: Number(tc?.startSec || 0),
+      endSec: Number(tc?.endSec || 0)
+    };
+  }
+  return null;
+}
+
+async function findOcrMatchForAssetRow(row, queryRaw) {
+  const qNorm = normalizeSubtitleSearchText(queryRaw);
+  const assetId = String(row?.id || '').trim();
+  if (!assetId || !qNorm) return null;
+  const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+  const activeOcrUrl = String(pickLatestVideoOcrUrlFromDc(dc) || '').trim();
+  if (activeOcrUrl) {
+    const fetchDbMatch = async () => pool.query(
+      `
+        SELECT start_sec, end_sec, segment_text
+        FROM asset_ocr_segments
+        WHERE asset_id = $1
+          AND ocr_url = $2
+          AND norm_text LIKE $3
+        ORDER BY start_sec ASC
+        LIMIT 1
+      `,
+      [assetId, activeOcrUrl, `%${qNorm}%`]
+    );
+    let dbHit = await fetchDbMatch();
+    if (!dbHit.rowCount) {
+      const exists = await pool.query(
+        `
+          SELECT 1
+          FROM asset_ocr_segments
+          WHERE asset_id = $1
+            AND ocr_url = $2
+          LIMIT 1
+        `,
+        [assetId, activeOcrUrl]
+      );
+      if (!exists.rowCount) {
+        await syncOcrSegmentIndexForAsset(assetId, activeOcrUrl, {
+          sourceEngine: String(dc.videoOcrEngine || 'paddle').trim(),
+          lang: ''
+        });
+        dbHit = await fetchDbMatch();
+      }
+    }
+    if (dbHit.rowCount) {
+      const hit = dbHit.rows[0];
+      return {
+        ocrUrl: activeOcrUrl,
+        line: String(hit.segment_text || ''),
+        startSec: Number(hit.start_sec || 0),
+        endSec: Number(hit.end_sec || 0)
+      };
+    }
+  }
+  return findOcrMatchInRow(row, queryRaw);
 }
 
 function normalizeSubtitleTime(value) {
@@ -293,6 +551,1135 @@ function normalizeOcrText(raw) {
     .trim();
 }
 
+function normalizeOcrLine(raw) {
+  return String(raw || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function dedupeTextList(items = []) {
+  const out = [];
+  const seen = new Set();
+  items.forEach((item) => {
+    const text = normalizeOcrLine(item);
+    if (!text) return;
+    const key = normalizeComparableOcr(text) || text.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(text);
+  });
+  return out;
+}
+
+function groupOcrEntriesToBlocks(entries = [], width = 1920, height = 1080) {
+  const valid = (Array.isArray(entries) ? entries : [])
+    .map((entry) => {
+      const text = normalizeOcrLine(entry?.text || '');
+      const left = Number(entry?.left);
+      const top = Number(entry?.top);
+      const right = Number(entry?.right);
+      const bottom = Number(entry?.bottom);
+      if (!text || !Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(right) || !Number.isFinite(bottom)) {
+        return null;
+      }
+      if (right <= left || bottom <= top) return null;
+      return {
+        text,
+        left,
+        top,
+        right,
+        bottom,
+        cy: (top + bottom) / 2
+      };
+    })
+    .filter(Boolean);
+
+  if (!valid.length) return [];
+
+  const w = Math.max(1, Number(width) || 1920);
+  const h = Math.max(1, Number(height) || 1080);
+  const xGapBlock = w / 20;
+  const yGapBlock = h / 12;
+  const yLineTol = Math.max(6, h / 55);
+
+  valid.sort((a, b) => (a.cy - b.cy) || (a.left - b.left));
+  const lines = [];
+  valid.forEach((item) => {
+    let placed = false;
+    for (const line of lines) {
+      if (Math.abs(item.cy - line.cy) <= yLineTol) {
+        line.items.push(item);
+        const count = line.items.length;
+        line.cy = ((line.cy * (count - 1)) + item.cy) / count;
+        line.top = Math.min(line.top, item.top);
+        line.bottom = Math.max(line.bottom, item.bottom);
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) {
+      lines.push({
+        items: [item],
+        cy: item.cy,
+        top: item.top,
+        bottom: item.bottom
+      });
+    }
+  });
+
+  const lineSegments = [];
+  lines.forEach((line) => {
+    const items = [...line.items].sort((a, b) => a.left - b.left);
+    if (!items.length) return;
+    let current = {
+      texts: [items[0].text],
+      left: items[0].left,
+      right: items[0].right,
+      top: items[0].top,
+      bottom: items[0].bottom
+    };
+    for (let i = 1; i < items.length; i += 1) {
+      const item = items[i];
+      const gap = item.left - current.right;
+      if (gap > xGapBlock) {
+        lineSegments.push(current);
+        current = {
+          texts: [item.text],
+          left: item.left,
+          right: item.right,
+          top: item.top,
+          bottom: item.bottom
+        };
+      } else {
+        current.texts.push(item.text);
+        current.right = Math.max(current.right, item.right);
+        current.top = Math.min(current.top, item.top);
+        current.bottom = Math.max(current.bottom, item.bottom);
+      }
+    }
+    lineSegments.push(current);
+  });
+
+  lineSegments.sort((a, b) => (a.top - b.top) || (a.left - b.left));
+  const blocks = [];
+  lineSegments.forEach((seg) => {
+    const segText = normalizeOcrLine(seg.texts.join(' '));
+    if (!segText) return;
+    const prev = blocks[blocks.length - 1];
+    if (!prev) {
+      blocks.push({
+        texts: [segText],
+        left: seg.left,
+        right: seg.right,
+        top: seg.top,
+        bottom: seg.bottom
+      });
+      return;
+    }
+    const vGap = seg.top - prev.bottom;
+    const hOverlap = Math.min(seg.right, prev.right) - Math.max(seg.left, prev.left);
+    let hSep = 0;
+    if (seg.left > prev.right) hSep = seg.left - prev.right;
+    else if (prev.left > seg.right) hSep = prev.left - seg.right;
+    const sameBlock = (vGap <= yGapBlock) && (hOverlap > 0 || hSep <= xGapBlock);
+    if (sameBlock) {
+      prev.texts.push(segText);
+      prev.left = Math.min(prev.left, seg.left);
+      prev.right = Math.max(prev.right, seg.right);
+      prev.top = Math.min(prev.top, seg.top);
+      prev.bottom = Math.max(prev.bottom, seg.bottom);
+    } else {
+      blocks.push({
+        texts: [segText],
+        left: seg.left,
+        right: seg.right,
+        top: seg.top,
+        bottom: seg.bottom
+      });
+    }
+  });
+
+  return dedupeTextList(blocks.map((block) => block.texts.join(' ')));
+}
+
+function escapeRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeComparableOcr(text) {
+  return String(text || '')
+    .toLocaleLowerCase('tr')
+    .replace(/[’'`]/g, '')
+    .replace(/[^a-z0-9çğıöşü\s]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseOcrIgnorePhrases(value) {
+  const list = Array.isArray(value)
+    ? value
+    : String(value || '').split(/[\n,;|]+/);
+  const out = [];
+  const seen = new Set();
+  list.forEach((item) => {
+    const phrase = normalizeOcrText(String(item || ''));
+    if (!phrase || phrase.length < 2 || phrase.length > 80) return;
+    const key = normalizeComparableOcr(phrase);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(phrase);
+  });
+  return out.slice(0, 24);
+}
+
+function removeIgnoredPhrasesFromOcrText(text, phrases = []) {
+  let out = normalizeOcrText(text);
+  if (!out || !Array.isArray(phrases) || !phrases.length) return out;
+  phrases.forEach((phrase) => {
+    const normalized = normalizeOcrText(phrase);
+    if (!normalized || normalized.length < 2) return;
+    const pattern = new RegExp(escapeRegExp(normalized).replace(/\s+/g, '\\s+'), 'giu');
+    out = out.replace(pattern, ' ');
+  });
+  return normalizeOcrText(out);
+}
+
+function detectStaticOverlayPhrases(frameEntries = [], options = {}) {
+  const minFrames = Math.max(3, Number(options.minFrames) || 3);
+  const ratio = Math.max(0.45, Math.min(0.95, Number(options.minRatio) || 0.62));
+  const nonEmpty = frameEntries
+    .map((item) => normalizeOcrText(String(item?.text || '')))
+    .filter(Boolean);
+  if (nonEmpty.length < minFrames) return [];
+
+  const required = Math.max(minFrames, Math.ceil(nonEmpty.length * ratio));
+  const counts = new Map();
+
+  nonEmpty.forEach((text) => {
+    const words = text.match(/[0-9A-Za-zÇĞİÖŞÜçğıöşü]+/g) || [];
+    if (!words.length) return;
+    const tails = new Set();
+    for (let n = 1; n <= 3; n += 1) {
+      if (words.length < n) continue;
+      const phrase = words.slice(-n).join(' ');
+      const key = normalizeComparableOcr(phrase);
+      if (!key || key.length < 5 || key.length > 40) continue;
+      tails.add(key);
+    }
+    tails.forEach((key) => {
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+  });
+
+  const isOverlayLike = (key) => {
+    const text = String(key || '').trim();
+    if (!text) return false;
+    const words = text.split(/\s+/).filter(Boolean);
+    if (words.length === 1) return text.length >= 5 && text.length <= 24;
+    if (words.length === 2) return text.length <= 18;
+    return false;
+  };
+
+  return Array.from(counts.entries())
+    .filter(([key, count]) => count >= required && /[a-zçğıöşü]/i.test(key) && isOverlayLike(key))
+    .sort((a, b) => (b[1] - a[1]) || (b[0].length - a[0].length))
+    .map(([key]) => key)
+    .slice(0, 8);
+}
+
+function applyOcrFrameFilters(frameEntries = [], options = {}) {
+  const manualPhrases = parseOcrIgnorePhrases(options.ignorePhrases);
+  const allowAuto = Boolean(options.ignoreStaticOverlays) && frameEntries.length >= 8;
+  const autoKeys = allowAuto ? detectStaticOverlayPhrases(frameEntries) : [];
+  const autoPhrases = autoKeys
+    .map((key) => String(key || '').trim())
+    .filter(Boolean);
+  const allPhrases = [...manualPhrases, ...autoPhrases];
+  if (!allPhrases.length) {
+    return { frameEntries, autoIgnoredPhrases: [] };
+  }
+
+  const cleaned = frameEntries
+    .map((item) => {
+      const text = removeIgnoredPhrasesFromOcrText(item?.text || '', allPhrases);
+      return { ...item, text };
+    })
+    .filter((item) => normalizeOcrText(item.text));
+
+  // Safety fallback: never allow auto filtering to wipe all OCR lines.
+  if (!cleaned.length && frameEntries.length) {
+    return { frameEntries, autoIgnoredPhrases: [] };
+  }
+
+  return { frameEntries: cleaned, autoIgnoredPhrases: autoPhrases };
+}
+
+function levenshteinDistance(a, b) {
+  const s = String(a || '');
+  const t = String(b || '');
+  const n = s.length;
+  const m = t.length;
+  if (!n) return m;
+  if (!m) return n;
+  const dp = new Array(m + 1);
+  for (let j = 0; j <= m; j += 1) dp[j] = j;
+  for (let i = 1; i <= n; i += 1) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= m; j += 1) {
+      const cur = dp[j];
+      const cost = s.charCodeAt(i - 1) === t.charCodeAt(j - 1) ? 0 : 1;
+      dp[j] = Math.min(dp[j] + 1, dp[j - 1] + 1, prev + cost);
+      prev = cur;
+    }
+  }
+  return dp[m];
+}
+
+function normalizedEditSimilarity(a, b) {
+  const left = normalizeComparableOcr(a);
+  const right = normalizeComparableOcr(b);
+  if (!left && !right) return 1;
+  if (!left || !right) return 0;
+  const dist = levenshteinDistance(left, right);
+  const denom = Math.max(left.length, right.length, 1);
+  return 1 - (dist / denom);
+}
+
+function scoreOcrDisplayText(text) {
+  const raw = String(text || '');
+  if (!raw) return 0;
+  const turkishChars = (raw.match(/[çğıöşüÇĞİÖŞÜ]/g) || []).length;
+  const letters = (raw.match(/[a-zçğıöşüA-ZÇĞİÖŞÜ]/g) || []).length || 1;
+  const punctuationPenalty = (raw.match(/[|_~]/g) || []).length * 0.4;
+  return (letters * 0.8) + (turkishChars * 0.6) - punctuationPenalty;
+}
+
+function chooseBetterOcrText(current, candidate) {
+  const cur = String(current || '').trim();
+  const next = String(candidate || '').trim();
+  if (!cur) return next;
+  if (!next) return cur;
+  return scoreOcrDisplayText(next) >= scoreOcrDisplayText(cur) ? next : cur;
+}
+
+const TURKISH_OCR_CHAR_FIXES = [
+  [/\bı([aeiouöü])/g, 'i$1'],
+  [/([a-zçğıöşü])I([a-zçğıöşü])/g, '$1ı$2'],
+  [/([A-ZÇĞİÖŞÜ])i([A-ZÇĞİÖŞÜ])/g, '$1İ$2']
+];
+
+const TURKISH_OCR_WORD_FIXES = new Map([
+  ['sifre', 'şifre'],
+  ['giris', 'giriş'],
+  ['cikis', 'çıkış'],
+  ['kullanici', 'kullanıcı'],
+  ['baslat', 'başlat'],
+  ['duraklat', 'duraklat'],
+  ['guncelle', 'güncelle'],
+  ['islem', 'işlem'],
+  ['goruntu', 'görüntü'],
+  ['altyazi', 'altyazı'],
+  ['baglanti', 'bağlantı'],
+  ['icerik', 'içerik'],
+  ['araclari', 'araçları'],
+  ['araclar', 'araçlar'],
+  ['canlandirma', 'canlandırma'],
+  ['nazli', 'nazlı'],
+  ['tarafindan', 'tarafından'],
+  ['hakkinda', 'hakkında'],
+  ['arasinda', 'arasında'],
+  ['sirasinda', 'sırasında'],
+  ['acisindan', 'açısından'],
+  ['disinda', 'dışında'],
+  ['icinde', 'içinde'],
+  ['icin', 'için']
+]);
+
+const TURKISH_OCR_PHRASE_FIXES = [
+  [/\btarafindan\b/giu, 'tarafından'],
+  [/\bhakkinda\b/giu, 'hakkında'],
+  [/\barasinda\b/giu, 'arasında'],
+  [/\bsirasinda\b/giu, 'sırasında'],
+  [/\bacisindan\b/giu, 'açısından'],
+  [/\bdisinda\b/giu, 'dışında'],
+  [/\bicinde\b/giu, 'içinde'],
+  [/\bicin\b/giu, 'için']
+];
+
+function buildTurkishLookupKey(value) {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[01]/g, (d) => (d === '0' ? 'o' : 'i'))
+    .replace(/[^0-9A-Za-zÇĞİÖŞÜçğıöşü]/g, '')
+    .toLocaleLowerCase('tr')
+    .replace(/ç/g, 'c')
+    .replace(/ğ/g, 'g')
+    .replace(/ı/g, 'i')
+    .replace(/ö/g, 'o')
+    .replace(/ş/g, 's')
+    .replace(/ü/g, 'u');
+}
+
+function normalizeLearnedCorrectionKey(value) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLocaleLowerCase('tr');
+}
+
+function escapeRegex(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function compileLearnedTurkishCorrections() {
+  learnedTurkishCorrectionsCompiled = Array.from(learnedTurkishCorrections.entries())
+    .map(([wrong, correct]) => {
+      const key = normalizeLearnedCorrectionKey(wrong);
+      const value = String(correct || '').trim();
+      if (!key || !value) return null;
+      const core = key
+        .replace(/^[^0-9A-Za-zÇĞİÖŞÜçğıöşü]+/u, '')
+        .replace(/[^0-9A-Za-zÇĞİÖŞÜçğıöşü]+$/u, '')
+        .trim();
+      const patternSource = core || key;
+      const isSingleWord = !/\s/u.test(patternSource);
+      const regex = isSingleWord
+        ? new RegExp(`\\b${escapeRegex(patternSource)}\\b`, 'giu')
+        : new RegExp(escapeRegex(patternSource), 'giu');
+      return {
+        wrong: key,
+        correct: value,
+        regex
+      };
+    })
+    .filter(Boolean);
+}
+
+async function reloadLearnedTurkishCorrectionsFromDb() {
+  learnedTurkishCorrections.clear();
+  const result = await pool.query(
+    `
+      SELECT wrong, correct
+      FROM learned_turkish_corrections
+      ORDER BY wrong ASC
+    `
+  );
+  result.rows.forEach((row) => {
+    const wrong = normalizeLearnedCorrectionKey(row?.wrong ?? '');
+    const correct = String(row?.correct ?? '').trim();
+    if (!wrong || !correct) return;
+    learnedTurkishCorrections.set(wrong, correct);
+  });
+  compileLearnedTurkishCorrections();
+}
+
+function getLearnedTurkishCorrectionsList() {
+  return Array.from(learnedTurkishCorrections.entries())
+    .map(([wrong, correct]) => ({ wrong, correct }))
+    .sort((a, b) => a.wrong.localeCompare(b.wrong, 'tr'));
+}
+
+function readLegacyLearnedCorrectionsFromDisk() {
+  if (!fs.existsSync(LEARNED_TURKISH_CORRECTIONS_PATH)) return [];
+  try {
+    const raw = fs.readFileSync(LEARNED_TURKISH_CORRECTIONS_PATH, 'utf8');
+    const parsed = JSON.parse(raw || '{}');
+    const rows = Array.isArray(parsed?.entries)
+      ? parsed.entries
+      : (Array.isArray(parsed) ? parsed : []);
+    return rows
+      .map((row) => {
+        const wrong = normalizeLearnedCorrectionKey(row?.wrong ?? row?.from ?? '');
+        const correct = String(row?.correct ?? row?.to ?? '').trim();
+        if (!wrong || !correct) return null;
+        return { wrong, correct };
+      })
+      .filter(Boolean);
+  } catch (_error) {
+    return [];
+  }
+}
+
+async function migrateLegacyLearnedCorrectionsIfNeeded() {
+  const countRes = await pool.query('SELECT COUNT(*)::int AS count FROM learned_turkish_corrections');
+  const rowCount = Number(countRes.rows?.[0]?.count || 0);
+  if (rowCount > 0) return;
+  const legacyRows = readLegacyLearnedCorrectionsFromDisk();
+  if (!legacyRows.length) return;
+  const now = new Date().toISOString();
+  for (const row of legacyRows) {
+    await pool.query(
+      `
+        INSERT INTO learned_turkish_corrections (wrong_key, wrong, correct, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (wrong_key)
+        DO UPDATE SET wrong = EXCLUDED.wrong, correct = EXCLUDED.correct, updated_at = EXCLUDED.updated_at
+      `,
+      [normalizeLearnedCorrectionKey(row.wrong), row.wrong, row.correct, now, now]
+    );
+  }
+}
+
+function tryAddTurkishWord(word) {
+  const base = String(word || '')
+    .split('/')[0]
+    .trim()
+    .toLocaleLowerCase('tr');
+  if (!base) return;
+  turkishWordSet.add(base);
+}
+
+function loadTurkishWordSet() {
+  turkishWordSet.clear();
+  const candidates = [
+    TURKISH_WORDLIST_PATH,
+    '/usr/share/hunspell/tr_TR.dic',
+    '/usr/share/myspell/tr_TR.dic',
+    '/Library/Spelling/tr_TR.dic'
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    try {
+      if (!fs.existsSync(candidate)) continue;
+      const lines = fs.readFileSync(candidate, 'utf8').replace(/\r\n?/g, '\n').split('\n');
+      lines.forEach((line, idx) => {
+        if (!line) return;
+        if (idx === 0 && /^\d+$/.test(line.trim())) return;
+        tryAddTurkishWord(line);
+      });
+      if (turkishWordSet.size > 1000) break;
+    } catch (_error) {
+      // Try next candidate path.
+    }
+  }
+  TURKISH_OCR_WORD_FIXES.forEach((_value, key) => {
+    if (key) turkishWordSet.add(String(key).toLocaleLowerCase('tr'));
+  });
+  TURKISH_OCR_WORD_FIXES.forEach((value) => {
+    if (value) turkishWordSet.add(String(value).toLocaleLowerCase('tr'));
+  });
+}
+
+function hasTurkishWordInSet(word) {
+  const w = String(word || '').trim().toLocaleLowerCase('tr');
+  if (!w) return false;
+  return turkishWordSet.has(w);
+}
+
+function applyLearnedTurkishCorrections(text) {
+  let out = String(text || '');
+  if (!out || !learnedTurkishCorrectionsCompiled.length) return out;
+  learnedTurkishCorrectionsCompiled.forEach((rule) => {
+    out = out.replace(rule.regex, rule.correct);
+  });
+  return out;
+}
+
+function maybeTitleCaseFromRaw(raw, fixedLower) {
+  const src = String(raw || '');
+  if (!src || !fixedLower) return fixedLower;
+  const trimmed = src.trim();
+  if (!trimmed) return fixedLower;
+  if (trimmed === trimmed.toLocaleUpperCase('tr')) {
+    return fixedLower.toLocaleUpperCase('tr');
+  }
+  const firstRaw = trimmed.charAt(0);
+  if (firstRaw && firstRaw === firstRaw.toUpperCase()) {
+    return fixedLower.charAt(0).toLocaleUpperCase('tr') + fixedLower.slice(1);
+  }
+  return fixedLower;
+}
+
+function applyTurkishWordFixToChunk(chunk) {
+  const src = String(chunk || '');
+  if (!src || /^\s+$/.test(src)) return src;
+  const match = src.match(/^([^0-9A-Za-zÇĞİÖŞÜçğıöşü]*)([0-9A-Za-zÇĞİÖŞÜçğıöşü]+)([^0-9A-Za-zÇĞİÖŞÜçğıöşü]*)$/);
+  if (!match) return src;
+  const prefix = match[1] || '';
+  const core = match[2] || '';
+  const suffix = match[3] || '';
+  const mapped = TURKISH_OCR_WORD_FIXES.get(buildTurkishLookupKey(core));
+  if (!mapped) return src;
+  return `${prefix}${maybeTitleCaseFromRaw(core, mapped)}${suffix}`;
+}
+
+function applyTurkishConjunctionSpacingFix(text, options = {}) {
+  let out = String(text || '');
+  if (!out) return out;
+  const useLexicon = Boolean(options.useZemberekLexicon);
+
+  // Common OCR merge: "buda/suda/oda" -> "bu da/şu da/o da"
+  out = out.replace(/\b([Bb]u|[Şş]u|[Oo])([Dd][ae])\b/gu, '$1 $2');
+
+  // Conservative split for plural-noun + "da/de" when predicate-like words follow.
+  // Example target: "bu adamlarda haklı" -> "bu adamlar da haklı"
+  out = out.replace(
+    /\b([0-9A-Za-zÇĞİÖŞÜçğıöşü]{3,}(?:lar|ler))([Dd][ae])(?=\s+(?:haklı|haksız|doğru|yanlış|aynı|farklı|var|yok|değil|olmalı|olabilir|iyi|kötü|güzel)\b)/giu,
+    '$1 $2'
+  );
+
+  // Broader heuristic for merged "de/da" in subtitle-style predicates.
+  // Guard with a protected-word list to avoid splitting lexical words (e.g., "madde", "sade").
+  const protectedWords = new Set([
+    'madde', 'sade', 'vade', 'mide', 'nerede', 'nede', 'şubede', 'evde'
+  ]);
+  const predicateHints = new Set([
+    'haklı', 'haksız', 'doğru', 'yanlış', 'güzel', 'kötü', 'iyi', 'zor', 'kolay',
+    'var', 'yok', 'değil', 'oldu', 'olur', 'olacak', 'olmalı', 'olabilir', 'gerek'
+  ]);
+  const tokens = out.split(/\s+/);
+  for (let i = 0; i < tokens.length - 1; i += 1) {
+    const raw = String(tokens[i] || '');
+    const nextRaw = String(tokens[i + 1] || '');
+    const core = raw.replace(/^[^0-9A-Za-zÇĞİÖŞÜçğıöşü]+|[^0-9A-Za-zÇĞİÖŞÜçğıöşü]+$/g, '');
+    const nextCore = nextRaw.replace(/^[^0-9A-Za-zÇĞİÖŞÜçğıöşü]+|[^0-9A-Za-zÇĞİÖŞÜçğıöşü]+$/g, '');
+    if (!core || core.length < 4 || !nextCore) continue;
+    const lower = core.toLocaleLowerCase('tr');
+    const nextLower = nextCore.toLocaleLowerCase('tr');
+    if (!(lower.endsWith('da') || lower.endsWith('de'))) continue;
+    if (protectedWords.has(lower)) continue;
+    const stem = core.slice(0, -2);
+    if (!stem || stem.length < 2) continue;
+    if (useLexicon && hasTurkishWordInSet(lower)) continue;
+    if (useLexicon && !hasTurkishWordInSet(stem)) continue;
+    const isPredicateContext = predicateHints.has(nextLower)
+      || /^(mi|mu|mü|mı)$/.test(nextLower)
+      || /(yor|acak|ecek|malı|meli|miş|mış|muş|müş|di|dı|du|dü|ti|tı|tu|tü|ir|ır|ur|ür|ar|er)$/.test(nextLower);
+    if (!isPredicateContext) continue;
+    const join = core.slice(-2);
+    tokens[i] = raw.replace(core, `${stem} ${join}`);
+  }
+  out = tokens.join(' ');
+
+  return out;
+}
+
+function applyTurkishOcrOfflineCorrection(text, options = {}) {
+  const useLexicon = Boolean(options.useZemberekLexicon);
+  let out = String(text || '').trim();
+  if (!out) return '';
+  out = applyLearnedTurkishCorrections(out);
+  TURKISH_OCR_CHAR_FIXES.forEach(([pattern, replacement]) => {
+    out = out.replace(pattern, replacement);
+  });
+  TURKISH_OCR_PHRASE_FIXES.forEach(([pattern, replacement]) => {
+    out = out.replace(pattern, replacement);
+  });
+  out = out
+    .split(/(\s+)/)
+    .map((chunk) => applyTurkishWordFixToChunk(chunk))
+    .join('');
+  out = applyTurkishConjunctionSpacingFix(out, { useZemberekLexicon: useLexicon });
+  out = applyLearnedTurkishCorrections(out);
+  return normalizeOcrText(out);
+}
+
+function applyTurkishCorrectionToVttContent(content, options = {}) {
+  const lines = String(content || '')
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n');
+  const out = lines.map((line) => {
+    const raw = String(line || '');
+    const trimmed = raw.trim();
+    if (!trimmed) return raw;
+    if (/^\d+$/.test(trimmed)) return raw;
+    if (trimmed.includes('-->')) return raw;
+    if (/^(WEBVTT|NOTE|STYLE|REGION)\b/i.test(trimmed)) return raw;
+    const fixed = applyTurkishOcrOfflineCorrection(trimmed, options);
+    if (!fixed) return raw;
+    const leading = raw.match(/^\s*/)?.[0] || '';
+    return `${leading}${fixed}`;
+  });
+  return normalizeVttContent(out.join('\n'));
+}
+
+function applyLearnedCorrectionsToVttContent(content) {
+  const lines = String(content || '')
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n');
+  const out = lines.map((line) => {
+    const raw = String(line || '');
+    const trimmed = raw.trim();
+    if (!trimmed) return raw;
+    if (/^\d+$/.test(trimmed)) return raw;
+    if (trimmed.includes('-->')) return raw;
+    if (/^(WEBVTT|NOTE|STYLE|REGION)\b/i.test(trimmed)) return raw;
+    const fixed = applyLearnedTurkishCorrections(trimmed);
+    if (!fixed) return raw;
+    const leading = raw.match(/^\s*/)?.[0] || '';
+    return `${leading}${fixed}`;
+  });
+  return normalizeVttContent(out.join('\n'));
+}
+
+function normalizeOcrPreprocessProfile(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'off' || raw === 'none') return 'off';
+  if (raw === 'strong' || raw === 'hard') return 'strong';
+  return 'light';
+}
+
+function buildOcrVisualEnhanceFilter(preprocessProfile = 'light') {
+  const profile = normalizeOcrPreprocessProfile(preprocessProfile);
+  if (profile === 'off') return '';
+  if (profile === 'strong') {
+    return 'format=gray,eq=contrast=1.28:brightness=0.03:saturation=0,unsharp=7:7:1.1:5:5:0.7';
+  }
+  return 'format=gray,eq=contrast=1.15:brightness=0.02:saturation=0,unsharp=5:5:0.75:3:3:0.35';
+}
+
+function buildOcrFrameFilter(intervalSec, preprocessProfile = 'light') {
+  const fpsPart = `fps=1/${Math.max(1, Math.min(30, Number(intervalSec) || 4))}`;
+  const visualEnhance = buildOcrVisualEnhanceFilter(preprocessProfile);
+  return visualEnhance ? `${fpsPart},${visualEnhance}` : fpsPart;
+}
+
+function frameSecFromName(name, intervalSec, fallbackIndex = 0) {
+  const safe = String(name || '').trim();
+  const frameMatch = /^frame-(\d+)\.jpg$/i.exec(safe);
+  if (frameMatch) {
+    const ordinal = Math.max(0, Number(frameMatch[1]) - 1);
+    return ordinal * intervalSec;
+  }
+  const sceneMatch = /^scene-(\d+)\.jpg$/i.exec(safe);
+  if (sceneMatch) {
+    return Math.max(0, Number(sceneMatch[1]) || 0) / 1000;
+  }
+  return Math.max(0, fallbackIndex) * intervalSec;
+}
+
+function isSceneFrameName(name) {
+  return /^scene-\d+\.jpg$/i.test(String(name || '').trim());
+}
+
+function normalizeConfidence(value, fallback = 0) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(1, n));
+}
+
+function refineSceneFrameEntries(frameEntries = [], options = {}) {
+  const input = Array.isArray(frameEntries) ? frameEntries : [];
+  if (!input.length) {
+    return { entries: [], droppedScene: 0, patchedPeriodic: 0, keptScene: 0 };
+  }
+  const minSceneConfidence = Math.max(0.2, Math.min(0.95, Number(options.minSceneConfidence) || 0.5));
+  const lowPeriodicConfidence = Math.max(0.2, Math.min(0.95, Number(options.lowPeriodicConfidence) || 0.58));
+  const similarThreshold = Math.max(0.55, Math.min(0.95, Number(options.similarityThreshold) || 0.78));
+  const patchThreshold = Math.max(0.3, Math.min(0.9, Number(options.patchSimilarityThreshold) || 0.45));
+  const minSceneTextLen = Math.max(3, Math.min(120, Number(options.minSceneTextLen) || 7));
+  const neighbourWindowSec = Math.max(0.2, Math.min(15, Number(options.neighbourWindowSec) || Math.max(1, Number(options.intervalSec) || 4)));
+
+  const periodic = [];
+  const scene = [];
+  input.forEach((item) => {
+    const text = normalizeOcrText(String(item?.text || ''));
+    if (!text) return;
+    const sec = Number(item?.sec) || 0;
+    const confidence = normalizeConfidence(item?.confidence, 0);
+    const frame = String(item?.frame || '');
+    const normalized = { ...item, text, sec, confidence, frame };
+    if (isSceneFrameName(frame)) scene.push(normalized);
+    else periodic.push(normalized);
+  });
+
+  periodic.sort((a, b) => (a.sec - b.sec) || a.frame.localeCompare(b.frame));
+  scene.sort((a, b) => (a.sec - b.sec) || a.frame.localeCompare(b.frame));
+
+  const periodicRef = periodic.map((it) => ({ ...it }));
+  let droppedScene = 0;
+  let patchedPeriodic = 0;
+  let keptScene = 0;
+  const extraScene = [];
+
+  scene.forEach((sc) => {
+    const sceneTextLen = String(sc.text || '').replace(/\s+/g, '').length;
+    if (sceneTextLen < minSceneTextLen || sc.confidence < minSceneConfidence) {
+      droppedScene += 1;
+      return;
+    }
+    let nearest = null;
+    let nearestDelta = Number.POSITIVE_INFINITY;
+    periodicRef.forEach((p) => {
+      const delta = Math.abs((Number(p.sec) || 0) - (Number(sc.sec) || 0));
+      if (delta < nearestDelta) {
+        nearest = p;
+        nearestDelta = delta;
+      }
+    });
+    if (!nearest || nearestDelta > neighbourWindowSec) {
+      extraScene.push(sc);
+      keptScene += 1;
+      return;
+    }
+    const sim = normalizedEditSimilarity(String(nearest.text || ''), String(sc.text || ''));
+    const confDiff = sc.confidence - normalizeConfidence(nearest.confidence, 0);
+
+    // Scene frame is used mainly to patch weak periodic OCR around cuts/transitions.
+    if (normalizeConfidence(nearest.confidence, 0) < lowPeriodicConfidence && sim >= patchThreshold && confDiff >= 0.05) {
+      nearest.text = normalizeOcrText(sc.text);
+      nearest.confidence = sc.confidence;
+      nearest.frame = sc.frame;
+      patchedPeriodic += 1;
+      return;
+    }
+    if (sim >= similarThreshold) {
+      // Similar and not better enough -> drop noisy duplicate scene line.
+      if (confDiff < 0.08) {
+        droppedScene += 1;
+        return;
+      }
+      nearest.text = normalizeOcrText(sc.text);
+      nearest.confidence = sc.confidence;
+      nearest.frame = sc.frame;
+      patchedPeriodic += 1;
+      return;
+    }
+    extraScene.push(sc);
+    keptScene += 1;
+  });
+
+  const merged = [...periodicRef, ...extraScene]
+    .sort((a, b) => (a.sec - b.sec) || String(a.frame || '').localeCompare(String(b.frame || ''), undefined, { numeric: true }));
+  const out = [];
+  merged.forEach((item) => {
+    const prev = out[out.length - 1];
+    if (!prev) {
+      out.push(item);
+      return;
+    }
+    const sameText = normalizeComparableOcr(prev.text) && normalizeComparableOcr(prev.text) === normalizeComparableOcr(item.text);
+    const nearSec = Math.abs((Number(item.sec) || 0) - (Number(prev.sec) || 0)) <= 0.35;
+    if (sameText && nearSec) {
+      if (normalizeConfidence(item.confidence, 0) > normalizeConfidence(prev.confidence, 0)) {
+        out[out.length - 1] = item;
+      }
+      return;
+    }
+    out.push(item);
+  });
+
+  return { entries: out, droppedScene, patchedPeriodic, keptScene };
+}
+
+function parseSceneTimesFromFfmpegLog(raw) {
+  const text = String(raw || '');
+  if (!text) return [];
+  const found = [];
+  let match;
+  const regex = /pts_time:([0-9]+(?:\.[0-9]+)?)/g;
+  while ((match = regex.exec(text)) !== null) {
+    const sec = Number(match[1]);
+    if (!Number.isFinite(sec) || sec < 0) continue;
+    found.push(sec);
+  }
+  found.sort((a, b) => a - b);
+  const unique = [];
+  for (const sec of found) {
+    if (!unique.length || Math.abs(sec - unique[unique.length - 1]) > 0.04) unique.push(sec);
+  }
+  return unique;
+}
+
+async function detectSceneChangeTimes(inputPath, options = {}) {
+  const intervalSec = Math.max(1, Math.min(30, Number(options.intervalSec) || 4));
+  const threshold = Math.max(0.08, Math.min(0.95, Number(options.sceneThreshold) || 0.34));
+  const maxSceneFrames = Math.max(0, Math.min(180, Number(options.maxSceneFrames) || 24));
+  const minGapSec = Math.max(0.15, Math.min(30, Number(options.sceneMinGapSec) || Math.max(1.8, intervalSec * 0.85)));
+  const periodicAvoidSec = Math.max(0.12, Math.min(intervalSec / 2, Number(options.periodicAvoidSec) || Math.max(0.35, intervalSec * 0.28)));
+  if (!maxSceneFrames) return [];
+  const run = await runCommandCapture('ffmpeg', [
+    '-hide_banner',
+    '-loglevel',
+    'info',
+    '-i',
+    inputPath,
+    '-vf',
+    `select='gt(scene,${threshold.toFixed(3)})',showinfo`,
+    '-an',
+    '-f',
+    'null',
+    '-'
+  ]);
+  const rawLog = `${String(run.stderr || '')}\n${String(run.stdout || '')}`;
+  const parsed = parseSceneTimesFromFfmpegLog(rawLog);
+  if (!parsed.length) return [];
+  const selected = [];
+  for (const sec of parsed) {
+    if (selected.length >= maxSceneFrames) break;
+    if (selected.length && (sec - selected[selected.length - 1]) < minGapSec) continue;
+    const nearestPeriodic = Math.round(sec / intervalSec) * intervalSec;
+    if (Math.abs(sec - nearestPeriodic) <= periodicAvoidSec) continue;
+    selected.push(sec);
+  }
+  return selected;
+}
+
+async function extractSceneFrames(inputPath, workDir, sceneTimes = [], preprocessProfile = 'light') {
+  const times = Array.isArray(sceneTimes) ? sceneTimes : [];
+  if (!times.length) return [];
+  const created = [];
+  const visualEnhance = buildOcrVisualEnhanceFilter(preprocessProfile);
+  for (const secValue of times) {
+    const sec = Math.max(0, Number(secValue) || 0);
+    const ms = Math.round(sec * 1000);
+    const sceneName = `scene-${String(ms).padStart(9, '0')}.jpg`;
+    const scenePath = path.join(workDir, sceneName);
+    const args = [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-ss',
+      sec.toFixed(3),
+      '-i',
+      inputPath,
+      '-frames:v',
+      '1'
+    ];
+    if (visualEnhance) args.push('-vf', visualEnhance);
+    args.push('-q:v', '3', scenePath);
+    const run = await runCommandCapture('ffmpeg', args);
+    if (run.ok && fs.existsSync(scenePath)) created.push(sceneName);
+  }
+  return created;
+}
+
+function listOcrFrameFiles(workDir, intervalSec = 4) {
+  const names = fs.readdirSync(workDir)
+    .filter((name) => /^(?:frame|scene)-\d+\.jpg$/i.test(name));
+  names.sort((a, b) => {
+    const ta = frameSecFromName(a, intervalSec, 0);
+    const tb = frameSecFromName(b, intervalSec, 0);
+    if (Math.abs(ta - tb) > 0.0005) return ta - tb;
+    return a.localeCompare(b, undefined, { numeric: true });
+  });
+  return names;
+}
+
+function applyTurkishCorrectionToEntries(frameEntries = [], options = {}) {
+  return (Array.isArray(frameEntries) ? frameEntries : [])
+    .map((item) => {
+      const text = applyTurkishOcrOfflineCorrection(item?.text || '', options);
+      return { ...item, text };
+    })
+    .filter((item) => normalizeOcrText(item.text));
+}
+
+function buildDisplaySegments(frameEntries, options = {}) {
+  const intervalSec = Math.max(1, Math.min(30, Number(options.intervalSec) || 4));
+  const minDisplaySec = Math.max(intervalSec, Math.min(60, Number(options.minDisplaySec) || intervalSec * 2));
+  const mergeGapSec = Math.max(0, Math.min(30, Number(options.mergeGapSec) || intervalSec));
+  const segments = [];
+  let active = null;
+
+  const pushActive = () => {
+    if (!active) return;
+    const duration = Math.max(0, active.endSec - active.startSec);
+    if (duration >= minDisplaySec && active.text) {
+      segments.push({
+        startSec: active.startSec,
+        endSec: active.endSec,
+        text: active.text
+      });
+    }
+    active = null;
+  };
+
+  frameEntries.forEach((item, index) => {
+    const sec = Number.isFinite(item?.sec) ? Number(item.sec) : index * intervalSec;
+    const text = normalizeOcrText(String(item?.text || ''));
+    if (!text) {
+      pushActive();
+      return;
+    }
+    if (!active) {
+      active = { startSec: sec, endSec: sec + intervalSec, text };
+      return;
+    }
+
+    const gap = Math.max(0, sec - active.endSec);
+    const similarity = normalizedEditSimilarity(active.text, text);
+    if (similarity >= 0.82 || (gap <= mergeGapSec && similarity >= 0.68)) {
+      active.endSec = sec + intervalSec;
+      active.text = chooseBetterOcrText(active.text, text);
+      return;
+    }
+    pushActive();
+    active = { startSec: sec, endSec: sec + intervalSec, text };
+  });
+  pushActive();
+
+  if (!segments.length) return segments;
+  const merged = [];
+  for (const seg of segments) {
+    const prev = merged[merged.length - 1];
+    if (!prev) {
+      merged.push({ ...seg });
+      continue;
+    }
+    const gap = Math.max(0, seg.startSec - prev.endSec);
+    const similarity = normalizedEditSimilarity(prev.text, seg.text);
+    if (gap <= mergeGapSec && similarity >= 0.78) {
+      prev.endSec = seg.endSec;
+      prev.text = chooseBetterOcrText(prev.text, seg.text);
+    } else {
+      merged.push({ ...seg });
+    }
+  }
+  return merged;
+}
+
+function mergeRepeatedSegments(segments = [], options = {}) {
+  const mergeGapSec = Math.max(0, Math.min(30, Number(options.mergeGapSec) || 4));
+  const similarityThreshold = Math.max(0.65, Math.min(0.95, Number(options.similarityThreshold) || 0.78));
+  const input = Array.isArray(segments) ? segments : [];
+  if (!input.length) return [];
+  const sorted = [...input]
+    .map((seg) => ({
+      startSec: Number(seg?.startSec) || 0,
+      endSec: Number(seg?.endSec) || 0,
+      text: normalizeOcrText(seg?.text || '')
+    }))
+    .filter((seg) => seg.text && seg.endSec > seg.startSec)
+    .sort((a, b) => (a.startSec - b.startSec) || (a.endSec - b.endSec));
+  if (!sorted.length) return [];
+
+  const out = [];
+  for (const seg of sorted) {
+    const prev = out[out.length - 1];
+    if (!prev) {
+      out.push({ ...seg });
+      continue;
+    }
+    const gap = Math.max(0, seg.startSec - prev.endSec);
+    const similarity = normalizedEditSimilarity(prev.text, seg.text);
+    if (gap <= mergeGapSec && similarity >= similarityThreshold) {
+      prev.endSec = Math.max(prev.endSec, seg.endSec);
+      prev.text = chooseBetterOcrText(prev.text, seg.text);
+    } else {
+      out.push({ ...seg });
+    }
+  }
+  return out;
+}
+
+function formatOcrSegmentsOutput(segments) {
+  if (!Array.isArray(segments) || !segments.length) {
+    return '[00:00:00.000 --> 00:00:00.000] No OCR text detected.\n';
+  }
+  return `${segments.map((seg) => `[${formatTimecode(seg.startSec)} --> ${formatTimecode(seg.endSec)}] ${seg.text}`).join('\n')}\n`;
+}
+
+function collapseFrameEntriesToSegments(frameEntries = [], intervalSec = 4) {
+  const step = Math.max(1, Math.min(30, Number(intervalSec) || 4));
+  const sorted = (Array.isArray(frameEntries) ? frameEntries : [])
+    .map((item) => ({
+      sec: Number(item?.sec) || 0,
+      text: normalizeOcrText(String(item?.text || ''))
+    }))
+    .filter((item) => Boolean(item.text))
+    .sort((a, b) => (a.sec - b.sec) || a.text.localeCompare(b.text));
+  if (!sorted.length) return [];
+
+  const groups = new Map();
+  sorted.forEach((item) => {
+    const key = normalizeComparableOcr(item.text) || item.text.toLowerCase();
+    const list = groups.get(key) || [];
+    list.push(item);
+    groups.set(key, list);
+  });
+
+  const segments = [];
+  groups.forEach((items) => {
+    items.sort((a, b) => a.sec - b.sec);
+    let cur = null;
+    items.forEach((item) => {
+      if (!cur) {
+        cur = { startSec: item.sec, endSec: item.sec + step, text: item.text };
+        return;
+      }
+      const gap = item.sec - cur.endSec;
+      if (gap <= (step * 1.2)) {
+        cur.endSec = Math.max(cur.endSec, item.sec + step);
+      } else {
+        segments.push(cur);
+        cur = { startSec: item.sec, endSec: item.sec + step, text: item.text };
+      }
+    });
+    if (cur) segments.push(cur);
+  });
+
+  return segments.sort((a, b) => (a.startSec - b.startSec) || a.text.localeCompare(b.text));
+}
+
+function formatOcrFrameLinesOutput(frameEntries = [], intervalSec = 4) {
+  if (!Array.isArray(frameEntries) || !frameEntries.length) {
+    return '[00:00:00.000 --> 00:00:00.000] No OCR text detected.\n';
+  }
+  const segments = collapseFrameEntriesToSegments(frameEntries, intervalSec);
+  return formatOcrSegmentsOutput(segments);
+}
+
+function buildOverlayTokenRegex(token = '') {
+  const raw = String(token || '').trim();
+  if (!raw) return null;
+  const compact = normalizeComparableOcr(raw).replace(/\s+/g, '');
+  if (compact === 'notebooklm') {
+    // OCR often emits NotebookLLM / Notebook L M variants.
+    return /\bnotebook\s*l+\s*m\b/giu;
+  }
+  return new RegExp(`\\b${escapeRegExp(raw)}\\b`, 'giu');
+}
+
+function collapseOverlaySegments(segments = [], token = '') {
+  const input = (Array.isArray(segments) ? segments : [])
+    .filter((seg) => Number(seg?.endSec) > Number(seg?.startSec));
+  if (!input.length) return [];
+  const first = input[0];
+  const last = input[input.length - 1];
+  return [{
+    startSec: Number(first.startSec) || 0,
+    endSec: Number(last.endSec) || (Number(first.startSec) || 0),
+    text: String(token || 'Overlay').trim() || 'Overlay'
+  }];
+}
+
+function splitOverlayTokenFromEntries(frameEntries = [], token = 'NotebookLM') {
+  const tokenRegex = buildOverlayTokenRegex(token);
+  const tokenComparable = normalizeComparableOcr(token).replace(/\s+/g, '');
+  const cleaned = [];
+  const overlay = [];
+  (Array.isArray(frameEntries) ? frameEntries : []).forEach((item) => {
+    const text = normalizeOcrText(String(item?.text || ''));
+    if (!text) return;
+    const sec = Number(item?.sec) || 0;
+    const textComparable = normalizeComparableOcr(text).replace(/\s+/g, '');
+    if ((tokenRegex && tokenRegex.test(text)) || (tokenComparable && textComparable.includes(tokenComparable))) {
+      overlay.push({ sec, text: token });
+      if (tokenRegex) tokenRegex.lastIndex = 0;
+      let without = tokenRegex ? normalizeOcrText(text.replace(tokenRegex, ' ')) : text;
+      if (without && tokenComparable) {
+        without = normalizeOcrText(without
+          .split(/\s+/)
+          .filter((word) => {
+            const w = normalizeComparableOcr(word).replace(/\s+/g, '');
+            if (!w) return false;
+            if (w.includes(tokenComparable)) return false;
+            return levenshteinDistance(w, tokenComparable) > 1;
+          })
+          .join(' '));
+      }
+      if (without) cleaned.push({ ...item, text: without });
+      return;
+    }
+    cleaned.push({ ...item, text });
+  });
+  return { cleaned, overlay };
+}
+
 function normalizeVttContent(input) {
   let text = String(input || '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trim();
   if (!text) return 'WEBVTT\n\n';
@@ -335,6 +1722,209 @@ function convertSrtToVtt(input) {
   }
 
   return normalizeVttContent(out.join('\n'));
+}
+
+function parseSubtitleTimestampToSeconds(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  const match = text.match(/^(?:(\d{1,2}):)?(\d{1,2}):(\d{2})(?:[.,](\d{1,3}))?$/);
+  if (!match) return null;
+  const hh = Number(match[1] || 0);
+  const mm = Number(match[2] || 0);
+  const ss = Number(match[3] || 0);
+  const ms = Number(String(match[4] || '0').padEnd(3, '0').slice(0, 3));
+  if (mm > 59 || ss > 59) return null;
+  return (hh * 3600) + (mm * 60) + ss + (ms / 1000);
+}
+
+function parseSubtitleCues(content) {
+  const lines = String(content || '')
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n');
+  const cues = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = String(lines[i] || '').trim();
+    if (!line) {
+      i += 1;
+      continue;
+    }
+    if (/^\d+$/.test(line) && i + 1 < lines.length && String(lines[i + 1] || '').includes('-->')) {
+      i += 1;
+    }
+    const timeLine = String(lines[i] || '').trim();
+    if (!timeLine.includes('-->')) {
+      i += 1;
+      continue;
+    }
+    const match = timeLine.match(/^\s*([^ ]+)\s*-->\s*([^ ]+).*/);
+    if (!match) {
+      i += 1;
+      continue;
+    }
+    const startSec = parseSubtitleTimestampToSeconds(match[1]);
+    const endSec = parseSubtitleTimestampToSeconds(match[2]);
+    i += 1;
+    const textLines = [];
+    while (i < lines.length) {
+      const row = String(lines[i] || '');
+      if (!row.trim()) break;
+      textLines.push(row.trim());
+      i += 1;
+    }
+    const cueText = normalizeOcrText(textLines.join(' '));
+    if (Number.isFinite(startSec) && Number.isFinite(endSec) && endSec >= startSec && cueText) {
+      cues.push({ startSec, endSec, cueText });
+    }
+    while (i < lines.length && !String(lines[i] || '').trim()) i += 1;
+  }
+  return cues;
+}
+
+function parseTimedOcrSegments(content) {
+  const lines = String(content || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n');
+  const out = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = String(lines[i] || '').trim();
+    if (!line) continue;
+    const ranged = line.match(/^\s*\[([0-9:.]+)\s*-->\s*([0-9:.]+)\]\s*(.*)$/);
+    if (ranged) {
+      const startSec = parseSubtitleTimestampToSeconds(ranged[1]);
+      const endSec = parseSubtitleTimestampToSeconds(ranged[2]);
+      const segmentText = normalizeOcrText(ranged[3]);
+      if (Number.isFinite(startSec) && Number.isFinite(endSec) && endSec >= startSec && segmentText) {
+        out.push({ startSec, endSec, segmentText });
+      }
+      continue;
+    }
+    const single = line.match(/^\s*\[([0-9:.]+)\]\s*(.*)$/);
+    if (!single) continue;
+    const atSec = parseSubtitleTimestampToSeconds(single[1]);
+    const segmentText = normalizeOcrText(single[2]);
+    if (Number.isFinite(atSec) && segmentText) {
+      out.push({ startSec: atSec, endSec: atSec, segmentText });
+    }
+  }
+  return out;
+}
+
+function normalizeSubtitleSearchText(value) {
+  return normalizeComparableOcr(value)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function syncSubtitleCueIndexForAssetRow(row) {
+  const assetId = String(row?.id || '').trim();
+  if (!assetId) return 0;
+  const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+  const subtitleUrl = String(dc.subtitleUrl || '').trim();
+  if (!subtitleUrl) {
+    await pool.query('DELETE FROM asset_subtitle_cues WHERE asset_id = $1', [assetId]);
+    return 0;
+  }
+  const subtitlePath = publicUploadUrlToAbsolutePath(subtitleUrl);
+  if (!subtitlePath || !fs.existsSync(subtitlePath)) {
+    await pool.query('DELETE FROM asset_subtitle_cues WHERE asset_id = $1', [assetId]);
+    return 0;
+  }
+  const raw = fs.readFileSync(subtitlePath, 'utf8');
+  const cues = parseSubtitleCues(raw);
+  const now = new Date().toISOString();
+
+  await pool.query('DELETE FROM asset_subtitle_cues WHERE asset_id = $1', [assetId]);
+  if (!cues.length) return 0;
+
+  for (let idx = 0; idx < cues.length; idx += 1) {
+    const cue = cues[idx];
+    const normText = normalizeSubtitleSearchText(cue.cueText);
+    await pool.query(
+      `
+        INSERT INTO asset_subtitle_cues (
+          asset_id, subtitle_url, seq, start_sec, end_sec, cue_text, norm_text, confidence, source_engine, lang, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `,
+      [
+        assetId,
+        subtitleUrl,
+        idx + 1,
+        cue.startSec,
+        cue.endSec,
+        cue.cueText,
+        normText,
+        1,
+        'whisper',
+        normalizeSubtitleLang(dc.subtitleLang),
+        now
+      ]
+    );
+  }
+  return cues.length;
+}
+
+async function ensureSubtitleCueIndexForAssetRow(row) {
+  const assetId = String(row?.id || '').trim();
+  if (!assetId) return 0;
+  const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+  const subtitleUrl = String(dc.subtitleUrl || '').trim();
+  if (!subtitleUrl) return 0;
+  const existing = await pool.query(
+    'SELECT COUNT(*)::int AS count FROM asset_subtitle_cues WHERE asset_id = $1 AND subtitle_url = $2',
+    [assetId, subtitleUrl]
+  );
+  const count = Number(existing.rows?.[0]?.count || 0);
+  if (count > 0) return count;
+  return syncSubtitleCueIndexForAssetRow(row);
+}
+
+async function syncOcrSegmentIndexForAsset(assetId, ocrUrl, options = {}) {
+  const safeAssetId = String(assetId || '').trim();
+  const safeOcrUrl = String(ocrUrl || '').trim();
+  if (!safeAssetId || !safeOcrUrl) return 0;
+  const ocrPath = publicUploadUrlToAbsolutePath(safeOcrUrl);
+  await pool.query('DELETE FROM asset_ocr_segments WHERE asset_id = $1 AND ocr_url = $2', [safeAssetId, safeOcrUrl]);
+  if (!ocrPath || !ocrPath.startsWith(OCR_DIR) || !fs.existsSync(ocrPath)) return 0;
+  let raw = '';
+  try {
+    raw = fs.readFileSync(ocrPath, 'utf8');
+  } catch (_error) {
+    return 0;
+  }
+  const segments = parseTimedOcrSegments(raw);
+  if (!segments.length) return 0;
+  const sourceEngine = normalizeOcrEngine(options.sourceEngine || 'paddle');
+  const lang = String(options.lang || '').trim();
+  const now = new Date().toISOString();
+  for (let idx = 0; idx < segments.length; idx += 1) {
+    const seg = segments[idx];
+    const normText = normalizeSubtitleSearchText(seg.segmentText);
+    await pool.query(
+      `
+        INSERT INTO asset_ocr_segments (
+          asset_id, ocr_url, seq, start_sec, end_sec, segment_text, norm_text, confidence, source_engine, lang, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `,
+      [
+        safeAssetId,
+        safeOcrUrl,
+        idx + 1,
+        seg.startSec,
+        seg.endSec,
+        seg.segmentText,
+        normText,
+        1,
+        sourceEngine,
+        lang,
+        now
+      ]
+    );
+  }
+  return segments.length;
 }
 
 function buildGeneratedSubtitleVtt(assetTitle, durationSeconds) {
@@ -390,7 +1980,335 @@ async function saveAssetSubtitleMetadata(assetId, row, subtitleUrl, subtitleLang
     `,
     [assetId, JSON.stringify(dcMetadata), now]
   );
-  return result.rows[0];
+  const updatedRow = result.rows[0];
+  try {
+    await syncSubtitleCueIndexForAssetRow(updatedRow);
+  } catch (_error) {}
+  return updatedRow;
+}
+
+function getLatestVideoOcrJobForAsset(assetId) {
+  const target = String(assetId || '').trim();
+  if (!target) return null;
+  const jobs = Array.from(videoOcrJobs.values())
+    .filter((job) => String(job?.assetId || '') === target)
+    .sort((a, b) => {
+      const ta = Date.parse(String(a?.updatedAt || a?.startedAt || 0)) || 0;
+      const tb = Date.parse(String(b?.updatedAt || b?.startedAt || 0)) || 0;
+      return tb - ta;
+    });
+  return jobs[0] || null;
+}
+
+function normalizeMediaJobType(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'subtitle' || raw === 'video_ocr' || raw === 'proxy') return raw;
+  return '';
+}
+
+function normalizeMediaJobStatus(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'queued' || raw === 'running' || raw === 'completed' || raw === 'failed') return raw;
+  return 'queued';
+}
+
+function buildMediaJobProgress(status) {
+  const safe = normalizeMediaJobStatus(status);
+  if (safe === 'completed') return 100;
+  if (safe === 'running') return 40;
+  if (safe === 'failed') return 0;
+  return 5;
+}
+
+function safeJsonPayload(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value;
+}
+
+async function upsertMediaProcessingJob(record) {
+  const jobId = String(record?.jobId || '').trim();
+  const assetId = String(record?.assetId || '').trim();
+  const jobType = normalizeMediaJobType(record?.jobType);
+  if (!jobId || !assetId || !jobType) return;
+  const status = normalizeMediaJobStatus(record?.status);
+  const requestPayload = safeJsonPayload(record?.requestPayload);
+  const resultPayload = safeJsonPayload(record?.resultPayload);
+  const errorText = String(record?.errorText || '').slice(0, 4000);
+  const progress = Math.max(0, Math.min(100, Number(record?.progress) || buildMediaJobProgress(status)));
+  const createdAt = record?.createdAt ? new Date(record.createdAt).toISOString() : new Date().toISOString();
+  const updatedAt = record?.updatedAt ? new Date(record.updatedAt).toISOString() : new Date().toISOString();
+  const startedAt = record?.startedAt ? new Date(record.startedAt).toISOString() : null;
+  const finishedAt = record?.finishedAt ? new Date(record.finishedAt).toISOString() : null;
+  await pool.query(
+    `
+      INSERT INTO media_processing_jobs (
+        job_id, asset_id, job_type, status, request_payload, result_payload, error_text, progress,
+        created_at, updated_at, started_at, finished_at
+      )
+      VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10, $11, $12)
+      ON CONFLICT (job_id)
+      DO UPDATE SET
+        asset_id = EXCLUDED.asset_id,
+        job_type = EXCLUDED.job_type,
+        status = EXCLUDED.status,
+        request_payload = EXCLUDED.request_payload,
+        result_payload = EXCLUDED.result_payload,
+        error_text = EXCLUDED.error_text,
+        progress = EXCLUDED.progress,
+        updated_at = EXCLUDED.updated_at,
+        started_at = COALESCE(EXCLUDED.started_at, media_processing_jobs.started_at),
+        finished_at = EXCLUDED.finished_at
+    `,
+    [
+      jobId,
+      assetId,
+      jobType,
+      status,
+      JSON.stringify(requestPayload),
+      JSON.stringify(resultPayload),
+      errorText,
+      progress,
+      createdAt,
+      updatedAt,
+      startedAt,
+      finishedAt
+    ]
+  );
+}
+
+async function upsertMediaProcessingJobSafe(record) {
+  try {
+    await upsertMediaProcessingJob(record);
+  } catch (_error) {
+    // Job persistence hatasi asıl iş akışını durdurmamalı.
+  }
+}
+
+async function getMediaProcessingJobById(jobId, expectedType = '') {
+  const safeJobId = String(jobId || '').trim();
+  if (!safeJobId) return null;
+  const safeType = normalizeMediaJobType(expectedType);
+  const result = safeType
+    ? await pool.query(
+      `
+        SELECT *
+        FROM media_processing_jobs
+        WHERE job_id = $1
+          AND job_type = $2
+        LIMIT 1
+      `,
+      [safeJobId, safeType]
+    )
+    : await pool.query(
+      `
+        SELECT *
+        FROM media_processing_jobs
+        WHERE job_id = $1
+        LIMIT 1
+      `,
+      [safeJobId]
+    );
+  return result.rowCount ? result.rows[0] : null;
+}
+
+async function getLatestMediaProcessingJobForAsset(assetId, jobType) {
+  const safeAssetId = String(assetId || '').trim();
+  const safeType = normalizeMediaJobType(jobType);
+  if (!safeAssetId || !safeType) return null;
+  const result = await pool.query(
+    `
+      SELECT *
+      FROM media_processing_jobs
+      WHERE asset_id = $1
+        AND job_type = $2
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `,
+    [safeAssetId, safeType]
+  );
+  return result.rowCount ? result.rows[0] : null;
+}
+
+function buildVideoOcrDbRequestPayload(job) {
+  return {
+    intervalSec: Number(job.intervalSec || 0),
+    ocrLang: String(job.ocrLang || ''),
+    ocrEngine: normalizeOcrEngine(job.ocrEngine || job.requestedEngine || 'paddle'),
+    requestedEngine: normalizeOcrEngine(job.requestedEngine || job.ocrEngine || 'paddle'),
+    mode: String(job.mode || 'basic'),
+    advancedMode: Boolean(job.advancedMode),
+    turkishAiCorrect: Boolean(job.turkishAiCorrect),
+    useZemberekLexicon: Boolean(job.useZemberekLexicon),
+    preprocessProfile: String(job.preprocessProfile || 'light'),
+    enableBlurFilter: Boolean(job.enableBlurFilter),
+    blurThreshold: Number(job.blurThreshold || 0),
+    enableRegionMode: Boolean(job.enableRegionMode),
+    tickerHeightPct: Number(job.tickerHeightPct || 0),
+    ignoreStaticOverlays: Boolean(job.ignoreStaticOverlays),
+    ignorePhrases: String(job.ignorePhrases || ''),
+    minDisplaySec: Number(job.minDisplaySec || 0),
+    mergeGapSec: Number(job.mergeGapSec || 0),
+    enableSceneSampling: Boolean(job.enableSceneSampling),
+    sceneThreshold: Number(job.sceneThreshold || 0),
+    maxSceneFrames: Number(job.maxSceneFrames || 0),
+    sceneMinGapSec: Number(job.sceneMinGapSec || 0)
+  };
+}
+
+function buildVideoOcrDbResultPayload(job) {
+  return {
+    resultUrl: String(job.resultUrl || ''),
+    resultLabel: String(job.resultLabel || ''),
+    lineCount: Number(job.lineCount || 0),
+    segmentCount: Number(job.segmentCount || 0),
+    ocrEngine: normalizeOcrEngine(job.ocrEngine || job.requestedEngine || 'paddle'),
+    warning: String(job.warning || ''),
+    detectedStaticPhrases: Array.isArray(job.detectedStaticPhrases) ? job.detectedStaticPhrases : [],
+    skippedBlur: Number(job.skippedBlur || 0),
+    sceneFrameCount: Number(job.sceneFrameCount || 0),
+    droppedSceneFrames: Number(job.droppedSceneFrames || 0),
+    patchedPeriodicFrames: Number(job.patchedPeriodicFrames || 0),
+    keptSceneFrames: Number(job.keptSceneFrames || 0),
+    mode: String(job.mode || 'basic')
+  };
+}
+
+function mapVideoOcrJobFromDbRow(row) {
+  const request = safeJsonPayload(row?.request_payload);
+  const result = safeJsonPayload(row?.result_payload);
+  const status = normalizeMediaJobStatus(row?.status);
+  const ocrEngine = normalizeOcrEngine(request.ocrEngine || result.ocrEngine || 'paddle');
+  const resultUrl = String(result.resultUrl || '').trim();
+  return {
+    jobId: String(row?.job_id || ''),
+    assetId: String(row?.asset_id || ''),
+    status,
+    intervalSec: Number(request.intervalSec || 0),
+    ocrLang: String(request.ocrLang || ''),
+    ocrEngine,
+    requestedEngine: normalizeOcrEngine(request.requestedEngine || request.ocrEngine || 'paddle'),
+    resultUrl,
+    downloadUrl: resultUrl ? `/api/video-ocr-jobs/${encodeURIComponent(String(row?.job_id || ''))}/download` : '',
+    resultLabel: String(result.resultLabel || ''),
+    lineCount: Number(result.lineCount || 0),
+    segmentCount: Number(result.segmentCount || 0),
+    mode: String(result.mode || request.mode || 'basic'),
+    advancedMode: Boolean(request.advancedMode),
+    turkishAiCorrect: Boolean(request.turkishAiCorrect),
+    useZemberekLexicon: Boolean(request.useZemberekLexicon),
+    preprocessProfile: String(request.preprocessProfile || 'light'),
+    enableBlurFilter: Boolean(request.enableBlurFilter),
+    blurThreshold: Number(request.blurThreshold || 0),
+    enableRegionMode: Boolean(request.enableRegionMode),
+    tickerHeightPct: Number(request.tickerHeightPct || 0),
+    ignoreStaticOverlays: Boolean(request.ignoreStaticOverlays),
+    ignorePhrases: String(request.ignorePhrases || ''),
+    detectedStaticPhrases: Array.isArray(result.detectedStaticPhrases) ? result.detectedStaticPhrases : [],
+    skippedBlur: Number(result.skippedBlur || 0),
+    sceneFrameCount: Number(result.sceneFrameCount || 0),
+    droppedSceneFrames: Number(result.droppedSceneFrames || 0),
+    patchedPeriodicFrames: Number(result.patchedPeriodicFrames || 0),
+    keptSceneFrames: Number(result.keptSceneFrames || 0),
+    minDisplaySec: Number(request.minDisplaySec || 0),
+    mergeGapSec: Number(request.mergeGapSec || 0),
+    enableSceneSampling: Boolean(request.enableSceneSampling),
+    sceneThreshold: Number(request.sceneThreshold || 0),
+    maxSceneFrames: Number(request.maxSceneFrames || 0),
+    sceneMinGapSec: Number(request.sceneMinGapSec || 0),
+    warning: String(result.warning || ''),
+    error: String(row?.error_text || ''),
+    startedAt: row?.started_at ? new Date(row.started_at).toISOString() : (row?.created_at ? new Date(row.created_at).toISOString() : ''),
+    updatedAt: row?.updated_at ? new Date(row.updated_at).toISOString() : '',
+    finishedAt: row?.finished_at ? new Date(row.finished_at).toISOString() : ''
+  };
+}
+
+function buildSubtitleDbRequestPayload(job) {
+  return {
+    model: String(job.model || WHISPER_MODEL || 'small'),
+    subtitleLang: normalizeSubtitleLang(job.subtitleLang),
+    subtitleLabel: String(job.subtitleLabel || 'auto-whisper'),
+    turkishAiCorrect: Boolean(job.turkishAiCorrect),
+    useZemberekLexicon: Boolean(job.useZemberekLexicon),
+    subtitleBackend: normalizeSubtitleBackend(job.subtitleBackendRequested || job.subtitleBackend)
+  };
+}
+
+function buildSubtitleDbResultPayload(job) {
+  return {
+    subtitleUrl: String(job.subtitleUrl || ''),
+    subtitleLang: normalizeSubtitleLang(job.subtitleLang),
+    subtitleLabel: String(job.subtitleLabel || ''),
+    model: String(job.model || WHISPER_MODEL || 'small'),
+    subtitleBackend: normalizeSubtitleBackend(job.subtitleBackend || job.subtitleBackendRequested),
+    warning: String(job.warning || '')
+  };
+}
+
+function mapSubtitleJobFromDbRow(row) {
+  const request = safeJsonPayload(row?.request_payload);
+  const result = safeJsonPayload(row?.result_payload);
+  return {
+    jobId: String(row?.job_id || ''),
+    assetId: String(row?.asset_id || ''),
+    status: normalizeMediaJobStatus(row?.status),
+    subtitleUrl: String(result.subtitleUrl || ''),
+    subtitleLang: normalizeSubtitleLang(result.subtitleLang || request.subtitleLang),
+    subtitleLabel: String(result.subtitleLabel || request.subtitleLabel || ''),
+    model: String(result.model || request.model || ''),
+    turkishAiCorrect: Boolean(request.turkishAiCorrect),
+    useZemberekLexicon: Boolean(request.useZemberekLexicon),
+    subtitleBackend: normalizeSubtitleBackend(result.subtitleBackend || request.subtitleBackend),
+    warning: String(result.warning || ''),
+    asset: null,
+    error: String(row?.error_text || ''),
+    startedAt: row?.started_at ? new Date(row.started_at).toISOString() : (row?.created_at ? new Date(row.created_at).toISOString() : ''),
+    updatedAt: row?.updated_at ? new Date(row.updated_at).toISOString() : '',
+    finishedAt: row?.finished_at ? new Date(row.finished_at).toISOString() : ''
+  };
+}
+
+async function saveAssetVideoOcrMetadata(assetId, row, job) {
+  const now = new Date().toISOString();
+  const existingDc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+  const items = sanitizeVideoOcrItems(existingDc.videoOcrItems);
+  items.push({
+    id: nanoid(),
+    ocrUrl: String(job.resultUrl || '').trim(),
+    ocrLabel: String(job.resultLabel || '').trim() || 'video-ocr.txt',
+    ocrEngine: normalizeOcrEngine(job.ocrEngine || job.requestedEngine || 'paddle'),
+    lineCount: Math.max(0, Number(job.lineCount) || 0),
+    segmentCount: Math.max(0, Number(job.segmentCount) || 0),
+    createdAt: now
+  });
+  const latest = items[items.length - 1];
+  const dcMetadata = {
+    ...existingDc,
+    videoOcrUrl: latest.ocrUrl,
+    videoOcrLabel: latest.ocrLabel,
+    videoOcrEngine: latest.ocrEngine,
+    videoOcrLineCount: latest.lineCount,
+    videoOcrSegmentCount: latest.segmentCount,
+    videoOcrItems: items
+  };
+  const result = await pool.query(
+    `
+      UPDATE assets
+      SET dc_metadata = $2::jsonb,
+          updated_at = $3
+      WHERE id = $1
+      RETURNING *
+    `,
+    [assetId, JSON.stringify(dcMetadata), now]
+  );
+  const updatedRow = result.rows[0];
+  try {
+    await syncOcrSegmentIndexForAsset(assetId, latest.ocrUrl, {
+      sourceEngine: latest.ocrEngine,
+      lang: String(job?.ocrLang || '')
+    });
+  } catch (_error) {}
+  return { row: updatedRow, item: latest };
 }
 
 function normalizeTypeFolder(typeValue, mimeType, fileName) {
@@ -454,6 +2372,170 @@ function safeRmDir(target) {
   } catch (_error) {}
 }
 
+let lastOcrFrameCacheCleanupAt = 0;
+
+function normalizeFrameCacheKeyPart(value, fallback = 'unknown') {
+  const raw = String(value || '').trim().toLowerCase();
+  const safe = raw.replace(/[^a-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '');
+  return safe || fallback;
+}
+
+function getOcrFrameCacheDir(assetId, intervalSec) {
+  const assetPart = normalizeFrameCacheKeyPart(assetId, 'asset');
+  const intervalPart = Math.max(1, Math.min(30, Number(intervalSec) || 4));
+  return path.join(OCR_FRAME_CACHE_DIR, `${assetPart}__i${intervalPart}`);
+}
+
+function getOcrFrameCacheMetaPath(cacheDir) {
+  return path.join(cacheDir, 'meta.json');
+}
+
+function listRawOcrFrames(dirPath) {
+  if (!dirPath || !fs.existsSync(dirPath)) return [];
+  try {
+    return fs.readdirSync(dirPath)
+      .filter((name) => /^(?:frame|scene)-\d+\.jpg$/i.test(name))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  } catch (_error) {
+    return [];
+  }
+}
+
+function readOcrFrameCacheMeta(cacheDir) {
+  const metaPath = getOcrFrameCacheMetaPath(cacheDir);
+  if (!fs.existsSync(metaPath)) return {};
+  try {
+    const raw = fs.readFileSync(metaPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_error) {
+    return {};
+  }
+}
+
+function writeOcrFrameCacheMeta(cacheDir, meta = {}) {
+  try {
+    fs.mkdirSync(cacheDir, { recursive: true });
+    const nowIso = new Date().toISOString();
+    const next = {
+      ...meta,
+      updatedAt: nowIso,
+      lastUsedAt: nowIso
+    };
+    fs.writeFileSync(getOcrFrameCacheMetaPath(cacheDir), JSON.stringify(next), 'utf8');
+  } catch (_error) {
+    // no-op
+  }
+}
+
+function touchOcrFrameCache(cacheDir) {
+  const now = Date.now();
+  try {
+    if (cacheDir && fs.existsSync(cacheDir)) {
+      const stamp = new Date(now);
+      fs.utimesSync(cacheDir, stamp, stamp);
+    }
+  } catch (_error) {
+    // no-op
+  }
+  const meta = readOcrFrameCacheMeta(cacheDir);
+  writeOcrFrameCacheMeta(cacheDir, {
+    ...meta,
+    lastUsedAt: new Date(now).toISOString()
+  });
+}
+
+function cleanupOcrFrameCache() {
+  if (!OCR_FRAME_CACHE_ENABLED) return;
+  const now = Date.now();
+  // Throttle cleanup to at most once every 15 minutes.
+  if (now - lastOcrFrameCacheCleanupAt < 15 * 60 * 1000) return;
+  lastOcrFrameCacheCleanupAt = now;
+  const ttlMs = OCR_FRAME_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
+  if (!fs.existsSync(OCR_FRAME_CACHE_DIR)) return;
+  let entries = [];
+  try {
+    entries = fs.readdirSync(OCR_FRAME_CACHE_DIR, { withFileTypes: true });
+  } catch (_error) {
+    return;
+  }
+  entries.forEach((entry) => {
+    if (!entry.isDirectory()) return;
+    const cacheDir = path.join(OCR_FRAME_CACHE_DIR, entry.name);
+    const meta = readOcrFrameCacheMeta(cacheDir);
+    const rawStamp = String(meta.lastUsedAt || meta.updatedAt || '').trim();
+    const stampMs = Date.parse(rawStamp);
+    const fallbackMs = (() => {
+      try {
+        return fs.statSync(cacheDir).mtimeMs;
+      } catch (_error) {
+        return now;
+      }
+    })();
+    const usedAt = Number.isFinite(stampMs) ? stampMs : fallbackMs;
+    if (now - usedAt > ttlMs) safeRmDir(cacheDir);
+  });
+}
+
+function restoreOcrFramesFromCache({ assetId, intervalSec, workDir, includeSceneFrames }) {
+  if (!OCR_FRAME_CACHE_ENABLED) return { restored: false, periodicCount: 0, sceneCount: 0 };
+  const safeAssetId = String(assetId || '').trim();
+  if (!safeAssetId) return { restored: false, periodicCount: 0, sceneCount: 0 };
+  const cacheDir = getOcrFrameCacheDir(safeAssetId, intervalSec);
+  if (!fs.existsSync(cacheDir)) return { restored: false, periodicCount: 0, sceneCount: 0 };
+  const names = listRawOcrFrames(cacheDir);
+  const periodic = names.filter((name) => /^frame-\d+\.jpg$/i.test(name));
+  const scenes = names.filter((name) => /^scene-\d+\.jpg$/i.test(name));
+  if (!periodic.length) return { restored: false, periodicCount: 0, sceneCount: 0 };
+  const selected = includeSceneFrames ? [...periodic, ...scenes] : periodic;
+  try {
+    fs.mkdirSync(workDir, { recursive: true });
+    selected.forEach((name) => {
+      fs.copyFileSync(path.join(cacheDir, name), path.join(workDir, name));
+    });
+    touchOcrFrameCache(cacheDir);
+    return {
+      restored: true,
+      periodicCount: periodic.length,
+      sceneCount: includeSceneFrames ? scenes.length : 0
+    };
+  } catch (_error) {
+    return { restored: false, periodicCount: 0, sceneCount: 0 };
+  }
+}
+
+function updateOcrFrameCacheFromWorkDir({ assetId, intervalSec, workDir }) {
+  if (!OCR_FRAME_CACHE_ENABLED) return;
+  const safeAssetId = String(assetId || '').trim();
+  if (!safeAssetId) return;
+  const sourceNames = listRawOcrFrames(workDir);
+  const periodic = sourceNames.filter((name) => /^frame-\d+\.jpg$/i.test(name));
+  const scenes = sourceNames.filter((name) => /^scene-\d+\.jpg$/i.test(name));
+  if (!periodic.length) return;
+  const cacheDir = getOcrFrameCacheDir(safeAssetId, intervalSec);
+  fs.mkdirSync(cacheDir, { recursive: true });
+  listRawOcrFrames(cacheDir).forEach((name) => {
+    try {
+      fs.unlinkSync(path.join(cacheDir, name));
+    } catch (_error) {
+      // ignore
+    }
+  });
+  [...periodic, ...scenes].forEach((name) => {
+    try {
+      fs.copyFileSync(path.join(workDir, name), path.join(cacheDir, name));
+    } catch (_error) {
+      // ignore
+    }
+  });
+  writeOcrFrameCacheMeta(cacheDir, {
+    assetId: safeAssetId,
+    intervalSec: Math.max(1, Math.min(30, Number(intervalSec) || 4)),
+    periodicCount: periodic.length,
+    sceneCount: scenes.length
+  });
+}
+
 function inferAssetType(inputType, mimeType) {
   if (inputType && inputType.trim()) return inputType.trim();
   const mime = String(mimeType || '').toLowerCase();
@@ -501,6 +2583,49 @@ function getFileExtension(fileName) {
   return path.extname(String(fileName || '')).replace('.', '').toLowerCase();
 }
 
+function inferMimeTypeFromFileName(fileName) {
+  const ext = getFileExtension(fileName);
+  if (!ext) return '';
+  const byExt = {
+    mp4: 'video/mp4',
+    mov: 'video/quicktime',
+    m4v: 'video/x-m4v',
+    mkv: 'video/x-matroska',
+    avi: 'video/x-msvideo',
+    webm: 'video/webm',
+    mpg: 'video/mpeg',
+    mpeg: 'video/mpeg',
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    m4a: 'audio/mp4',
+    aac: 'audio/aac',
+    flac: 'audio/flac',
+    ogg: 'audio/ogg',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    tif: 'image/tiff',
+    tiff: 'image/tiff',
+    svg: 'image/svg+xml',
+    bmp: 'image/bmp',
+    pdf: 'application/pdf',
+    txt: 'text/plain',
+    md: 'text/markdown',
+    csv: 'text/csv',
+    json: 'application/json',
+    xml: 'application/xml',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls: 'application/vnd.ms-excel',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ppt: 'application/vnd.ms-powerpoint',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+  };
+  return byExt[ext] || '';
+}
+
 const TEXT_DOC_EXTENSIONS = new Set([
   'txt', 'md', 'csv', 'tsv', 'json', 'xml', 'yaml', 'yml', 'sql', 'py', 'js', 'jsx', 'ts', 'tsx',
   'java', 'c', 'cpp', 'h', 'hpp', 'go', 'rs', 'rb', 'php', 'swift', 'kt', 'log', 'ini', 'cfg',
@@ -530,6 +2655,14 @@ function isDocumentCandidate({ mimeType, fileName, declaredType }) {
 
   const ext = getFileExtension(fileName);
   return ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'odt', 'ods', 'odp'].includes(ext) || TEXT_DOC_EXTENSIONS.has(ext);
+}
+
+function getAssetFamily({ mimeType, fileName, declaredType }) {
+  if (isVideoCandidate({ mimeType, fileName, declaredType })) return 'video';
+  if (String(mimeType || '').toLowerCase().startsWith('audio/')) return 'audio';
+  if (String(mimeType || '').toLowerCase().startsWith('image/')) return 'image';
+  if (isDocumentCandidate({ mimeType, fileName, declaredType })) return 'document';
+  return 'unknown';
 }
 
 function escapeSvgText(value) {
@@ -1179,12 +3312,24 @@ function mapAssetRow(row) {
   const thumbnailUrl = resolveStoredUrl(row.thumbnail_url, 'thumbnails');
   const dcMetadata = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
   let subtitleItems = sanitizeSubtitleItems(dcMetadata.subtitleItems);
+  let videoOcrItems = sanitizeVideoOcrItems(dcMetadata.videoOcrItems);
   if (!subtitleItems.length && String(dcMetadata.subtitleUrl || '').trim()) {
     subtitleItems = [{
       id: nanoid(),
       subtitleUrl: String(dcMetadata.subtitleUrl || '').trim(),
       subtitleLang: normalizeSubtitleLang(dcMetadata.subtitleLang),
       subtitleLabel: String(dcMetadata.subtitleLabel || '').trim() || 'subtitle',
+      createdAt: row.updated_at || row.created_at || new Date().toISOString()
+    }];
+  }
+  if (!videoOcrItems.length && String(dcMetadata.videoOcrUrl || '').trim()) {
+    videoOcrItems = [{
+      id: nanoid(),
+      ocrUrl: String(dcMetadata.videoOcrUrl || '').trim(),
+      ocrLabel: String(dcMetadata.videoOcrLabel || '').trim() || 'video-ocr.txt',
+      ocrEngine: normalizeOcrEngine(dcMetadata.videoOcrEngine || 'paddle'),
+      lineCount: Math.max(0, Number(dcMetadata.videoOcrLineCount) || 0),
+      segmentCount: Math.max(0, Number(dcMetadata.videoOcrSegmentCount) || 0),
       createdAt: row.updated_at || row.created_at || new Date().toISOString()
     }];
   }
@@ -1219,6 +3364,14 @@ function mapAssetRow(row) {
     subtitleLang: dcMetadata.subtitleUrl ? normalizeSubtitleLang(dcMetadata.subtitleLang) : '',
     subtitleLabel: String(dcMetadata.subtitleLabel || '').trim(),
     subtitleItems,
+    videoOcrUrl: String(dcMetadata.videoOcrUrl || '').trim(),
+    videoOcrLabel: String(dcMetadata.videoOcrLabel || '').trim(),
+    videoOcrEngine: normalizeOcrEngine(dcMetadata.videoOcrEngine || 'paddle'),
+    videoOcrLineCount: Math.max(0, Number(dcMetadata.videoOcrLineCount) || 0),
+    videoOcrSegmentCount: Math.max(0, Number(dcMetadata.videoOcrSegmentCount) || 0),
+    videoOcrItems,
+    ocrSearchHit: row._ocr_search_hit || null,
+    subtitleSearchHit: row._subtitle_search_hit || null,
     cuts: listCuts,
     status: row.status,
     deletedAt: row.deleted_at,
@@ -1233,7 +3386,25 @@ function mapVersionRow(row) {
     versionId: row.version_id,
     label: row.label,
     note: row.note,
+    snapshotMediaUrl: row.snapshot_media_url || '',
+    snapshotSourcePath: row.snapshot_source_path || '',
+    snapshotFileName: row.snapshot_file_name || '',
+    snapshotMimeType: row.snapshot_mime_type || '',
+    snapshotThumbnailUrl: row.snapshot_thumbnail_url || '',
+    actorUsername: row.actor_username || '',
+    actionType: row.action_type || 'manual',
+    restoredFromVersionId: row.restored_from_version_id || '',
     createdAt: row.created_at
+  };
+}
+
+function buildVersionSnapshotFromRow(row) {
+  return {
+    snapshotMediaUrl: String(row?.media_url || '').trim(),
+    snapshotSourcePath: String(row?.source_path || '').trim(),
+    snapshotFileName: String(row?.file_name || '').trim(),
+    snapshotMimeType: String(row?.mime_type || '').trim(),
+    snapshotThumbnailUrl: String(row?.thumbnail_url || '').trim()
   };
 }
 
@@ -1278,6 +3449,15 @@ async function createAssetRecord(input) {
     versionId: nanoid(),
     label: 'v1',
     note: 'Initial ingest',
+    snapshot: {
+      snapshotMediaUrl: asset.mediaUrl,
+      snapshotSourcePath: asset.sourcePath,
+      snapshotFileName: asset.fileName,
+      snapshotMimeType: asset.mimeType,
+      snapshotThumbnailUrl: asset.thumbnailUrl
+    },
+    actorUsername: String(asset.owner || '').trim() || 'system',
+    actionType: 'ingest',
     createdAt: now
   };
 
@@ -1317,8 +3497,20 @@ async function createAssetRecord(input) {
       ]
     );
     await pool.query(
-      'INSERT INTO asset_versions (version_id, asset_id, label, note, created_at) VALUES ($1,$2,$3,$4,$5)',
-      [version.versionId, asset.id, version.label, version.note, version.createdAt]
+      `
+        INSERT INTO asset_versions (
+          version_id, asset_id, label, note,
+          snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
+          actor_username, action_type, restored_from_version_id,
+          created_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      `,
+      [
+        version.versionId, asset.id, version.label, version.note,
+        version.snapshot.snapshotMediaUrl, version.snapshot.snapshotSourcePath, version.snapshot.snapshotFileName, version.snapshot.snapshotMimeType, version.snapshot.snapshotThumbnailUrl,
+        version.actorUsername, version.actionType, null,
+        version.createdAt
+      ]
     );
     await pool.query('COMMIT');
     await indexAssetToElastic(asset.id).catch(() => {});
@@ -1456,7 +3648,10 @@ function runCommandQuiet(cmd, args) {
 }
 
 async function transcribeMediaToVtt(inputPath, outputPath, options = {}) {
-  const scriptPath = path.join(__dirname, 'transcribe_whisper.py');
+  const backend = normalizeSubtitleBackend(options.backend || options.subtitleBackend || (options.useWhisperX ? 'whisperx' : 'whisper'));
+  const scriptPath = backend === 'whisperx'
+    ? path.join(__dirname, 'transcribe_whisperx.py')
+    : path.join(__dirname, 'transcribe_whisper.py');
   const lang = String(options.lang || '').trim().toLowerCase();
   const model = String(options.model || WHISPER_MODEL || 'small').trim();
   const args = [
@@ -1478,68 +3673,281 @@ async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
   const intervalSec = Math.max(1, Math.min(30, Number(options.intervalSec) || 4));
   const ocrLang = String(options.ocrLang || 'eng+tur').trim() || 'eng+tur';
   const ocrEngine = normalizeOcrEngine(options.ocrEngine);
+  const advancedMode = Boolean(options.advancedMode);
+  const turkishAiCorrect = options.turkishAiCorrect == null
+    ? true
+    : Boolean(options.turkishAiCorrect);
+  const useZemberekLexicon = options.useZemberekLexicon == null
+    ? turkishAiCorrect
+    : Boolean(options.useZemberekLexicon);
+  const preprocessProfile = normalizeOcrPreprocessProfile(options.preprocessProfile);
+  const enableBlurFilter = Boolean(options.enableBlurFilter);
+  const blurThreshold = Math.max(0, Math.min(300, Number(options.blurThreshold) || 80));
+  const enableRegionMode = Boolean(options.enableRegionMode);
+  const tickerHeightPct = Math.max(10, Math.min(40, Number(options.tickerHeightPct) || 20));
+  const ignoreStaticOverlays = Boolean(options.ignoreStaticOverlays);
+  const ignorePhrases = String(options.ignorePhrases || '').trim();
+  const minDisplaySec = Math.max(intervalSec, Math.min(60, Number(options.minDisplaySec) || intervalSec * 2));
+  const mergeGapSec = Math.max(0, Math.min(30, Number(options.mergeGapSec) || intervalSec));
+  const enableSceneSampling = options.enableSceneSampling == null
+    ? advancedMode
+    : Boolean(options.enableSceneSampling);
+  const sceneThreshold = Math.max(0.08, Math.min(0.95, Number(options.sceneThreshold) || 0.34));
+  const maxSceneFrames = Math.max(0, Math.min(180, Number(options.maxSceneFrames) || 24));
+  const sceneMinGapSec = Math.max(0.15, Math.min(30, Number(options.sceneMinGapSec) || Math.max(1.8, intervalSec * 0.85)));
+  const assetId = String(options.assetId || '').trim();
   const workDir = String(options.workDir || '').trim() || createOcrFrameWorkDir();
   fs.mkdirSync(workDir, { recursive: true });
-  const framePattern = path.join(workDir, 'frame-%06d.jpg');
-  const ffmpeg = await runCommandCapture('ffmpeg', [
-    '-hide_banner',
-    '-loglevel',
-    'error',
-    '-i',
-    inputPath,
-    '-vf',
-    `fps=1/${intervalSec}`,
-    '-q:v',
-    '3',
-    framePattern
-  ]);
-  if (!ffmpeg.ok) throw new Error(String(ffmpeg.stderr || 'Could not sample video frames'));
+  cleanupOcrFrameCache();
+  const cacheRestore = restoreOcrFramesFromCache({
+    assetId,
+    intervalSec,
+    workDir,
+    includeSceneFrames: enableSceneSampling
+  });
 
-  const files = fs.readdirSync(workDir)
-    .filter((name) => /^frame-\d+\.jpg$/i.test(name))
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  let sceneFrames = [];
+  let usedFrameCache = Boolean(cacheRestore.restored);
+  if (!cacheRestore.restored) {
+    const framePattern = path.join(workDir, 'frame-%06d.jpg');
+    const ffmpeg = await runCommandCapture('ffmpeg', [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-i',
+      inputPath,
+      '-vf',
+      buildOcrFrameFilter(intervalSec, preprocessProfile),
+      '-q:v',
+      '3',
+      framePattern
+    ]);
+    if (!ffmpeg.ok) throw new Error(String(ffmpeg.stderr || 'Could not sample video frames'));
+
+    const sampledSceneTimes = enableSceneSampling
+      ? await detectSceneChangeTimes(inputPath, {
+        intervalSec,
+        sceneThreshold,
+        maxSceneFrames,
+        sceneMinGapSec
+      })
+      : [];
+    sceneFrames = enableSceneSampling
+      ? await extractSceneFrames(inputPath, workDir, sampledSceneTimes, preprocessProfile)
+      : [];
+    updateOcrFrameCacheFromWorkDir({ assetId, intervalSec, workDir });
+  } else {
+    const restoredNames = listRawOcrFrames(workDir);
+    sceneFrames = restoredNames.filter((name) => isSceneFrameName(name));
+    // Cache was created earlier without scene frames; fill scene cache lazily if requested.
+    if (enableSceneSampling && !sceneFrames.length) {
+      const sampledSceneTimes = await detectSceneChangeTimes(inputPath, {
+        intervalSec,
+        sceneThreshold,
+        maxSceneFrames,
+        sceneMinGapSec
+      });
+      sceneFrames = await extractSceneFrames(inputPath, workDir, sampledSceneTimes, preprocessProfile);
+      updateOcrFrameCacheFromWorkDir({ assetId, intervalSec, workDir });
+    }
+  }
+  const files = listOcrFrameFiles(workDir, intervalSec);
 
   if (!files.length) throw new Error('No frames extracted for OCR');
 
-  if (ocrEngine === 'paddle') {
-    const result = await extractVideoOcrToTextPaddle({ workDir, files, outputPath, intervalSec, ocrLang });
-    return { ...result, workDir };
-  }
+  const prep = await prepareOcrFrames({
+    workDir,
+    files,
+    preprocessProfile,
+    enableBlurFilter,
+    blurThreshold,
+    enableRegionMode,
+    tickerHeightPct
+  });
+  const preparedFiles = Array.isArray(prep.files) && prep.files.length ? prep.files : files;
+  if (!preparedFiles.length) throw new Error('All sampled frames were filtered out before OCR');
 
-  const result = await extractVideoOcrToTextTesseract({ workDir, files, outputPath, intervalSec, ocrLang });
-  return { ...result, workDir };
+  const result = await extractVideoOcrFrameTextPaddle({
+    workDir,
+    files: preparedFiles,
+    intervalSec,
+    ocrLang,
+    tickerMap: prep.tickerMap
+  });
+
+  const frameEntriesRaw = Array.isArray(result.frameEntries) ? result.frameEntries : [];
+  const correctedEntries = turkishAiCorrect
+    ? applyTurkishCorrectionToEntries(frameEntriesRaw, { useZemberekLexicon })
+    : frameEntriesRaw;
+  const sceneRefined = refineSceneFrameEntries(correctedEntries, {
+    intervalSec,
+    minSceneConfidence: 0.5,
+    lowPeriodicConfidence: 0.58,
+    similarityThreshold: 0.78,
+    patchSimilarityThreshold: 0.45,
+    minSceneTextLen: 7,
+    neighbourWindowSec: Math.max(1.1, intervalSec)
+  });
+  const refinedEntries = Array.isArray(sceneRefined.entries) && sceneRefined.entries.length
+    ? sceneRefined.entries
+    : correctedEntries;
+  const filterResult = applyOcrFrameFilters(refinedEntries, {
+    ignorePhrases,
+    ignoreStaticOverlays
+  });
+  const frameEntries = Array.isArray(filterResult.frameEntries) ? filterResult.frameEntries : refinedEntries;
+  const autoIgnoredPhrases = Array.isArray(filterResult.autoIgnoredPhrases) ? filterResult.autoIgnoredPhrases : [];
+  const overlaySplit = splitOverlayTokenFromEntries(frameEntries, 'NotebookLM');
+  const effectiveEntries = overlaySplit.cleaned;
+  const overlaySegmentsRaw = mergeRepeatedSegments(
+    collapseFrameEntriesToSegments(overlaySplit.overlay, intervalSec),
+    { mergeGapSec: Math.max(intervalSec * 2, mergeGapSec), similarityThreshold: 0.9 }
+  );
+  const overlaySegments = collapseOverlaySegments(overlaySegmentsRaw, 'NotebookLM');
+  const baseLines = [];
+  let prevNorm = '';
+  effectiveEntries.forEach((item) => {
+    const text = normalizeOcrText(String(item?.text || ''));
+    if (!text) return;
+    const norm = normalizeComparableOcr(text);
+    if (!norm || norm === prevNorm) return;
+    prevNorm = norm;
+    baseLines.push(`[${formatTimecode(Number(item?.sec) || 0)}] ${text}`);
+  });
+
+  let output = '';
+  let segmentCount = 0;
+  if (advancedMode) {
+    const rawSegments = buildDisplaySegments(effectiveEntries, {
+      intervalSec,
+      minDisplaySec,
+      mergeGapSec
+    });
+    const segments = mergeRepeatedSegments(rawSegments, {
+      mergeGapSec,
+      similarityThreshold: 0.74
+    });
+    segmentCount = segments.length;
+    const allSegments = [...segments, ...overlaySegments]
+      .sort((a, b) => (a.startSec - b.startSec) || a.text.localeCompare(b.text));
+    output = segmentCount
+      ? formatOcrSegmentsOutput(allSegments)
+      : formatOcrFrameLinesOutput(effectiveEntries, intervalSec);
+  } else {
+    const collapsedSegments = mergeRepeatedSegments(
+      collapseFrameEntriesToSegments(effectiveEntries, intervalSec),
+      { mergeGapSec: Math.max(mergeGapSec, intervalSec), similarityThreshold: 0.72 }
+    );
+    const allSegments = [...collapsedSegments, ...overlaySegments]
+      .sort((a, b) => (a.startSec - b.startSec) || a.text.localeCompare(b.text));
+    segmentCount = collapsedSegments.length;
+    output = segmentCount
+      ? formatOcrSegmentsOutput(allSegments)
+      : '[00:00:00.000 --> 00:00:00.000] No OCR text detected.\n';
+  }
+  fs.writeFileSync(outputPath, output, 'utf8');
+
+  return {
+    lines: baseLines.length,
+    segments: segmentCount,
+    engine: result.engine,
+    mode: advancedMode ? 'advanced' : 'basic',
+    autoIgnoredPhrases,
+    skippedBlur: Number(prep.skippedBlur || 0),
+    sampledFrames: files.length,
+    ocrFrames: preparedFiles.length,
+    droppedSceneFrames: Number(sceneRefined.droppedScene || 0),
+    patchedPeriodicFrames: Number(sceneRefined.patchedPeriodic || 0),
+    keptSceneFrames: Number(sceneRefined.keptScene || 0),
+    sceneSamplingEnabled: enableSceneSampling,
+    sceneFrameCount: sceneFrames.length,
+    sceneThreshold,
+    sceneMinGapSec,
+    maxSceneFrames,
+    preprocessingWarning: String(prep.warning || '').trim(),
+    usedFrameCache,
+    workDir
+  };
 }
 
 function normalizeOcrEngine(value) {
-  const raw = String(value || '').trim().toLowerCase();
-  return raw === 'paddle' ? 'paddle' : 'tesseract';
+  void value;
+  return 'paddle';
 }
 
-async function extractVideoOcrToTextTesseract({ workDir, files, outputPath, intervalSec, ocrLang }) {
-  const lines = [];
-  let prevNorm = '';
-  for (let i = 0; i < files.length; i += 1) {
-    const framePath = path.join(workDir, files[i]);
-    const ocr = await runCommandCapture('tesseract', [framePath, 'stdout', '-l', ocrLang]);
-    if (!ocr.ok) continue;
-    const text = normalizeOcrText(ocr.stdout || '');
-    if (!text) continue;
-    const norm = text.toLocaleLowerCase('tr').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-    if (!norm || norm === prevNorm) continue;
-    prevNorm = norm;
-    const sec = i * intervalSec;
-    lines.push(`[${formatTimecode(sec)}] ${text}`);
+async function prepareOcrFrames({
+  workDir,
+  files,
+  preprocessProfile,
+  enableBlurFilter,
+  blurThreshold,
+  enableRegionMode,
+  tickerHeightPct
+}) {
+  const base = {
+    files: Array.isArray(files) ? [...files] : [],
+    tickerMap: {},
+    skippedBlur: 0,
+    warning: ''
+  };
+  const needsPrep = enableBlurFilter || enableRegionMode || preprocessProfile !== 'off';
+  if (!needsPrep || !base.files.length) return base;
+
+  const scriptPath = path.join(__dirname, 'video_ocr_frame_prep.py');
+  const args = [
+    scriptPath,
+    '--frames-dir',
+    workDir,
+    '--profile',
+    normalizeOcrPreprocessProfile(preprocessProfile)
+  ];
+  if (enableBlurFilter) {
+    args.push('--enable-blur-filter', '--blur-threshold', String(blurThreshold));
   }
-
-  const output = lines.length
-    ? `${lines.join('\n')}\n`
-    : '[00:00:00.000] No OCR text detected.\n';
-  fs.writeFileSync(outputPath, output, 'utf8');
-
-  return { lines: lines.length, engine: 'tesseract' };
+  if (enableRegionMode) {
+    args.push('--enable-region-mode', '--ticker-height-pct', String(tickerHeightPct));
+  }
+  const run = await runCommandCapture('python3', args, {
+    env: {
+      PYTHONWARNINGS: 'ignore'
+    }
+  });
+  if (!run.ok) {
+    return {
+      ...base,
+      warning: `Frame preprocess skipped: ${String(run.stderr || run.stdout || 'unknown error').trim().slice(0, 300)}`
+    };
+  }
+  try {
+    const payload = JSON.parse(String(run.stdout || '{}'));
+    const kept = Array.isArray(payload.kept)
+      ? payload.kept.map((name) => String(name || '').trim()).filter(Boolean)
+      : [];
+    const keptSet = new Set(kept);
+    const nextFiles = keptSet.size ? base.files.filter((name) => keptSet.has(name)) : base.files;
+    const tickerMapRaw = payload.ticker_map && typeof payload.ticker_map === 'object' ? payload.ticker_map : {};
+    const tickerMap = {};
+    Object.entries(tickerMapRaw).forEach(([key, value]) => {
+      const frame = String(key || '').trim();
+      const ticker = String(value || '').trim();
+      if (frame && ticker) tickerMap[frame] = ticker;
+    });
+    const skippedBlur = Array.isArray(payload.skipped_blur) ? payload.skipped_blur.length : 0;
+    return {
+      files: nextFiles.length ? nextFiles : base.files,
+      tickerMap,
+      skippedBlur,
+      warning: ''
+    };
+  } catch (_error) {
+    return {
+      ...base,
+      warning: 'Frame preprocess output parse failed; OCR continued without frame filtering.'
+    };
+  }
 }
 
-async function extractVideoOcrToTextPaddle({ workDir, files, outputPath, intervalSec, ocrLang }) {
+async function extractVideoOcrFrameTextPaddle({ workDir, files, intervalSec, ocrLang, tickerMap = {} }) {
   const sanitizeErr = (value) => String(value || '')
     .replace(/\x1B\[[0-9;]*[A-Za-z]/g, '')
     .split(/\r?\n/)
@@ -1595,27 +4003,44 @@ async function extractVideoOcrToTextPaddle({ workDir, files, outputPath, interva
 
   const itemMap = new Map(
     (Array.isArray(payload.items) ? payload.items : [])
-      .map((item) => [String(item?.name || ''), normalizeOcrText(String(item?.text || ''))])
+      .map((item) => {
+        const name = String(item?.name || '');
+        const texts = Array.isArray(item?.texts)
+          ? item.texts.map((part) => normalizeOcrLine(part)).filter(Boolean)
+          : [];
+        const text = normalizeOcrText(String(item?.text || ''));
+        const confidence = normalizeConfidence(item?.confidence, 0);
+        return [name, { text, texts, confidence }];
+      })
       .filter(([name]) => Boolean(name))
   );
 
-  const lines = [];
-  let prevNorm = '';
+  const frameEntries = [];
   for (let i = 0; i < files.length; i += 1) {
-    const text = String(itemMap.get(files[i]) || '');
-    if (!text) continue;
-    const norm = text.toLocaleLowerCase('tr').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-    if (!norm || norm === prevNorm) continue;
-    prevNorm = norm;
-    const sec = i * intervalSec;
-    lines.push(`[${formatTimecode(sec)}] ${text}`);
+    const item = itemMap.get(files[i]) || null;
+    const lines = Array.isArray(item?.texts) && item.texts.length
+      ? item.texts
+      : [normalizeOcrLine(item?.text || '')].filter(Boolean);
+    const tickerName = String(tickerMap[files[i]] || '').trim();
+    const tickerItem = tickerName ? (itemMap.get(tickerName) || null) : null;
+    const tickerLines = Array.isArray(tickerItem?.texts) && tickerItem.texts.length
+      ? tickerItem.texts
+      : [normalizeOcrLine(tickerItem?.text || '')].filter(Boolean);
+    const mergedLines = dedupeTextList([...(lines || []), ...(tickerLines || [])]);
+    if (!mergedLines.length) continue;
+    const sec = frameSecFromName(files[i], intervalSec, i);
+    frameEntries.push({
+      sec,
+      text: normalizeOcrText(mergedLines.join(' ')),
+      frame: files[i],
+      frameType: isSceneFrameName(files[i]) ? 'scene' : 'periodic',
+      confidence: Math.max(
+        normalizeConfidence(item?.confidence, 0),
+        normalizeConfidence(tickerItem?.confidence, 0)
+      )
+    });
   }
-
-  const output = lines.length
-    ? `${lines.join('\n')}\n`
-    : '[00:00:00.000] No OCR text detected.\n';
-  fs.writeFileSync(outputPath, output, 'utf8');
-  return { lines: lines.length, engine: 'paddle' };
+  return { frameEntries, engine: 'paddle' };
 }
 
 function queueVideoOcrJob(row, options = {}) {
@@ -1623,6 +4048,25 @@ function queueVideoOcrJob(row, options = {}) {
   const intervalSec = Math.max(1, Math.min(30, Number(options.intervalSec) || 4));
   const ocrLang = String(options.ocrLang || 'eng+tur').trim() || 'eng+tur';
   const ocrEngine = normalizeOcrEngine(options.ocrEngine);
+  const advancedMode = Boolean(options.advancedMode);
+  const turkishAiCorrect = options.turkishAiCorrect == null
+    ? true
+    : Boolean(options.turkishAiCorrect);
+  const preprocessProfile = normalizeOcrPreprocessProfile(options.preprocessProfile);
+  const enableBlurFilter = Boolean(options.enableBlurFilter);
+  const blurThreshold = Math.max(0, Math.min(300, Number(options.blurThreshold) || 80));
+  const enableRegionMode = Boolean(options.enableRegionMode);
+  const tickerHeightPct = Math.max(10, Math.min(40, Number(options.tickerHeightPct) || 20));
+  const ignoreStaticOverlays = Boolean(options.ignoreStaticOverlays);
+  const ignorePhrases = String(options.ignorePhrases || '').trim().slice(0, 300);
+  const minDisplaySec = Math.max(intervalSec, Math.min(60, Number(options.minDisplaySec) || intervalSec * 2));
+  const mergeGapSec = Math.max(0, Math.min(30, Number(options.mergeGapSec) || intervalSec));
+  const enableSceneSampling = options.enableSceneSampling == null
+    ? advancedMode
+    : Boolean(options.enableSceneSampling);
+  const sceneThreshold = Math.max(0.08, Math.min(0.95, Number(options.sceneThreshold) || 0.34));
+  const maxSceneFrames = Math.max(0, Math.min(180, Number(options.maxSceneFrames) || 24));
+  const sceneMinGapSec = Math.max(0.15, Math.min(30, Number(options.sceneMinGapSec) || Math.max(1.8, intervalSec * 0.85)));
   const now = new Date().toISOString();
   const job = {
     jobId,
@@ -1636,59 +4080,148 @@ function queueVideoOcrJob(row, options = {}) {
     resultPath: '',
     resultLabel: '',
     lineCount: 0,
+    segmentCount: 0,
+    mode: advancedMode ? 'advanced' : 'basic',
+    advancedMode,
+    turkishAiCorrect,
+    useZemberekLexicon,
+    preprocessProfile,
+    enableBlurFilter,
+    blurThreshold,
+    enableRegionMode,
+    tickerHeightPct,
+    ignoreStaticOverlays,
+    ignorePhrases,
+    detectedStaticPhrases: [],
+    skippedBlur: 0,
+    minDisplaySec,
+    mergeGapSec,
+    enableSceneSampling,
+    sceneThreshold,
+    maxSceneFrames,
+    sceneMinGapSec,
+    sceneFrameCount: 0,
+    droppedSceneFrames: 0,
+    patchedPeriodicFrames: 0,
+    keptSceneFrames: 0,
     frameDir: '',
     warning: '',
     error: '',
+    createdAt: now,
     startedAt: now,
     updatedAt: now,
     finishedAt: ''
   };
   videoOcrJobs.set(jobId, job);
+  upsertMediaProcessingJobSafe({
+    jobId: job.jobId,
+    assetId: job.assetId,
+    jobType: 'video_ocr',
+    status: job.status,
+    requestPayload: buildVideoOcrDbRequestPayload(job),
+    resultPayload: buildVideoOcrDbResultPayload(job),
+    errorText: job.error,
+    progress: buildMediaJobProgress(job.status),
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    startedAt: '',
+    finishedAt: ''
+  });
 
   setTimeout(async () => {
     const running = videoOcrJobs.get(jobId);
     if (!running) return;
     running.status = 'running';
     running.updatedAt = new Date().toISOString();
+    await upsertMediaProcessingJobSafe({
+      jobId: running.jobId,
+      assetId: running.assetId,
+      jobType: 'video_ocr',
+      status: running.status,
+      requestPayload: buildVideoOcrDbRequestPayload(running),
+      resultPayload: buildVideoOcrDbResultPayload(running),
+      errorText: running.error,
+      progress: buildMediaJobProgress(running.status),
+      createdAt: running.createdAt,
+      updatedAt: running.updatedAt,
+      startedAt: running.startedAt || running.updatedAt,
+      finishedAt: ''
+    });
     try {
       const inputPath = resolveAssetInputPath(row);
       if (!inputPath) throw new Error('Source media not found');
       const base = sanitizeFileName(path.basename(String(row.file_name || row.id), path.extname(String(row.file_name || ''))));
-      let selectedEngine = ocrEngine;
-      let outName = `${Date.now()}-${nanoid()}-${base}-ocr-${selectedEngine}.txt`;
+      const selectedEngine = ocrEngine;
+      const outName = `${Date.now()}-${nanoid()}-${base}-ocr-${selectedEngine}.txt`;
       let out = buildArtifactPath('ocr', outName, row.created_at);
       const frameDir = createOcrFrameWorkDir(row.created_at);
       running.frameDir = frameDir;
-      let result;
-      try {
-        result = await extractVideoOcrToText(inputPath, out.absolutePath, {
-          intervalSec,
-          ocrLang,
-          ocrEngine: selectedEngine,
-          workDir: frameDir
-        });
-      } catch (primaryError) {
-        if (selectedEngine !== 'paddle' || !ALLOW_PADDLE_OCR_FALLBACK) throw primaryError;
-        // Paddle can crash in some host/container combinations; fallback to tesseract.
-        selectedEngine = 'tesseract';
-        outName = `${Date.now()}-${nanoid()}-${base}-ocr-${selectedEngine}.txt`;
-        out = buildArtifactPath('ocr', outName, row.created_at);
-        result = await extractVideoOcrToText(inputPath, out.absolutePath, {
-          intervalSec,
-          ocrLang,
-          ocrEngine: selectedEngine,
-          workDir: frameDir
-        });
-        running.warning = `PaddleOCR failed, fallback engine used: tesseract. (${String(primaryError?.message || 'unknown error').slice(0, 220)})`;
-      }
+      const result = await extractVideoOcrToText(inputPath, out.absolutePath, {
+        assetId: row.id,
+        intervalSec,
+        ocrLang,
+        ocrEngine: selectedEngine,
+        advancedMode,
+        turkishAiCorrect,
+        useZemberekLexicon,
+        preprocessProfile,
+        enableBlurFilter,
+        blurThreshold,
+        enableRegionMode,
+        tickerHeightPct,
+        ignoreStaticOverlays,
+        ignorePhrases,
+        minDisplaySec,
+        mergeGapSec,
+        enableSceneSampling,
+        sceneThreshold,
+        maxSceneFrames,
+        sceneMinGapSec,
+        workDir: frameDir
+      });
       running.status = 'completed';
       running.resultUrl = out.publicUrl;
       running.resultPath = out.absolutePath;
       running.resultLabel = outName;
       running.lineCount = Number(result.lines || 0);
+      running.segmentCount = Number(result.segments || 0);
+      running.detectedStaticPhrases = Array.isArray(result.autoIgnoredPhrases) ? result.autoIgnoredPhrases : [];
+      running.skippedBlur = Number(result.skippedBlur || 0);
+      running.sceneFrameCount = Number(result.sceneFrameCount || 0);
+      running.droppedSceneFrames = Number(result.droppedSceneFrames || 0);
+      running.patchedPeriodicFrames = Number(result.patchedPeriodicFrames || 0);
+      running.keptSceneFrames = Number(result.keptSceneFrames || 0);
+      running.enableSceneSampling = Boolean(result.sceneSamplingEnabled);
+      running.sceneThreshold = Number(result.sceneThreshold || running.sceneThreshold || 0);
+      running.maxSceneFrames = Number(result.maxSceneFrames || running.maxSceneFrames || 0);
+      running.sceneMinGapSec = Number(result.sceneMinGapSec || running.sceneMinGapSec || 0);
+      running.mode = String(result.mode || (advancedMode ? 'advanced' : 'basic'));
       running.ocrEngine = normalizeOcrEngine(result.engine || selectedEngine);
+      const prepWarning = String(result.preprocessingWarning || '').trim();
+      if (prepWarning) {
+        running.warning = running.warning ? `${running.warning} | ${prepWarning}` : prepWarning;
+      }
+      if (result.usedFrameCache) {
+        running.warning = running.warning
+          ? `${running.warning} | Frame cache reused`
+          : 'Frame cache reused';
+      }
       running.finishedAt = new Date().toISOString();
       running.updatedAt = running.finishedAt;
+      await upsertMediaProcessingJobSafe({
+        jobId: running.jobId,
+        assetId: running.assetId,
+        jobType: 'video_ocr',
+        status: running.status,
+        requestPayload: buildVideoOcrDbRequestPayload(running),
+        resultPayload: buildVideoOcrDbResultPayload(running),
+        errorText: running.error,
+        progress: buildMediaJobProgress(running.status),
+        createdAt: running.createdAt,
+        updatedAt: running.updatedAt,
+        startedAt: running.startedAt || running.createdAt,
+        finishedAt: running.finishedAt
+      });
     } catch (error) {
       running.status = 'failed';
       running.error = String(error?.message || 'Video OCR failed').slice(0, 900);
@@ -1696,6 +4229,20 @@ function queueVideoOcrJob(row, options = {}) {
       running.frameDir = '';
       running.finishedAt = new Date().toISOString();
       running.updatedAt = running.finishedAt;
+      await upsertMediaProcessingJobSafe({
+        jobId: running.jobId,
+        assetId: running.assetId,
+        jobType: 'video_ocr',
+        status: running.status,
+        requestPayload: buildVideoOcrDbRequestPayload(running),
+        resultPayload: buildVideoOcrDbResultPayload(running),
+        errorText: running.error,
+        progress: buildMediaJobProgress(running.status),
+        createdAt: running.createdAt,
+        updatedAt: running.updatedAt,
+        startedAt: running.startedAt || running.createdAt,
+        finishedAt: running.finishedAt
+      });
     }
   }, 10);
   return job;
@@ -1706,39 +4253,117 @@ function queueSubtitleGenerationJob(row, options = {}) {
   const subtitleLang = normalizeSubtitleLang(options.lang);
   const subtitleLabel = String(options.label || 'auto-whisper').trim() || 'auto-whisper';
   const model = String(options.model || WHISPER_MODEL || 'tiny').trim() || 'tiny';
+  const requestedSubtitleBackend = normalizeSubtitleBackend(
+    options.subtitleBackend || (options.useWhisperX ? 'whisperx' : 'whisper')
+  );
+  const turkishAiCorrect = options.turkishAiCorrect == null
+    ? true
+    : Boolean(options.turkishAiCorrect);
+  const useZemberekLexicon = options.useZemberekLexicon == null
+    ? turkishAiCorrect
+    : Boolean(options.useZemberekLexicon);
   const now = new Date().toISOString();
   const job = {
     jobId,
     assetId: row.id,
     status: 'queued',
     model,
+    turkishAiCorrect,
+    useZemberekLexicon,
+    subtitleBackendRequested: requestedSubtitleBackend,
+    subtitleBackend: requestedSubtitleBackend,
     subtitleLang,
     subtitleLabel,
     subtitleUrl: '',
+    warning: '',
     error: '',
+    createdAt: now,
     startedAt: now,
     updatedAt: now,
     finishedAt: ''
   };
   subtitleJobs.set(jobId, job);
+  upsertMediaProcessingJobSafe({
+    jobId: job.jobId,
+    assetId: job.assetId,
+    jobType: 'subtitle',
+    status: job.status,
+    requestPayload: buildSubtitleDbRequestPayload(job),
+    resultPayload: buildSubtitleDbResultPayload(job),
+    errorText: job.error,
+    progress: buildMediaJobProgress(job.status),
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    startedAt: '',
+    finishedAt: ''
+  });
 
   setTimeout(async () => {
     const running = subtitleJobs.get(jobId);
     if (!running) return;
     running.status = 'running';
     running.updatedAt = new Date().toISOString();
+    await upsertMediaProcessingJobSafe({
+      jobId: running.jobId,
+      assetId: running.assetId,
+      jobType: 'subtitle',
+      status: running.status,
+      requestPayload: buildSubtitleDbRequestPayload(running),
+      resultPayload: buildSubtitleDbResultPayload(running),
+      errorText: running.error,
+      progress: buildMediaJobProgress(running.status),
+      createdAt: running.createdAt,
+      updatedAt: running.updatedAt,
+      startedAt: running.startedAt || running.updatedAt,
+      finishedAt: ''
+    });
 
     try {
       const inputPath = resolveAssetInputPath(row);
       if (!inputPath) throw new Error('Source media not found for transcription');
       const storedName = `${Date.now()}-${nanoid()}-auto-${sanitizeFileName(row.id)}.vtt`;
       const subtitleOut = buildArtifactPath('subtitles', storedName, row.created_at);
-      const transcription = await transcribeMediaToVtt(inputPath, subtitleOut.absolutePath, {
+      let usedSubtitleBackend = requestedSubtitleBackend;
+      let transcription = await transcribeMediaToVtt(inputPath, subtitleOut.absolutePath, {
         lang: subtitleLang,
-        model
+        model,
+        subtitleBackend: usedSubtitleBackend
       });
-      if (!transcription.ok || !fs.existsSync(subtitleOut.absolutePath) || fs.statSync(subtitleOut.absolutePath).size < 16) {
+      let subtitleReady = transcription.ok && fs.existsSync(subtitleOut.absolutePath) && fs.statSync(subtitleOut.absolutePath).size >= 16;
+      if (!subtitleReady && usedSubtitleBackend === 'whisperx') {
+        const whisperxError = String(transcription.stderr || transcription.stdout || '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 240);
+        usedSubtitleBackend = 'whisper';
+        transcription = await transcribeMediaToVtt(inputPath, subtitleOut.absolutePath, {
+          lang: subtitleLang,
+          model,
+          subtitleBackend: usedSubtitleBackend
+        });
+        subtitleReady = transcription.ok && fs.existsSync(subtitleOut.absolutePath) && fs.statSync(subtitleOut.absolutePath).size >= 16;
+        if (subtitleReady) {
+          running.warning = whisperxError
+            ? `WhisperX failed (${whisperxError}); subtitle was generated with faster-whisper fallback.`
+            : 'WhisperX failed; subtitle was generated with faster-whisper fallback.';
+        }
+      }
+      if (!subtitleReady) {
         throw new Error(String(transcription.stderr || transcription.stdout || 'Subtitle transcription failed'));
+      }
+      running.subtitleBackend = usedSubtitleBackend;
+      if (subtitleLang.startsWith('tr')) {
+        try {
+          const rawVtt = fs.readFileSync(subtitleOut.absolutePath, 'utf8');
+          const fixedVtt = turkishAiCorrect
+            ? applyTurkishCorrectionToVttContent(rawVtt, { useZemberekLexicon })
+            : applyLearnedCorrectionsToVttContent(rawVtt);
+          if (fixedVtt && fixedVtt !== rawVtt) {
+            fs.writeFileSync(subtitleOut.absolutePath, fixedVtt, 'utf8');
+          }
+        } catch (_error) {
+          // Keep original subtitle on correction errors.
+        }
       }
       const subtitleUrl = subtitleOut.publicUrl;
       const updatedRow = await saveAssetSubtitleMetadata(row.id, row, subtitleUrl, subtitleLang, subtitleLabel);
@@ -1749,11 +4374,39 @@ function queueSubtitleGenerationJob(row, options = {}) {
       running.asset = mapAssetRow(updatedRow);
       running.finishedAt = new Date().toISOString();
       running.updatedAt = running.finishedAt;
+      await upsertMediaProcessingJobSafe({
+        jobId: running.jobId,
+        assetId: running.assetId,
+        jobType: 'subtitle',
+        status: running.status,
+        requestPayload: buildSubtitleDbRequestPayload(running),
+        resultPayload: buildSubtitleDbResultPayload(running),
+        errorText: running.error,
+        progress: buildMediaJobProgress(running.status),
+        createdAt: running.createdAt,
+        updatedAt: running.updatedAt,
+        startedAt: running.startedAt || running.createdAt,
+        finishedAt: running.finishedAt
+      });
     } catch (error) {
       running.status = 'failed';
       running.error = String(error?.message || 'Subtitle generation failed').slice(0, 800);
       running.finishedAt = new Date().toISOString();
       running.updatedAt = running.finishedAt;
+      await upsertMediaProcessingJobSafe({
+        jobId: running.jobId,
+        assetId: running.assetId,
+        jobType: 'subtitle',
+        status: running.status,
+        requestPayload: buildSubtitleDbRequestPayload(running),
+        resultPayload: buildSubtitleDbResultPayload(running),
+        errorText: running.error,
+        progress: buildMediaJobProgress(running.status),
+        createdAt: running.createdAt,
+        updatedAt: running.updatedAt,
+        startedAt: running.startedAt || running.createdAt,
+        finishedAt: running.finishedAt
+      });
     }
   }, 10);
 
@@ -1928,6 +4581,7 @@ async function verifyOidcBearerToken(token, settings) {
 
 async function maybeRequireApiToken(req, res, next) {
   if (!req.path.startsWith('/api/')) return next();
+  if (!USE_OAUTH2_PROXY) return next();
   try {
     const settings = await getAdminSettings();
     if (!settings.apiTokenEnabled) return next();
@@ -2463,13 +5117,155 @@ function buildUserContextFromRequest(req) {
 
 function normalizePermissionEntry(input, fallbackAdmin) {
   const raw = input && typeof input === 'object' ? input : {};
+  const toBool = (value, fallback) => {
+    if (value == null) return Boolean(fallback);
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    const text = String(value).trim().toLowerCase();
+    if (!text) return Boolean(fallback);
+    if (['true', '1', 'yes', 'y', 'on'].includes(text)) return true;
+    if (['false', '0', 'no', 'n', 'off', 'null', 'undefined'].includes(text)) return false;
+    return Boolean(fallback);
+  };
   const adminPageAccess = Object.prototype.hasOwnProperty.call(raw, 'adminPageAccess')
-    ? Boolean(raw.adminPageAccess)
+    ? toBool(raw.adminPageAccess, fallbackAdmin)
     : Boolean(fallbackAdmin);
   const assetDelete = Object.prototype.hasOwnProperty.call(raw, 'assetDelete')
-    ? Boolean(raw.assetDelete)
+    ? toBool(raw.assetDelete, fallbackAdmin)
     : Boolean(fallbackAdmin);
-  return { adminPageAccess, assetDelete };
+  const pdfAdvancedTools = Object.prototype.hasOwnProperty.call(raw, 'pdfAdvancedTools')
+    ? toBool(raw.pdfAdvancedTools, fallbackAdmin)
+    : Boolean(fallbackAdmin);
+  return { adminPageAccess, assetDelete, pdfAdvancedTools };
+}
+
+function isAdminName(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'admin' || normalized === 'mamadmin';
+}
+
+function isAdminByGroupsOrRoles(groupsOrRoles) {
+  return (Array.isArray(groupsOrRoles) ? groupsOrRoles : [])
+    .map((item) => String(item || '').trim().toLowerCase())
+    .some((name) => name === 'admin' || name === 'realm-admin' || name === 'mam-admin');
+}
+
+function getKeycloakCandidateRealms() {
+  const fromList = KEYCLOAK_REALMS
+    ? KEYCLOAK_REALMS.split(',').map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+  const fallback = [KEYCLOAK_REALM]
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+  const merged = [...fromList, ...fallback];
+  const seen = new Set();
+  return merged.filter((realm) => {
+    const key = realm.toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function getKeycloakAdminAccessToken() {
+  if (!KEYCLOAK_ADMIN_USERNAME || !KEYCLOAK_ADMIN_PASSWORD) return '';
+  const tokenUrl = `${KEYCLOAK_INTERNAL_URL}/realms/${encodeURIComponent(KEYCLOAK_ADMIN_REALM)}/protocol/openid-connect/token`;
+  try {
+    const form = new URLSearchParams();
+    form.set('grant_type', 'password');
+    form.set('client_id', KEYCLOAK_ADMIN_CLIENT_ID);
+    form.set('username', KEYCLOAK_ADMIN_USERNAME);
+    form.set('password', KEYCLOAK_ADMIN_PASSWORD);
+    const response = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString()
+    });
+    if (!response.ok) return '';
+    const payload = await response.json().catch(() => ({}));
+    return String(payload?.access_token || '').trim();
+  } catch (_error) {
+    return '';
+  }
+}
+
+async function fetchKeycloakUsers() {
+  const token = await getKeycloakAdminAccessToken();
+  if (!token) return { users: [], realmByUsername: new Map() };
+  const realms = getKeycloakCandidateRealms();
+  const users = [];
+  const realmByUsername = new Map();
+  const seen = new Set();
+  for (const realm of realms) {
+    let first = 0;
+    const pageSize = 100;
+    try {
+      while (true) {
+        const url = `${KEYCLOAK_INTERNAL_URL}/admin/realms/${encodeURIComponent(realm)}/users?first=${first}&max=${pageSize}`;
+        const response = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!response.ok) break;
+        const rows = await response.json().catch(() => []);
+        const arr = Array.isArray(rows) ? rows : [];
+        arr.forEach((row) => {
+          const username = String(row?.username || '').trim().toLowerCase();
+          if (!username || seen.has(username)) return;
+          seen.add(username);
+          users.push(row);
+          realmByUsername.set(username, realm);
+        });
+        if (arr.length < pageSize) break;
+        first += pageSize;
+      }
+    } catch (_error) {
+      // Try next realm candidate.
+    }
+  }
+  return { users, realmByUsername };
+}
+
+function isVisibleKeycloakUser(user) {
+  const username = String(user?.username || '').trim().toLowerCase();
+  if (!username) return false;
+  if (username.startsWith('service-account-')) return false;
+  if (username === 'admin' || username === 'mamadmin') return false;
+  if (user && Object.prototype.hasOwnProperty.call(user, 'enabled') && user.enabled === false) return false;
+  return true;
+}
+
+async function fetchKeycloakUserAdminFlags(users, realmByUsername) {
+  const token = await getKeycloakAdminAccessToken();
+  if (!token) return new Map();
+  const candidateRealms = getKeycloakCandidateRealms();
+  const defaultRealm = candidateRealms[0] || KEYCLOAK_REALM;
+  const results = new Map();
+  await Promise.all(
+    (Array.isArray(users) ? users : []).map(async (user) => {
+      const userId = String(user?.id || '').trim();
+      const username = String(user?.username || '').trim().toLowerCase();
+      if (!userId || !username) return;
+      const realm = String(realmByUsername?.get(username) || defaultRealm || KEYCLOAK_REALM).trim();
+      const realmEncoded = encodeURIComponent(realm);
+      const [rolesRes, groupsRes] = await Promise.all([
+        fetch(`${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users/${encodeURIComponent(userId)}/role-mappings/realm`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }).catch(() => null),
+        fetch(`${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users/${encodeURIComponent(userId)}/groups`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }).catch(() => null)
+      ]);
+      const roles = rolesRes && rolesRes.ok ? await rolesRes.json().catch(() => []) : [];
+      const groups = groupsRes && groupsRes.ok ? await groupsRes.json().catch(() => []) : [];
+      const roleNames = (Array.isArray(roles) ? roles : []).map((item) => String(item?.name || '').trim());
+      const groupNames = (Array.isArray(groups) ? groups : [])
+        .map((item) => String(item?.path || item?.name || '').trim())
+        .filter(Boolean);
+      const baseIsAdmin = isAdminName(username) || isAdminByGroupsOrRoles(roleNames) || isAdminByGroupsOrRoles(groupNames);
+      results.set(username, baseIsAdmin);
+    })
+  );
+  return results;
 }
 
 async function resolveEffectivePermissions(req) {
@@ -2483,6 +5279,7 @@ async function resolveEffectivePermissions(req) {
     isAdmin: Boolean(effective.adminPageAccess),
     canAccessAdmin: Boolean(effective.adminPageAccess),
     canDeleteAssets: Boolean(effective.assetDelete),
+    canUsePdfAdvancedTools: Boolean(effective.pdfAdvancedTools),
     permissions: effective
   };
 }
@@ -2500,10 +5297,23 @@ app.get('/api/me', async (req, res) => {
       email: effective.email || '',
       isAdmin: effective.isAdmin,
       canAccessAdmin: effective.canAccessAdmin,
-      canDeleteAssets: effective.canDeleteAssets
+      canDeleteAssets: effective.canDeleteAssets,
+      canUsePdfAdvancedTools: effective.canUsePdfAdvancedTools
     });
   } catch (_error) {
     res.status(500).json({ error: 'Failed to resolve user profile' });
+  }
+});
+
+app.get('/api/logout-url', (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  res.set('Surrogate-Control', 'no-store');
+  try {
+    return res.json({ url: buildLogoutUrl(req) });
+  } catch (_error) {
+    return res.json({ url: '/oauth2/sign_out' });
   }
 });
 
@@ -2529,6 +5339,57 @@ function normalizeTypesInput(value) {
     .filter(Boolean);
 }
 
+function normalizeUploadDate(value) {
+  const raw = String(value || '').trim();
+  if (!/^(\d{4})-(\d{2})-(\d{2})$/.test(raw)) return null;
+  const parts = raw.split('-').map((item) => Number(item));
+  const [year, month, day] = parts;
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
+  const dt = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt;
+}
+
+function normalizeUploadDateRange(fromValue, toValue) {
+  let fromDate = normalizeUploadDate(fromValue);
+  let toDate = normalizeUploadDate(toValue);
+  if (fromDate && toDate && fromDate > toDate) {
+    const tmp = fromDate;
+    fromDate = toDate;
+    toDate = tmp;
+  }
+  if (toDate) {
+    toDate = new Date(Date.UTC(toDate.getUTCFullYear(), toDate.getUTCMonth(), toDate.getUTCDate(), 23, 59, 59, 999));
+  }
+  return {
+    from: fromDate ? fromDate.toISOString() : null,
+    to: toDate ? toDate.toISOString() : null
+  };
+}
+
+function normalizeSortBy(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return 'default';
+  const aliases = {
+    relevance: 'relevance',
+    updated: 'updated_desc',
+    updated_at: 'updated_desc',
+    updated_at_desc: 'updated_desc',
+    updated_desc: 'updated_desc',
+    updated_at_asc: 'updated_asc',
+    updated_asc: 'updated_asc',
+    created: 'created_desc',
+    created_at: 'created_desc',
+    created_at_desc: 'created_desc',
+    created_desc: 'created_desc',
+    created_at_asc: 'created_asc',
+    created_asc: 'created_asc',
+    title: 'title_asc',
+    title_asc: 'title_asc'
+  };
+  return aliases[raw] || 'default';
+}
+
 function mapAssetSuggestionRow(row) {
   return {
     id: row.id,
@@ -2541,6 +5402,28 @@ function mapAssetSuggestionRow(row) {
   };
 }
 
+function buildAssetOrderClause({ hasRelevance, sortBy, rankedParamAlias }) {
+  if (hasRelevance) {
+    return `array_position($${rankedParamAlias}::text[], id), updated_at DESC`;
+  }
+
+  const normalized = normalizeSortBy(sortBy);
+  switch (normalized) {
+    case 'updated_asc':
+      return 'updated_at ASC';
+    case 'updated_desc':
+      return 'updated_at DESC';
+    case 'created_asc':
+      return 'created_at ASC';
+    case 'created_desc':
+      return 'created_at DESC';
+    case 'title_asc':
+      return 'LOWER(title) ASC, created_at DESC';
+    default:
+      return 'updated_at DESC';
+  }
+}
+
 async function queryAssetSuggestions(options = {}) {
   const q = String(options.q || '').trim();
   if (!q) return [];
@@ -2549,10 +5432,13 @@ async function queryAssetSuggestions(options = {}) {
   const tag = String(options.tag || '').trim();
   const type = String(options.type || '').trim();
   const status = String(options.status || '').trim();
+  const dateRange = normalizeUploadDateRange(options.uploadDateFrom, options.uploadDateTo);
   const types = Array.isArray(options.types)
     ? options.types.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean)
     : normalizeTypesInput(options.types);
   const qLower = q.toLowerCase();
+
+  const owner = String(options.owner || '').trim();
 
   const baseWhere = [];
   const baseValues = [];
@@ -2585,6 +5471,18 @@ async function queryAssetSuggestions(options = {}) {
   if (status) {
     baseValues.push(status.toLowerCase());
     baseWhere.push(`LOWER(status) = $${baseValues.length}`);
+  }
+  if (owner) {
+    baseValues.push(`%${owner.toLowerCase()}%`);
+    baseWhere.push(`LOWER(owner) LIKE $${baseValues.length}`);
+  }
+  if (dateRange.from) {
+    baseValues.push(dateRange.from);
+    baseWhere.push(`created_at >= $${baseValues.length}`);
+  }
+  if (dateRange.to) {
+    baseValues.push(dateRange.to);
+    baseWhere.push(`created_at <= $${baseValues.length}`);
   }
 
   let rows = [];
@@ -2649,18 +5547,26 @@ async function queryAssetSuggestions(options = {}) {
 app.get('/api/assets', async (req, res) => {
   try {
     const q = (req.query.q || '').toString().trim();
+    const ocrQ = (req.query.ocrQ || '').toString().trim();
+    const subtitleQ = (req.query.subtitleQ || '').toString().trim();
     const tag = (req.query.tag || '').toString().trim();
     const type = (req.query.type || '').toString().trim();
+    const owner = (req.query.owner || '').toString().trim();
+    const uploadDateFrom = req.query.uploadDateFrom;
+    const uploadDateTo = req.query.uploadDateTo;
+    const sortBy = (req.query.sortBy || '').toString().trim();
     const types = String(req.query.types || '')
       .split(',')
       .map((item) => item.trim().toLowerCase())
       .filter(Boolean);
     const status = (req.query.status || '').toString().trim();
     const trash = (req.query.trash || 'active').toString().trim().toLowerCase();
+    const dateRange = normalizeUploadDateRange(uploadDateFrom, uploadDateTo);
 
     const where = [];
     const values = [];
     let rankedIds = null;
+    const normalizedSortBy = normalizeSortBy(sortBy);
 
     if (trash === 'trash') {
       where.push('deleted_at IS NOT NULL');
@@ -2686,8 +5592,6 @@ app.get('/api/assets', async (req, res) => {
       } else if (!rankedIds.length) {
         return res.json([]);
       } else {
-        values.push(rankedIds);
-        where.push(`id = ANY($${values.length}::text[])`);
       }
     }
     if (tag) {
@@ -2695,9 +5599,21 @@ app.get('/api/assets', async (req, res) => {
       const tagParam = `$${values.length}`;
       where.push(`EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE ${sqlTagFold('t')} = ${sqlTagFold(tagParam)})`);
     }
+    if (owner) {
+      values.push(`%${owner.toLowerCase()}%`);
+      where.push(`LOWER(owner) LIKE $${values.length}`);
+    }
     if (type) {
       values.push(type.toLowerCase());
       where.push(`LOWER(type) = $${values.length}`);
+    }
+    if (dateRange.from) {
+      values.push(dateRange.from);
+      where.push(`created_at >= $${values.length}`);
+    }
+    if (dateRange.to) {
+      values.push(dateRange.to);
+      where.push(`created_at <= $${values.length}`);
     }
     if (types.length) {
       values.push(types);
@@ -2716,10 +5632,22 @@ app.get('/api/assets', async (req, res) => {
       where.push(`LOWER(status) = $${values.length}`);
     }
 
-    let orderClause = 'updated_at DESC';
+    const useRelevanceOrder = Boolean(rankedIds && rankedIds.length && normalizedSortBy === 'default');
+    let orderClause = buildAssetOrderClause({
+      hasRelevance: useRelevanceOrder,
+      sortBy: normalizedSortBy,
+      rankedParamAlias: values.length + 1
+    });
     if (rankedIds && rankedIds.length) {
       values.push(rankedIds);
-      orderClause = `array_position($${values.length}::text[], id), updated_at DESC`;
+      where.push(`id = ANY($${values.length}::text[])`);
+      if (useRelevanceOrder) {
+        orderClause = buildAssetOrderClause({
+          hasRelevance: true,
+          sortBy: normalizedSortBy,
+          rankedParamAlias: values.length
+        });
+      }
     }
 
     const sql = `
@@ -2742,8 +5670,63 @@ app.get('/api/assets', async (req, res) => {
     `;
 
     const result = await pool.query(sql, values);
+    let rows = result.rows;
+    if (ocrQ) {
+      const filtered = [];
+      for (const row of rows) {
+        const hit = await findOcrMatchForAssetRow(row, ocrQ);
+        if (!hit) continue;
+        row._ocr_search_hit = {
+          query: ocrQ,
+          text: String(hit.line || ''),
+          startSec: Number(hit.startSec || 0),
+          endSec: Number(hit.endSec || 0),
+          startTc: formatTimecode(Number(hit.startSec || 0))
+        };
+        filtered.push(row);
+      }
+      rows = filtered;
+    }
+    // subtitleQ geldiyse sadece aktif altyazi cue index'i uzerinden filtre uygula.
+    if (subtitleQ) {
+      const subtitleNorm = normalizeSubtitleSearchText(subtitleQ);
+      if (!subtitleNorm) {
+        rows = [];
+      } else {
+        const filtered = [];
+        for (const row of rows) {
+          const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+          const activeSubtitleUrl = String(dc.subtitleUrl || '').trim();
+          if (!activeSubtitleUrl) continue;
+          const subtitleRes = await pool.query(
+            `
+              SELECT start_sec, end_sec, cue_text
+              FROM asset_subtitle_cues
+              WHERE asset_id = $1
+                AND subtitle_url = $2
+                AND norm_text LIKE $3
+              ORDER BY start_sec ASC
+              LIMIT 1
+            `,
+            [String(row.id || '').trim(), activeSubtitleUrl, `%${subtitleNorm}%`]
+          );
+          if (!subtitleRes.rowCount) continue;
+          const match = subtitleRes.rows[0];
+          row._subtitle_search_hit = {
+            query: subtitleQ,
+            text: String(match.cue_text || ''),
+            startSec: Number(match.start_sec || 0),
+            endSec: Number(match.end_sec || 0),
+            startTc: formatTimecode(Number(match.start_sec || 0))
+          };
+          filtered.push(row);
+        }
+        rows = filtered;
+      }
+    }
+
     const hydratedRows = [];
-    for (const row of result.rows) {
+    for (const row of rows) {
       const withPdfThumb = await ensurePdfThumbnailForRow(row);
       // Backfill missing document thumbnails lazily so existing uploads also get previews.
       hydratedRows.push(await ensureDocumentThumbnailForRow(withPdfThumb));
@@ -2762,8 +5745,11 @@ app.get('/api/assets/suggest', async (req, res) => {
       trash: req.query.trash,
       tag: req.query.tag,
       type: req.query.type,
+      owner: req.query.owner,
       types: req.query.types,
-      status: req.query.status
+      status: req.query.status,
+      uploadDateFrom: req.query.uploadDateFrom,
+      uploadDateTo: req.query.uploadDateTo
     });
     return res.json(suggestions);
   } catch (_error) {
@@ -2771,9 +5757,205 @@ app.get('/api/assets/suggest', async (req, res) => {
   }
 });
 
+app.get('/api/assets/ocr-suggest', async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (q.length < 2) return res.json([]);
+    const limit = Math.max(1, Math.min(12, Number(req.query.limit) || 8));
+    const tag = String(req.query.tag || '').trim();
+    const type = String(req.query.type || '').trim().toLowerCase();
+    const status = String(req.query.status || '').trim().toLowerCase();
+    const owner = String(req.query.owner || '').trim();
+    const trash = normalizeTrashScope(req.query.trash, 'active');
+    const uploadDateFrom = req.query.uploadDateFrom;
+    const uploadDateTo = req.query.uploadDateTo;
+    const types = String(req.query.types || '')
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean);
+    const dateRange = normalizeUploadDateRange(uploadDateFrom, uploadDateTo);
+
+    const where = [];
+    const values = [];
+    if (trash === 'trash') where.push('deleted_at IS NOT NULL');
+    else if (trash !== 'all') where.push('deleted_at IS NULL');
+    if (tag) {
+      values.push(tag);
+      const tagParam = `$${values.length}`;
+      where.push(`EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE ${sqlTagFold('t')} = ${sqlTagFold(tagParam)})`);
+    }
+    if (type) {
+      values.push(type);
+      where.push(`LOWER(type) = $${values.length}`);
+    }
+    if (owner) {
+      values.push(`%${owner.toLowerCase()}%`);
+      where.push(`LOWER(owner) LIKE $${values.length}`);
+    }
+    if (types.length) {
+      values.push(types);
+      where.push(`
+        (
+          CASE
+            WHEN LOWER(type) = 'image' THEN 'photo'
+            WHEN LOWER(type) = 'file' THEN 'other'
+            ELSE LOWER(type)
+          END
+        ) = ANY($${values.length}::text[])
+      `);
+    }
+    if (status) {
+      values.push(status);
+      where.push(`LOWER(status) = $${values.length}`);
+    }
+    if (dateRange.from) {
+      values.push(dateRange.from);
+      where.push(`created_at >= $${values.length}`);
+    }
+    if (dateRange.to) {
+      values.push(dateRange.to);
+      where.push(`created_at <= $${values.length}`);
+    }
+
+    const result = await pool.query(
+      `
+        SELECT id, title, file_name, type, status, owner, updated_at, deleted_at, dc_metadata
+        FROM assets
+        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY updated_at DESC
+        LIMIT 400
+      `,
+      values
+    );
+
+    const out = [];
+    for (const row of result.rows) {
+      const hit = await findOcrMatchForAssetRow(row, q);
+      if (!hit) continue;
+      out.push({
+        id: row.id,
+        title: String(row.title || row.file_name || row.id || ''),
+        fileName: String(row.file_name || ''),
+        type: String(row.type || ''),
+        status: String(row.status || ''),
+        inTrash: Boolean(row.deleted_at),
+        updatedAt: row.updated_at,
+        ocrHitText: String(hit.line || ''),
+        startSec: Number(hit.startSec || 0)
+      });
+      if (out.length >= limit) break;
+    }
+    return res.json(out);
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to suggest OCR matches' });
+  }
+});
+
+// 1. kolon altyazi arama kutusu icin global (assetler arasi) oneriler.
+app.get('/api/assets/subtitle-suggest', async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (q.length < 2) return res.json([]);
+    const folded = normalizeSubtitleSearchText(q);
+    if (!folded) return res.json([]);
+    const limit = Math.max(1, Math.min(12, Number(req.query.limit) || 8));
+    const tag = String(req.query.tag || '').trim();
+    const type = String(req.query.type || '').trim().toLowerCase();
+    const status = String(req.query.status || '').trim().toLowerCase();
+    const trash = normalizeTrashScope(req.query.trash, 'active');
+    const types = String(req.query.types || '')
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean);
+
+    const where = [];
+    const values = [];
+    if (trash === 'trash') where.push('deleted_at IS NOT NULL');
+    else if (trash !== 'all') where.push('deleted_at IS NULL');
+    if (tag) {
+      values.push(tag);
+      const tagParam = `$${values.length}`;
+      where.push(`EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE ${sqlTagFold('t')} = ${sqlTagFold(tagParam)})`);
+    }
+    if (type) {
+      values.push(type);
+      where.push(`LOWER(type) = $${values.length}`);
+    }
+    if (types.length) {
+      values.push(types);
+      where.push(`
+        (
+          CASE
+            WHEN LOWER(type) = 'image' THEN 'photo'
+            WHEN LOWER(type) = 'file' THEN 'other'
+            ELSE LOWER(type)
+          END
+        ) = ANY($${values.length}::text[])
+      `);
+    }
+    if (status) {
+      values.push(status);
+      where.push(`LOWER(status) = $${values.length}`);
+    }
+
+    const result = await pool.query(
+      `
+        SELECT id, title, file_name, type, status, updated_at, deleted_at, dc_metadata
+        FROM assets
+        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY updated_at DESC
+        LIMIT 400
+      `,
+      values
+    );
+
+    const out = [];
+    for (const row of result.rows) {
+      const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+      const activeSubtitleUrl = String(dc.subtitleUrl || '').trim();
+      if (!activeSubtitleUrl) continue;
+      const hitRes = await pool.query(
+        `
+          SELECT start_sec, cue_text
+          FROM asset_subtitle_cues
+          WHERE asset_id = $1
+            AND subtitle_url = $2
+            AND norm_text LIKE $3
+          ORDER BY start_sec ASC
+          LIMIT 1
+        `,
+        [String(row.id || '').trim(), activeSubtitleUrl, `%${folded}%`]
+      );
+      if (!hitRes.rowCount) continue;
+      const hit = hitRes.rows[0];
+      out.push({
+        id: row.id,
+        title: String(row.title || row.file_name || row.id || ''),
+        fileName: String(row.file_name || ''),
+        type: String(row.type || ''),
+        status: String(row.status || ''),
+        inTrash: Boolean(row.deleted_at),
+        updatedAt: row.updated_at,
+        subtitleHitText: String(hit.cue_text || ''),
+        startSec: Number(hit.start_sec || 0)
+      });
+      if (out.length >= limit) break;
+    }
+    return res.json(out);
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to suggest subtitle matches' });
+  }
+});
+
 app.post('/api/assets', async (req, res) => {
   try {
-    const created = await createAssetRecord(req.body);
+    const effective = await resolveEffectivePermissions(req).catch(() => null);
+    const owner = String(effective?.username || effective?.displayName || '').trim() || 'Unknown';
+    const payload = {
+      ...(req.body && typeof req.body === 'object' ? req.body : {}),
+      owner
+    };
+    const created = await createAssetRecord(payload);
     res.status(201).json(created);
   } catch (_error) {
     res.status(500).json({ error: 'Failed to create asset' });
@@ -2867,8 +6049,11 @@ app.post('/api/assets/upload', async (req, res) => {
     detectedAudioChannels = await getMediaAudioChannelCount(absolutePath);
   }
 
+  const effective = await resolveEffectivePermissions(req).catch(() => null);
+  const owner = String(effective?.username || effective?.displayName || '').trim() || 'Unknown';
   const payload = {
     ...metadata,
+    owner,
     fileName: safeName,
     mimeType: String(mimeType || ''),
     mediaUrl,
@@ -3039,40 +6224,64 @@ app.post('/api/assets/:id/subtitles/generate', async (req, res) => {
     const subtitleLang = normalizeSubtitleLang(req.body?.lang);
     const subtitleLabel = String(req.body?.label || 'auto-whisper').trim() || 'auto-whisper';
     const model = String(req.body?.model || WHISPER_MODEL || 'tiny').trim() || 'tiny';
+    const turkishAiCorrect = req.body?.turkishAiCorrect;
+    const useZemberekLexicon = req.body?.useZemberekLexicon;
+    const subtitleBackend = normalizeSubtitleBackend(
+      req.body?.subtitleBackend || (req.body?.useWhisperX ? 'whisperx' : 'whisper')
+    );
     const job = queueSubtitleGenerationJob(row, {
       lang: subtitleLang,
       label: subtitleLabel,
-      model
+      model,
+      turkishAiCorrect,
+      useZemberekLexicon,
+      subtitleBackend
     });
     return res.status(202).json({
       jobId: job.jobId,
       status: job.status,
       subtitleLang,
       subtitleLabel,
-      model
+      model,
+      turkishAiCorrect: job.turkishAiCorrect,
+      useZemberekLexicon: Boolean(job.useZemberekLexicon),
+      subtitleBackend: normalizeSubtitleBackend(job.subtitleBackend || job.subtitleBackendRequested),
+      warning: String(job.warning || '')
     });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to generate subtitle' });
   }
 });
 
-app.get('/api/subtitle-jobs/:jobId', (req, res) => {
+app.get('/api/subtitle-jobs/:jobId', async (req, res) => {
   const job = subtitleJobs.get(String(req.params.jobId || '').trim());
-  if (!job) return res.status(404).json({ error: 'Subtitle job not found' });
-  return res.json({
-    jobId: job.jobId,
-    assetId: job.assetId,
-    status: job.status,
-    subtitleUrl: job.subtitleUrl || '',
-    subtitleLang: job.subtitleLang || '',
-    subtitleLabel: job.subtitleLabel || '',
-    model: job.model || '',
-    asset: job.asset || null,
-    error: job.error || '',
-    startedAt: job.startedAt,
-    updatedAt: job.updatedAt,
-    finishedAt: job.finishedAt || ''
-  });
+  if (job) {
+    return res.json({
+      jobId: job.jobId,
+      assetId: job.assetId,
+      status: job.status,
+      subtitleUrl: job.subtitleUrl || '',
+      subtitleLang: job.subtitleLang || '',
+      subtitleLabel: job.subtitleLabel || '',
+      model: job.model || '',
+      turkishAiCorrect: Boolean(job.turkishAiCorrect),
+      useZemberekLexicon: Boolean(job.useZemberekLexicon),
+      subtitleBackend: normalizeSubtitleBackend(job.subtitleBackend || job.subtitleBackendRequested),
+      warning: String(job.warning || ''),
+      asset: job.asset || null,
+      error: job.error || '',
+      startedAt: job.startedAt,
+      updatedAt: job.updatedAt,
+      finishedAt: job.finishedAt || ''
+    });
+  }
+  try {
+    const persisted = await getMediaProcessingJobById(req.params.jobId, 'subtitle');
+    if (!persisted) return res.status(404).json({ error: 'Subtitle job not found' });
+    return res.json(mapSubtitleJobFromDbRow(persisted));
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load subtitle job' });
+  }
 });
 
 app.post('/api/assets/:id/video-ocr/extract', async (req, res) => {
@@ -3089,63 +6298,286 @@ app.post('/api/assets/:id/video-ocr/extract', async (req, res) => {
     const job = queueVideoOcrJob(row, {
       intervalSec: req.body?.intervalSec,
       ocrLang: req.body?.ocrLang,
-      ocrEngine: req.body?.ocrEngine
+      ocrEngine: req.body?.ocrEngine,
+      advancedMode: req.body?.advancedMode,
+      turkishAiCorrect: req.body?.turkishAiCorrect,
+      useZemberekLexicon: req.body?.useZemberekLexicon,
+      preprocessProfile: req.body?.preprocessProfile,
+      enableBlurFilter: req.body?.enableBlurFilter,
+      blurThreshold: req.body?.blurThreshold,
+      enableRegionMode: req.body?.enableRegionMode,
+      tickerHeightPct: req.body?.tickerHeightPct,
+      ignoreStaticOverlays: req.body?.ignoreStaticOverlays,
+      ignorePhrases: req.body?.ignorePhrases,
+      minDisplaySec: req.body?.minDisplaySec,
+      mergeGapSec: req.body?.mergeGapSec,
+      enableSceneSampling: req.body?.enableSceneSampling,
+      sceneThreshold: req.body?.sceneThreshold,
+      maxSceneFrames: req.body?.maxSceneFrames,
+      sceneMinGapSec: req.body?.sceneMinGapSec
     });
     return res.status(202).json({
       jobId: job.jobId,
       status: job.status,
       intervalSec: job.intervalSec,
       ocrLang: job.ocrLang,
-      ocrEngine: job.ocrEngine
+      ocrEngine: job.ocrEngine,
+      mode: job.mode,
+      advancedMode: job.advancedMode,
+      turkishAiCorrect: job.turkishAiCorrect,
+      useZemberekLexicon: Boolean(job.useZemberekLexicon),
+      preprocessProfile: job.preprocessProfile,
+      enableBlurFilter: job.enableBlurFilter,
+      blurThreshold: job.blurThreshold,
+      enableRegionMode: job.enableRegionMode,
+      tickerHeightPct: job.tickerHeightPct,
+      ignoreStaticOverlays: job.ignoreStaticOverlays,
+      ignorePhrases: job.ignorePhrases,
+      minDisplaySec: job.minDisplaySec,
+      mergeGapSec: job.mergeGapSec,
+      enableSceneSampling: job.enableSceneSampling,
+      sceneThreshold: job.sceneThreshold,
+      maxSceneFrames: job.maxSceneFrames,
+      sceneMinGapSec: job.sceneMinGapSec
     });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to queue video OCR extraction' });
   }
 });
 
-app.get('/api/video-ocr-jobs/:jobId', (req, res) => {
+app.get('/api/video-ocr-jobs/:jobId', async (req, res) => {
   const job = videoOcrJobs.get(String(req.params.jobId || '').trim());
-  if (!job) return res.status(404).json({ error: 'Video OCR job not found' });
-  return res.json({
-    jobId: job.jobId,
-    assetId: job.assetId,
-    status: job.status,
-    intervalSec: job.intervalSec,
-    ocrLang: job.ocrLang,
-    ocrEngine: job.ocrEngine,
-    requestedEngine: job.requestedEngine,
-    resultUrl: job.resultUrl || '',
-    downloadUrl: job.resultUrl ? `/api/video-ocr-jobs/${encodeURIComponent(job.jobId)}/download` : '',
-    resultLabel: job.resultLabel || '',
-    lineCount: Number(job.lineCount || 0),
-    warning: job.warning || '',
-    error: job.error || '',
-    startedAt: job.startedAt,
-    updatedAt: job.updatedAt,
-    finishedAt: job.finishedAt || ''
-  });
+  if (job) {
+    return res.json({
+      jobId: job.jobId,
+      assetId: job.assetId,
+      status: job.status,
+      intervalSec: job.intervalSec,
+      ocrLang: job.ocrLang,
+      ocrEngine: job.ocrEngine,
+      requestedEngine: job.requestedEngine,
+      resultUrl: job.resultUrl || '',
+      downloadUrl: job.resultUrl ? `/api/video-ocr-jobs/${encodeURIComponent(job.jobId)}/download` : '',
+      resultLabel: job.resultLabel || '',
+      lineCount: Number(job.lineCount || 0),
+      segmentCount: Number(job.segmentCount || 0),
+      mode: String(job.mode || 'basic'),
+      advancedMode: Boolean(job.advancedMode),
+      turkishAiCorrect: Boolean(job.turkishAiCorrect),
+      useZemberekLexicon: Boolean(job.useZemberekLexicon),
+      preprocessProfile: String(job.preprocessProfile || 'light'),
+      enableBlurFilter: Boolean(job.enableBlurFilter),
+      blurThreshold: Number(job.blurThreshold || 0),
+      enableRegionMode: Boolean(job.enableRegionMode),
+      tickerHeightPct: Number(job.tickerHeightPct || 0),
+      ignoreStaticOverlays: Boolean(job.ignoreStaticOverlays),
+      ignorePhrases: String(job.ignorePhrases || ''),
+      detectedStaticPhrases: Array.isArray(job.detectedStaticPhrases) ? job.detectedStaticPhrases : [],
+      skippedBlur: Number(job.skippedBlur || 0),
+      sceneFrameCount: Number(job.sceneFrameCount || 0),
+      droppedSceneFrames: Number(job.droppedSceneFrames || 0),
+      patchedPeriodicFrames: Number(job.patchedPeriodicFrames || 0),
+      keptSceneFrames: Number(job.keptSceneFrames || 0),
+      minDisplaySec: Number(job.minDisplaySec || 0),
+      mergeGapSec: Number(job.mergeGapSec || 0),
+      enableSceneSampling: Boolean(job.enableSceneSampling),
+      sceneThreshold: Number(job.sceneThreshold || 0),
+      maxSceneFrames: Number(job.maxSceneFrames || 0),
+      sceneMinGapSec: Number(job.sceneMinGapSec || 0),
+      warning: job.warning || '',
+      error: job.error || '',
+      startedAt: job.startedAt,
+      updatedAt: job.updatedAt,
+      finishedAt: job.finishedAt || ''
+    });
+  }
+  try {
+    const persisted = await getMediaProcessingJobById(req.params.jobId, 'video_ocr');
+    if (!persisted) return res.status(404).json({ error: 'Video OCR job not found' });
+    return res.json(mapVideoOcrJobFromDbRow(persisted));
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load video OCR job' });
+  }
 });
 
-app.get('/api/video-ocr-jobs/:jobId/download', (req, res) => {
+app.get('/api/assets/:id/video-ocr/latest', async (req, res) => {
+  try {
+    const assetId = String(req.params.id || '').trim();
+    if (!assetId) return res.status(400).json({ error: 'Asset id is required' });
+    const latest = getLatestVideoOcrJobForAsset(assetId);
+    if (latest) {
+      return res.json({
+        source: 'memory',
+        jobId: latest.jobId,
+        assetId: latest.assetId,
+        status: latest.status,
+        intervalSec: latest.intervalSec,
+        ocrLang: latest.ocrLang,
+        ocrEngine: latest.ocrEngine,
+        requestedEngine: latest.requestedEngine,
+        resultUrl: latest.resultUrl || '',
+        downloadUrl: latest.resultUrl ? `/api/video-ocr-jobs/${encodeURIComponent(latest.jobId)}/download` : '',
+        resultLabel: latest.resultLabel || '',
+        lineCount: Number(latest.lineCount || 0),
+        segmentCount: Number(latest.segmentCount || 0),
+        mode: String(latest.mode || 'basic'),
+        advancedMode: Boolean(latest.advancedMode),
+        turkishAiCorrect: Boolean(latest.turkishAiCorrect),
+        useZemberekLexicon: Boolean(latest.useZemberekLexicon),
+        preprocessProfile: String(latest.preprocessProfile || 'light'),
+        enableBlurFilter: Boolean(latest.enableBlurFilter),
+        blurThreshold: Number(latest.blurThreshold || 0),
+        enableRegionMode: Boolean(latest.enableRegionMode),
+        tickerHeightPct: Number(latest.tickerHeightPct || 0),
+        ignoreStaticOverlays: Boolean(latest.ignoreStaticOverlays),
+        ignorePhrases: String(latest.ignorePhrases || ''),
+        skippedBlur: Number(latest.skippedBlur || 0),
+        sceneFrameCount: Number(latest.sceneFrameCount || 0),
+        droppedSceneFrames: Number(latest.droppedSceneFrames || 0),
+        patchedPeriodicFrames: Number(latest.patchedPeriodicFrames || 0),
+        keptSceneFrames: Number(latest.keptSceneFrames || 0),
+        minDisplaySec: Number(latest.minDisplaySec || 0),
+        mergeGapSec: Number(latest.mergeGapSec || 0),
+        enableSceneSampling: Boolean(latest.enableSceneSampling),
+        sceneThreshold: Number(latest.sceneThreshold || 0),
+        maxSceneFrames: Number(latest.maxSceneFrames || 0),
+        sceneMinGapSec: Number(latest.sceneMinGapSec || 0),
+        warning: latest.warning || '',
+        error: latest.error || '',
+        startedAt: latest.startedAt,
+        updatedAt: latest.updatedAt,
+        finishedAt: latest.finishedAt || ''
+      });
+    }
+
+    const persistedLatest = await getLatestMediaProcessingJobForAsset(assetId, 'video_ocr');
+    if (persistedLatest) {
+      const mapped = mapVideoOcrJobFromDbRow(persistedLatest);
+      return res.json({
+        source: 'db_job',
+        ...mapped
+      });
+    }
+
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
+    const row = assetResult.rows[0];
+    const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+    const items = sanitizeVideoOcrItems(dc.videoOcrItems);
+    if (!items.length) return res.status(404).json({ error: 'Video OCR job not found' });
+    const last = items[items.length - 1];
+    return res.json({
+      source: 'db',
+      jobId: '',
+      assetId,
+      status: 'completed',
+      ocrEngine: last.ocrEngine,
+      resultUrl: last.ocrUrl,
+      downloadUrl: '',
+      resultLabel: last.ocrLabel,
+      lineCount: Number(last.lineCount || 0),
+      segmentCount: Number(last.segmentCount || 0),
+      mode: '',
+      warning: '',
+      error: '',
+      startedAt: '',
+      updatedAt: String(last.createdAt || ''),
+      finishedAt: String(last.createdAt || ''),
+      saved: true
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load latest OCR job' });
+  }
+});
+
+app.post('/api/assets/:id/video-ocr/save', async (req, res) => {
+  try {
+    const assetId = String(req.params.id || '').trim();
+    if (!assetId) return res.status(400).json({ error: 'Asset id is required' });
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
+    const row = assetResult.rows[0];
+    if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+      return res.status(400).json({ error: 'OCR save is supported only for video assets' });
+    }
+    const requestedJobId = String(req.body?.jobId || '').trim();
+    let job = requestedJobId ? videoOcrJobs.get(requestedJobId) : getLatestVideoOcrJobForAsset(assetId);
+    if (!job) {
+      const persisted = requestedJobId
+        ? await getMediaProcessingJobById(requestedJobId, 'video_ocr')
+        : await getLatestMediaProcessingJobForAsset(assetId, 'video_ocr');
+      if (persisted && String(persisted.asset_id || '') === assetId) {
+        const mapped = mapVideoOcrJobFromDbRow(persisted);
+        job = {
+          jobId: mapped.jobId,
+          assetId: mapped.assetId,
+          status: mapped.status,
+          resultUrl: mapped.resultUrl,
+          resultLabel: mapped.resultLabel,
+          lineCount: mapped.lineCount,
+          segmentCount: mapped.segmentCount,
+          ocrEngine: mapped.ocrEngine,
+          requestedEngine: mapped.requestedEngine,
+          ocrLang: mapped.ocrLang
+        };
+      }
+    }
+    if (!job || String(job.assetId || '') !== assetId) {
+      return res.status(404).json({ error: 'Video OCR job not found for this asset' });
+    }
+    if (String(job.status || '') !== 'completed') {
+      return res.status(409).json({ error: 'OCR job is not completed yet' });
+    }
+    if (!String(job.resultUrl || '').trim()) {
+      return res.status(409).json({ error: 'OCR output file is not ready yet' });
+    }
+
+    const saved = await saveAssetVideoOcrMetadata(assetId, row, job);
+    return res.json({
+      ok: true,
+      savedItem: saved.item,
+      asset: mapAssetRow(saved.row)
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to save OCR result to database' });
+  }
+});
+
+app.get('/api/video-ocr-jobs/:jobId/download', async (req, res) => {
   const jobId = String(req.params.jobId || '').trim();
-  const job = videoOcrJobs.get(jobId);
-  if (!job) return res.status(404).json({ error: 'Video OCR job not found' });
-  if (String(job.status || '') !== 'completed') {
-    return res.status(409).json({ error: 'OCR file is not ready yet' });
+  const inMemory = videoOcrJobs.get(jobId);
+  const serve = (jobLike) => {
+    if (String(jobLike.status || '') !== 'completed') {
+      return res.status(409).json({ error: 'OCR file is not ready yet' });
+    }
+    const filePath = String(jobLike.resultPath || '').trim() || publicUploadUrlToAbsolutePath(jobLike.resultUrl);
+    if (!filePath || !fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'OCR file not found' });
+    }
+    const fileName = String(jobLike.resultLabel || path.basename(filePath) || 'video-ocr.txt').trim() || 'video-ocr.txt';
+    return res.download(filePath, fileName, (error) => {
+      if (error) return;
+      if (inMemory) {
+        safeRmDir(inMemory.frameDir);
+        inMemory.frameDir = '';
+        inMemory.updatedAt = new Date().toISOString();
+      }
+    });
+  };
+  if (inMemory) return serve(inMemory);
+  try {
+    const row = await getMediaProcessingJobById(jobId, 'video_ocr');
+    if (!row) return res.status(404).json({ error: 'Video OCR job not found' });
+    const mapped = mapVideoOcrJobFromDbRow(row);
+    return serve({
+      status: mapped.status,
+      resultUrl: mapped.resultUrl,
+      resultPath: '',
+      resultLabel: mapped.resultLabel
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load OCR job download info' });
   }
-
-  const filePath = String(job.resultPath || '').trim() || publicUploadUrlToAbsolutePath(job.resultUrl);
-  if (!filePath || !fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'OCR file not found' });
-  }
-  const fileName = String(job.resultLabel || path.basename(filePath) || 'video-ocr.txt').trim() || 'video-ocr.txt';
-
-  return res.download(filePath, fileName, (error) => {
-    if (error) return;
-    safeRmDir(job.frameDir);
-    job.frameDir = '';
-    job.updatedAt = new Date().toISOString();
-  });
 });
 
 app.patch('/api/assets/:id/subtitles', async (req, res) => {
@@ -3195,6 +6627,9 @@ app.patch('/api/assets/:id/subtitles', async (req, res) => {
       [req.params.id, JSON.stringify(updatedDc), new Date().toISOString()]
     );
     const updatedRow = updatedResult.rows[0];
+    try {
+      await syncSubtitleCueIndexForAssetRow(updatedRow);
+    } catch (_error) {}
     return res.json({
       subtitleUrl,
       subtitleLang,
@@ -3251,6 +6686,9 @@ app.delete('/api/assets/:id/subtitles', requireAssetDelete, async (req, res) => 
       `,
       [req.params.id, JSON.stringify(updatedDc), new Date().toISOString()]
     );
+    try {
+      await syncSubtitleCueIndexForAssetRow(updatedResult.rows[0]);
+    } catch (_error) {}
 
     const filePath = publicUploadUrlToAbsolutePath(subtitleUrl);
     if (filePath && filePath.startsWith(SUBTITLES_DIR) && fs.existsSync(filePath)) {
@@ -3259,10 +6697,107 @@ app.delete('/api/assets/:id/subtitles', requireAssetDelete, async (req, res) => 
 
     return res.json({
       removed: subtitleUrl,
+      subtitleCuesCleared: !nextActive,
       asset: mapAssetRow(updatedResult.rows[0])
     });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to remove subtitle' });
+  }
+});
+
+app.get('/api/assets/:id/subtitles/search', async (req, res) => {
+  try {
+    const assetId = String(req.params.id || '').trim();
+    const query = String(req.query.q || '').trim();
+    const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 20));
+    if (!assetId) return res.status(400).json({ error: 'Asset id is required' });
+    if (!query) return res.status(400).json({ error: 'q is required' });
+    if (query.length < 2) return res.json({ query, total: 0, matches: [] });
+
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
+    const row = assetResult.rows[0];
+    if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+      return res.status(400).json({ error: 'Subtitle search is supported only for video assets' });
+    }
+    const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+    const subtitleUrl = String(dc.subtitleUrl || '').trim();
+    if (!subtitleUrl) return res.status(400).json({ error: 'No active subtitle for this asset' });
+
+    await ensureSubtitleCueIndexForAssetRow(row);
+    const folded = normalizeSubtitleSearchText(query);
+    if (!folded) return res.json({ query, total: 0, matches: [] });
+
+    const result = await pool.query(
+      `
+        SELECT seq, start_sec, end_sec, cue_text
+        FROM asset_subtitle_cues
+        WHERE asset_id = $1
+          AND subtitle_url = $2
+          AND norm_text LIKE $3
+        ORDER BY start_sec ASC
+        LIMIT $4
+      `,
+      [assetId, subtitleUrl, `%${folded}%`, limit]
+    );
+    const matches = result.rows.map((item) => ({
+      seq: Number(item.seq || 0),
+      startSec: Number(item.start_sec || 0),
+      endSec: Number(item.end_sec || 0),
+      startTc: formatTimecode(Number(item.start_sec || 0)),
+      endTc: formatTimecode(Number(item.end_sec || 0)),
+      text: String(item.cue_text || '')
+    }));
+    return res.json({
+      query,
+      total: matches.length,
+      subtitleUrl,
+      matches
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to search subtitles' });
+  }
+});
+
+app.get('/api/assets/:id/subtitles/suggest', async (req, res) => {
+  try {
+    const assetId = String(req.params.id || '').trim();
+    const query = String(req.query.q || '').trim();
+    const limit = Math.max(1, Math.min(20, Number(req.query.limit) || 8));
+    if (!assetId) return res.status(400).json({ error: 'Asset id is required' });
+    if (query.length < 2) return res.json([]);
+
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
+    const row = assetResult.rows[0];
+    const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+    const subtitleUrl = String(dc.subtitleUrl || '').trim();
+    if (!subtitleUrl) return res.json([]);
+
+    await ensureSubtitleCueIndexForAssetRow(row);
+    const folded = normalizeSubtitleSearchText(query);
+    if (!folded) return res.json([]);
+    const result = await pool.query(
+      `
+        SELECT seq, start_sec, end_sec, cue_text
+        FROM asset_subtitle_cues
+        WHERE asset_id = $1
+          AND subtitle_url = $2
+          AND norm_text LIKE $3
+        ORDER BY start_sec ASC
+        LIMIT $4
+      `,
+      [assetId, subtitleUrl, `%${folded}%`, limit]
+    );
+    return res.json(result.rows.map((item) => ({
+      seq: Number(item.seq || 0),
+      startSec: Number(item.start_sec || 0),
+      endSec: Number(item.end_sec || 0),
+      startTc: formatTimecode(Number(item.start_sec || 0)),
+      text: String(item.cue_text || '')
+    })));
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to suggest subtitle matches' });
   }
 });
 
@@ -3466,6 +7001,428 @@ app.get('/api/assets/:id/pdf-page-image', async (req, res) => {
   }
 });
 
+app.post('/api/assets/:id/pdf/save', requirePdfAdvancedTools, async (req, res) => {
+  try {
+    const assetId = String(req.params.id || '').trim();
+    if (!assetId) return res.status(400).json({ error: 'Invalid asset id' });
+    const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    const row = rowResult.rows[0];
+    if (!row) return res.status(404).json({ error: 'Asset not found' });
+    if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+      return res.status(400).json({ error: 'PDF save is only supported for PDF assets' });
+    }
+
+    const rawBase64 = String(req.body?.pdfBase64 || '').trim();
+    if (!rawBase64) return res.status(400).json({ error: 'pdfBase64 is required' });
+    const sanitizedBase64 = rawBase64.replace(/^data:application\/pdf;base64,/i, '');
+    let pdfBuffer = null;
+    try {
+      pdfBuffer = Buffer.from(sanitizedBase64, 'base64');
+    } catch (_error) {
+      return res.status(400).json({ error: 'Invalid base64 payload' });
+    }
+    if (!pdfBuffer || pdfBuffer.length < 16) {
+      return res.status(400).json({ error: 'Decoded PDF content is empty' });
+    }
+    const isPdfHeader = String(pdfBuffer.slice(0, 5).toString('utf8') || '').startsWith('%PDF-');
+    if (!isPdfHeader) {
+      return res.status(400).json({ error: 'Decoded content is not a valid PDF' });
+    }
+
+    const inputFileName = String(req.body?.fileName || row.file_name || `${assetId}.pdf`).trim();
+    const safeBase = sanitizeFileName(path.basename(inputFileName, path.extname(inputFileName)) || `asset-${assetId}`);
+    const storage = getIngestStoragePath({ type: 'document', mimeType: 'application/pdf', fileName: `${safeBase}.pdf` });
+    const storedName = `${Date.now()}-${nanoid()}-${safeBase}-edited.pdf`;
+    const absPath = path.join(storage.absoluteDir, storedName);
+    const relativePath = path.join(storage.relativeDir, storedName);
+    const mediaUrl = `/uploads/${relativePath.replace(/\\/g, '/')}`;
+    fs.writeFileSync(absPath, pdfBuffer);
+
+    const nowIso = new Date().toISOString();
+    const versionCount = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [assetId]);
+    const nextVersion = Number(versionCount.rows?.[0]?.c || 0) + 1;
+    const actor = String(req.userPermissions?.displayName || req.userPermissions?.username || 'admin').trim() || 'admin';
+    const rawKinds = Array.isArray(req.body?.changeKinds) ? req.body.changeKinds : [];
+    const normalizedKinds = Array.from(new Set(rawKinds.map((k) => String(k || '').trim().toLowerCase()).filter(Boolean)));
+    let effectiveKind = 'unknown';
+    if (normalizedKinds.includes('redaction') && normalizedKinds.includes('text_insert')) effectiveKind = 'mixed';
+    else if (normalizedKinds.includes('redaction') && normalizedKinds.includes('annotation')) effectiveKind = 'mixed';
+    else if (normalizedKinds.includes('text_insert') && normalizedKinds.includes('annotation')) effectiveKind = 'mixed';
+    else if (normalizedKinds.includes('redaction')) effectiveKind = 'redaction';
+    else if (normalizedKinds.includes('text_insert')) effectiveKind = 'text_insert';
+    else if (normalizedKinds.includes('annotation')) effectiveKind = 'annotation';
+    const nextFileName = `${safeBase}-edited.pdf`;
+    const version = {
+      versionId: nanoid(),
+      label: `PDF Edit ${nextVersion}`,
+      note: `Saved from PDF viewer by ${actor} [change:${effectiveKind}]`,
+      snapshot: {
+        snapshotMediaUrl: mediaUrl,
+        snapshotSourcePath: absPath,
+        snapshotFileName: nextFileName,
+        snapshotMimeType: 'application/pdf',
+        snapshotThumbnailUrl: ''
+      },
+      actorUsername: actor,
+      actionType: 'pdf_save',
+      createdAt: nowIso
+    };
+    await pool.query('BEGIN');
+    try {
+      const originalExists = await pool.query(
+        `SELECT 1 FROM asset_versions WHERE asset_id = $1 AND action_type = 'pdf_original' LIMIT 1`,
+        [assetId]
+      );
+      if (!originalExists.rowCount) {
+        await pool.query(
+          `
+            INSERT INTO asset_versions (
+              version_id, asset_id, label, note,
+              snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
+              actor_username, action_type, restored_from_version_id,
+              created_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          `,
+          [
+            nanoid(),
+            assetId,
+            'PDF Original',
+            'Hidden original snapshot before first PDF edit',
+            String(row.media_url || '').trim(),
+            String(row.source_path || '').trim(),
+            String(row.file_name || '').trim(),
+            String(row.mime_type || '').trim() || 'application/pdf',
+            String(row.thumbnail_url || '').trim(),
+            actor,
+            'pdf_original',
+            null,
+            nowIso
+          ]
+        );
+      }
+
+      await pool.query(
+        `
+          INSERT INTO asset_versions (
+            version_id, asset_id, label, note,
+            snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
+            actor_username, action_type, restored_from_version_id,
+            created_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        `,
+        [
+          version.versionId, assetId, version.label, version.note,
+          version.snapshot.snapshotMediaUrl, version.snapshot.snapshotSourcePath, version.snapshot.snapshotFileName, version.snapshot.snapshotMimeType, version.snapshot.snapshotThumbnailUrl,
+          version.actorUsername, version.actionType, null,
+          version.createdAt
+        ]
+      );
+      await pool.query(
+        `
+          UPDATE assets
+          SET media_url = $2,
+              source_path = $3,
+              file_name = $4,
+              mime_type = $5,
+              thumbnail_url = '',
+              updated_at = $6
+          WHERE id = $1
+        `,
+        [assetId, mediaUrl, absPath, nextFileName, 'application/pdf', nowIso]
+      );
+      await pool.query('COMMIT');
+    } catch (error) {
+      await pool.query('ROLLBACK');
+      throw error;
+    }
+
+    const updatedResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    let updatedRow = updatedResult.rows[0];
+    updatedRow = await ensurePdfThumbnailForRow(updatedRow);
+
+    return res.json({
+      saved: true,
+      asset: mapAssetRow(updatedRow),
+      changeKind: effectiveKind,
+      version
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to save PDF edits' });
+  }
+});
+
+app.post('/api/assets/:id/pdf-restore-original', requireAdminAccess, async (req, res) => {
+  try {
+    if (!req.userPermissions?.canUsePdfAdvancedTools) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const assetId = String(req.params.id || '').trim();
+    if (!assetId) return res.status(400).json({ error: 'assetId is required' });
+
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    const currentRow = assetResult.rows[0];
+    if (!currentRow) return res.status(404).json({ error: 'Asset not found' });
+    if (!isPdfCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
+      return res.status(400).json({ error: 'PDF restore is only supported for PDF assets' });
+    }
+
+    let targetResult = await pool.query(
+      `SELECT * FROM asset_versions WHERE asset_id = $1 AND action_type = 'pdf_original' ORDER BY created_at ASC LIMIT 1`,
+      [assetId]
+    );
+    if (!targetResult.rowCount) {
+      targetResult = await pool.query(
+        `SELECT * FROM asset_versions WHERE asset_id = $1 AND action_type = 'ingest' ORDER BY created_at ASC LIMIT 1`,
+        [assetId]
+      );
+    }
+    const target = targetResult.rows[0];
+    if (!target) return res.status(404).json({ error: 'Original PDF snapshot not found' });
+
+    const snapshotMediaUrl = String(target.snapshot_media_url || '').trim();
+    const snapshotFileName = String(target.snapshot_file_name || '').trim() || currentRow.file_name;
+    const snapshotMimeType = String(target.snapshot_mime_type || '').trim() || 'application/pdf';
+    const snapshotThumbnailUrl = String(target.snapshot_thumbnail_url || '').trim();
+    let snapshotSourcePath = String(target.snapshot_source_path || '').trim();
+    if (!snapshotMediaUrl.startsWith('/uploads/')) {
+      return res.status(400).json({ error: 'Original snapshot is not restorable' });
+    }
+    if (!snapshotSourcePath || !fs.existsSync(snapshotSourcePath)) {
+      const resolved = publicUploadUrlToAbsolutePath(snapshotMediaUrl);
+      snapshotSourcePath = resolved && fs.existsSync(resolved) ? resolved : '';
+    }
+    if (!snapshotSourcePath || !fs.existsSync(snapshotSourcePath)) {
+      return res.status(400).json({ error: 'Original snapshot file is missing on disk' });
+    }
+
+    const nowIso = new Date().toISOString();
+    const actor = String(req.userPermissions?.displayName || req.userPermissions?.username || 'admin').trim() || 'admin';
+
+    await pool.query(
+      `
+        UPDATE assets
+        SET media_url = $2,
+            source_path = $3,
+            file_name = $4,
+            mime_type = $5,
+            thumbnail_url = $6,
+            updated_at = $7
+        WHERE id = $1
+      `,
+      [assetId, snapshotMediaUrl, snapshotSourcePath, snapshotFileName, snapshotMimeType, snapshotThumbnailUrl, nowIso]
+    );
+
+    const countResult = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [assetId]);
+    const nextVersion = Number(countResult.rows?.[0]?.c || 0) + 1;
+    const restoreVersion = {
+      versionId: nanoid(),
+      label: `PDF Original Restore ${nextVersion}`,
+      note: `Restored to original snapshot by ${actor}`,
+      snapshot: {
+        snapshotMediaUrl,
+        snapshotSourcePath,
+        snapshotFileName,
+        snapshotMimeType,
+        snapshotThumbnailUrl
+      },
+      actorUsername: actor,
+      actionType: 'pdf_restore_original',
+      restoredFromVersionId: target.version_id,
+      createdAt: nowIso
+    };
+    await pool.query(
+      `
+        INSERT INTO asset_versions (
+          version_id, asset_id, label, note,
+          snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
+          actor_username, action_type, restored_from_version_id,
+          created_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      `,
+      [
+        restoreVersion.versionId, assetId, restoreVersion.label, restoreVersion.note,
+        restoreVersion.snapshot.snapshotMediaUrl, restoreVersion.snapshot.snapshotSourcePath, restoreVersion.snapshot.snapshotFileName, restoreVersion.snapshot.snapshotMimeType, restoreVersion.snapshot.snapshotThumbnailUrl,
+        restoreVersion.actorUsername, restoreVersion.actionType, restoreVersion.restoredFromVersionId,
+        restoreVersion.createdAt
+      ]
+    );
+
+    const updatedResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    let updatedRow = updatedResult.rows[0];
+    updatedRow = await ensurePdfThumbnailForRow(updatedRow);
+    await indexAssetToElastic(assetId).catch(() => {});
+
+    return res.json({ restored: true, original: true, asset: mapAssetRow(updatedRow), version: restoreVersion });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to restore original PDF' });
+  }
+});
+
+app.delete('/api/assets/:id/versions/:versionId', requireAdminAccess, async (req, res) => {
+  try {
+    if (!req.userPermissions?.canUsePdfAdvancedTools) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const assetId = String(req.params.id || '').trim();
+    const versionId = String(req.params.versionId || '').trim();
+    if (!assetId || !versionId) return res.status(400).json({ error: 'assetId and versionId are required' });
+    const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
+    const row = versionResult.rows[0];
+    if (!row) return res.status(404).json({ error: 'Version not found' });
+    if (String(row.action_type || '').trim().toLowerCase() === 'pdf_original') {
+      return res.status(400).json({ error: 'Protected version cannot be deleted' });
+    }
+    await pool.query('DELETE FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
+    return res.json({ deleted: true, versionId });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to delete version' });
+  }
+});
+
+app.patch('/api/assets/:id/versions/:versionId', requireAdminAccess, async (req, res) => {
+  try {
+    if (!req.userPermissions?.canUsePdfAdvancedTools) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const assetId = String(req.params.id || '').trim();
+    const versionId = String(req.params.versionId || '').trim();
+    if (!assetId || !versionId) return res.status(400).json({ error: 'assetId and versionId are required' });
+
+    const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
+    const row = versionResult.rows[0];
+    if (!row) return res.status(404).json({ error: 'Version not found' });
+
+    const nextLabel = String(req.body?.label || '').trim();
+    const nextNote = String(req.body?.note || '').trim();
+    if (!nextLabel) return res.status(400).json({ error: 'label is required' });
+
+    const updated = await pool.query(
+      `
+        UPDATE asset_versions
+        SET label = $3,
+            note = $4
+        WHERE asset_id = $1 AND version_id = $2
+        RETURNING *
+      `,
+      [assetId, versionId, nextLabel, nextNote]
+    );
+    return res.json({ updated: true, version: mapVersionRow(updated.rows[0]) });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to update version' });
+  }
+});
+
+app.post('/api/assets/:id/pdf-restore', requireAdminAccess, async (req, res) => {
+  try {
+    if (!req.userPermissions?.canUsePdfAdvancedTools) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const assetId = String(req.params.id || '').trim();
+    const versionId = String(req.body?.versionId || '').trim();
+    if (!assetId || !versionId) return res.status(400).json({ error: 'assetId and versionId are required' });
+
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    const currentRow = assetResult.rows[0];
+    if (!currentRow) return res.status(404).json({ error: 'Asset not found' });
+    if (!isPdfCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
+      return res.status(400).json({ error: 'PDF restore is only supported for PDF assets' });
+    }
+
+    const versionResult = await pool.query(
+      'SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2',
+      [assetId, versionId]
+    );
+    const target = versionResult.rows[0];
+    if (!target) return res.status(404).json({ error: 'Version not found' });
+
+    const snapshotMediaUrl = String(target.snapshot_media_url || '').trim();
+    const snapshotFileName = String(target.snapshot_file_name || '').trim();
+    const snapshotMimeType = String(target.snapshot_mime_type || '').trim() || 'application/pdf';
+    const snapshotThumbnailUrl = String(target.snapshot_thumbnail_url || '').trim();
+    let snapshotSourcePath = String(target.snapshot_source_path || '').trim();
+    if (!snapshotMediaUrl.startsWith('/uploads/')) {
+      return res.status(400).json({ error: 'Selected version has no restorable PDF snapshot' });
+    }
+    if (!snapshotSourcePath || !fs.existsSync(snapshotSourcePath)) {
+      const resolved = publicUploadUrlToAbsolutePath(snapshotMediaUrl);
+      snapshotSourcePath = resolved && fs.existsSync(resolved) ? resolved : '';
+    }
+    if (!snapshotSourcePath || !fs.existsSync(snapshotSourcePath)) {
+      return res.status(400).json({ error: 'Snapshot file for selected version is missing on disk' });
+    }
+
+    const nowIso = new Date().toISOString();
+    const actor = String(req.userPermissions?.displayName || req.userPermissions?.username || 'admin').trim() || 'admin';
+
+    await pool.query('BEGIN');
+    try {
+      await pool.query(
+        `
+          UPDATE assets
+          SET media_url = $2,
+              source_path = $3,
+              file_name = $4,
+              mime_type = $5,
+              thumbnail_url = $6,
+              updated_at = $7
+          WHERE id = $1
+        `,
+        [assetId, snapshotMediaUrl, snapshotSourcePath, snapshotFileName || currentRow.file_name, snapshotMimeType, snapshotThumbnailUrl, nowIso]
+      );
+
+      const countResult = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [assetId]);
+      const nextVersion = Number(countResult.rows?.[0]?.c || 0) + 1;
+      const restoreVersion = {
+        versionId: nanoid(),
+        label: `PDF Restore ${nextVersion}`,
+        note: `Restored to ${String(target.label || target.version_id)} by ${actor}`,
+        snapshot: {
+          snapshotMediaUrl,
+          snapshotSourcePath,
+          snapshotFileName: snapshotFileName || currentRow.file_name,
+          snapshotMimeType,
+          snapshotThumbnailUrl
+        },
+        actorUsername: actor,
+        actionType: 'pdf_restore',
+        restoredFromVersionId: target.version_id,
+        createdAt: nowIso
+      };
+      await pool.query(
+        `
+          INSERT INTO asset_versions (
+            version_id, asset_id, label, note,
+            snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
+            actor_username, action_type, restored_from_version_id,
+            created_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        `,
+        [
+          restoreVersion.versionId, assetId, restoreVersion.label, restoreVersion.note,
+          restoreVersion.snapshot.snapshotMediaUrl, restoreVersion.snapshot.snapshotSourcePath, restoreVersion.snapshot.snapshotFileName, restoreVersion.snapshot.snapshotMimeType, restoreVersion.snapshot.snapshotThumbnailUrl,
+          restoreVersion.actorUsername, restoreVersion.actionType, restoreVersion.restoredFromVersionId,
+          restoreVersion.createdAt
+        ]
+      );
+      await pool.query('COMMIT');
+
+      const updatedResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+      let updatedRow = updatedResult.rows[0];
+      updatedRow = await ensurePdfThumbnailForRow(updatedRow);
+      return res.json({
+        restored: true,
+        asset: mapAssetRow(updatedRow),
+        version: restoreVersion
+      });
+    } catch (error) {
+      await pool.query('ROLLBACK');
+      throw error;
+    }
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to restore PDF version' });
+  }
+});
+
 app.post('/api/assets/:id/ensure-proxy', async (req, res) => {
   try {
     const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
@@ -3533,7 +7490,698 @@ async function requireAssetDelete(req, res, next) {
   }
 }
 
+async function requirePdfAdvancedTools(req, res, next) {
+  try {
+    const effective = await resolveEffectivePermissions(req);
+    if (!effective.canUsePdfAdvancedTools) return res.status(403).json({ error: 'Forbidden' });
+    req.userPermissions = effective;
+    return next();
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to verify PDF advanced permissions' });
+  }
+}
+
 app.use('/api/admin', requireAdminAccess);
+
+app.get('/api/admin/turkish-corrections', async (_req, res) => {
+  try {
+    await reloadLearnedTurkishCorrectionsFromDb();
+    return res.json({
+      entries: getLearnedTurkishCorrectionsList(),
+      wordSetSize: turkishWordSet.size
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load Turkish corrections' });
+  }
+});
+
+app.post('/api/admin/turkish-corrections', async (req, res) => {
+  try {
+    const wrong = normalizeLearnedCorrectionKey(req.body?.wrong ?? req.body?.from ?? '');
+    const correct = String(req.body?.correct ?? req.body?.to ?? '').trim();
+    if (!wrong || !correct) {
+      return res.status(400).json({ error: 'wrong and correct are required' });
+    }
+    const now = new Date().toISOString();
+    await pool.query(
+      `
+        INSERT INTO learned_turkish_corrections (wrong_key, wrong, correct, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (wrong_key)
+        DO UPDATE SET wrong = EXCLUDED.wrong, correct = EXCLUDED.correct, updated_at = EXCLUDED.updated_at
+      `,
+      [wrong, wrong, correct, now, now]
+    );
+    await reloadLearnedTurkishCorrectionsFromDb();
+    return res.json({ ok: true, entry: { wrong, correct }, total: learnedTurkishCorrections.size });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to save Turkish correction' });
+  }
+});
+
+app.put('/api/admin/turkish-corrections', async (req, res) => {
+  try {
+    const rows = Array.isArray(req.body?.entries) ? req.body.entries : [];
+    const sanitized = rows
+      .map((row) => ({
+        wrong: normalizeLearnedCorrectionKey(row?.wrong ?? row?.from ?? ''),
+        correct: String(row?.correct ?? row?.to ?? '').trim()
+      }))
+      .filter((row) => row.wrong && row.correct);
+    await pool.query('BEGIN');
+    await pool.query('DELETE FROM learned_turkish_corrections');
+    const now = new Date().toISOString();
+    for (const row of sanitized) {
+      await pool.query(
+        `
+          INSERT INTO learned_turkish_corrections (wrong_key, wrong, correct, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, $5)
+        `,
+        [row.wrong, row.wrong, row.correct, now, now]
+      );
+    }
+    await pool.query('COMMIT');
+    await reloadLearnedTurkishCorrectionsFromDb();
+    return res.json({ ok: true, total: learnedTurkishCorrections.size });
+  } catch (_error) {
+    await pool.query('ROLLBACK').catch(() => {});
+    return res.status(500).json({ error: 'Failed to replace Turkish corrections' });
+  }
+});
+
+app.delete('/api/admin/turkish-corrections', async (req, res) => {
+  try {
+    const wrong = normalizeLearnedCorrectionKey(req.body?.wrong ?? req.query?.wrong ?? '');
+    if (!wrong) return res.status(400).json({ error: 'wrong is required' });
+    const delRes = await pool.query(
+      'DELETE FROM learned_turkish_corrections WHERE wrong_key = $1',
+      [wrong]
+    );
+    const removed = Number(delRes.rowCount || 0) > 0;
+    await reloadLearnedTurkishCorrectionsFromDb();
+    return res.json({ ok: true, removed, total: learnedTurkishCorrections.size });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to delete Turkish correction' });
+  }
+});
+
+function getOcrItemsFromDc(dcMetadata = {}, fallbackDate = '') {
+  const dc = dcMetadata && typeof dcMetadata === 'object' ? dcMetadata : {};
+  let items = sanitizeVideoOcrItems(dc.videoOcrItems);
+  if (!items.length && String(dc.videoOcrUrl || '').trim()) {
+    items = [{
+      id: '__legacy_active__',
+      ocrUrl: String(dc.videoOcrUrl || '').trim(),
+      ocrLabel: String(dc.videoOcrLabel || '').trim() || 'video-ocr',
+      ocrEngine: normalizeOcrEngine(dc.videoOcrEngine || 'paddle'),
+      lineCount: Math.max(0, Number(dc.videoOcrLineCount) || 0),
+      segmentCount: Math.max(0, Number(dc.videoOcrSegmentCount) || 0),
+      createdAt: String(fallbackDate || new Date().toISOString())
+    }];
+  }
+  return items;
+}
+
+function ocrAbsolutePathToPublicUrl(absPath) {
+  const safe = String(absPath || '');
+  if (!safe) return '';
+  const rel = path.relative(OCR_DIR, safe).replace(/\\/g, '/');
+  if (!rel || rel.startsWith('..')) return '';
+  return `/uploads/ocr/${rel}`;
+}
+
+function resolveAdminOcrItemForAssetRow(row, itemId) {
+  const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+  const items = getOcrItemsFromDc(dc, row?.updated_at || row?.created_at || '');
+  const direct = items.find((it) => String(it.id || '') === String(itemId || ''));
+  if (direct) return { item: direct, inferred: false };
+
+  const rawId = String(itemId || '').trim();
+  if (!rawId.startsWith('__inferred__')) return { item: null, inferred: false };
+  const inferredName = rawId.slice('__inferred__'.length);
+  if (!inferredName) return { item: null, inferred: true };
+
+  const inferredPaths = getCandidateOcrFilePathsForRow(row);
+  const matched = inferredPaths.find((p) => path.basename(String(p || '')) === inferredName);
+  if (!matched) return { item: null, inferred: true };
+  const inferredUrl = ocrAbsolutePathToPublicUrl(matched);
+  if (!inferredUrl) return { item: null, inferred: true };
+  return {
+    item: {
+      id: rawId,
+      ocrUrl: inferredUrl,
+      ocrLabel: path.basename(matched),
+      ocrEngine: '',
+      lineCount: 0,
+      segmentCount: 0,
+      createdAt: String(row?.updated_at || row?.created_at || new Date().toISOString())
+    },
+    inferred: true
+  };
+}
+
+app.get('/api/admin/ocr-records', async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    const limit = Math.max(20, Math.min(2000, Number(req.query.limit) || 500));
+    const params = [limit];
+    let whereSql = '';
+    if (q) {
+      params.push(`%${q}%`);
+      whereSql = 'WHERE COALESCE(title, \'\') ILIKE $2 OR COALESCE(file_name, \'\') ILIKE $2';
+    }
+    const result = await pool.query(
+      `
+        SELECT id, title, file_name, type, owner, updated_at, dc_metadata
+        FROM assets
+        ${whereSql}
+        ORDER BY updated_at DESC
+        LIMIT $1
+      `,
+      params
+    );
+
+    const records = [];
+    result.rows.forEach((row) => {
+      if (records.length >= limit) return;
+      const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+      let items = getOcrItemsFromDc(dc, row.updated_at || row.created_at || '');
+      if (!items.length) {
+        const inferredPaths = getCandidateOcrFilePathsForRow(row);
+        if (inferredPaths.length) {
+          const first = inferredPaths[0];
+          const inferredUrl = ocrAbsolutePathToPublicUrl(first);
+          if (inferredUrl) {
+            items = [{
+              id: `__inferred__${path.basename(first)}`,
+              ocrUrl: inferredUrl,
+              ocrLabel: path.basename(first),
+              ocrEngine: '',
+              lineCount: 0,
+              segmentCount: 0,
+              createdAt: String(row.updated_at || row.created_at || new Date().toISOString())
+            }];
+          }
+        }
+      }
+      if (!items.length) return;
+      const activeUrl = String(dc.videoOcrUrl || '').trim();
+      items.forEach((item) => {
+        if (records.length >= limit) return;
+        const label = String(item.ocrLabel || '').trim();
+        const url = String(item.ocrUrl || '').trim();
+        const urlFileName = path.basename(url || '');
+        const lineCount = Number(item.lineCount || 0);
+        const segmentCount = Number(item.segmentCount || 0);
+        records.push({
+          assetId: row.id,
+          assetTitle: String(row.title || row.file_name || row.id || ''),
+          fileName: String(row.file_name || ''),
+          type: String(row.type || ''),
+          owner: String(row.owner || ''),
+          itemId: String(item.id || ''),
+          ocrLabel: label || 'video-ocr',
+          ocrUrl: url,
+          ocrEngine: String(item.ocrEngine || ''),
+          lineCount: Number.isFinite(lineCount) ? lineCount : 0,
+          segmentCount: Number.isFinite(segmentCount) ? segmentCount : 0,
+          active: activeUrl && url ? activeUrl === url : false,
+          createdAt: String(item.createdAt || row.updated_at || '')
+        });
+      });
+    });
+    return res.json({ records });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load OCR records' });
+  }
+});
+
+app.patch('/api/admin/ocr-records', async (req, res) => {
+  try {
+    const assetId = String(req.body?.assetId || '').trim();
+    const itemId = String(req.body?.itemId || '').trim();
+    const nextLabel = String(req.body?.ocrLabel || '').trim();
+    if (!assetId || !itemId) return res.status(400).json({ error: 'assetId and itemId are required' });
+    if (!nextLabel) return res.status(400).json({ error: 'ocrLabel is required' });
+
+    const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    if (!rowResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
+    const row = rowResult.rows[0];
+    const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+    const items = getOcrItemsFromDc(dc, row.updated_at || row.created_at || '');
+    const idx = items.findIndex((item) => String(item.id || '') === itemId);
+    if (idx < 0) return res.status(404).json({ error: 'OCR record not found' });
+    items[idx] = { ...items[idx], ocrLabel: nextLabel };
+    const activeUrl = String(dc.videoOcrUrl || '').trim();
+    const activeItem = items.find((it) => String(it.ocrUrl || '').trim() === activeUrl) || items[items.length - 1] || null;
+    const updatedDc = {
+      ...dc,
+      videoOcrItems: items,
+      videoOcrUrl: activeItem ? String(activeItem.ocrUrl || '').trim() : '',
+      videoOcrLabel: activeItem ? String(activeItem.ocrLabel || '').trim() : '',
+      videoOcrEngine: activeItem ? String(activeItem.ocrEngine || '').trim() : '',
+      videoOcrLineCount: activeItem ? Math.max(0, Number(activeItem.lineCount) || 0) : 0,
+      videoOcrSegmentCount: activeItem ? Math.max(0, Number(activeItem.segmentCount) || 0) : 0
+    };
+    await pool.query(
+      'UPDATE assets SET dc_metadata = $2::jsonb, updated_at = $3 WHERE id = $1',
+      [assetId, JSON.stringify(updatedDc), new Date().toISOString()]
+    );
+    return res.json({ ok: true });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to update OCR record' });
+  }
+});
+
+app.delete('/api/admin/ocr-records', async (req, res) => {
+  try {
+    const assetId = String(req.body?.assetId || '').trim();
+    const itemId = String(req.body?.itemId || '').trim();
+    const deleteFile = Boolean(req.body?.deleteFile);
+    if (!assetId || !itemId) return res.status(400).json({ error: 'assetId and itemId are required' });
+
+    const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    if (!rowResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
+    const row = rowResult.rows[0];
+    const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+    const items = getOcrItemsFromDc(dc, row.updated_at || row.created_at || '');
+    const target = items.find((item) => String(item.id || '') === itemId);
+    if (!target) return res.status(404).json({ error: 'OCR record not found' });
+    const nextItems = items.filter((item) => String(item.id || '') !== itemId);
+    const prevActiveUrl = String(dc.videoOcrUrl || '').trim();
+    let nextActive = nextItems.find((it) => String(it.ocrUrl || '').trim() === prevActiveUrl) || null;
+    if (!nextActive && nextItems.length) nextActive = nextItems[nextItems.length - 1];
+    const updatedDc = {
+      ...dc,
+      videoOcrItems: nextItems,
+      videoOcrUrl: nextActive ? String(nextActive.ocrUrl || '').trim() : '',
+      videoOcrLabel: nextActive ? String(nextActive.ocrLabel || '').trim() : '',
+      videoOcrEngine: nextActive ? String(nextActive.ocrEngine || '').trim() : '',
+      videoOcrLineCount: nextActive ? Math.max(0, Number(nextActive.lineCount) || 0) : 0,
+      videoOcrSegmentCount: nextActive ? Math.max(0, Number(nextActive.segmentCount) || 0) : 0
+    };
+    await pool.query(
+      'UPDATE assets SET dc_metadata = $2::jsonb, updated_at = $3 WHERE id = $1',
+      [assetId, JSON.stringify(updatedDc), new Date().toISOString()]
+    );
+    await pool.query(
+      'DELETE FROM asset_ocr_segments WHERE asset_id = $1 AND ocr_url = $2',
+      [assetId, String(target.ocrUrl || '').trim()]
+    );
+
+    if (deleteFile) {
+      const filePath = publicUploadUrlToAbsolutePath(String(target.ocrUrl || '').trim());
+      if (filePath && filePath.startsWith(OCR_DIR) && fs.existsSync(filePath)) {
+        try { fs.unlinkSync(filePath); } catch (_error) {}
+      }
+    }
+    return res.json({ ok: true, removedFile: deleteFile });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to delete OCR record' });
+  }
+});
+
+function computeOcrStatsFromContent(content) {
+  const text = String(content || '');
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => String(line || '').trim())
+    .filter(Boolean)
+    .filter((line) => !/^WEBVTT$/i.test(line));
+  const segmentCount = (text.match(/\[[0-9:.]+\s*-->\s*[0-9:.]+\]/g) || []).length;
+  return {
+    lineCount: lines.length,
+    segmentCount: segmentCount > 0 ? segmentCount : lines.length
+  };
+}
+
+app.get('/api/admin/ocr-records/content', async (req, res) => {
+  try {
+    const assetId = String(req.query.assetId || '').trim();
+    const itemId = String(req.query.itemId || '').trim();
+    if (!assetId || !itemId) return res.status(400).json({ error: 'assetId and itemId are required' });
+    const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    if (!rowResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
+    const row = rowResult.rows[0];
+    const resolved = resolveAdminOcrItemForAssetRow(row, itemId);
+    const item = resolved.item;
+    if (!item) return res.status(404).json({ error: 'OCR record not found' });
+    const filePath = publicUploadUrlToAbsolutePath(String(item.ocrUrl || '').trim());
+    if (!filePath || !filePath.startsWith(OCR_DIR) || !fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'OCR file not found' });
+    }
+    const content = fs.readFileSync(filePath, 'utf8');
+    return res.json({ content, ocrUrl: item.ocrUrl || '' });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to read OCR content' });
+  }
+});
+
+app.patch('/api/admin/ocr-records/content', async (req, res) => {
+  try {
+    const assetId = String(req.body?.assetId || '').trim();
+    const itemId = String(req.body?.itemId || '').trim();
+    const content = String(req.body?.content || '');
+    if (!assetId || !itemId) return res.status(400).json({ error: 'assetId and itemId are required' });
+    const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    if (!rowResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
+    const row = rowResult.rows[0];
+    const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+    const resolved = resolveAdminOcrItemForAssetRow(row, itemId);
+    const target = resolved.item;
+    if (!target) return res.status(404).json({ error: 'OCR record not found' });
+    const items = getOcrItemsFromDc(dc, row.updated_at || row.created_at || '');
+    let idx = items.findIndex((it) => String(it.id || '') === itemId);
+    const filePath = publicUploadUrlToAbsolutePath(String(target.ocrUrl || '').trim());
+    if (!filePath || !filePath.startsWith(OCR_DIR) || !fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'OCR file not found' });
+    }
+    fs.writeFileSync(filePath, content, 'utf8');
+    const stats = computeOcrStatsFromContent(content);
+    if (idx < 0) {
+      // First edit of an inferred OCR file: persist it as a managed OCR item.
+      items.push({
+        id: nanoid(),
+        ocrUrl: String(target.ocrUrl || '').trim(),
+        ocrLabel: String(target.ocrLabel || path.basename(filePath) || 'video-ocr').trim() || 'video-ocr',
+        ocrEngine: normalizeOcrEngine(target.ocrEngine || 'paddle'),
+        lineCount: Math.max(0, Number(stats.lineCount) || 0),
+        segmentCount: Math.max(0, Number(stats.segmentCount) || 0),
+        createdAt: new Date().toISOString()
+      });
+      idx = items.length - 1;
+    } else {
+      items[idx] = {
+        ...target,
+        lineCount: Math.max(0, Number(stats.lineCount) || 0),
+        segmentCount: Math.max(0, Number(stats.segmentCount) || 0)
+      };
+    }
+    const activeUrl = String(dc.videoOcrUrl || '').trim();
+    const activeItem = items.find((it) => String(it.ocrUrl || '').trim() === activeUrl) || items[idx];
+    const updatedDc = {
+      ...dc,
+      videoOcrItems: items,
+      videoOcrUrl: activeItem ? String(activeItem.ocrUrl || '').trim() : '',
+      videoOcrLabel: activeItem ? String(activeItem.ocrLabel || '').trim() : '',
+      videoOcrEngine: activeItem ? String(activeItem.ocrEngine || '').trim() : '',
+      videoOcrLineCount: activeItem ? Math.max(0, Number(activeItem.lineCount) || 0) : 0,
+      videoOcrSegmentCount: activeItem ? Math.max(0, Number(activeItem.segmentCount) || 0) : 0
+    };
+    await pool.query(
+      'UPDATE assets SET dc_metadata = $2::jsonb, updated_at = $3 WHERE id = $1',
+      [assetId, JSON.stringify(updatedDc), new Date().toISOString()]
+    );
+    await syncOcrSegmentIndexForAsset(assetId, String(target.ocrUrl || '').trim(), {
+      sourceEngine: String(target.ocrEngine || 'paddle').trim(),
+      lang: ''
+    });
+    return res.json({ ok: true, lineCount: stats.lineCount, segmentCount: stats.segmentCount });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to save OCR content' });
+  }
+});
+
+function getSubtitleItemsFromDc(dcMetadata = {}) {
+  const dc = dcMetadata && typeof dcMetadata === 'object' ? dcMetadata : {};
+  let items = sanitizeSubtitleItems(dc.subtitleItems);
+  if (!items.length && String(dc.subtitleUrl || '').trim()) {
+    items = [{
+      id: nanoid(),
+      subtitleUrl: String(dc.subtitleUrl || '').trim(),
+      subtitleLang: normalizeSubtitleLang(dc.subtitleLang),
+      subtitleLabel: String(dc.subtitleLabel || '').trim() || 'subtitle',
+      createdAt: new Date().toISOString()
+    }];
+  }
+  return items;
+}
+
+function findSubtitleMatchInText(text, queryNorm) {
+  const cues = parseSubtitleCues(text);
+  for (const cue of cues) {
+    const norm = normalizeSubtitleSearchText(cue.cueText);
+    if (!norm) continue;
+    if (norm.includes(queryNorm)) {
+      return cue;
+    }
+  }
+  return null;
+}
+
+app.get('/api/admin/subtitle-records', async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim().toLocaleLowerCase('tr');
+    const limit = Math.max(20, Math.min(2000, Number(req.query.limit) || 500));
+    const result = await pool.query(
+      `
+        SELECT id, title, file_name, type, owner, updated_at, dc_metadata
+        FROM assets
+        ORDER BY updated_at DESC
+        LIMIT $1
+      `,
+      [limit]
+    );
+
+    const records = [];
+    result.rows.forEach((row) => {
+      const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+      const items = getSubtitleItemsFromDc(dc);
+      if (!items.length) return;
+      const activeUrl = String(dc.subtitleUrl || '').trim();
+      items.forEach((item) => {
+        const label = String(item.subtitleLabel || '').trim();
+        const lang = normalizeSubtitleLang(item.subtitleLang);
+        const url = String(item.subtitleUrl || '').trim();
+        const hitText = `${row.title || ''} ${row.file_name || ''} ${label} ${lang} ${url}`.toLocaleLowerCase('tr');
+        if (q && !hitText.includes(q)) return;
+        records.push({
+          assetId: row.id,
+          assetTitle: String(row.title || row.file_name || row.id || ''),
+          fileName: String(row.file_name || ''),
+          type: String(row.type || ''),
+          owner: String(row.owner || ''),
+          itemId: String(item.id || ''),
+          subtitleLabel: label || 'subtitle',
+          subtitleLang: lang,
+          subtitleUrl: url,
+          active: activeUrl && url ? activeUrl === url : false,
+          createdAt: String(item.createdAt || row.updated_at || '')
+        });
+      });
+    });
+    return res.json({ records });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load subtitle records' });
+  }
+});
+
+app.patch('/api/admin/subtitle-records', async (req, res) => {
+  try {
+    const assetId = String(req.body?.assetId || '').trim();
+    const itemId = String(req.body?.itemId || '').trim();
+    const nextLabel = String(req.body?.subtitleLabel || '').trim();
+    const nextLang = normalizeSubtitleLang(req.body?.subtitleLang || 'tr');
+    const setActive = Boolean(req.body?.setActive);
+    if (!assetId || !itemId) return res.status(400).json({ error: 'assetId and itemId are required' });
+    if (!nextLabel) return res.status(400).json({ error: 'subtitleLabel is required' });
+
+    const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    if (!rowResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
+    const row = rowResult.rows[0];
+    const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+    const items = getSubtitleItemsFromDc(dc);
+    const idx = items.findIndex((item) => String(item.id || '') === itemId);
+    if (idx < 0) return res.status(404).json({ error: 'Subtitle record not found' });
+    items[idx] = { ...items[idx], subtitleLabel: nextLabel, subtitleLang: nextLang };
+
+    const prevActive = String(dc.subtitleUrl || '').trim();
+    const chosen = setActive
+      ? items[idx]
+      : (items.find((it) => String(it.subtitleUrl || '').trim() === prevActive) || items[idx]);
+    const updatedDc = {
+      ...dc,
+      subtitleItems: items,
+      subtitleUrl: String(chosen.subtitleUrl || '').trim(),
+      subtitleLabel: String(chosen.subtitleLabel || '').trim(),
+      subtitleLang: normalizeSubtitleLang(chosen.subtitleLang)
+    };
+    const updatedRes = await pool.query(
+      'UPDATE assets SET dc_metadata = $2::jsonb, updated_at = $3 WHERE id = $1 RETURNING *',
+      [assetId, JSON.stringify(updatedDc), new Date().toISOString()]
+    );
+    try {
+      await syncSubtitleCueIndexForAssetRow(updatedRes.rows[0]);
+    } catch (_error) {}
+    return res.json({ ok: true });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to update subtitle record' });
+  }
+});
+
+app.delete('/api/admin/subtitle-records', async (req, res) => {
+  try {
+    const assetId = String(req.body?.assetId || '').trim();
+    const itemId = String(req.body?.itemId || '').trim();
+    const deleteFile = Boolean(req.body?.deleteFile);
+    if (!assetId || !itemId) return res.status(400).json({ error: 'assetId and itemId are required' });
+
+    const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    if (!rowResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
+    const row = rowResult.rows[0];
+    const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+    const items = getSubtitleItemsFromDc(dc);
+    const target = items.find((item) => String(item.id || '') === itemId);
+    if (!target) return res.status(404).json({ error: 'Subtitle record not found' });
+
+    const nextItems = items.filter((item) => String(item.id || '') !== itemId);
+    const prevActive = String(dc.subtitleUrl || '').trim();
+    let nextActive = nextItems.find((it) => String(it.subtitleUrl || '').trim() === prevActive) || null;
+    if (!nextActive && nextItems.length) nextActive = nextItems[nextItems.length - 1];
+    const updatedDc = {
+      ...dc,
+      subtitleItems: nextItems,
+      subtitleUrl: nextActive ? String(nextActive.subtitleUrl || '').trim() : '',
+      subtitleLabel: nextActive ? String(nextActive.subtitleLabel || '').trim() : '',
+      subtitleLang: nextActive ? normalizeSubtitleLang(nextActive.subtitleLang) : ''
+    };
+    const updatedRes = await pool.query(
+      'UPDATE assets SET dc_metadata = $2::jsonb, updated_at = $3 WHERE id = $1 RETURNING *',
+      [assetId, JSON.stringify(updatedDc), new Date().toISOString()]
+    );
+    try {
+      await syncSubtitleCueIndexForAssetRow(updatedRes.rows[0]);
+    } catch (_error) {}
+
+    if (deleteFile) {
+      const filePath = publicUploadUrlToAbsolutePath(String(target.subtitleUrl || '').trim());
+      if (filePath && filePath.startsWith(SUBTITLES_DIR) && fs.existsSync(filePath)) {
+        try { fs.unlinkSync(filePath); } catch (_error) {}
+      }
+    }
+    return res.json({ ok: true, removedFile: deleteFile });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to delete subtitle record' });
+  }
+});
+
+app.get('/api/admin/subtitle-records/content', async (req, res) => {
+  try {
+    const assetId = String(req.query.assetId || '').trim();
+    const itemId = String(req.query.itemId || '').trim();
+    if (!assetId || !itemId) return res.status(400).json({ error: 'assetId and itemId are required' });
+    const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    if (!rowResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
+    const row = rowResult.rows[0];
+    const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+    const items = getSubtitleItemsFromDc(dc);
+    const item = items.find((it) => String(it.id || '') === itemId);
+    if (!item) return res.status(404).json({ error: 'Subtitle record not found' });
+    const filePath = publicUploadUrlToAbsolutePath(String(item.subtitleUrl || '').trim());
+    if (!filePath || !filePath.startsWith(SUBTITLES_DIR) || !fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Subtitle file not found' });
+    }
+    const content = fs.readFileSync(filePath, 'utf8');
+    return res.json({ content, subtitleUrl: item.subtitleUrl || '' });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to read subtitle content' });
+  }
+});
+
+app.patch('/api/admin/subtitle-records/content', async (req, res) => {
+  try {
+    const assetId = String(req.body?.assetId || '').trim();
+    const itemId = String(req.body?.itemId || '').trim();
+    const rawContent = String(req.body?.content || '');
+    if (!assetId || !itemId) return res.status(400).json({ error: 'assetId and itemId are required' });
+    const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    if (!rowResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
+    const row = rowResult.rows[0];
+    const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+    const items = getSubtitleItemsFromDc(dc);
+    const idx = items.findIndex((it) => String(it.id || '') === itemId);
+    if (idx < 0) return res.status(404).json({ error: 'Subtitle record not found' });
+    const item = items[idx];
+    const filePath = publicUploadUrlToAbsolutePath(String(item.subtitleUrl || '').trim());
+    if (!filePath || !filePath.startsWith(SUBTITLES_DIR) || !fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Subtitle file not found' });
+    }
+    const ext = path.extname(filePath).toLowerCase();
+    const nextContent = ext === '.vtt'
+      ? normalizeVttContent(rawContent)
+      : String(rawContent || '').replace(/\r\n?/g, '\n');
+    fs.writeFileSync(filePath, nextContent, 'utf8');
+    const updatedRes = await pool.query(
+      'UPDATE assets SET dc_metadata = $2::jsonb, updated_at = $3 WHERE id = $1 RETURNING *',
+      [assetId, JSON.stringify({ ...dc, subtitleItems: items }), new Date().toISOString()]
+    );
+    try {
+      await syncSubtitleCueIndexForAssetRow(updatedRes.rows[0]);
+    } catch (_error) {}
+    return res.json({ ok: true });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to save subtitle content' });
+  }
+});
+
+app.get('/api/admin/text-search', async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (!q) return res.json({ results: [] });
+    const qNormSub = normalizeSubtitleSearchText(q);
+    const limit = Math.max(10, Math.min(500, Number(req.query.limit) || 200));
+    const assetRes = await pool.query(
+      `
+        SELECT id, title, file_name, type, dc_metadata, updated_at
+        FROM assets
+        ORDER BY updated_at DESC
+        LIMIT 800
+      `
+    );
+    const out = [];
+    for (const row of assetRes.rows) {
+      const assetTitle = String(row.title || row.file_name || row.id || '');
+      const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+
+      const subtitleItems = getSubtitleItemsFromDc(dc);
+      for (const item of subtitleItems) {
+        const subtitlePath = publicUploadUrlToAbsolutePath(String(item.subtitleUrl || '').trim());
+        if (!subtitlePath || !fs.existsSync(subtitlePath)) continue;
+        let raw = '';
+        try { raw = fs.readFileSync(subtitlePath, 'utf8'); } catch (_error) { continue; }
+        const cue = findSubtitleMatchInText(raw, qNormSub);
+        if (!cue) continue;
+        out.push({
+          source: 'subtitle',
+          assetId: row.id,
+          assetTitle,
+          label: String(item.subtitleLabel || item.subtitleLang || 'subtitle'),
+          timecode: formatTimecode(Number(cue.startSec || 0)),
+          startSec: Number(cue.startSec || 0),
+          text: String(cue.cueText || '')
+        });
+        if (out.length >= limit) return res.json({ results: out });
+      }
+
+      const ocrHit = await findOcrMatchForAssetRow(row, q);
+      if (ocrHit) {
+        out.push({
+          source: 'ocr',
+          assetId: row.id,
+          assetTitle,
+          label: String(dc.videoOcrLabel || 'video-ocr'),
+          timecode: formatTimecode(Number(ocrHit.startSec || 0)),
+          startSec: Number(ocrHit.startSec || 0),
+          text: String(ocrHit.line || '')
+        });
+        if (out.length >= limit) return res.json({ results: out });
+      }
+    }
+    return res.json({ results: out });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to run combined text search' });
+  }
+});
 
 app.get('/api/admin/workflow-tracking', async (_req, res) => {
   try {
@@ -3630,6 +8278,21 @@ app.patch('/api/admin/settings', async (req, res) => {
       playerUiMode: Object.prototype.hasOwnProperty.call(req.body, 'playerUiMode')
         ? normalizePlayerUiMode(req.body.playerUiMode)
         : normalizePlayerUiMode(current.playerUiMode),
+      ocrDefaultAdvancedMode: Object.prototype.hasOwnProperty.call(req.body, 'ocrDefaultAdvancedMode')
+        ? Boolean(req.body.ocrDefaultAdvancedMode)
+        : current.ocrDefaultAdvancedMode,
+      ocrDefaultTurkishAiCorrect: Object.prototype.hasOwnProperty.call(req.body, 'ocrDefaultTurkishAiCorrect')
+        ? Boolean(req.body.ocrDefaultTurkishAiCorrect)
+        : current.ocrDefaultTurkishAiCorrect,
+      ocrDefaultEnableBlurFilter: Object.prototype.hasOwnProperty.call(req.body, 'ocrDefaultEnableBlurFilter')
+        ? Boolean(req.body.ocrDefaultEnableBlurFilter)
+        : current.ocrDefaultEnableBlurFilter,
+      ocrDefaultEnableRegionMode: Object.prototype.hasOwnProperty.call(req.body, 'ocrDefaultEnableRegionMode')
+        ? Boolean(req.body.ocrDefaultEnableRegionMode)
+        : current.ocrDefaultEnableRegionMode,
+      ocrDefaultIgnoreStaticOverlays: Object.prototype.hasOwnProperty.call(req.body, 'ocrDefaultIgnoreStaticOverlays')
+        ? Boolean(req.body.ocrDefaultIgnoreStaticOverlays)
+        : current.ocrDefaultIgnoreStaticOverlays,
       apiTokenEnabled: Object.prototype.hasOwnProperty.call(req.body, 'apiTokenEnabled')
         ? Boolean(req.body.apiTokenEnabled)
         : current.apiTokenEnabled,
@@ -3659,28 +8322,42 @@ app.patch('/api/admin/settings', async (req, res) => {
 app.get('/api/admin/user-permissions', async (req, res) => {
   try {
     const saved = await getUserPermissionsSettings();
-    const fromAssets = await pool.query('SELECT DISTINCT owner FROM assets WHERE owner IS NOT NULL AND owner <> \'\'');
-    const usernames = new Set(
-      fromAssets.rows.map((r) => String(r.owner || '').trim().toLowerCase()).filter(Boolean)
-    );
-    Object.keys(saved || {}).forEach((k) => usernames.add(String(k || '').trim().toLowerCase()));
-    const me = await resolveEffectivePermissions(req);
-    if (me.username) usernames.add(String(me.username).trim().toLowerCase());
-    usernames.add('admin');
-    usernames.add('mamadmin');
+    const kcData = await fetchKeycloakUsers();
+    const kcUsersAll = Array.isArray(kcData?.users) ? kcData.users : [];
+    const kcUsers = kcUsersAll.filter((row) => isVisibleKeycloakUser(row));
+    if (!kcUsers.length) {
+      return res.status(503).json({ error: 'Failed to fetch users from Keycloak' });
+    }
+    const adminFlagsByUser = await fetchKeycloakUserAdminFlags(kcUsers, kcData?.realmByUsername);
+    const usernames = new Set();
+    kcUsers.forEach((row) => {
+      const username = String(row?.username || '').trim().toLowerCase();
+      if (username) usernames.add(username);
+    });
+    Object.keys(saved || {}).forEach((k) => {
+      const username = String(k || '').trim().toLowerCase();
+      if (!username) return;
+      if (usernames.has(username)) usernames.add(username);
+    });
 
     const users = Array.from(usernames)
       .sort((a, b) => a.localeCompare(b))
       .map((username) => {
-        const defaults = ['admin', 'mamadmin'].includes(username);
+        const defaults = adminFlagsByUser.has(username)
+          ? Boolean(adminFlagsByUser.get(username))
+          : isAdminName(username);
         const effective = normalizePermissionEntry(saved?.[username], defaults);
         return {
           username,
           adminPageAccess: effective.adminPageAccess,
-          assetDelete: effective.assetDelete
+          assetDelete: effective.assetDelete,
+          pdfAdvancedTools: effective.pdfAdvancedTools
         };
       });
-    return res.json({ users });
+    return res.json({
+      users,
+      source: kcUsers.length ? 'keycloak' : 'fallback'
+    });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to load user permissions' });
   }
@@ -3690,12 +8367,23 @@ app.patch('/api/admin/user-permissions/:username', async (req, res) => {
   try {
     const username = String(req.params.username || '').trim().toLowerCase();
     if (!username) return res.status(400).json({ error: 'username is required' });
+    const kcData = await fetchKeycloakUsers();
+    const kcUsersAll = Array.isArray(kcData?.users) ? kcData.users : [];
+    const kcUsers = kcUsersAll.filter((row) => isVisibleKeycloakUser(row));
+    if (!kcUsers.length) {
+      return res.status(503).json({ error: 'Failed to fetch users from Keycloak' });
+    }
+    const existsInKeycloak = kcUsers.some((row) => String(row?.username || '').trim().toLowerCase() === username);
+    if (!existsInKeycloak) {
+      return res.status(404).json({ error: 'User not found in Keycloak realm' });
+    }
 
     const current = await getUserPermissionsSettings();
     const nextEntry = normalizePermissionEntry(
       {
         adminPageAccess: req.body?.adminPageAccess,
-        assetDelete: req.body?.assetDelete
+        assetDelete: req.body?.assetDelete,
+        pdfAdvancedTools: req.body?.pdfAdvancedTools
       },
       ['admin', 'mamadmin'].includes(username)
     );
@@ -3724,6 +8412,158 @@ app.post('/api/admin/api-token/rotate', async (_req, res) => {
     return res.json({ apiToken: saved.apiToken });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to rotate API token' });
+  }
+});
+
+function getDirSizeAndFiles(rootDir) {
+  let totalBytes = 0;
+  let totalFiles = 0;
+  const stack = [rootDir];
+  while (stack.length) {
+    const current = stack.pop();
+    let entries = [];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch (_error) {
+      continue;
+    }
+    entries.forEach((entry) => {
+      const abs = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(abs);
+        return;
+      }
+      if (!entry.isFile()) return;
+      totalFiles += 1;
+      try {
+        const st = fs.statSync(abs);
+        totalBytes += Math.max(0, Number(st.size) || 0);
+      } catch (_error) {}
+    });
+  }
+  return { totalBytes, totalFiles };
+}
+
+function getFsFreeAndTotal(targetDir) {
+  try {
+    if (typeof fs.statfsSync !== 'function') {
+      return { freeBytes: 0, totalBytes: 0 };
+    }
+    const st = fs.statfsSync(targetDir);
+    const blockSize = Math.max(0, Number(st.bsize || st.frsize || 0));
+    const freeBlocks = Math.max(0, Number(st.bavail || st.bfree || 0));
+    const totalBlocks = Math.max(0, Number(st.blocks || 0));
+    return {
+      freeBytes: blockSize * freeBlocks,
+      totalBytes: blockSize * totalBlocks
+    };
+  } catch (_error) {
+    return { freeBytes: 0, totalBytes: 0 };
+  }
+}
+
+async function checkHttpService(url, timeoutMs = 2200) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    return {
+      ok: response.ok,
+      status: response.status
+    };
+  } catch (_error) {
+    clearTimeout(timer);
+    return { ok: false, status: 0 };
+  }
+}
+
+app.get('/api/admin/system-health', async (_req, res) => {
+  try {
+    const [proxyRunning, proxyFailed] = [
+      Array.from(proxyJobs.values()).filter((job) => ['running', 'queued'].includes(String(job.status || ''))).length,
+      Array.from(proxyJobs.values()).filter((job) => String(job.status || '') === 'failed').length
+    ];
+    const mediaJobsStats = await pool.query(
+      `
+        SELECT job_type, status, COUNT(*)::int AS count
+        FROM media_processing_jobs
+        WHERE job_type IN ('subtitle', 'video_ocr')
+        GROUP BY job_type, status
+      `
+    );
+    const mediaCounts = {};
+    mediaJobsStats.rows.forEach((row) => {
+      const key = `${String(row.job_type || '')}:${String(row.status || '')}`;
+      mediaCounts[key] = Number(row.count || 0);
+    });
+    const subtitleRunning = (mediaCounts['subtitle:running'] || 0) + (mediaCounts['subtitle:queued'] || 0);
+    const ocrRunning = (mediaCounts['video_ocr:running'] || 0) + (mediaCounts['video_ocr:queued'] || 0);
+    const subtitleFailed = mediaCounts['subtitle:failed'] || 0;
+    const ocrFailed = mediaCounts['video_ocr:failed'] || 0;
+
+    const { totalBytes: uploadsBytes, totalFiles: uploadsFiles } = getDirSizeAndFiles(UPLOADS_DIR);
+    const fsInfo = getFsFreeAndTotal(UPLOADS_DIR);
+
+    const assetRows = await pool.query(
+      'SELECT id, proxy_url, thumbnail_url, dc_metadata FROM assets ORDER BY updated_at DESC LIMIT 5000'
+    );
+    let missingProxy = 0;
+    let missingThumbnail = 0;
+    let missingSubtitle = 0;
+    let missingOcr = 0;
+    assetRows.rows.forEach((row) => {
+      const proxyAbs = publicUploadUrlToAbsolutePath(resolveStoredUrl(row.proxy_url, 'proxies'));
+      if (proxyAbs && !fs.existsSync(proxyAbs)) missingProxy += 1;
+      const thumbAbs = publicUploadUrlToAbsolutePath(resolveStoredUrl(row.thumbnail_url, 'thumbnails'));
+      if (thumbAbs && !fs.existsSync(thumbAbs)) missingThumbnail += 1;
+      const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+      const subUrl = String(dc.subtitleUrl || '').trim();
+      const subAbs = subUrl ? publicUploadUrlToAbsolutePath(subUrl) : '';
+      if (subAbs && !fs.existsSync(subAbs)) missingSubtitle += 1;
+      const ocrUrl = pickLatestVideoOcrUrlFromDc(dc);
+      const ocrAbs = ocrUrl ? publicUploadUrlToAbsolutePath(ocrUrl) : '';
+      if (ocrAbs && !fs.existsSync(ocrAbs)) missingOcr += 1;
+    });
+
+    const [postgresCheck, elasticCheck, keycloakCheck, oauth2ProxyCheck] = await Promise.all([
+      pool.query('SELECT 1 AS ok').then(() => ({ ok: true, status: 200 })).catch(() => ({ ok: false, status: 0 })),
+      checkHttpService('http://elasticsearch:9200'),
+      checkHttpService('http://keycloak:8080/realms/mam'),
+      checkHttpService('http://oauth2-proxy:4180/ping')
+    ]);
+
+    return res.json({
+      disk: {
+        uploadsBytes,
+        uploadsFiles,
+        fsFreeBytes: fsInfo.freeBytes,
+        fsTotalBytes: fsInfo.totalBytes
+      },
+      jobs: {
+        proxyRunning,
+        subtitleRunning,
+        ocrRunning,
+        proxyFailed,
+        subtitleFailed,
+        ocrFailed
+      },
+      services: {
+        app: { ok: true, status: 200 },
+        postgres: postgresCheck,
+        elasticsearch: elasticCheck,
+        keycloak: keycloakCheck,
+        oauth2Proxy: oauth2ProxyCheck
+      },
+      integrity: {
+        missingProxy,
+        missingThumbnail,
+        missingSubtitle,
+        missingOcr
+      }
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load system health' });
   }
 });
 
@@ -3812,8 +8652,8 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
     const assetName = String(req.body?.assetName || '').trim();
     const mode = String(req.body?.mode || '').trim().toLowerCase();
     if (!assetName) return res.status(400).json({ error: 'assetName is required' });
-    if (!['thumbnail', 'preview', 'proxy'].includes(mode)) {
-      return res.status(400).json({ error: 'mode must be one of: thumbnail, preview, proxy' });
+    if (!['thumbnail', 'preview', 'proxy', 'replace_asset', 'replace_pdf'].includes(mode)) {
+      return res.status(400).json({ error: 'mode must be one of: thumbnail, preview, proxy, replace_asset, replace_pdf' });
     }
 
     const like = `%${assetName}%`;
@@ -3870,6 +8710,136 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
         previewMode: String(preview.mode || 'text'),
         previewChars: Math.max(0, String(preview.html || preview.text || '').length),
         thumbnailUrl: resolveStoredUrl(row.thumbnail_url, 'thumbnails')
+      };
+    } else if (mode === 'replace_asset' || mode === 'replace_pdf') {
+      const rawBase64 = String(req.body?.fileBase64 || req.body?.pdfBase64 || '').trim();
+      if (!rawBase64) return res.status(400).json({ error: 'fileBase64 is required for replace_asset' });
+      const sanitizedBase64 = rawBase64.replace(/^data:[^;]+;base64,/i, '');
+      let fileBuffer = null;
+      try {
+        fileBuffer = Buffer.from(sanitizedBase64, 'base64');
+      } catch (_error) {
+        return res.status(400).json({ error: 'Invalid fileBase64 payload' });
+      }
+      if (!fileBuffer || fileBuffer.length < 16) {
+        return res.status(400).json({ error: 'Decoded file content is empty' });
+      }
+
+      const inputFileName = String(req.body?.fileName || row.file_name || `${row.id}.bin`).trim();
+      const safeFileName = sanitizeFileName(inputFileName || row.file_name || `${row.id}.bin`);
+      const nextMimeType = String(req.body?.mimeType || '').trim().toLowerCase() || inferMimeTypeFromFileName(safeFileName) || 'application/octet-stream';
+      const currentFamily = getAssetFamily({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type });
+      const newFamily = getAssetFamily({ mimeType: nextMimeType, fileName: safeFileName, declaredType: inferAssetType('', nextMimeType) });
+      if (currentFamily === 'unknown' || newFamily === 'unknown' || currentFamily !== newFamily) {
+        return res.status(400).json({
+          error: 'New file type must match existing asset type',
+          currentFamily,
+          newFamily
+        });
+      }
+      const generateThumbnail = Boolean(req.body?.generateThumbnail);
+      const generatePreview = Boolean(req.body?.generatePreview);
+      const safeBase = sanitizeFileName(path.basename(safeFileName, path.extname(safeFileName)) || `asset-${row.id}`);
+      const extWithDot = path.extname(safeFileName) || '';
+      const extSafe = extWithDot ? sanitizeFileName(extWithDot.replace(/^\./, '')) : '';
+      const storedName = `${Date.now()}-${nanoid()}-${safeBase}${extSafe ? `.${extSafe}` : ''}`;
+      const storage = getIngestStoragePath({ type: inferAssetType(row.type, nextMimeType), mimeType: nextMimeType, fileName: safeFileName });
+      const absPath = path.join(storage.absoluteDir, storedName);
+      const relativePath = path.join(storage.relativeDir, storedName);
+      const mediaUrl = `/uploads/${relativePath.replace(/\\/g, '/')}`;
+      fs.writeFileSync(absPath, fileBuffer);
+
+      const nowIso = new Date().toISOString();
+      const actor = String(req.userPermissions?.displayName || req.userPermissions?.username || 'admin').trim() || 'admin';
+      const versionCount = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [row.id]);
+      const nextVersion = Number(versionCount.rows?.[0]?.c || 0) + 1;
+      const nextFileName = safeFileName;
+      await pool.query(
+        `
+          INSERT INTO asset_versions (
+            version_id, asset_id, label, note,
+            snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
+            actor_username, action_type, restored_from_version_id,
+            created_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        `,
+        [
+          nanoid(),
+          row.id,
+          `Asset Replace ${nextVersion}`,
+          `File replaced via admin proxy tool by ${actor}`,
+          mediaUrl,
+          absPath,
+          nextFileName,
+          nextMimeType,
+          '',
+          actor,
+          'file_replace',
+          null,
+          nowIso
+        ]
+      );
+      await pool.query(
+        `
+          UPDATE assets
+          SET media_url = $2,
+              proxy_url = '',
+              proxy_status = 'not_applicable',
+              source_path = $3,
+              file_name = $4,
+              mime_type = $5,
+              type = $6,
+              thumbnail_url = '',
+              updated_at = $7
+          WHERE id = $1
+          RETURNING *
+        `,
+        [row.id, mediaUrl, absPath, nextFileName, nextMimeType, inferAssetType(row.type, nextMimeType), nowIso]
+      ).then((result) => {
+        row = result.rows[0] || row;
+      });
+      let previewChars = 0;
+      if (generateThumbnail) {
+        if (isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+          const inputPath = resolveAssetInputPath(row);
+          if (inputPath && fs.existsSync(inputPath)) {
+            const thumbStoredName = `${Date.now()}-${nanoid()}-thumb.jpg`;
+            const thumbOut = buildArtifactPath('thumbnails', thumbStoredName, new Date());
+            await generateVideoThumbnail(inputPath, thumbOut.absolutePath);
+            const refreshed = await pool.query(
+              `UPDATE assets SET thumbnail_url = $2, updated_at = $3 WHERE id = $1 RETURNING *`,
+              [row.id, thumbOut.publicUrl, new Date().toISOString()]
+            );
+            row = refreshed.rows?.[0] || row;
+          }
+        } else if (isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+          row = await ensurePdfThumbnailForRow(row);
+        } else if (isDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+          row = await ensureDocumentThumbnailForRow(row);
+        } else if (String(row.mime_type || '').toLowerCase().startsWith('image/')) {
+          const nowIso2 = new Date().toISOString();
+          const imageThumb = resolveStoredUrl(row.media_url, 'uploads') || row.media_url || '';
+          const updated = await pool.query(
+            `UPDATE assets SET thumbnail_url = $2, updated_at = $3 WHERE id = $1 RETURNING *`,
+            [row.id, imageThumb, nowIso2]
+          );
+          row = updated.rows?.[0] || row;
+        }
+      }
+      if (generatePreview && isDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+        const inputPath = resolveAssetInputPath(row);
+        if (inputPath && fs.existsSync(inputPath)) {
+          const preview = await extractPreviewContentFromFile(row, inputPath);
+          previewChars = Math.max(0, String(preview.html || preview.text || '').length);
+        }
+      }
+      await indexAssetToElastic(row.id).catch(() => {});
+      info = {
+        replaced: true,
+        thumbnailUrl: resolveStoredUrl(row.thumbnail_url, 'thumbnails'),
+        generatedThumbnail: generateThumbnail,
+        generatedPreview: generatePreview,
+        previewChars
       };
     }
 
@@ -4129,8 +9099,9 @@ app.patch('/api/assets/:id', async (req, res) => {
 
 app.post('/api/assets/:id/versions', async (req, res) => {
   try {
-    const exists = await pool.query('SELECT id FROM assets WHERE id = $1', [req.params.id]);
-    if (!exists.rowCount) {
+    const exists = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
+    const row = exists.rows[0];
+    if (!row) {
       return res.status(404).json({ error: 'Asset not found' });
     }
 
@@ -4141,12 +9112,27 @@ app.post('/api/assets/:id/versions', async (req, res) => {
       versionId: nanoid(),
       label: req.body.label?.trim() || `v${count + 1}`,
       note: req.body.note?.trim() || 'Version update',
+      snapshot: buildVersionSnapshotFromRow(row),
+      actorUsername: String(req.get('x-forwarded-user') || req.get('x-auth-request-user') || row.owner || 'user').trim() || 'user',
+      actionType: 'manual',
       createdAt: new Date().toISOString()
     };
 
     await pool.query(
-      'INSERT INTO asset_versions (version_id, asset_id, label, note, created_at) VALUES ($1,$2,$3,$4,$5)',
-      [version.versionId, req.params.id, version.label, version.note, version.createdAt]
+      `
+        INSERT INTO asset_versions (
+          version_id, asset_id, label, note,
+          snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
+          actor_username, action_type, restored_from_version_id,
+          created_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      `,
+      [
+        version.versionId, req.params.id, version.label, version.note,
+        version.snapshot.snapshotMediaUrl, version.snapshot.snapshotSourcePath, version.snapshot.snapshotFileName, version.snapshot.snapshotMimeType, version.snapshot.snapshotThumbnailUrl,
+        version.actorUsername, version.actionType, null,
+        version.createdAt
+      ]
     );
     await pool.query('UPDATE assets SET updated_at = $2 WHERE id = $1', [req.params.id, version.createdAt]);
 
@@ -4236,8 +9222,12 @@ app.post('/api/collections', async (req, res) => {
   }
 });
 
+loadTurkishWordSet();
+
 initDb()
-  .then(() => {
+  .then(async () => {
+    await migrateLegacyLearnedCorrectionsIfNeeded();
+    await reloadLearnedTurkishCorrectionsFromDb();
     ensureElasticIndex()
       .then(() => backfillElasticIndex().catch(() => {}))
       .catch(() => {});

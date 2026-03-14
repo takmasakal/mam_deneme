@@ -42,6 +42,14 @@
               <input id="searchQueryInput" name="q" autocomplete="off" data-i18n-placeholder="ph_query" placeholder="Query" />
               <div id="searchSuggestList" class="search-suggest hidden"></div>
             </div>
+            <div class="search-query-wrap">
+              <input id="ocrQueryInput" name="ocrQ" autocomplete="off" data-i18n-placeholder="ph_ocr_query" placeholder="OCR Search" />
+              <div id="ocrSuggestList" class="search-suggest hidden"></div>
+            </div>
+            <div class="search-query-wrap">
+              <input id="subtitleQueryInput" name="subtitleQ" autocomplete="off" data-i18n-placeholder="ph_subtitle_query" placeholder="Subtitle Search" />
+              <div id="subtitleSuggestList" class="search-suggest hidden"></div>
+            </div>
             <input name="tag" data-i18n-placeholder="ph_tag" placeholder="Tag" />
             <input name="type" data-i18n-placeholder="ph_type_simple" placeholder="Type" />
             <select name="status">
@@ -67,15 +75,12 @@
               <option value="Photo" data-i18n="type_photo">Photo</option>
               <option value="Other" data-i18n="type_other">Other</option>
             </select>
-            <input name="owner" data-i18n-placeholder="ph_owner" placeholder="Owner" required />
             <div class="file-picker">
               <input id="mediaFileInput" name="mediaFile" type="file" hidden accept="video/*,audio/*,image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,.csv,.sql,.py,.js,.ts,.tsx,.jsx,.json,.md,.xml,.yaml,.yml,.log,.ini,.cfg,.conf,.sh,.bash,.zsh,.java,.c,.cpp,.h,.hpp,.go,.rs,.rb,.php,.swift,.kt" required />
               <button type="button" id="mediaFileBtn" class="file-picker-btn" data-i18n="choose_file">Dosya Sec</button>
               <span id="mediaFileName" class="file-picker-name"></span>
             </div>
             <input name="tags" data-i18n-placeholder="ph_tags" placeholder="Tags (comma separated)" />
-            <input name="durationSeconds" type="number" min="0" data-i18n-placeholder="ph_duration_auto" placeholder="Duration auto-detected" readonly />
-            <input name="sourcePath" data-i18n-placeholder="ph_source" placeholder="Source path" />
             <textarea name="description" data-i18n-placeholder="ph_description" placeholder="Description"></textarea>
             <button type="submit" data-i18n="btn_upload_create">Upload & Create Asset</button>
             <div id="uploadProgressWrap" class="upload-progress hidden" aria-live="polite">

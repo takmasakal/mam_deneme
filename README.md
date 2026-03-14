@@ -51,10 +51,15 @@ A lightweight Media Asset Management starter app.
 ## Run With Docker Compose
 1. Start everything:
    ```bash
-   docker compose up --build
+   ./scripts/up-fast.sh
    ```
 2. Open:
    `http://localhost:3000`
+
+`up-fast.sh` behavior:
+- Uses Docker layer cache in a multi-stage Dockerfile.
+- Heavy OCR/ASR dependency layer is reused automatically when unchanged.
+- Typical runs rebuild only app code layers (fast).
 
 Compose starts:
 - `postgres` on `localhost:5432` (persistent `pg_data` volume)
@@ -100,7 +105,7 @@ Image build context excludes local media/metadata paths via `.dockerignore` (`up
 ### EN
 1. Start full stack:
    ```bash
-   docker compose up --build -d
+   ./scripts/up-fast.sh
    ```
 2. Open MAM login: `http://localhost:3000`
 3. Open Keycloak admin: `http://localhost:8081`
@@ -116,7 +121,7 @@ Image build context excludes local media/metadata paths via `.dockerignore` (`up
 ### TR
 1. Tüm servisi başlat:
    ```bash
-   docker compose up --build -d
+   ./scripts/up-fast.sh
    ```
 2. MAM giriş sayfasını aç: `http://localhost:3000`
 3. Keycloak admin panelini aç: `http://localhost:8081`

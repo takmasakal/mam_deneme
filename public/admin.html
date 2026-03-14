@@ -26,10 +26,7 @@
       <nav class="admin-tabs" id="adminTabs">
         <button type="button" class="admin-tab active" data-tab="apiHelp" data-i18n="api_help_doc_title">API Help Document</button>
         <button type="button" class="admin-tab" data-tab="systemHealth" data-i18n="system_health">System Health</button>
-        <button type="button" class="admin-tab" data-tab="workflowTracking" data-i18n="workflow_tracking">Workflow Tracking</button>
-        <button type="button" class="admin-tab" data-tab="proxyJobs" data-i18n="proxy_jobs">Proxy Jobs</button>
         <button type="button" class="admin-tab" data-tab="settings" data-i18n="settings">Settings</button>
-        <button type="button" class="admin-tab" data-tab="userSettings" data-i18n="user_settings">User Settings</button>
       </nav>
 
       <section class="admin-panels">
@@ -41,111 +38,229 @@
         <article class="admin-card admin-panel" data-panel="systemHealth">
           <h2 data-i18n="system_health">System Health</h2>
           <div id="ffmpegHealth" class="empty" data-i18n="loading">Loading...</div>
-        </article>
-
-        <article class="admin-card admin-panel" data-panel="workflowTracking">
-          <h2 data-i18n="workflow_tracking">Workflow Tracking</h2>
-          <div id="workflowSummary" class="metrics"></div>
-          <div id="workflowRows" class="rows"></div>
-        </article>
-
-        <article class="admin-card admin-panel" data-panel="proxyJobs">
-          <h2 data-i18n="proxy_jobs">Proxy Jobs</h2>
-          <div class="proxy-job-actions">
-            <label><input type="checkbox" id="includeTrash" /> <span data-i18n="include_trash">Include trash</span></label>
-            <button id="startProxyJobBtn" type="button" data-i18n="start_proxy_job">Start Proxy Job</button>
-          </div>
-          <div id="proxyJobState" class="admin-note"></div>
-          <div class="progress-wrap"><div id="proxyProgress" class="progress-bar"></div></div>
-          <div id="proxyJobErrors" class="rows"></div>
-
-          <div class="proxy-tool-box">
-            <h3 data-i18n="proxy_tool_title">Asset Generation Tool</h3>
-            <div class="proxy-tool-grid">
-              <label class="proxy-tool-asset-field">
-                <span data-i18n="proxy_tool_asset_name">Asset Name</span>
-                <input id="proxyToolAssetName" type="text" autocomplete="off" data-i18n-placeholder="proxy_tool_asset_name_ph" placeholder="Type asset name" />
-                <div id="proxyToolSuggestList" class="proxy-suggest hidden"></div>
-              </label>
-              <label>
-                <span data-i18n="proxy_tool_action">Action</span>
-                <select id="proxyToolAction">
-                  <option value="thumbnail" data-i18n="proxy_tool_action_thumbnail">Generate Thumbnail</option>
-                  <option value="preview" data-i18n="proxy_tool_action_preview">Generate Preview</option>
-                  <option value="proxy" data-i18n="proxy_tool_action_proxy">Generate Proxy</option>
-                </select>
-              </label>
-              <label id="proxyToolTimecodeWrap">
-                <span data-i18n="proxy_tool_timecode">Thumbnail Timecode</span>
-                <input id="proxyToolTimecode" type="text" data-i18n-placeholder="proxy_tool_timecode_ph" placeholder="00:00:12:10 or 12.4" />
-              </label>
-            </div>
-            <div class="proxy-tool-actions">
-              <button id="runProxyToolBtn" type="button" data-i18n="proxy_tool_run">Run Action</button>
-            </div>
-            <div id="proxyToolMsg" class="admin-note"></div>
-          </div>
+          <div id="systemHealthRows" class="rows"></div>
         </article>
 
         <article class="admin-card admin-panel" data-panel="settings">
           <h2 data-i18n="settings">Settings</h2>
-          <form id="settingsForm" class="stack">
-            <label class="toggle-row">
-              <input type="checkbox" name="workflowTrackingEnabled" />
-              <span data-i18n="workflow_tracking_enabled">Workflow tracking enabled</span>
-            </label>
-            <label class="toggle-row">
-              <input type="checkbox" name="autoProxyBackfillOnUpload" />
-              <span data-i18n="auto_proxy_backfill">Auto backfill proxies on upload</span>
-            </label>
-            <label>
-              <span data-i18n="player_mode">Player Mode</span>
-              <select name="playerUiMode" id="playerUiModeSelect">
-                <option value="native" data-i18n="player_mode_native">Native player</option>
-                <option value="custom" data-i18n="player_mode_custom">Custom player</option>
-                <option value="vidstack" data-i18n="player_mode_vidstack">Vidstack</option>
-                <option value="videojs" data-i18n="player_mode_videojs">Open-source (Video.js)</option>
-                <option value="mpegdash" data-i18n="player_mode_mpegdash">MPEG-DASH (dash.js)</option>
-              </select>
-            </label>
-            <label class="toggle-row">
-              <input type="checkbox" name="apiTokenEnabled" />
-              <span data-i18n="api_token_enabled">Require API token (non-SSO API access)</span>
-            </label>
-            <label class="toggle-row">
-              <input type="checkbox" name="oidcBearerEnabled" />
-              <span data-i18n="oidc_bearer_enabled">Accept Keycloak Bearer JWT (preferred for mobile)</span>
-            </label>
-            <label>
-              <span data-i18n="api_token">API Token</span>
-              <input name="apiToken" id="apiTokenInput" data-i18n-placeholder="api_token_placeholder" placeholder="Generate token first" />
-            </label>
-            <label>
-              <span data-i18n="oidc_issuer_url">OIDC Issuer URL</span>
-              <input name="oidcIssuerUrl" id="oidcIssuerUrlInput" data-i18n-placeholder="oidc_issuer_url_ph" placeholder="http://keycloak:8080/realms/mam" />
-            </label>
-            <label>
-              <span data-i18n="oidc_jwks_url">OIDC JWKS URL</span>
-              <input name="oidcJwksUrl" id="oidcJwksUrlInput" data-i18n-placeholder="oidc_jwks_url_ph" placeholder="http://keycloak:8080/realms/mam/protocol/openid-connect/certs" />
-            </label>
-            <label>
-              <span data-i18n="oidc_audience">OIDC Audience (optional, comma separated)</span>
-              <input name="oidcAudience" id="oidcAudienceInput" data-i18n-placeholder="oidc_audience_ph" placeholder="mam-web,account" />
-            </label>
-            <div class="token-actions">
-              <button id="rotateApiTokenBtn" type="button" data-i18n="rotate_token">Rotate Token</button>
-              <button id="copyApiTokenBtn" type="button" data-i18n="copy_token">Copy Token</button>
-            </div>
-            <div class="api-help" id="apiHelpBox"></div>
-            <button type="submit" data-i18n="save_settings">Save Settings</button>
-          </form>
-          <div id="settingsMsg" class="admin-note"></div>
-        </article>
+          <nav class="settings-subtabs" id="settingsSubtabs">
+            <button type="button" class="settings-subtab active" data-settings-tab="general" data-i18n="settings_sub_general">General</button>
+            <button type="button" class="settings-subtab" data-settings-tab="workflow" data-i18n="settings_sub_workflow">Workflow</button>
+            <button type="button" class="settings-subtab" data-settings-tab="proxy" data-i18n="settings_sub_proxy">Proxy</button>
+            <button type="button" class="settings-subtab" data-settings-tab="ocr" data-i18n="settings_sub_ocr">OCR</button>
+            <button type="button" class="settings-subtab" data-settings-tab="subtitle" data-i18n="settings_sub_subtitle">Subtitle</button>
+            <button type="button" class="settings-subtab" data-settings-tab="users" data-i18n="settings_sub_users">Users</button>
+          </nav>
 
-        <article class="admin-card admin-panel" data-panel="userSettings">
-          <h2 data-i18n="user_settings">User Settings</h2>
-          <div id="userPermissionsRows" class="rows"></div>
-          <div id="userPermissionsMsg" class="admin-note"></div>
+          <section class="settings-subpanel active" data-settings-panel="general">
+            <form id="settingsForm" class="stack">
+              <fieldset class="settings-group">
+                <legend data-i18n="settings_group_workflow">Workflow & Player</legend>
+                <label class="toggle-row">
+                  <input type="checkbox" name="workflowTrackingEnabled" />
+                  <span data-i18n="workflow_tracking_enabled">Workflow tracking enabled</span>
+                </label>
+                <label class="toggle-row">
+                  <input type="checkbox" name="autoProxyBackfillOnUpload" />
+                  <span data-i18n="auto_proxy_backfill">Auto backfill proxies on upload</span>
+                </label>
+                <label>
+                  <span data-i18n="player_mode">Player Mode</span>
+                  <select name="playerUiMode" id="playerUiModeSelect">
+                    <option value="native" data-i18n="player_mode_native">Native player</option>
+                    <option value="custom" data-i18n="player_mode_custom">Custom player</option>
+                    <option value="vidstack" data-i18n="player_mode_vidstack">Vidstack</option>
+                    <option value="videojs" data-i18n="player_mode_videojs">Open-source (Video.js)</option>
+                    <option value="mpegdash" data-i18n="player_mode_mpegdash">MPEG-DASH (dash.js)</option>
+                  </select>
+                </label>
+              </fieldset>
+
+              <fieldset class="settings-group">
+                <legend data-i18n="settings_group_security">Security</legend>
+                <label class="toggle-row">
+                  <input type="checkbox" name="apiTokenEnabled" />
+                  <span data-i18n="api_token_enabled">Require API token (non-SSO API access)</span>
+                </label>
+                <label class="toggle-row">
+                  <input type="checkbox" name="oidcBearerEnabled" />
+                  <span data-i18n="oidc_bearer_enabled">Accept Keycloak Bearer JWT (preferred for mobile)</span>
+                </label>
+              </fieldset>
+
+              <fieldset class="settings-group">
+                <legend data-i18n="settings_group_identity">Token & OIDC</legend>
+                <label>
+                  <span data-i18n="api_token">API Token</span>
+                  <input name="apiToken" id="apiTokenInput" data-i18n-placeholder="api_token_placeholder" placeholder="Generate token first" />
+                </label>
+                <label>
+                  <span data-i18n="oidc_issuer_url">OIDC Issuer URL</span>
+                  <input name="oidcIssuerUrl" id="oidcIssuerUrlInput" data-i18n-placeholder="oidc_issuer_url_ph" placeholder="http://keycloak:8080/realms/mam" />
+                </label>
+                <label>
+                  <span data-i18n="oidc_jwks_url">OIDC JWKS URL</span>
+                  <input name="oidcJwksUrl" id="oidcJwksUrlInput" data-i18n-placeholder="oidc_jwks_url_ph" placeholder="http://keycloak:8080/realms/mam/protocol/openid-connect/certs" />
+                </label>
+                <label>
+                  <span data-i18n="oidc_audience">OIDC Audience (optional, comma separated)</span>
+                  <input name="oidcAudience" id="oidcAudienceInput" data-i18n-placeholder="oidc_audience_ph" placeholder="mam-web,account" />
+                </label>
+                <div class="token-actions">
+                  <button id="rotateApiTokenBtn" type="button" data-i18n="rotate_token">Rotate Token</button>
+                  <button id="copyApiTokenBtn" type="button" data-i18n="copy_token">Copy Token</button>
+                </div>
+              </fieldset>
+
+              <fieldset class="settings-group">
+                <legend data-i18n="settings_group_docs">Documentation</legend>
+                <div class="api-help" id="apiHelpBox"></div>
+              </fieldset>
+
+              <div class="settings-submit-row">
+                <button type="submit" data-i18n="save_settings">Save Settings</button>
+              </div>
+            </form>
+            <div id="settingsMsg" class="admin-note"></div>
+          </section>
+
+          <section class="settings-subpanel" data-settings-panel="workflow">
+            <h3 data-i18n="workflow_tracking">Workflow Tracking</h3>
+            <div id="workflowSummary" class="metrics"></div>
+            <div id="workflowRows" class="rows"></div>
+          </section>
+
+          <section class="settings-subpanel" data-settings-panel="proxy">
+            <h3 data-i18n="proxy_jobs">Proxy Jobs</h3>
+            <div class="proxy-job-actions">
+              <label><input type="checkbox" id="includeTrash" /> <span data-i18n="include_trash">Include trash</span></label>
+              <button id="startProxyJobBtn" type="button" data-i18n="start_proxy_job">Start Proxy Job</button>
+            </div>
+            <div id="proxyJobState" class="admin-note"></div>
+            <div class="progress-wrap"><div id="proxyProgress" class="progress-bar"></div></div>
+            <div id="proxyJobErrors" class="rows"></div>
+
+            <div class="proxy-tool-box">
+              <h3 data-i18n="proxy_tool_title">Asset Generation Tool</h3>
+              <div class="proxy-tool-grid">
+                <label class="proxy-tool-asset-field">
+                  <span data-i18n="proxy_tool_asset_name">Asset Name</span>
+                  <input id="proxyToolAssetName" type="text" autocomplete="off" data-i18n-placeholder="proxy_tool_asset_name_ph" placeholder="Type asset name" />
+                  <div id="proxyToolSuggestList" class="proxy-suggest hidden"></div>
+                </label>
+                <label>
+                  <span data-i18n="proxy_tool_action">Action</span>
+                  <select id="proxyToolAction">
+                    <option value="thumbnail" data-i18n="proxy_tool_action_thumbnail">Generate Thumbnail</option>
+                    <option value="preview" data-i18n="proxy_tool_action_preview">Generate Preview</option>
+                    <option value="proxy" data-i18n="proxy_tool_action_proxy">Generate Proxy</option>
+                    <option value="replace_asset" data-i18n="proxy_tool_action_replace_asset">Replace Asset</option>
+                  </select>
+                </label>
+                <label id="proxyToolTimecodeWrap">
+                  <span data-i18n="proxy_tool_timecode">Thumbnail Timecode</span>
+                  <input id="proxyToolTimecode" type="text" data-i18n-placeholder="proxy_tool_timecode_ph" placeholder="00:00:12:10 or 12.4" />
+                </label>
+                <label id="proxyToolReplaceFileWrap" class="hidden">
+                  <span data-i18n="proxy_tool_replace_file">New Asset File</span>
+                  <input id="proxyToolReplaceFile" type="file" />
+                </label>
+              </div>
+              <div class="proxy-tool-actions">
+                <button id="runProxyToolBtn" type="button" data-i18n="proxy_tool_run">Run Action</button>
+              </div>
+              <div id="proxyToolMsg" class="admin-note"></div>
+            </div>
+          </section>
+
+          <section class="settings-subpanel" data-settings-panel="ocr">
+            <h3 data-i18n="ocr_defaults">OCR Defaults</h3>
+            <form id="ocrSettingsForm" class="stack">
+              <fieldset class="settings-group">
+                <legend data-i18n="ocr_filters">OCR Filters</legend>
+                <label class="toggle-row">
+                  <input id="ocrDefaultAdvancedMode" type="checkbox" />
+                  <span data-i18n="ocr_default_advanced_mode">Advanced OCR mode default</span>
+                </label>
+                <label class="toggle-row">
+                  <input id="ocrDefaultTurkishAiCorrect" type="checkbox" />
+                  <span data-i18n="ocr_default_turkish_ai_correct">Turkish offline correction default</span>
+                </label>
+                <label class="toggle-row">
+                  <input id="ocrDefaultEnableBlurFilter" type="checkbox" />
+                  <span data-i18n="ocr_default_blur_filter">Blur filter default</span>
+                </label>
+                <label class="toggle-row">
+                  <input id="ocrDefaultEnableRegionMode" type="checkbox" />
+                  <span data-i18n="ocr_default_region_mode">Ticker region mode default</span>
+                </label>
+                <label class="toggle-row">
+                  <input id="ocrDefaultIgnoreStaticOverlays" type="checkbox" />
+                  <span data-i18n="ocr_default_static_overlay_filter">Static overlay filter default</span>
+                </label>
+              </fieldset>
+              <div class="settings-submit-row">
+                <button type="submit" data-i18n="save_settings">Save Settings</button>
+              </div>
+            </form>
+            <div id="ocrSettingsMsg" class="admin-note"></div>
+
+            <h3 data-i18n="ocr_records">OCR Records</h3>
+            <div class="proxy-tool-grid records-toolbar">
+              <label>
+                <span data-i18n="ocr_search">Search OCR</span>
+                <input id="ocrAdminSearchInput" type="text" data-i18n-placeholder="ocr_search_ph" placeholder="asset, label, file..." />
+              </label>
+              <div class="proxy-tool-actions ocr-search-actions">
+                <button id="runOcrAdminSearchBtn" type="button" data-i18n="ocr_search_run">Run Search</button>
+              </div>
+              <label class="toggle-row">
+                <input id="ocrDeleteFileCheck" type="checkbox" />
+                <span data-i18n="ocr_delete_file">Delete OCR file from disk too</span>
+              </label>
+            </div>
+            <div id="ocrRecordsRows" class="rows"></div>
+            <div id="ocrRecordsMsg" class="admin-note"></div>
+          </section>
+
+          <section class="settings-subpanel" data-settings-panel="subtitle">
+            <h3 data-i18n="subtitle_records">Subtitle Records</h3>
+            <div class="proxy-tool-grid">
+              <label>
+                <span data-i18n="subtitle_search_admin">Search Subtitle</span>
+                <input id="subtitleAdminSearchInput" type="text" data-i18n-placeholder="subtitle_search_admin_ph" placeholder="asset, label, language..." />
+              </label>
+              <label class="toggle-row">
+                <input id="subtitleDeleteFileCheck" type="checkbox" />
+                <span data-i18n="subtitle_delete_file">Delete subtitle file from disk too</span>
+              </label>
+            </div>
+            <div id="subtitleRecordsRows" class="rows"></div>
+            <div id="subtitleRecordsMsg" class="admin-note"></div>
+
+            <h3 data-i18n="combined_search">Combined Subtitle + OCR Search</h3>
+            <div class="proxy-tool-grid">
+              <label>
+                <span data-i18n="combined_search_query">Search Query</span>
+                <input id="combinedSearchInput" type="text" data-i18n-placeholder="combined_search_query_ph" placeholder="Type query..." />
+              </label>
+              <label>
+                <span data-i18n="combined_search_limit">Limit</span>
+                <input id="combinedSearchLimit" type="number" min="10" max="500" step="10" value="120" />
+              </label>
+            </div>
+            <div class="proxy-tool-actions">
+              <button id="runCombinedSearchBtn" type="button" data-i18n="combined_search_run">Run Search</button>
+            </div>
+            <div id="combinedSearchRows" class="rows"></div>
+            <div id="combinedSearchMsg" class="admin-note"></div>
+          </section>
+
+          <section class="settings-subpanel" data-settings-panel="users">
+            <h3 data-i18n="user_settings">User Settings</h3>
+            <div id="userPermissionsRows" class="rows"></div>
+            <div id="userPermissionsMsg" class="admin-note"></div>
+          </section>
         </article>
       </section>
     </main>

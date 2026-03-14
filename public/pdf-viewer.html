@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Doküman Önizleme</title>
+  <title>Dokuman Onizleme</title>
   <style>
     :root {
       --bg: #0f1218;
@@ -13,12 +13,9 @@
       --text: #dde6f7;
       --muted: #a6b3cc;
       --accent: #59c2ff;
-      --mark: #ffe58a;
-      --mark-active: #8de1a8;
     }
 
-    html,
-    body {
+    html, body {
       margin: 0;
       padding: 0;
       width: 100%;
@@ -93,58 +90,71 @@
     }
 
     .viewer-wrap {
+      position: relative;
       height: calc(100% - 48px);
-      overflow: auto;
+      overflow: visible;
       padding: 10px;
       box-sizing: border-box;
       background: #141a23;
     }
 
-    .pdf-stage {
-      position: relative;
-      margin: 0 auto;
-      background: #fff;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-      width: fit-content;
-      max-width: 100%;
-    }
-
-    #pdfCanvas {
-      display: block;
-      max-width: 100%;
-      height: auto;
-    }
-
-    #pdfTextLayer {
+    .pdf-action-bar {
       position: absolute;
-      inset: 0;
-      pointer-events: none;
-      overflow: hidden;
-      color: transparent;
-      line-height: 1;
-      user-select: text;
-      -webkit-user-select: text;
-    }
-
-    #pdfTextLayer span {
-      position: absolute;
-      transform-origin: 0 0;
-      white-space: pre;
-      pointer-events: auto;
-      color: transparent;
-    }
-
-    #pdfTextLayer mark {
-      background: rgba(255, 229, 122, 0.36);
-      color: transparent;
-      border-radius: 2px;
+      bottom: -28px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
       padding: 0;
-      box-shadow: inset 0 0 0 1px rgba(170, 130, 20, 0.15);
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      backdrop-filter: none;
+      box-shadow: none;
     }
 
-    #pdfTextLayer mark.active {
-      background: rgba(141, 225, 168, 0.34);
-      box-shadow: inset 0 0 0 1px rgba(40, 120, 70, 0.35);
+    .pdf-action-bar.hidden {
+      display: none !important;
+    }
+
+    .pdf-action-bar button {
+      height: 30px;
+      border: 1px solid #a31414;
+      border-radius: 7px;
+      background: #cf1f1f;
+      color: #ffffff;
+      padding: 0 10px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .pdf-action-bar button:hover {
+      border-color: #7f0f0f;
+      background: #b51818;
+      color: #ffffff;
+    }
+
+    .pdf-action-status {
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+      max-width: 220px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #embedPdfContainer,
+    #pdfViewerContainer {
+      position: absolute;
+      inset: 10px;
+      overflow: auto;
+      background: #1a202b;
+      border: 1px solid #2f3b50;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
     }
 
     #textPreview {
@@ -183,15 +193,14 @@
       display: none;
     }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 </head>
 <body>
   <div id="topBar" class="topbar">
-    <input id="searchInput" type="text" placeholder="Dokümanda ara" />
+    <input id="searchInput" type="text" placeholder="Dokumanda ara" />
     <button id="searchBtn" type="button">Ara</button>
     <button id="searchPrevBtn" type="button">&lt;</button>
     <button id="searchNextBtn" type="button">&gt;</button>
-    <label><input id="caseCheck" type="checkbox" /> Büyük/küçük</label>
+    <label><input id="caseCheck" type="checkbox" /> Buyuk/kucuk</label>
     <button id="zoomOutBtn" type="button">-</button>
     <button id="zoomInBtn" type="button">+</button>
     <button id="pagePrevBtn" type="button">◀</button>
@@ -202,9 +211,9 @@
   </div>
 
   <div class="viewer-wrap">
-    <div id="pdfContainer" class="pdf-stage" style="display:none;">
-      <canvas id="pdfCanvas"></canvas>
-      <div id="pdfTextLayer"></div>
+    <div id="embedPdfContainer" style="display:none;"></div>
+    <div id="pdfViewerContainer" style="display:none;">
+      <div id="pdfViewer" class="pdfViewer"></div>
     </div>
     <pre id="textPreview"></pre>
     <div id="errorBox"></div>
@@ -216,6 +225,8 @@
       const file = String(params.get('file') || '');
       const assetId = String(params.get('assetId') || '');
       const isPdf = file.toLowerCase().endsWith('.pdf');
+      const uiLang = String(params.get('lang') || 'en').trim().toLowerCase() === 'tr' ? 'tr' : 'en';
+      const requestedPdfAdvanced = String(params.get('pdfAdvanced') || '').trim() === '1';
 
       const topBar = document.getElementById('topBar');
       const searchInput = document.getElementById('searchInput');
@@ -230,20 +241,46 @@
       const zoomOutBtn = document.getElementById('zoomOutBtn');
       const zoomInBtn = document.getElementById('zoomInBtn');
       const searchMeta = document.getElementById('searchMeta');
-
-      const pdfContainer = document.getElementById('pdfContainer');
-      const canvas = document.getElementById('pdfCanvas');
-      const textLayer = document.getElementById('pdfTextLayer');
+      const embedPdfContainer = document.getElementById('embedPdfContainer');
+      const viewerContainer = document.getElementById('pdfViewerContainer');
+      const viewer = document.getElementById('pdfViewer');
       const textPreview = document.getElementById('textPreview');
       const errorBox = document.getElementById('errorBox');
-      const ctx = canvas.getContext('2d');
-
-      if (!file || !file.startsWith('/uploads/')) {
-        topBar.style.display = 'none';
-        errorBox.style.display = 'block';
-        errorBox.innerHTML = '<strong>Geçersiz dosya yolu.</strong><br>Sadece <code>/uploads/</code> altındaki dosyalar önizlenebilir.';
-        return;
-      }
+      const NON_ADVANCED_DISABLED_CATEGORIES = [
+        'annotation',
+        'annotation-markup',
+        'annotation-highlight',
+        'annotation-strikeout',
+        'annotation-underline',
+        'annotation-squiggly',
+        'annotation-text',
+        'annotation-insert-text',
+        'annotation-replace-text',
+        'annotation-comment',
+        'annotation-comment-tool',
+        'annotation-style',
+        'annotation-link',
+        'annotation-shape',
+        'annotation-ink',
+        'annotation-stamp',
+        'annotation-delete',
+        'redaction',
+        'redaction-text',
+        'redaction-delete',
+        'redaction-commit',
+        'panel-comment',
+        'panel-redaction',
+        'panel-annotation-style',
+        'selection-copy',
+        'document-export',
+        'document-capture',
+        'document-protect',
+        'attachment'
+      ];
+      const ALWAYS_DISABLED_CATEGORIES = [
+        'document-close'
+      ];
+      let cachedUserProfile = null;
 
       const escapeHtml = (v) => String(v || '')
         .replace(/&/g, '&amp;')
@@ -253,9 +290,811 @@
         .replace(/'/g, '&#39;');
       const escapeRegExp = (v) => String(v || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+      const EMBEDPDF_TR_REPLACEMENTS = [
+        ['Search in document', 'Belgede ara'],
+        ['Search in PDF', 'PDF içinde ara'],
+        ['Search', 'Ara'],
+        ['Find', 'Bul'],
+        ['Find next', 'Sonrakini bul'],
+        ['Find previous', 'Öncekini bul'],
+        ['Next', 'Sonraki'],
+        ['Previous', 'Önceki'],
+        ['Thumbnails', 'Küçük Görseller'],
+        ['Thumbnail', 'Küçük Görsel'],
+        ['Outline', 'İçindekiler'],
+        ['Bookmarks', 'Yer İmleri'],
+        ['Bookmark', 'Yer İmi'],
+        ['Print', 'Yazdır'],
+        ['Download', 'İndir'],
+        ['Open', 'Aç'],
+        ['Save', 'Kaydet'],
+        ['Close', 'Kapat'],
+        ['Cancel', 'İptal'],
+        ['Zoom In', 'Yakınlaştır'],
+        ['Zoom Out', 'Uzaklaştır'],
+        ['Zoom', 'Yakınlık'],
+        ['Fit to width', 'Ene sığdır'],
+        ['Fit to page', 'Sayfaya sığdır'],
+        ['Rotate clockwise', 'Saat yönünde döndür'],
+        ['Rotate counterclockwise', 'Saat yönünün tersine döndür'],
+        ['Rotate', 'Döndür'],
+        ['Page', 'Sayfa'],
+        ['Pages', 'Sayfalar'],
+        ['Go to page', 'Sayfaya git'],
+        ['First page', 'İlk sayfa'],
+        ['Last page', 'Son sayfa'],
+        ['Properties', 'Özellikler'],
+        ['Language', 'Dil'],
+        ['Settings', 'Ayarlar'],
+        ['Protect document', 'Belge koru'],
+        ['None', 'Yok'],
+        ['Comment', 'Yorum'],
+        ['Comments', 'Yorumlar'],
+        ['Highlight', 'Vurgu'],
+        ['Underline', 'Altı Çizili'],
+        ['Strikeout', 'Üstü Çizili'],
+        ['Draw', 'Çiz'],
+        ['Color', 'Renk'],
+        ['Opacity', 'Saydamlık'],
+        ['Delete', 'Sil'],
+        ['Undo', 'Geri al'],
+        ['Redo', 'Yinele'],
+        ['Tools', 'Araçlar'],
+        ['Document', 'Belge'],
+        ['Menu', 'Menü'],
+        ['Sidebar', 'Yan panel'],
+        ['Show sidebar', 'Yan paneli göster'],
+        ['Hide sidebar', 'Yan paneli gizle'],
+        ['Open search', 'Aramayı aç'],
+        ['Search panel', 'Arama paneli'],
+        ['Comments panel', 'Yorum paneli'],
+        ['Redaction panel', 'Karartma paneli'],
+        ['Selection', 'Seçim'],
+        ['Annotate', 'Not Ekle'],
+        ['Shape', 'Şekil'],
+        ['Shapes', 'Şekiller'],
+        ['Rectangle', 'Dikdörtgen'],
+        ['Circle', 'Daire'],
+        ['Line', 'Çizgi'],
+        ['Arrow', 'Ok'],
+        ['Ellipse', 'Elips'],
+        ['Triangle', 'Üçgen'],
+        ['Polygon', 'Çokgen'],
+        ['Polyline', 'Çoklu çizgi'],
+        ['Freehand', 'Serbest çizim'],
+        ['Pencil', 'Kalem'],
+        ['Pen', 'Kalem'],
+        ['Marker', 'İşaretleyici'],
+        ['Redact', 'Karart'],
+        ['Redaction', 'Karartma'],
+        ['Redact all', 'Tümünü karart'],
+        ['Redact All', 'Tümünü karart'],
+        ['Clear all', 'Tümünü temizle'],
+        ['Clear All', 'Tümünü temizle'],
+        ['Clear all redactions', 'Tüm karartmaları temizle'],
+        ['Clear All Redactions', 'Tüm karartmaları temizle'],
+        ['Redaction styles', 'Karartma stilleri'],
+        ['Redact styles', 'Karartma stilleri'],
+        ['Redaction style', 'Karartma stili'],
+        ['Fill color', 'Dolgu rengi'],
+        ['Font size', 'Yazı boyutu'],
+        ['Font color', 'Yazı rengi'],
+        ['Text alignment', 'Metin hizalama'],
+        ['t4ext alignment', 'Metin hizalama'],
+        ['Vertical alignment', 'Dikey hizalama'],
+        ['Rotation', 'Döndürme'],
+        ['More tools', 'Daha fazla araç'],
+        ['More Options', 'Daha fazla seçenek'],
+        ['No pending redactions', 'Bekleyen karartma yok'],
+        ['Karartmas', 'Karartmalar'],
+        ['karartmas', 'karartmalar'],
+        ['Annotation style', 'Not stili'],
+        ['Insert text', 'Metin ekle'],
+        ['Replace text', 'Metni değiştir'],
+        ['Select an annotation to see styles', 'Stilleri görmek için bir not seçin'],
+        ['Select an annotation to see style', 'Stili görmek için bir not seçin'],
+        ['Add annotation to be able to comment on them', 'Yorum yapabilmek için not ekleyin'],
+        ['Add annotation to be able to comment on it', 'Yorum yapabilmek için not ekleyin'],
+        ['Delete selected annotation', 'Seçili notu sil'],
+        ['Apply redaction', 'Karartmayı uygula'],
+        ['View controls', 'Görünüm kontrolleri'],
+        ['View kontrols', 'Görünüm kontrolleri'],
+        ['Zoom controls', 'Yakınlık kontrolleri'],
+        ['Zoom kontrols', 'Yakınlık kontrolleri'],
+        ['No outline available', 'İçindekiler mevcut değil'],
+        ['No outlines available', 'İçindekiler mevcut değil'],
+        ["This document doesn't contain bookmarks", 'Bu belge yer imleri içermiyor'],
+        ['This document does not contain bookmarks', 'Bu belge yer imleri içermiyor'],
+        ['Blank document', 'Boş belge'],
+        ['Empty document', 'Boş belge'],
+        ['Require password to open', 'Açmak için parola iste'],
+        ['Users must enter password to view this document', 'Kullanıcılar bu belgeyi görüntülemek için parola girmelidir'],
+        ['User must enter password to view this document', 'Kullanıcı bu belgeyi görüntülemek için parola girmelidir'],
+        ['Users must enter a password to view this document.', 'Kullanıcılar bu belgeyi görüntülemek için parola girmelidir.'],
+        ['Users must enter a password to Görünüm this Belge.', 'Kullanıcılar bu belgeyi görüntülemek için parola girmelidir.'],
+        ['Users must enter a password to view this Belge.', 'Kullanıcılar bu belgeyi görüntülemek için parola girmelidir.'],
+        ['Users must enter a password to Görünüm this document.', 'Kullanıcılar bu belgeyi görüntülemek için parola girmelidir.'],
+        ['Document password', 'Belge parolası'],
+        ['Owner password', 'Sahip parolası'],
+        ['Owner Password', 'Sahip parolası'],
+        ['Enter owner password', 'Sahip parolasını girin'],
+        ['Confirm Owner Password', 'Sahip parolasını doğrulayın'],
+        ['Confirm owner password', 'Sahip parolasını doğrulayın'],
+        ['User password', 'Kullanıcı parolası'],
+        ['Confirm password', 'Parolayı doğrula'],
+        ['Enter password', 'Parolayı girin'],
+        ['Password', 'Parola'],
+        ['Passwords do not match', 'Parolalar eşleşmiyor'],
+        ['Invalid password', 'Geçersiz parola'],
+        ['Incorrect password', 'Hatalı parola'],
+        ['Encryption', 'Şifreleme'],
+        ['Encryption level', 'Şifreleme seviyesi'],
+        ['Encrypt document', 'Belgeyi şifrele'],
+        ['Encrypt all contents', 'Tüm içeriği şifrele'],
+        ['Restrict permissions', 'İzinleri kısıtla'],
+        ['Permissions', 'İzinler'],
+        ['Permission', 'İzin'],
+        ['Allowed', 'İzin verildi'],
+        ['Allowed actions', 'İzin verilen işlemler'],
+        ['Tümüowed actions', 'İzin verilen işlemler'],
+        ['Not allowed', 'İzin verilmedi'],
+        ['Not permitted', 'İzin yok'],
+        ['Limit what user can do with this document', 'Kullanıcının bu belgede yapabileceklerini sınırla'],
+        ['Limit what users can do with this document', 'Kullanıcıların bu belgede yapabileceklerini sınırla'],
+        ['Allowed changes', 'İzin verilen değişiklikler'],
+        ['No changes allowed', 'Değişikliğe izin yok'],
+        ['Printing', 'Yazdırma'],
+        ['Allow printing', 'Yazdırmaya izin ver'],
+        ['High resolution printing', 'Yüksek çözünürlüklü yazdırma'],
+        ['Copying', 'Kopyalama'],
+        ['Allow copying', 'Kopyalamaya izin ver'],
+        ['Content copying', 'İçerik kopyalama'],
+        ['Content copying for accessibility', 'Erişilebilirlik için içerik kopyalama'],
+        ['Accessibility', 'Erişilebilirlik'],
+        ['Modify', 'Değiştir'],
+        ['Modification', 'Değiştirme'],
+        ['Allow modifications', 'Değişikliğe izin ver'],
+        ['Modify annotations', 'Notları değiştir'],
+        ['Commenting', 'Yorumlama'],
+        ['Form filling', 'Form doldurma'],
+        ['Fill forms', 'Formları doldur'],
+        ['Fill forms & sign', 'Form doldur ve imzala'],
+        ['Signing', 'İmzalama'],
+        ['Sign', 'İmzala'],
+        ['Document assembly', 'Belge birleştirme'],
+        ['Assemble document', 'Belgeyi birleştir'],
+        ['Manage pages', 'Sayfaları yönet'],
+        ['Assemble & extract pages', 'Sayfaları birleştir ve çıkar'],
+        ['Assemble & extract Sayfalar', 'Sayfaları birleştir ve çıkar'],
+        ['Page extraction', 'Sayfa çıkarma'],
+        ['Print high quality', 'Yüksek kalitede yazdır'],
+        ['Copy content', 'İçeriği kopyala'],
+        ['Extract for accessibility', 'Erişilebilirlik için çıkar'],
+        ['Modify content', 'İçeriği değiştir'],
+        ['Add/modify annotations & comments', 'Not ekle/değiştir ve yorum yap'],
+        ['Add/modify annotations & Yorumlar', 'Not ekle/değiştir ve yorum yap'],
+        ['Select at least one protection option to apply', 'Uygulamak için en az bir koruma seçeneği seçin'],
+        ['Apply protection', 'Korumayı uygula'],
+        ['Users who open with the document password will have restricted permissions.', 'Belge parolasıyla açan kullanıcılar kısıtlı izinlere sahip olur.'],
+        ['Users who Aç with the Belge parolası will have restricted permissions.', 'Belge parolasıyla açan kullanıcılar kısıtlı izinlere sahip olur.'],
+        ['Use the owner password to unlock full access.', 'Tam erişimi açmak için sahip parolasını kullanın.'],
+        ['Copy selection', 'Seçimi kopyala'],
+        ['Add highlight', 'Vurgu ekle'],
+        ['Add underline', 'Altını çiz'],
+        ['Add strikeout', 'Üstünü çiz'],
+        ['Add link', 'Bağlantı ekle'],
+        ['Security', 'Güvenlik'],
+        ['Case sensitive', 'Büyük/küçük duyarlı'],
+        ['Whole word', 'Tam kelime'],
+        ['Whole words', 'Tam kelimeler'],
+        ['Whole words only', 'Yalnızca tam kelime'],
+        ['Match whole word', 'Tam kelime eşleştir'],
+        ['View', 'Görünüm'],
+        ['Screenshot', 'Ekran görüntüsü'],
+        ['Take screenshot', 'Ekran görüntüsü al'],
+        ['Attachments', 'Ekler'],
+        ['Fullscreen', 'Tam ekran'],
+        ['Protect', 'Koru'],
+        ['View permissions', 'İzinleri görüntüle'],
+        ['Spread mode', 'Yayılım modu'],
+        ['Scroll layout', 'Kaydırma düzeni'],
+        ['Page rotation', 'Sayfa döndürme'],
+        ['Print settings', 'Yazdırma ayarları'],
+        ['Pages to print', 'Yazdırılacak sayfalar'],
+        ['All pages', 'Tüm sayfalar'],
+        ['Current page', 'Geçerli sayfa'],
+        ['Specify pages', 'Sayfa aralığı belirt'],
+        ['Include annotations', 'Notları dahil et'],
+        ['No results found', 'Sonuç bulunamadı'],
+        ['result found', 'sonuç bulundu'],
+        ['results found', 'sonuç bulundu'],
+        ['Export', 'Dışa aktar'],
+        ['No documents open', 'Açık belge yok'],
+        ['No Belges open', 'Açık belge yok'],
+        ['Open a PDF document to get started.', 'Başlamak için bir PDF belge açın.'],
+        ['Open a PDF Belge to get started.', 'Başlamak için bir PDF belge açın.'],
+        ['You can view multiple documents using tabs.', 'Sekmeleri kullanarak birden çok belge görüntüleyebilirsiniz.'],
+        ['You can Görünüm multiple Belges using tabs.', 'Sekmeleri kullanarak birden çok belge görüntüleyebilirsiniz.']
+      ];
+
+      const applyEmbedPdfTurkishUiPatch = (root) => {
+        if (uiLang !== 'tr' || !root) return () => {};
+        const escapeForRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const withProtectedPlaceholders = (input, fn) => {
+          const raw = String(input || '');
+          const placeholders = [];
+          const tokenized = raw.replace(/\{[^{}]+\}/g, (m) => {
+            const idx = placeholders.length;
+            placeholders.push(m);
+            return `__PH_${idx}__`;
+          });
+          const translated = fn(tokenized);
+          return translated.replace(/__PH_(\d+)__/g, (_m, i) => placeholders[Number(i)] || _m);
+        };
+        const patchText = (value) => {
+          let out = String(value || '');
+          if (!out.trim()) return out;
+          out = withProtectedPlaceholders(out, (safeText) => {
+            let next = safeText;
+            EMBEDPDF_TR_REPLACEMENTS
+              .slice()
+              .sort((a, b) => b[0].length - a[0].length)
+              .forEach(([en, tr]) => {
+                next = next.replace(new RegExp(escapeForRegex(en), 'gi'), tr);
+              });
+            return next;
+          });
+          return out;
+        };
+        const patchNode = (node) => {
+          if (!node) return;
+          if (node.nodeType === Node.TEXT_NODE) {
+            const next = patchText(node.nodeValue || '');
+            if (next !== node.nodeValue) node.nodeValue = next;
+            return;
+          }
+          if (!(node instanceof Element)) return;
+          if (node.shadowRoot) patchNode(node.shadowRoot);
+          if (node.childNodes?.length) node.childNodes.forEach((child) => patchNode(child));
+          ['title', 'aria-label', 'placeholder'].forEach((attr) => {
+            if (!node.hasAttribute(attr)) return;
+            const raw = node.getAttribute(attr) || '';
+            const next = patchText(raw);
+            if (next !== raw) node.setAttribute(attr, next);
+          });
+        };
+        const observers = [];
+        const observedRoots = new Set();
+        const attachObserver = (targetRoot) => {
+          if (!targetRoot || observedRoots.has(targetRoot)) return;
+          observedRoots.add(targetRoot);
+          const observer = new MutationObserver((entries) => {
+            entries.forEach((entry) => {
+              if (entry.type === 'characterData') {
+                patchNode(entry.target);
+                return;
+              }
+              entry.addedNodes?.forEach((added) => patchNode(added));
+              if (entry.target) patchNode(entry.target);
+            });
+          });
+          observer.observe(targetRoot, {
+            subtree: true,
+            childList: true,
+            characterData: true,
+            attributes: true,
+            attributeFilter: ['title', 'aria-label', 'placeholder']
+          });
+          observers.push(observer);
+        };
+        const collectShadowRoots = (baseRoot) => {
+          if (!baseRoot || !baseRoot.querySelectorAll) return;
+          baseRoot.querySelectorAll('*').forEach((el) => {
+            if (el.shadowRoot) {
+              patchNode(el.shadowRoot);
+              attachObserver(el.shadowRoot);
+              collectShadowRoots(el.shadowRoot);
+            }
+          });
+        };
+        patchNode(root);
+        attachObserver(root);
+        collectShadowRoots(root);
+        const rootObserver = new MutationObserver((entries) => {
+          entries.forEach((entry) => {
+            entry.addedNodes?.forEach((added) => patchNode(added));
+            if (entry.target) patchNode(entry.target);
+            collectShadowRoots(root);
+          });
+        });
+        rootObserver.observe(root, {
+          subtree: true,
+          childList: true,
+          characterData: true,
+          attributes: true,
+          attributeFilter: ['title', 'aria-label', 'placeholder']
+        });
+        observers.push(rootObserver);
+        return () => observers.forEach((obs) => obs.disconnect());
+      };
+
+      const buildTurkishLocaleFromEnglish = (enLocale) => {
+        const escapeForRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const withProtectedPlaceholders = (input, fn) => {
+          const raw = String(input || '');
+          const placeholders = [];
+          const tokenized = raw.replace(/\{[^{}]+\}/g, (m) => {
+            const idx = placeholders.length;
+            placeholders.push(m);
+            return `__PH_${idx}__`;
+          });
+          const translated = fn(tokenized);
+          return translated.replace(/__PH_(\d+)__/g, (_m, i) => placeholders[Number(i)] || _m);
+        };
+        const translateString = (raw) => {
+          let out = String(raw || '');
+          out = withProtectedPlaceholders(out, (safeText) => {
+            let next = safeText;
+            EMBEDPDF_TR_REPLACEMENTS
+              .slice()
+              .sort((a, b) => b[0].length - a[0].length)
+              .forEach(([en, tr]) => {
+                next = next.replace(new RegExp(escapeForRegex(en), 'gi'), tr);
+              });
+            return next;
+          });
+          return out;
+        };
+        const walk = (value) => {
+          if (typeof value === 'string') return translateString(value);
+          if (Array.isArray(value)) return value.map((item) => walk(item));
+          if (!value || typeof value !== 'object') return value;
+          const out = {};
+          Object.entries(value).forEach(([k, v]) => {
+            out[k] = walk(v);
+          });
+          return out;
+        };
+        const base = enLocale && typeof enLocale === 'object'
+          ? enLocale
+          : { code: 'en', name: 'English', translations: {} };
+        return {
+          ...base,
+          code: 'tr',
+          name: 'Türkçe',
+          translations: walk(base.translations || {})
+        };
+      };
+
+      const applyEmbedPdfTurkishLocale = async (embedInstance, root) => {
+        if (uiLang !== 'tr' || !embedInstance) return;
+        try {
+          const registry = await embedInstance.registry;
+          const i18nPlugin = registry?.getPlugin?.('i18n');
+          const i18n = i18nPlugin?.provides?.();
+          if (!i18n) {
+            applyEmbedPdfTurkishUiPatch(root);
+            return;
+          }
+          const enLocale = i18n.getLocaleInfo?.('en') || i18n.getLocaleInfo?.('en-US');
+          const trLocale = buildTurkishLocaleFromEnglish(enLocale);
+          if (!i18n.hasLocale?.('tr')) {
+            i18n.registerLocale?.(trLocale);
+          }
+          i18n.setLocale?.('tr');
+        } catch (_error) {
+          // Fallback DOM patch if i18n capability is not reachable.
+          applyEmbedPdfTurkishUiPatch(root);
+        }
+      };
+
+      const toStrictBool = (value, fallback = false) => {
+        if (value == null) return Boolean(fallback);
+        if (typeof value === 'boolean') return value;
+        if (typeof value === 'number') return value !== 0;
+        const raw = String(value).trim().toLowerCase();
+        if (!raw) return Boolean(fallback);
+        if (['true', '1', 'yes', 'y', 'on'].includes(raw)) return true;
+        if (['false', '0', 'no', 'n', 'off', 'null', 'undefined'].includes(raw)) return false;
+        return Boolean(fallback);
+      };
+
+      const resolvePdfAdvancedPermission = async () => {
+        try {
+          const response = await fetch('/api/me', { credentials: 'include' });
+          if (!response.ok) return requestedPdfAdvanced;
+          cachedUserProfile = await response.json().catch(() => ({}));
+          return toStrictBool(cachedUserProfile?.canUsePdfAdvancedTools, toStrictBool(cachedUserProfile?.isAdmin, requestedPdfAdvanced));
+        } catch (_error) {
+          return requestedPdfAdvanced;
+        }
+      };
+
+      const resolveCurrentUserProfile = async () => {
+        if (cachedUserProfile && typeof cachedUserProfile === 'object') return cachedUserProfile;
+        try {
+          const response = await fetch('/api/me', { credentials: 'include' });
+          if (!response.ok) return {};
+          cachedUserProfile = await response.json().catch(() => ({}));
+          return cachedUserProfile || {};
+        } catch (_error) {
+          return {};
+        }
+      };
+
+      const taskToPromise = (task) => {
+        if (!task) return Promise.reject(new Error('Task is not available'));
+        if (typeof task.toPromise === 'function') return task.toPromise();
+        return new Promise((resolve, reject) => {
+          if (typeof task.wait !== 'function') return reject(new Error('Task adapter is unavailable'));
+          task.wait(
+            (value) => resolve(value),
+            (reason) => reject(new Error(String(reason?.message || reason || 'Task failed')))
+          );
+        });
+      };
+
+      const arrayBufferToBase64 = (buffer) => {
+        const bytes = new Uint8Array(buffer || new ArrayBuffer(0));
+        const chunkSize = 0x8000;
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          const chunk = bytes.subarray(i, i + chunkSize);
+          binary += String.fromCharCode.apply(null, chunk);
+        }
+        return btoa(binary);
+      };
+
+      const mountPdfSaveActions = (embedInstance, allowSave) => {
+        const viewerWrap = document.querySelector('.viewer-wrap');
+        if (!viewerWrap || !allowSave || !assetId) return;
+        const existing = document.getElementById('pdfActionBar');
+        if (existing) existing.remove();
+        const bar = document.createElement('div');
+        bar.id = 'pdfActionBar';
+        bar.className = 'pdf-action-bar';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = uiLang === 'tr' ? 'PDF Kaydet' : 'Save PDF';
+        const status = document.createElement('span');
+        status.className = 'pdf-action-status';
+        status.textContent = '';
+        bar.appendChild(btn);
+        bar.appendChild(status);
+        viewerWrap.appendChild(bar);
+        bar.classList.add('hidden');
+
+        const setStatus = (text, isError) => {
+          status.textContent = String(text || '');
+          status.style.color = isError ? '#ff7a7a' : 'var(--muted)';
+        };
+        const setDirty = (isDirty) => {
+          if (isDirty) {
+            bar.classList.remove('hidden');
+            return;
+          }
+          bar.classList.add('hidden');
+          setStatus('', false);
+        };
+        const bindEventHook = (hook, callback) => {
+          try {
+            if (typeof hook === 'function') {
+              const unsub = hook(callback);
+              if (typeof unsub === 'function') return unsub;
+            }
+          } catch (_error) {}
+          return () => {};
+        };
+
+        const pdfChangeKinds = new Set();
+        const classifyPdfChangeKind = (eventPayload, fallback) => {
+          const raw = String(
+            eventPayload?.type
+            || eventPayload?.name
+            || eventPayload?.action
+            || eventPayload?.kind
+            || eventPayload?.tool
+            || ''
+          ).toLowerCase();
+          const blob = `${raw} ${String(JSON.stringify(eventPayload || {})).toLowerCase()}`;
+          if (blob.includes('redact')) return 'redaction';
+          if (blob.includes('insert') && blob.includes('text')) return 'text_insert';
+          if (blob.includes('replace') && blob.includes('text')) return 'text_insert';
+          if (blob.includes('annotation') || blob.includes('comment') || blob.includes('highlight') || blob.includes('shape')) return 'annotation';
+          return fallback || 'unknown';
+        };
+
+        const attachDirtyTracking = async () => {
+          try {
+            const registry = await embedInstance.registry;
+            const unsubs = [];
+            const readDirtyFromHistory = () => {
+              try {
+                const historyCap = registry?.getPlugin?.('history')?.provides?.();
+                if (!historyCap?.getHistoryState) return false;
+                const state = historyCap.getHistoryState();
+                if (state?.global?.canUndo) return true;
+                const topics = state?.topics && typeof state.topics === 'object' ? Object.values(state.topics) : [];
+                return topics.some((item) => Boolean(item?.canUndo));
+              } catch (_error) {
+                return false;
+              }
+            };
+            const refreshDirty = () => {
+              const dirty = readDirtyFromHistory();
+              setDirty(dirty);
+            };
+            const historyCap = registry?.getPlugin?.('history')?.provides?.();
+            if (historyCap?.onHistoryChange) {
+              unsubs.push(bindEventHook(historyCap.onHistoryChange, () => refreshDirty()));
+            }
+            const annotationCap = registry?.getPlugin?.('annotation')?.provides?.();
+            if (annotationCap?.onAnnotationEvent) {
+              unsubs.push(bindEventHook(annotationCap.onAnnotationEvent, (payload) => {
+                pdfChangeKinds.add(classifyPdfChangeKind(payload, 'annotation'));
+                refreshDirty();
+              }));
+            }
+            const redactionCap = registry?.getPlugin?.('redaction')?.provides?.();
+            if (redactionCap?.onRedactionEvent) {
+              unsubs.push(bindEventHook(redactionCap.onRedactionEvent, (payload) => {
+                pdfChangeKinds.add(classifyPdfChangeKind(payload, 'redaction'));
+                refreshDirty();
+              }));
+            }
+            refreshDirty();
+            bar.__mamSaveUnsubs = unsubs;
+          } catch (_error) {
+            // If tracking cannot attach, keep save hidden until explicit save path.
+            setDirty(false);
+          }
+        };
+        attachDirtyTracking();
+
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          setStatus(uiLang === 'tr' ? 'Kaydediliyor...' : 'Saving...', false);
+          try {
+            const registry = await embedInstance.registry;
+            const exportCap = registry?.getPlugin?.('export')?.provides?.();
+            if (!exportCap?.saveAsCopy) throw new Error('Export capability is not available');
+            const pdfBuffer = await taskToPromise(exportCap.saveAsCopy());
+            const pdfBase64 = arrayBufferToBase64(pdfBuffer);
+            const saveRes = await fetch(`/api/assets/${encodeURIComponent(assetId)}/pdf/save`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                pdfBase64,
+                fileName: `asset-${assetId}-edited.pdf`,
+                changeKinds: Array.from(pdfChangeKinds)
+              })
+            });
+            const saveData = await saveRes.json().catch(() => ({}));
+            if (!saveRes.ok) {
+              throw new Error(String(saveData?.error || `HTTP ${saveRes.status}`));
+            }
+            const latestUrl = String(saveData?.asset?.mediaUrl || '').trim();
+            if (latestUrl.startsWith('/uploads/')) {
+              const next = new URL(window.location.href);
+              next.searchParams.set('file', latestUrl);
+              next.searchParams.set('assetId', assetId);
+              if (uiLang === 'tr') next.searchParams.set('lang', 'tr');
+              window.location.assign(next.toString());
+              return;
+            }
+            setStatus(uiLang === 'tr' ? 'Kaydedildi' : 'Saved', false);
+            setDirty(false);
+          } catch (error) {
+            setStatus(String(error?.message || (uiLang === 'tr' ? 'Kaydetme başarısız' : 'Save failed')), true);
+          } finally {
+            btn.disabled = false;
+          }
+        });
+      };
+
+      const applyEmbedPdfAdvancedToolsLock = (root, enabled) => {
+        if (!root || enabled) return () => {};
+        const blockedCommandIds = new Set([
+          'annotation:overflow-tools',
+          'annotation:overflow-shapes',
+          'annotation:add-highlight',
+          'annotation:add-underline',
+          'annotation:add-strikeout',
+          'annotation:add-squiggly',
+          'annotation:add-link',
+          'annotation:add-comment',
+          'annotation:add-text',
+          'annotation:add-insert-text',
+          'annotation:add-replace-text',
+          'annotation:add-stamp',
+          'annotation:add-ink',
+          'annotation:add-rectangle',
+          'annotation:add-circle',
+          'annotation:add-line',
+          'annotation:add-arrow',
+          'annotation:add-polyline',
+          'annotation:add-polygon',
+          'redaction:redact',
+          'redaction:redact-text',
+          'redaction:commit-selected',
+          'redaction:delete-selected',
+          'selection:copy',
+          'panel:toggle-comment',
+          'panel:toggle-redaction',
+          'panel:toggle-annotation-style'
+        ]);
+        const blockedHints = [
+          'annotation', 'comment', 'highlight', 'underline', 'strikeout', 'squiggly',
+          'redact', 'redaction', 'copy selection', 'export', 'download',
+          'protect', 'permission', 'attach', 'stamp', 'ink', 'shape',
+          'annotate', 'araçlar', 'araclar', 'gelişmiş', 'gelismis'
+        ];
+        const hasBlockedHint = (text) => {
+          const normalized = String(text || '').trim().toLowerCase();
+          if (!normalized) return false;
+          if (normalized.includes('print') || normalized.includes('yazdır') || normalized.includes('yazdir')) {
+            return false;
+          }
+          return blockedHints.some((hint) => normalized.includes(hint));
+        };
+        const normalizeCommandId = (value) => String(value || '').trim().toLowerCase();
+        const HIDDEN_MARK = 'data-mam-pdf-hidden';
+        const isActionLikeNode = (node) => {
+          if (!(node instanceof Element)) return false;
+          const tag = String(node.tagName || '').toLowerCase();
+          const role = String(node.getAttribute('role') || '').toLowerCase();
+          if (['button', 'a'].includes(tag)) return true;
+          if (['menuitem', 'tab', 'option'].includes(role)) return true;
+          if (node.hasAttribute('aria-label') || node.hasAttribute('title') || node.hasAttribute('data-command-id')) return true;
+          return false;
+        };
+        const applyHide = (node) => {
+          if (!(node instanceof Element)) return;
+          if (node.getAttribute(HIDDEN_MARK) === '1') return;
+          node.style.display = 'none';
+          node.setAttribute('aria-hidden', 'true');
+          node.setAttribute(HIDDEN_MARK, '1');
+        };
+        const hideNode = (node) => {
+          if (!(node instanceof Element)) return;
+          const commandId = normalizeCommandId(node.getAttribute('data-command-id') || node.getAttribute('commandid'));
+          const testId = normalizeCommandId(node.getAttribute('data-testid'));
+          const idValue = normalizeCommandId(node.getAttribute('id'));
+          const classValue = normalizeCommandId(node.className || '');
+          const hardBlockedByCommandFamily = (
+            commandId.startsWith('annotation:') ||
+            commandId.startsWith('redaction:') ||
+            testId.startsWith('annotation:') ||
+            testId.startsWith('redaction:')
+          );
+          if (
+            hardBlockedByCommandFamily ||
+            blockedCommandIds.has(commandId) ||
+            blockedCommandIds.has(testId) ||
+            idValue.includes('mode-select-button') ||
+            testId.includes('mode-select-button') ||
+            classValue.includes('mode-select-button')
+          ) {
+            applyHide(node);
+            return;
+          }
+          if (isActionLikeNode(node)) {
+            const attrs = [
+              node.getAttribute('title') || '',
+              node.getAttribute('aria-label') || '',
+              commandId,
+              testId,
+              idValue,
+              classValue,
+              (node.textContent || '').slice(0, 80)
+            ];
+            if (attrs.some((v) => hasBlockedHint(v))) {
+              applyHide(node);
+              return;
+            }
+          }
+          if (node.shadowRoot) {
+            scanTree(node.shadowRoot);
+            attachObserver(node.shadowRoot);
+            return;
+          }
+          node.querySelectorAll?.('*').forEach((child) => {
+            const childCommandId = normalizeCommandId(child.getAttribute('data-command-id') || child.getAttribute('commandid'));
+            const childTestId = normalizeCommandId(child.getAttribute('data-testid'));
+            const childId = normalizeCommandId(child.getAttribute('id'));
+            const childClass = normalizeCommandId(child.className || '');
+            if (
+              childCommandId.startsWith('annotation:') ||
+              childCommandId.startsWith('redaction:') ||
+              childTestId.startsWith('annotation:') ||
+              childTestId.startsWith('redaction:') ||
+              blockedCommandIds.has(childCommandId) ||
+              blockedCommandIds.has(childTestId) ||
+              childId.includes('mode-select-button') ||
+              childTestId.includes('mode-select-button') ||
+              childClass.includes('mode-select-button')
+            ) {
+              applyHide(child);
+            } else if (isActionLikeNode(child)) {
+              const childAttrs = [
+                child.getAttribute('title') || '',
+                child.getAttribute('aria-label') || '',
+                childCommandId,
+                childTestId,
+                childId,
+                childClass,
+                (child.textContent || '').slice(0, 80)
+              ];
+              if (childAttrs.some((v) => hasBlockedHint(v))) {
+                applyHide(child);
+              }
+            }
+            if (child.shadowRoot) {
+              scanTree(child.shadowRoot);
+              attachObserver(child.shadowRoot);
+            }
+          });
+        };
+        const scanTree = (scanRoot) => {
+          if (!scanRoot) return;
+          hideNode(scanRoot);
+          if (scanRoot.querySelectorAll) {
+            scanRoot.querySelectorAll('*').forEach((el) => hideNode(el));
+          }
+        };
+        const observers = [];
+        const observedRoots = new Set();
+        const attachObserver = (targetRoot) => {
+          if (!targetRoot || observedRoots.has(targetRoot)) return;
+          observedRoots.add(targetRoot);
+          const observer = new MutationObserver((entries) => {
+            entries.forEach((entry) => {
+              entry.addedNodes?.forEach((added) => {
+                if (!(added instanceof Element)) return;
+                hideNode(added);
+                if (added.shadowRoot) {
+                  scanTree(added.shadowRoot);
+                  attachObserver(added.shadowRoot);
+                  collectShadowRoots(added.shadowRoot);
+                }
+                collectShadowRoots(added);
+              });
+            });
+          });
+          observer.observe(targetRoot, {
+            subtree: true,
+            childList: true
+          });
+          observers.push(observer);
+        };
+        const collectShadowRoots = (baseRoot) => {
+          if (!baseRoot || !baseRoot.querySelectorAll) return;
+          baseRoot.querySelectorAll('*').forEach((el) => {
+            if (el.shadowRoot) {
+              scanTree(el.shadowRoot);
+              attachObserver(el.shadowRoot);
+              collectShadowRoots(el.shadowRoot);
+            }
+          });
+        };
+        scanTree(root);
+        attachObserver(root);
+        collectShadowRoots(root);
+        return () => observers.forEach((obs) => obs.disconnect());
+      };
+
+
+      if (!file || !file.startsWith('/uploads/')) {
+        topBar.style.display = 'none';
+        errorBox.style.display = 'block';
+        errorBox.innerHTML = '<strong>Gecersiz dosya yolu.</strong><br>Sadece <code>/uploads/</code> altindaki dosyalar onizlenebilir.';
+        return;
+      }
+
       if (!isPdf) {
-        // Non-PDF: keep text preview/search in the same module.
-        pdfContainer.style.display = 'none';
+        if (embedPdfContainer) embedPdfContainer.style.display = 'none';
+        viewerContainer.style.display = 'none';
         textPreview.style.display = 'block';
         let sourceText = '';
         let activeIndex = -1;
@@ -289,14 +1128,14 @@
           textPreview.innerHTML = out;
           matchCount = idx;
           activeIndex = matchCount ? 0 : -1;
-          searchMeta.textContent = matchCount ? `1/${matchCount}` : 'Eşleşme yok';
+          searchMeta.textContent = matchCount ? `1/${matchCount} (Toplam: ${matchCount})` : 'Eslesme yok';
           if (activeIndex >= 0) textPreview.querySelector('mark[data-idx="0"]')?.scrollIntoView({ block: 'center' });
         };
 
         const move = (delta) => {
           if (!matchCount) return;
           activeIndex = (activeIndex + delta + matchCount) % matchCount;
-          searchMeta.textContent = `${activeIndex + 1}/${matchCount}`;
+          searchMeta.textContent = `${activeIndex + 1}/${matchCount} (Toplam: ${matchCount})`;
           textPreview.querySelector(`mark[data-idx="${activeIndex}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
         };
 
@@ -325,220 +1164,99 @@
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
             sourceText = String((data && data.text) || '').trim();
-            textPreview.textContent = sourceText || 'Önizleme mevcut değil.';
+            textPreview.textContent = sourceText || 'Onizleme mevcut degil.';
           } catch (_error) {
-            textPreview.textContent = 'Önizleme yüklenemedi.';
+            textPreview.textContent = 'Onizleme yuklenemedi.';
           }
         })();
         return;
       }
 
-      // PDF mode: Phraseanet-like in-document highlights via PDF.js text layer.
-      textPreview.style.display = 'none';
-      pdfContainer.style.display = 'block';
-
-      if (!window.pdfjsLib) {
-        topBar.style.display = 'none';
-        errorBox.style.display = 'block';
-        errorBox.textContent = 'PDF motoru yüklenemedi.';
-        return;
-      }
-
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
-
-      let pdfDoc = null;
-      let currentPage = 1;
-      let totalPages = 1;
-      let scale = 1.15;
-      let renderToken = 0;
-      const pageTextCache = new Map();
-      let matches = [];
-      let activeIndex = -1;
-
-      const updatePageUi = () => {
-        pageInput.value = String(currentPage);
-        pageTotal.textContent = `/ ${totalPages}`;
-      };
-
-      const buildRegex = () => {
-        const q = String(searchInput.value || '').trim();
-        if (!q) return null;
-        const flags = caseCheck.checked ? 'g' : 'gi';
-        return new RegExp(escapeRegExp(q), flags);
-      };
-
-      const pageText = async (pageNum) => {
-        if (pageTextCache.has(pageNum)) return pageTextCache.get(pageNum);
-        const page = await pdfDoc.getPage(pageNum);
-        const tc = await page.getTextContent();
-        const text = tc.items.map((it) => String(it.str || '')).join(' ');
-        pageTextCache.set(pageNum, text);
-        return text;
-      };
-
-      const renderHighlightsCurrentPage = () => {
-        const regex = buildRegex();
-        const spans = Array.from(textLayer.querySelectorAll('span'));
-        spans.forEach((sp) => {
-          const original = sp.getAttribute('data-original') || sp.textContent || '';
-          if (!sp.hasAttribute('data-original')) sp.setAttribute('data-original', original);
-          sp.innerHTML = escapeHtml(original);
-        });
-        if (!regex) return;
-
-        spans.forEach((sp) => {
-          const original = sp.getAttribute('data-original') || '';
-          if (!original) return;
-          regex.lastIndex = 0;
-          let out = '';
-          let last = 0;
-          let m;
-          let idx = 0;
-          while ((m = regex.exec(original)) !== null) {
-            const s = m.index;
-            const e = s + m[0].length;
-            out += escapeHtml(original.slice(last, s));
-            out += `<mark data-local-idx="${idx}">${escapeHtml(original.slice(s, e))}</mark>`;
-            last = e;
-            idx += 1;
-            if (m[0].length === 0) regex.lastIndex += 1;
+      // Preferred path: EmbedPDF snippet (accurate in-document rendering/highlight).
+      const tryInitEmbedPdf = async () => {
+        if (!embedPdfContainer) return false;
+        try {
+          const canUsePdfAdvancedTools = await resolvePdfAdvancedPermission();
+          let EmbedPDF = window.EmbedPDF || null;
+          if (!EmbedPDF) {
+            const mod = await import('/vendor/embedpdf/embedpdf.js');
+            EmbedPDF = mod?.default || mod;
           }
-          if (idx > 0) {
-            out += escapeHtml(original.slice(last));
-            sp.innerHTML = out;
-          }
-        });
-
-        const pageMatches = matches.filter((m) => m.page === currentPage);
-        const active = matches[activeIndex];
-        if (!active || active.page !== currentPage) return;
-        const localIndexOnPage = pageMatches.findIndex((m) => m.globalIndex === active.globalIndex);
-        if (localIndexOnPage < 0) return;
-        const marks = Array.from(textLayer.querySelectorAll('mark'));
-        const target = marks[localIndexOnPage];
-        if (!target) return;
-        target.classList.add('active');
-        target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
-      };
-
-      const renderPage = async (pageNum) => {
-        if (!pdfDoc) return;
-        currentPage = Math.min(totalPages, Math.max(1, Number(pageNum) || 1));
-        updatePageUi();
-        const token = ++renderToken;
-        const page = await pdfDoc.getPage(currentPage);
-        const viewport = page.getViewport({ scale });
-
-        canvas.width = Math.ceil(viewport.width);
-        canvas.height = Math.ceil(viewport.height);
-        canvas.style.width = `${Math.ceil(viewport.width)}px`;
-        canvas.style.height = `${Math.ceil(viewport.height)}px`;
-
-        textLayer.style.width = `${Math.ceil(viewport.width)}px`;
-        textLayer.style.height = `${Math.ceil(viewport.height)}px`;
-        textLayer.innerHTML = '';
-
-        await page.render({ canvasContext: ctx, viewport }).promise;
-        if (token !== renderToken) return;
-
-        const tc = await page.getTextContent();
-        await window.pdfjsLib.renderTextLayer({
-          textContent: tc,
-          container: textLayer,
-          viewport,
-          textDivs: []
-        }).promise;
-        if (token !== renderToken) return;
-
-        renderHighlightsCurrentPage();
-      };
-
-      const runSearch = async () => {
-        const regex = buildRegex();
-        if (!regex) {
-          matches = [];
-          activeIndex = -1;
-          searchMeta.textContent = '';
-          renderHighlightsCurrentPage();
-          return;
-        }
-
-        const next = [];
-        let global = 0;
-        for (let p = 1; p <= totalPages; p += 1) {
-          const txt = await pageText(p);
-          regex.lastIndex = 0;
-          let m;
-          while ((m = regex.exec(txt)) !== null) {
-            next.push({ page: p, globalIndex: global });
-            global += 1;
-            if (m[0].length === 0) regex.lastIndex += 1;
-          }
-        }
-
-        matches = next;
-        if (!matches.length) {
-          activeIndex = -1;
-          searchMeta.textContent = 'Eşleşme yok';
-          renderHighlightsCurrentPage();
-          return;
-        }
-
-        activeIndex = 0;
-        const first = matches[0];
-        searchMeta.textContent = `${activeIndex + 1}/${matches.length}`;
-        if (first.page !== currentPage) await renderPage(first.page);
-        else renderHighlightsCurrentPage();
-      };
-
-      const moveMatch = async (delta) => {
-        if (!matches.length) {
-          await runSearch();
-          return;
-        }
-        activeIndex = (activeIndex + delta + matches.length) % matches.length;
-        searchMeta.textContent = `${activeIndex + 1}/${matches.length}`;
-        const target = matches[activeIndex];
-        if (target.page !== currentPage) await renderPage(target.page);
-        else renderHighlightsCurrentPage();
-      };
-
-      searchBtn.addEventListener('click', () => { runSearch(); });
-      searchNextBtn.addEventListener('click', () => { moveMatch(1); });
-      searchPrevBtn.addEventListener('click', () => { moveMatch(-1); });
-      searchInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          runSearch();
-        }
-      });
-      caseCheck.addEventListener('change', () => { runSearch(); });
-
-      pagePrevBtn.addEventListener('click', () => renderPage(currentPage - 1));
-      pageNextBtn.addEventListener('click', () => renderPage(currentPage + 1));
-      pageInput.addEventListener('change', () => renderPage(Number(pageInput.value || 1)));
-      zoomInBtn.addEventListener('click', () => {
-        scale = Math.min(4, scale + 0.15);
-        renderPage(currentPage);
-      });
-      zoomOutBtn.addEventListener('click', () => {
-        scale = Math.max(0.5, scale - 0.15);
-        renderPage(currentPage);
-      });
-
-      window.pdfjsLib.getDocument({ url: file }).promise
-        .then((doc) => {
-          pdfDoc = doc;
-          totalPages = Math.max(1, Number(doc.numPages) || 1);
-          updatePageUi();
-          return renderPage(1);
-        })
-        .catch(() => {
+          if (!EmbedPDF || typeof EmbedPDF.init !== 'function') return false;
           topBar.style.display = 'none';
-          pdfContainer.style.display = 'none';
-          errorBox.style.display = 'block';
-          errorBox.textContent = 'PDF yüklenemedi.';
-        });
+          textPreview.style.display = 'none';
+          viewerContainer.style.display = 'none';
+          errorBox.style.display = 'none';
+          embedPdfContainer.style.display = 'block';
+          embedPdfContainer.innerHTML = '';
+          const embedInstance = EmbedPDF.init({
+            type: 'container',
+            target: embedPdfContainer,
+            src: file,
+            disabledCategories: Array.from(new Set([
+              ...ALWAYS_DISABLED_CATEGORIES,
+              ...(canUsePdfAdvancedTools ? [] : NON_ADVANCED_DISABLED_CATEGORIES)
+            ])),
+            permissions: canUsePdfAdvancedTools
+              ? undefined
+              : {
+                  overrides: {
+                    modifyAnnotations: false,
+                    modifyContents: false,
+                    assembleDocument: false
+                  }
+                }
+          });
+          if (!canUsePdfAdvancedTools) {
+            try {
+              const registry = await embedInstance.registry;
+              const commandsCap = registry?.getPlugin?.('commands')?.provides?.();
+              const uiCap = registry?.getPlugin?.('ui')?.provides?.();
+              const effectiveDisabledCategories = Array.from(new Set([
+                ...ALWAYS_DISABLED_CATEGORIES,
+                ...NON_ADVANCED_DISABLED_CATEGORIES
+              ]));
+              commandsCap?.setDisabledCategories?.(effectiveDisabledCategories);
+              uiCap?.setDisabledCategories?.(effectiveDisabledCategories);
+              commandsCap?.setDisabledCommands?.(['document:close', 'document-close', 'viewer:close']);
+              uiCap?.setDisabledCommands?.(['document:close', 'document-close', 'viewer:close']);
+            } catch (_e) {
+              // Best-effort permission hardening.
+            }
+          } else {
+            try {
+              const registry = await embedInstance.registry;
+              const commandsCap = registry?.getPlugin?.('commands')?.provides?.();
+              const uiCap = registry?.getPlugin?.('ui')?.provides?.();
+              commandsCap?.setDisabledCategories?.(ALWAYS_DISABLED_CATEGORIES);
+              uiCap?.setDisabledCategories?.(ALWAYS_DISABLED_CATEGORIES);
+              commandsCap?.setDisabledCommands?.(['document:close', 'document-close', 'viewer:close']);
+              uiCap?.setDisabledCommands?.(['document:close', 'document-close', 'viewer:close']);
+            } catch (_e) {
+              // Best-effort for admin mode as well.
+            }
+          }
+          await applyEmbedPdfTurkishLocale(embedInstance, embedPdfContainer);
+          applyEmbedPdfTurkishUiPatch(embedPdfContainer);
+          const me = await resolveCurrentUserProfile();
+          const allowPdfSave = toStrictBool(me?.canUsePdfAdvancedTools, toStrictBool(me?.isAdmin, false));
+          mountPdfSaveActions(embedInstance, allowPdfSave);
+          return true;
+        } catch (_err) {
+          return false;
+        }
+      };
+
+      (async () => {
+        const ok = await tryInitEmbedPdf();
+        if (ok) return;
+
+      topBar.style.display = 'none';
+      viewerContainer.style.display = 'none';
+      embedPdfContainer.style.display = 'none';
+      errorBox.style.display = 'block';
+      errorBox.textContent = 'EmbedPDF yerel paket yuklenemedi. /public/vendor/embedpdf dosyalarini kontrol edin.';
+      })();
     })();
   </script>
 </body>

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import os
+import re
 import sys
 
 from faster_whisper import WhisperModel
@@ -18,16 +19,128 @@ def fmt_ts(seconds: float) -> str:
     return f"{hh:02d}:{mm:02d}:{ss:02d}.{ms:03d}"
 
 
+MAX_CUE_SECONDS = 5.5
+MAX_CUE_CHARS = 84
+
+
+def _clean_token(token: str) -> str:
+    return re.sub(r"\s+", " ", str(token or "").replace("\n", " ")).strip()
+
+
+def _join_tokens(tokens) -> str:
+    out = ""
+    for token in tokens:
+        t = _clean_token(token)
+        if not t:
+            continue
+        if not out:
+            out = t
+            continue
+        if re.match(r"^[,.;:!?…)\]\}]", t):
+            out += t
+        elif out.endswith(("(", "[", "{", "“", "\"", "'")):
+            out += t
+        else:
+            out += " " + t
+    return out.strip()
+
+
+def _segment_to_word_chunks(seg):
+    words = list(getattr(seg, "words", []) or [])
+    chunks = []
+    current_tokens = []
+    current_start = None
+    current_end = None
+    for w in words:
+        text = _clean_token(getattr(w, "word", ""))
+        if not text:
+            continue
+        w_start = float(getattr(w, "start", getattr(seg, "start", 0.0)) or getattr(seg, "start", 0.0))
+        w_end = float(getattr(w, "end", w_start) or w_start)
+        if current_start is None:
+            current_start = w_start
+        next_tokens = current_tokens + [text]
+        next_text = _join_tokens(next_tokens)
+        predicted_end = max(w_end, current_start + 0.4)
+        duration = predicted_end - current_start
+        force_break = (
+            bool(current_tokens)
+            and (duration >= MAX_CUE_SECONDS or len(next_text) >= MAX_CUE_CHARS)
+        )
+        if force_break:
+            flushed = _join_tokens(current_tokens)
+            if flushed:
+                chunks.append((current_start, max(current_end or current_start + 0.4, current_start + 0.4), flushed))
+            current_tokens = [text]
+            current_start = w_start
+            current_end = w_end
+            continue
+        current_tokens.append(text)
+        current_end = w_end
+        if re.search(r"[.!?…]$", text) and len(next_text) >= 22:
+            flushed = _join_tokens(current_tokens)
+            if flushed:
+                chunks.append((current_start, max(current_end or current_start + 0.4, current_start + 0.4), flushed))
+            current_tokens = []
+            current_start = None
+            current_end = None
+    if current_tokens and current_start is not None:
+        flushed = _join_tokens(current_tokens)
+        if flushed:
+            chunks.append((current_start, max(current_end or current_start + 0.4, current_start + 0.4), flushed))
+    return chunks
+
+
+def _split_plain_segment(start: float, end: float, text: str):
+    clean = _clean_token(text)
+    if not clean:
+        return []
+    parts = [p.strip() for p in re.split(r"(?<=[.!?…])\s+", clean) if p.strip()]
+    if not parts:
+        parts = [clean]
+    total_chars = max(1, sum(len(p) for p in parts))
+    cur = max(0.0, float(start or 0.0))
+    end = max(cur + 0.4, float(end or cur + 0.4))
+    out = []
+    for i, part in enumerate(parts):
+        frac = len(part) / total_chars
+        if i == len(parts) - 1:
+            seg_end = end
+        else:
+            seg_end = min(end, max(cur + 0.4, cur + (end - start) * frac))
+        out.append((cur, seg_end, part))
+        cur = seg_end
+    return out
+
+
+def _build_cues(segments):
+    cues = []
+    for seg in segments:
+        start = float(getattr(seg, "start", 0.0) or 0.0)
+        end = float(getattr(seg, "end", start + 0.5) or (start + 0.5))
+        if end <= start:
+            end = start + 0.5
+        text = _clean_token(getattr(seg, "text", ""))
+        if not text:
+            continue
+        chunks = _segment_to_word_chunks(seg)
+        # Preserve original segment timing unless we have real word-level timestamps.
+        if not chunks:
+            chunks = [(start, end, text)]
+        cues.extend(chunks)
+    return cues
+
+
 def write_vtt(path: str, segments) -> int:
     cue_count = 0
+    cues = _build_cues(segments)
     with open(path, "w", encoding="utf-8") as f:
         f.write("WEBVTT\n\n")
-        for seg in segments:
-            text = (seg.text or "").strip()
+        for start_sec, end_sec, text in cues:
             if not text:
                 continue
-            start = fmt_ts(seg.start)
-            end = fmt_ts(seg.end if seg.end > seg.start else seg.start + 0.5)
+            start = fmt_ts(start_sec)
+            end = fmt_ts(end_sec if end_sec > start_sec else start_sec + 0.5)
             f.write(f"{start} --> {end}\n")
             f.write(text + "\n\n")
             cue_count += 1
@@ -61,7 +174,7 @@ def main() -> int:
         language=lang,
         beam_size=5,
         vad_filter=True,
-        word_timestamps=False
+        word_timestamps=True
     )
 
     cue_count = write_vtt(out_path, segments)

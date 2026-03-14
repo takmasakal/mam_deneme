@@ -2,8 +2,11 @@ const LOCAL_LANG = 'mam.lang';
 const I18N_PATH = '/i18n.json';
 
 const ffmpegHealthEl = document.getElementById('ffmpegHealth');
+const systemHealthRows = document.getElementById('systemHealthRows');
 const settingsForm = document.getElementById('settingsForm');
 const settingsMsg = document.getElementById('settingsMsg');
+const ocrSettingsForm = document.getElementById('ocrSettingsForm');
+const ocrSettingsMsg = document.getElementById('ocrSettingsMsg');
 const apiTokenInput = document.getElementById('apiTokenInput');
 const oidcIssuerUrlInput = document.getElementById('oidcIssuerUrlInput');
 const oidcJwksUrlInput = document.getElementById('oidcJwksUrlInput');
@@ -24,13 +27,31 @@ const proxyToolSuggestList = document.getElementById('proxyToolSuggestList');
 const proxyToolAction = document.getElementById('proxyToolAction');
 const proxyToolTimecodeWrap = document.getElementById('proxyToolTimecodeWrap');
 const proxyToolTimecode = document.getElementById('proxyToolTimecode');
+const proxyToolReplaceFileWrap = document.getElementById('proxyToolReplaceFileWrap');
+const proxyToolReplaceFile = document.getElementById('proxyToolReplaceFile');
 const runProxyToolBtn = document.getElementById('runProxyToolBtn');
 const proxyToolMsg = document.getElementById('proxyToolMsg');
 const languageSelect = document.getElementById('languageSelectAdmin');
 const adminTabs = Array.from(document.querySelectorAll('.admin-tab'));
 const adminPanels = Array.from(document.querySelectorAll('.admin-panel'));
+const settingsSubTabs = Array.from(document.querySelectorAll('.settings-subtab'));
+const settingsSubPanels = Array.from(document.querySelectorAll('.settings-subpanel'));
 const userPermissionsRows = document.getElementById('userPermissionsRows');
 const userPermissionsMsg = document.getElementById('userPermissionsMsg');
+const ocrAdminSearchInput = document.getElementById('ocrAdminSearchInput');
+const ocrDeleteFileCheck = document.getElementById('ocrDeleteFileCheck');
+const ocrRecordsRows = document.getElementById('ocrRecordsRows');
+const ocrRecordsMsg = document.getElementById('ocrRecordsMsg');
+const runOcrAdminSearchBtn = document.getElementById('runOcrAdminSearchBtn');
+const subtitleAdminSearchInput = document.getElementById('subtitleAdminSearchInput');
+const subtitleDeleteFileCheck = document.getElementById('subtitleDeleteFileCheck');
+const subtitleRecordsRows = document.getElementById('subtitleRecordsRows');
+const subtitleRecordsMsg = document.getElementById('subtitleRecordsMsg');
+const combinedSearchInput = document.getElementById('combinedSearchInput');
+const combinedSearchLimit = document.getElementById('combinedSearchLimit');
+const runCombinedSearchBtn = document.getElementById('runCombinedSearchBtn');
+const combinedSearchRows = document.getElementById('combinedSearchRows');
+const combinedSearchMsg = document.getElementById('combinedSearchMsg');
 
 let currentLang = localStorage.getItem(LOCAL_LANG) || 'en';
 let pollTimer = null;
@@ -40,6 +61,8 @@ let proxySuggestReqSeq = 0;
 let proxySuggestItems = [];
 let proxySuggestActiveIndex = -1;
 let proxySuggestHideTimer = null;
+let ocrRecordsTimer = null;
+let subtitleRecordsTimer = null;
 
 let i18n = {
   en: {
@@ -93,6 +116,23 @@ let i18n = {
     api_help_postman_step3: 'When token protection is ON, send either X-API-Token or Authorization: Bearer <token>.',
     api_help_postman_step4: 'Disable auto-follow redirects when testing through port 3000.',
     api_help_endpoints_title: 'Main Endpoints',
+    settings_group_workflow: 'Workflow & Player',
+    settings_group_security: 'Security',
+    settings_group_identity: 'Token & OIDC',
+    settings_group_docs: 'Documentation',
+    ocr_defaults: 'OCR Defaults',
+    ocr_filters: 'OCR Filters',
+    ocr_default_advanced_mode: 'Advanced OCR mode default',
+    ocr_default_turkish_ai_correct: 'Turkish offline correction default',
+    ocr_default_blur_filter: 'Blur filter default',
+    ocr_default_region_mode: 'Ticker region mode default',
+    ocr_default_static_overlay_filter: 'Static overlay filter default',
+    settings_sub_general: 'General',
+    settings_sub_workflow: 'Workflow',
+    settings_sub_proxy: 'Proxy',
+    settings_sub_ocr: 'OCR',
+    settings_sub_subtitle: 'Subtitle',
+    settings_sub_users: 'Users',
     save_settings: 'Save Settings',
     settings_saved: 'Settings saved.',
     workflow_tracking: 'Workflow Tracking',
@@ -110,8 +150,16 @@ let i18n = {
     proxy_tool_action_thumbnail: 'Generate Thumbnail',
     proxy_tool_action_preview: 'Generate Preview',
     proxy_tool_action_proxy: 'Generate Proxy',
+    proxy_tool_action_replace_asset: 'Replace Asset',
     proxy_tool_timecode: 'Thumbnail Timecode',
     proxy_tool_timecode_ph: '00:00:12:10 or 12.4',
+    proxy_tool_replace_file: 'New Asset File',
+    proxy_tool_replace_file_required: 'Please select a file.',
+    proxy_tool_replace_options_title: 'After replace',
+    proxy_tool_replace_gen_thumbnail: 'Generate thumbnail',
+    proxy_tool_replace_gen_preview: 'Generate preview',
+    proxy_tool_replace_type_mismatch: 'New file type must match existing asset type.',
+    proxy_tool_replace_options_prompt: 'Select what to generate after replacing the main file.',
     proxy_tool_run: 'Run Action',
     proxy_tool_name_required: 'Asset name is required.',
     proxy_tool_done: 'Action completed',
@@ -129,36 +177,120 @@ let i18n = {
     ffmpeg_fail: 'ffmpeg: unavailable',
     ffprobe_ok: 'ffprobe: available',
     ffprobe_fail: 'ffprobe: unavailable',
+    health_disk: 'Disk',
+    health_jobs: 'Jobs',
+    health_services: 'Services',
+    health_integrity: 'Integrity',
+    health_uploads_size: 'Uploads size',
+    health_uploads_files: 'Uploads files',
+    health_fs_free: 'Filesystem free',
+    health_fs_total: 'Filesystem total',
+    health_proxy_running: 'Proxy running/queued',
+    health_subtitle_running: 'Subtitle running/queued',
+    health_ocr_running: 'OCR running/queued',
+    health_proxy_failed: 'Proxy failed',
+    health_subtitle_failed: 'Subtitle failed',
+    health_ocr_failed: 'OCR failed',
+    health_missing_proxy: 'Missing proxy files',
+    health_missing_thumbnail: 'Missing thumbnail files',
+    health_missing_subtitle: 'Missing subtitle files',
+    health_missing_ocr: 'Missing OCR files',
+    health_service_app: 'App',
+    health_service_postgres: 'Postgres',
+    health_service_elastic: 'Elasticsearch',
+    health_service_keycloak: 'Keycloak',
+    health_service_oauth2_proxy: 'OAuth2 Proxy',
+    health_up: 'UP',
+    health_down: 'DOWN',
     user_settings: 'User Settings',
     perm_admin_access: 'Admin page access',
     perm_asset_delete: 'Asset delete',
+    perm_pdf_advanced: 'PDF advanced tools',
     user_permissions_saved: 'User permissions saved.',
-    access_denied: 'Access denied.'
+    access_denied: 'Access denied.',
+    ocr_records: 'OCR Records',
+    ocr_search: 'Search OCR',
+    ocr_search_ph: 'asset name...',
+    ocr_search_run: 'Run Search',
+    ocr_delete_file: 'Delete OCR file from disk too',
+    ocr_asset: 'Asset',
+    ocr_label: 'Label',
+    ocr_engine: 'Engine',
+    ocr_lines: 'Lines',
+    ocr_segments: 'Segments',
+    ocr_edit: 'Save',
+    ocr_delete_db: 'Delete from DB',
+    content_edit: 'Edit Content',
+    content_save: 'Save Content',
+    content_cancel: 'Cancel',
+    content_loading: 'Loading content...',
+    content_saved: 'Content saved.',
+    find_label: 'Find',
+    replace_label: 'Replace',
+    find_next: 'Find Next',
+    replace_all: 'Replace All',
+    ocr_saved: 'OCR record saved.',
+    ocr_deleted: 'OCR record deleted.',
+    ocr_none: 'No OCR records found.',
+    ocr_confirm_delete: 'Delete this OCR record from database?',
+    learned_corrections_title: 'Learned Corrections',
+    learned_wrong: 'Wrong',
+    learned_correct: 'Correct',
+    learned_wrong_ph: 'wrong phrase...',
+    learned_correct_ph: 'correct phrase...',
+    learned_add: 'Add',
+    learned_apply: 'Apply',
+    learned_use_selection: 'Use selected text',
+    learned_delete: 'Delete',
+    learned_none: 'No learned correction yet.',
+    learned_saved: 'Learned correction saved.',
+    learned_deleted: 'Learned correction deleted.',
+    learned_invalid: 'Both wrong and correct fields are required.',
+    content_audio_player: 'Audio Preview',
+    content_audio_tc: 'TC',
+    subtitle_records: 'Subtitle Records',
+    subtitle_search_admin: 'Search Subtitle',
+    subtitle_search_admin_ph: 'asset, label, language...',
+    subtitle_delete_file: 'Delete subtitle file from disk too',
+    subtitle_lang: 'Language',
+    subtitle_set_active: 'Set Active',
+    subtitle_save: 'Save',
+    subtitle_delete_db: 'Delete from DB',
+    subtitle_saved: 'Subtitle record saved.',
+    subtitle_deleted: 'Subtitle record deleted.',
+    subtitle_none: 'No subtitle records found.',
+    subtitle_confirm_delete: 'Delete this subtitle record from database?',
+    combined_search: 'Combined Subtitle + OCR Search',
+    combined_search_query: 'Search Query',
+    combined_search_query_ph: 'Type query...',
+    combined_search_limit: 'Limit',
+    combined_search_run: 'Run Search',
+    combined_search_none: 'No match found.'
   },
   tr: {
-    admin_title: 'Yonetici Ayarlari',
-    admin_subtitle: 'Is akisi izleme, proxy uretimi ve sistem sagligi.',
-    back_to_mam: "MAM'e Don",
-    system_health: 'Sistem Sagligi',
+    admin_title: 'Yönetici Ayarları',
+    admin_subtitle: 'İş akışı izleme, proxy üretimi ve sistem sağlığı.',
+    back_to_mam: "MAM'e Dön",
+    system_health: 'Sistem Sağlığı',
     settings: 'Ayarlar',
-    loading: 'Yukleniyor...',
-    workflow_tracking_enabled: 'Is akisi izleme etkin',
-    auto_proxy_backfill: 'Yuklemede proxy backfill otomatik',
-    player_mode: 'Oynatici Modu',
-    player_mode_native: 'Varsayilan oynatici',
-    player_mode_custom: 'Ozel oynatici',
+    loading: 'Yükleniyor...',
+    workflow_tracking_enabled: 'İş akışı izleme etkin',
+    auto_proxy_backfill: 'Yüklemede proxy backfill otomatik',
+    player_mode: 'Oynatıcı Modu',
+    player_mode_native: 'Varsayılan oynatıcı',
+    player_mode_custom: 'Özel oynatıcı',
     player_mode_vidstack: 'Vidstack',
     player_mode_videojs: 'Açık kaynak (Video.js)',
     player_mode_mpegdash: 'MPEG-DASH (dash.js)',
     api_token_enabled: 'API token zorunlu olsun (SSO olmayan API erişimi)',
-    oidc_bearer_enabled: 'Keycloak Bearer JWT kabul et (mobil icin onerilen)',
+    oidc_bearer_enabled: 'Keycloak Bearer JWT kabul et (mobil için önerilen)',
     api_token: 'API Token',
-    api_token_placeholder: 'Önce token üretin',
+    api_token_placeholder: 'Önce token üret',
     oidc_issuer_url: 'OIDC Issuer URL',
     oidc_issuer_url_ph: 'http://keycloak:8080/realms/mam',
     oidc_jwks_url: 'OIDC JWKS URL',
     oidc_jwks_url_ph: 'http://keycloak:8080/realms/mam/protocol/openid-connect/certs',
-    oidc_audience: 'OIDC Audience (opsiyonel, virgul ile)',
+    oidc_audience: 'OIDC Audience (opsiyonel, virgül ile)',
     oidc_audience_ph: 'mam-web,account',
     rotate_token: 'Token Yenile',
     copy_token: 'Token Kopyala',
@@ -166,67 +298,176 @@ let i18n = {
     token_copied: 'API token kopyalandı.',
     api_test_title: 'Postman Testi',
     api_test_note: 'Header: X-API-Token veya Authorization: Bearer <token>',
-    api_help_doc_title: 'API Yardim Dokumani',
-    api_help_intro: 'MAM APIlerini Postman veya cURL ile hizli test etmek icin bu bolumu kullanin.',
-    api_help_auth_title: 'Kimlik Dogrulama Kurallari',
-    api_help_auth_note: '3000 portundaki UI trafigi SSO proxy uzerinden calisir. Token testleri icin 3001 direkt API kullanin.',
-    api_help_bearer_on: 'OIDC Bearer JWT dogrulamasi ACIK.',
-    api_help_bearer_off: 'OIDC Bearer JWT dogrulamasi KAPALI.',
-    api_help_token_on: 'API token korumasi su anda ACIK.',
-    api_help_token_off: 'API token korumasi su anda KAPALI.',
-    api_help_token_hint: 'Direkt API testlerinde Settings altindaki guncel tokeni kullanin.',
-    api_help_quick_title: 'Hizli Komutlar',
-    api_help_cmd_workflow: 'Workflow adimlarini listele',
-    api_help_cmd_assets: 'Aktif varliklari listele',
-    api_help_cmd_asset_by_id: 'ID ile tek varlik getir',
-    api_help_cmd_create_collection: 'Koleksiyon olustur',
+    api_help_doc_title: 'API Yardım Dokümanı',
+    api_help_intro: 'MAM APIlerini Postman veya cURL ile hızlı test etmek için bu bölümü kullanın.',
+    api_help_auth_title: 'Kimlik Doğrulama Kuralları',
+    api_help_auth_note: '3000 portundaki UI trafiği SSO proxy üzerinden çalışır. Token testleri için 3001 direkt API kullanın.',
+    api_help_bearer_on: 'OIDC Bearer JWT doğrulaması AÇIK.',
+    api_help_bearer_off: 'OIDC Bearer JWT doğrulaması KAPALI.',
+    api_help_token_on: 'API token koruması şu anda AÇIK.',
+    api_help_token_off: 'API token koruması şu anda KAPALI.',
+    api_help_token_hint: 'Direkt API testlerinde Settings altındaki güncel tokeni kullanın.',
+    api_help_quick_title: 'Hızlı Komutlar',
+    api_help_cmd_workflow: 'Workflow adımlarını listele',
+    api_help_cmd_assets: 'Aktif varlıkları listele',
+    api_help_cmd_asset_by_id: 'ID ile tek varlık getir',
+    api_help_cmd_create_collection: 'Koleksiyon oluştur',
     api_help_postman_title: 'Postman Kurulumu',
     api_help_postman_step1: 'Method: GET',
-    api_help_postman_step2: 'URL: {{baseUrl}}/api/workflow (onerilen baseUrl: http://localhost:3001)',
-    api_help_postman_step3: 'Token korumasi ACIK ise X-API-Token veya Authorization: Bearer <token> gonderin.',
-    api_help_postman_step4: '3000 portunu test ederken otomatik redirect takibini kapatin.',
+    api_help_postman_step2: 'URL: {{baseUrl}}/api/workflow (önerilen baseUrl: http://localhost:3001)',
+    api_help_postman_step3: 'Token koruması AÇIK ise X-API-Token veya Authorization: Bearer <token> gönderin.',
+    api_help_postman_step4: '3000 portunu test ederken otomatik redirect takibini kapatın.',
     api_help_endpoints_title: 'Temel Endpointler',
-    save_settings: 'Ayarlari Kaydet',
+    settings_group_workflow: 'İş Akışı ve Oynatıcı',
+    settings_group_security: 'Güvenlik',
+    settings_group_identity: 'Token ve OIDC',
+    settings_group_docs: 'Dokümantasyon',
+    ocr_defaults: 'OCR Varsayılanları',
+    ocr_filters: 'OCR Filtreleri',
+    ocr_default_advanced_mode: 'Gelişmiş OCR varsayılan açık',
+    ocr_default_turkish_ai_correct: 'Türkçe çevrimdışı düzeltme varsayılan açık',
+    ocr_default_blur_filter: 'Bulanıklık filtresi varsayılan açık',
+    ocr_default_region_mode: 'Ticker bölge modu varsayılan açık',
+    ocr_default_static_overlay_filter: 'Sabit yazı filtresi varsayılan açık',
+    settings_sub_general: 'Genel',
+    settings_sub_workflow: 'İş Akışı',
+    settings_sub_proxy: 'Proxy',
+    settings_sub_ocr: 'OCR',
+    settings_sub_subtitle: 'Altyazı',
+    settings_sub_users: 'Kullanıcılar',
+    save_settings: 'Ayarları Kaydet',
     settings_saved: 'Ayarlar kaydedildi.',
-    workflow_tracking: 'Is Akisi Izleme',
-    proxy_jobs: 'Proxy Gorevleri',
-    include_trash: 'Copu dahil et',
-    start_proxy_job: 'Proxy Gorevi Baslat',
-    proxy_job_started: 'Proxy gorevi baslatildi.',
-    proxy_job_done: 'Proxy gorevi tamamlandi.',
-    proxy_job_running: 'Proxy gorevi calisiyor',
-    proxy_job_failed: 'Proxy gorevi basarisiz.',
-    proxy_tool_title: 'Varlik Uretim Araci',
-    proxy_tool_asset_name: 'Varlik Adi',
-    proxy_tool_asset_name_ph: 'Varlik adini yazin',
-    proxy_tool_action: 'Islem',
-    proxy_tool_action_thumbnail: 'Thumbnail Uret',
-    proxy_tool_action_preview: 'Onizleme Uret',
+    workflow_tracking: 'İş Akışı İzleme',
+    proxy_jobs: 'Proxy Görevleri',
+    include_trash: 'Çöpü dahil et',
+    start_proxy_job: 'Proxy Görevi Başlat',
+    proxy_job_started: 'Proxy görevi başlatıldı.',
+    proxy_job_done: 'Proxy görevi tamamlandı.',
+    proxy_job_running: 'Proxy görevi çalışıyor',
+    proxy_job_failed: 'Proxy görevi başarısız.',
+    proxy_tool_title: 'Varlık Üretim Aracı',
+    proxy_tool_asset_name: 'Varlık Adı',
+    proxy_tool_asset_name_ph: 'Varlık adını yazın',
+    proxy_tool_action: 'İşlem',
+    proxy_tool_action_thumbnail: 'Thumbnail Üret',
+    proxy_tool_action_preview: 'Önizleme Üret',
     proxy_tool_action_proxy: 'Proxy Uret',
+    proxy_tool_action_replace_asset: 'Varlık Değiştir',
     proxy_tool_timecode: 'Thumbnail Timecode',
     proxy_tool_timecode_ph: '00:00:12:10 veya 12.4',
-    proxy_tool_run: 'Islemi Calistir',
-    proxy_tool_name_required: 'Varlik adi gerekli.',
-    proxy_tool_done: 'Islem tamamlandi',
-    proxy_tool_multi_match: 'Birden fazla varlik bulundu, en guncel olan kullanildi',
-    processed: 'Islenen',
-    generated: 'Uretilen',
+    proxy_tool_replace_file: 'Yeni Varlık Dosyası',
+    proxy_tool_replace_file_required: 'Lütfen bir dosya seçin.',
+    proxy_tool_replace_options_title: 'Değişim sonrası',
+    proxy_tool_replace_gen_thumbnail: 'Thumbnail üret',
+    proxy_tool_replace_gen_preview: 'Önizleme üret',
+    proxy_tool_replace_type_mismatch: 'Yeni dosya türü mevcut varlık türü ile aynı olmalı.',
+    proxy_tool_replace_options_prompt: 'Ana dosya değiştikten sonra üretilecekleri seçin.',
+    proxy_tool_run: 'İşlemi Çalıştır',
+    proxy_tool_name_required: 'Varlık adı gerekli.',
+    proxy_tool_done: 'İşlem tamamlandı',
+    proxy_tool_multi_match: 'Birden fazla varlık bulundu, en güncel olan kullanıldı',
+    processed: 'İşlenen',
+    generated: 'Üretilen',
     skipped: 'Atlanan',
-    failed: 'Hatali',
-    assets_total: 'Toplam varlik',
-    assets_active: 'Aktif varlik',
-    assets_trash: 'Copteki varlik',
-    proxies_ready: 'Hazir proxy',
+    failed: 'Hatalı',
+    assets_total: 'Toplam varlık',
+    assets_active: 'Aktif varlık',
+    assets_trash: 'Çöpteki varlık',
+    proxies_ready: 'Hazır proxy',
     proxies_missing: 'Eksik proxy',
-    ffmpeg_ok: 'ffmpeg: hazir',
+    ffmpeg_ok: 'ffmpeg: hazır',
     ffmpeg_fail: 'ffmpeg: yok',
-    ffprobe_ok: 'ffprobe: hazir',
+    ffprobe_ok: 'ffprobe: hazır',
     ffprobe_fail: 'ffprobe: yok',
-    user_settings: 'Kullanici Ayarlari',
-    perm_admin_access: 'Yonetim sayfasina erisim',
-    perm_asset_delete: 'Varlik silme',
-    user_permissions_saved: 'Kullanici yetkileri kaydedildi.',
-    access_denied: 'Erisim engellendi.'
+    health_disk: 'Disk',
+    health_jobs: 'İşler',
+    health_services: 'Servisler',
+    health_integrity: 'Bütünlük',
+    health_uploads_size: 'Uploads boyutu',
+    health_uploads_files: 'Uploads dosya sayısı',
+    health_fs_free: 'Disk boş alan',
+    health_fs_total: 'Disk toplam alan',
+    health_proxy_running: 'Proxy çalışan/kuyruk',
+    health_subtitle_running: 'Altyazı çalışan/kuyruk',
+    health_ocr_running: 'OCR çalışan/kuyruk',
+    health_proxy_failed: 'Proxy hatalı',
+    health_subtitle_failed: 'Altyazı hatalı',
+    health_ocr_failed: 'OCR hatalı',
+    health_missing_proxy: 'Eksik proxy dosyası',
+    health_missing_thumbnail: 'Eksik thumbnail dosyası',
+    health_missing_subtitle: 'Eksik altyazı dosyası',
+    health_missing_ocr: 'Eksik OCR dosyası',
+    health_service_app: 'Uygulama',
+    health_service_postgres: 'Postgres',
+    health_service_elastic: 'Elasticsearch',
+    health_service_keycloak: 'Keycloak',
+    health_service_oauth2_proxy: 'OAuth2 Proxy',
+    health_up: 'AYAKTA',
+    health_down: 'KAPALI',
+    user_settings: 'Kullanıcı Ayarları',
+    perm_admin_access: 'Yönetim sayfasına erişim',
+    perm_asset_delete: 'Varlık silme',
+    perm_pdf_advanced: 'PDF gelişmiş araçlar',
+    user_permissions_saved: 'Kullanıcı yetkileri kaydedildi.',
+    access_denied: 'Erişim engellendi.',
+    ocr_records: 'OCR Kayıtları',
+    ocr_search: 'OCR Ara',
+    ocr_search_ph: 'varlık adı...',
+    ocr_search_run: 'Ara',
+    ocr_delete_file: 'OCR dosyasını diskten de sil',
+    ocr_asset: 'Varlık',
+    ocr_label: 'Etiket',
+    ocr_engine: 'Motor',
+    ocr_lines: 'Satır',
+    ocr_segments: 'Segment',
+    ocr_edit: 'Kaydet',
+    ocr_delete_db: 'DBden Sil',
+    content_edit: 'İçeriği Düzenle',
+    content_save: 'İçeriği Kaydet',
+    content_cancel: 'İptal',
+    content_loading: 'İçerik yükleniyor...',
+    content_saved: 'İçerik kaydedildi.',
+    find_label: 'Bul',
+    replace_label: 'Değiştir',
+    find_next: 'Sonrakini Bul',
+    replace_all: 'Tümünü Değiştir',
+    ocr_saved: 'OCR kaydı kaydedildi.',
+    ocr_deleted: 'OCR kaydı silindi.',
+    ocr_none: 'OCR kaydı bulunamadı.',
+    ocr_confirm_delete: 'Bu OCR kaydı veritabanından silinsin mi?',
+    learned_corrections_title: 'Öğrenilmiş Düzeltmeler',
+    learned_wrong: 'Yanlış',
+    learned_correct: 'Doğru',
+    learned_wrong_ph: 'yanlış ifade...',
+    learned_correct_ph: 'doğru ifade...',
+    learned_add: 'Ekle',
+    learned_apply: 'Uygula',
+    learned_use_selection: 'Seçili metni al',
+    learned_delete: 'Sil',
+    learned_none: 'Henüz öğrenilmiş düzeltme yok.',
+    learned_saved: 'Öğrenilmiş düzeltme kaydedildi.',
+    learned_deleted: 'Öğrenilmiş düzeltme silindi.',
+    learned_invalid: 'Yanlış ve doğru alanları zorunludur.',
+    content_audio_player: 'Ses Önizleme',
+    content_audio_tc: 'TC',
+    subtitle_records: 'Altyazı Kayıtları',
+    subtitle_search_admin: 'Altyazı Ara',
+    subtitle_search_admin_ph: 'varlık, etiket, dil...',
+    subtitle_delete_file: 'Altyazı dosyasını diskten de sil',
+    subtitle_lang: 'Dil',
+    subtitle_set_active: 'Aktif Yap',
+    subtitle_save: 'Kaydet',
+    subtitle_delete_db: 'DBden Sil',
+    subtitle_saved: 'Altyazı kaydı kaydedildi.',
+    subtitle_deleted: 'Altyazı kaydı silindi.',
+    subtitle_none: 'Altyazı kaydı bulunamadı.',
+    subtitle_confirm_delete: 'Bu altyazı kaydı veritabanından silinsin mi?',
+    combined_search: 'Birleşik Altyazı + OCR Arama',
+    combined_search_query: 'Arama Metni',
+    combined_search_query_ph: 'Arama metni girin...',
+    combined_search_limit: 'Limit',
+    combined_search_run: 'Aramayı Çalıştır',
+    combined_search_none: 'Eşleşme bulunamadı.'
   }
 };
 
@@ -283,6 +524,355 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;');
 }
 
+function formatEditorTc(sec = 0) {
+  const safe = Math.max(0, Number(sec) || 0);
+  const hh = String(Math.floor(safe / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((safe % 3600) / 60)).padStart(2, '0');
+  const ss = String(Math.floor(safe % 60)).padStart(2, '0');
+  const ms = String(Math.floor((safe % 1) * 1000)).padStart(3, '0');
+  return `${hh}:${mm}:${ss}.${ms}`;
+}
+
+function parseEditorTcToSec(rawTc) {
+  const text = String(rawTc || '').trim();
+  const match = text.match(/^(\d{2}):(\d{2}):(\d{2})(?:([.,:])(\d{2,3}))?$/);
+  if (!match) return null;
+  const hh = Number(match[1] || 0);
+  const mm = Number(match[2] || 0);
+  const ss = Number(match[3] || 0);
+  const sep = String(match[4] || '');
+  const fracRaw = String(match[5] || '');
+  let fracSec = 0;
+  if (fracRaw) {
+    if (sep === ':' && fracRaw.length <= 2) {
+      const frame = Number(fracRaw);
+      fracSec = Math.max(0, frame) / 25;
+    } else {
+      const ms = Number(fracRaw.padEnd(3, '0').slice(0, 3));
+      fracSec = Math.max(0, ms) / 1000;
+    }
+  }
+  return (hh * 3600) + (mm * 60) + ss + fracSec;
+}
+
+function openTextEditorModal({ title, content, mediaUrl = '', mediaStartSec = 0 }) {
+  return new Promise((resolve) => {
+    const safeMediaUrl = String(mediaUrl || '').trim();
+    const hasMedia = Boolean(safeMediaUrl);
+    const backdrop = document.createElement('div');
+    backdrop.className = 'content-modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="content-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title || 'Editor')}">
+        <h4>${escapeHtml(title || 'Editor')}</h4>
+        ${hasMedia ? `
+        <div class="content-modal-audio" role="group" aria-label="${escapeHtml(t('content_audio_player'))}">
+          <div class="content-modal-audio-head">
+            <span>${escapeHtml(t('content_audio_player'))}</span>
+            <span class="content-modal-audio-tc">${escapeHtml(t('content_audio_tc'))}: <strong id="contentEditorAudioTc">00:00:00.000</strong></span>
+          </div>
+          <audio id="contentEditorAudio" preload="metadata" src="${escapeHtml(safeMediaUrl)}"></audio>
+          <div class="content-modal-audio-controls">
+            <button type="button" id="contentEditorAudioToggle">Play</button>
+            <input id="contentEditorAudioTimeline" type="range" min="0" max="0" step="0.01" value="0" />
+            <span class="content-modal-audio-duration" id="contentEditorAudioDuration">00:00:00.000</span>
+          </div>
+        </div>
+        ` : ''}
+        <div class="content-modal-toolbar">
+          <label>
+            <span>${escapeHtml(t('find_label'))}</span>
+            <input id="contentEditorFindInput" type="text" />
+          </label>
+          <label>
+            <span>${escapeHtml(t('replace_label'))}</span>
+            <input id="contentEditorReplaceInput" type="text" />
+          </label>
+          <button type="button" id="contentEditorFindNextBtn">${escapeHtml(t('find_next'))}</button>
+          <button type="button" id="contentEditorReplaceAllBtn">${escapeHtml(t('replace_all'))}</button>
+        </div>
+        <div class="content-modal-layout">
+          <textarea id="contentEditorArea"></textarea>
+          <aside class="content-modal-side">
+            <h5>${escapeHtml(t('learned_corrections_title'))}</h5>
+            <div class="content-modal-side-grid">
+              <input id="contentEditorLcWrong" type="text" placeholder="${escapeHtml(t('learned_wrong_ph'))}" />
+              <input id="contentEditorLcCorrect" type="text" placeholder="${escapeHtml(t('learned_correct_ph'))}" />
+            </div>
+            <div class="content-modal-side-actions">
+              <button type="button" id="contentEditorLcUseSelection">${escapeHtml(t('learned_use_selection'))}</button>
+              <button type="button" id="contentEditorLcAdd">${escapeHtml(t('learned_add'))}</button>
+            </div>
+            <div id="contentEditorLcMsg" class="content-modal-side-msg"></div>
+            <div id="contentEditorLcRows" class="content-modal-side-rows"></div>
+          </aside>
+        </div>
+        <div class="content-modal-actions">
+          <button type="button" id="contentEditorCancelBtn">${escapeHtml(t('content_cancel'))}</button>
+          <button type="button" id="contentEditorSaveBtn">${escapeHtml(t('content_save'))}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(backdrop);
+    const area = backdrop.querySelector('#contentEditorArea');
+    const findInput = backdrop.querySelector('#contentEditorFindInput');
+    const replaceInput = backdrop.querySelector('#contentEditorReplaceInput');
+    const lcWrongInput = backdrop.querySelector('#contentEditorLcWrong');
+    const lcCorrectInput = backdrop.querySelector('#contentEditorLcCorrect');
+    const lcMsg = backdrop.querySelector('#contentEditorLcMsg');
+    const lcRows = backdrop.querySelector('#contentEditorLcRows');
+    const audioEl = backdrop.querySelector('#contentEditorAudio');
+    const audioToggleBtn = backdrop.querySelector('#contentEditorAudioToggle');
+    const audioTimeline = backdrop.querySelector('#contentEditorAudioTimeline');
+    const audioTc = backdrop.querySelector('#contentEditorAudioTc');
+    const audioDuration = backdrop.querySelector('#contentEditorAudioDuration');
+    if (area) area.value = String(content || '');
+    let lastFindPos = 0;
+    let lastFindQuery = '';
+    // Keep folded text length stable so match indexes map to original text positions.
+    const foldForFind = (value) => String(value || '')
+      .normalize('NFC')
+      .replace(/İ/g, 'I')
+      .replace(/ı/g, 'i')
+      .toLowerCase();
+    const scrollSelectionIntoView = (startIndex) => {
+      if (!area) return;
+      const before = String(area.value || '').slice(0, Math.max(0, Number(startIndex) || 0));
+      const line = before.split('\n').length - 1;
+      const lineHeight = parseFloat(window.getComputedStyle(area).lineHeight) || 20;
+      area.scrollTop = Math.max(0, (line - 2) * lineHeight);
+    };
+
+    const findNext = () => {
+      const q = String(findInput?.value || '').trim();
+      if (!q || !area) return;
+      const text = String(area.value || '');
+      const foldedText = foldForFind(text);
+      const foldedQuery = foldForFind(q);
+      if (!foldedQuery) return;
+      if (foldedQuery !== lastFindQuery) {
+        lastFindPos = 0;
+        lastFindQuery = foldedQuery;
+      }
+      const from = Math.max(0, Number(lastFindPos) || 0);
+      let idx = foldedText.indexOf(foldedQuery, from);
+      if (idx < 0) idx = foldedText.indexOf(foldedQuery, 0);
+      if (idx < 0) return;
+      area.focus();
+      area.setSelectionRange(idx, idx + foldedQuery.length);
+      scrollSelectionIntoView(idx);
+      lastFindPos = idx + foldedQuery.length;
+    };
+
+    const replaceAll = () => {
+      if (!area) return;
+      const q = String(findInput?.value || '').trim();
+      if (!q) return;
+      const next = String(replaceInput?.value || '');
+      const source = String(area.value || '');
+      const foldedSource = foldForFind(source);
+      const foldedQuery = foldForFind(q);
+      if (!foldedQuery) return;
+      let cursor = 0;
+      let out = '';
+      while (cursor < source.length) {
+        const idx = foldedSource.indexOf(foldedQuery, cursor);
+        if (idx < 0) {
+          out += source.slice(cursor);
+          break;
+        }
+        out += source.slice(cursor, idx);
+        out += next;
+        cursor = idx + foldedQuery.length;
+      }
+      area.value = out;
+    };
+
+    const applyReplacementToArea = (wrong, correct) => {
+      if (!area) return;
+      const w = String(wrong || '').trim();
+      const c = String(correct || '');
+      if (!w) return;
+      const escaped = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const rx = new RegExp(escaped, 'giu');
+      area.value = String(area.value || '').replace(rx, c);
+    };
+
+    const renderLcRows = (entries) => {
+      if (!lcRows) return;
+      const list = Array.isArray(entries) ? entries : [];
+      if (!list.length) {
+        lcRows.innerHTML = `<div class="muted">${escapeHtml(t('learned_none'))}</div>`;
+        return;
+      }
+      lcRows.innerHTML = list.map((item) => `
+        <div class="content-lc-row" data-wrong="${escapeHtml(item.wrong || '')}" data-correct="${escapeHtml(item.correct || '')}">
+          <div class="content-lc-text">
+            <strong>${escapeHtml(item.wrong || '')}</strong>
+            <span>${escapeHtml(item.correct || '')}</span>
+          </div>
+          <div class="content-lc-actions">
+            <button type="button" class="content-lc-apply">${escapeHtml(t('learned_apply'))}</button>
+            <button type="button" class="content-lc-delete">${escapeHtml(t('learned_delete'))}</button>
+          </div>
+        </div>
+      `).join('');
+    };
+
+    const loadLc = async () => {
+      try {
+        const result = await api('/api/admin/turkish-corrections');
+        renderLcRows(result.entries || []);
+      } catch (error) {
+        if (lcMsg) lcMsg.textContent = String(error.message || 'Request failed');
+      }
+    };
+
+    backdrop.querySelector('#contentEditorLcUseSelection')?.addEventListener('click', () => {
+      if (!area || !lcWrongInput) return;
+      const start = Number(area.selectionStart || 0);
+      const end = Number(area.selectionEnd || 0);
+      if (end <= start) return;
+      const selected = String(area.value || '').slice(start, end).trim();
+      if (selected) lcWrongInput.value = selected;
+    });
+
+    backdrop.querySelector('#contentEditorLcAdd')?.addEventListener('click', async () => {
+      const wrong = String(lcWrongInput?.value || '').trim();
+      const correct = String(lcCorrectInput?.value || '').trim();
+      if (!wrong || !correct) {
+        if (lcMsg) lcMsg.textContent = t('learned_invalid');
+        return;
+      }
+      try {
+        await api('/api/admin/turkish-corrections', {
+          method: 'POST',
+          body: JSON.stringify({ wrong, correct })
+        });
+        applyReplacementToArea(wrong, correct);
+        if (lcWrongInput) lcWrongInput.value = '';
+        if (lcCorrectInput) lcCorrectInput.value = '';
+        if (lcMsg) lcMsg.textContent = t('learned_saved');
+        await loadLc();
+      } catch (error) {
+        if (lcMsg) lcMsg.textContent = String(error.message || 'Request failed');
+      }
+    });
+
+    lcRows?.addEventListener('click', async (event) => {
+      const rowEl = event.target.closest('.content-lc-row');
+      if (!rowEl) return;
+      const wrong = String(rowEl.dataset.wrong || '');
+      const correct = String(rowEl.dataset.correct || '');
+      if (event.target.closest('.content-lc-apply')) {
+        applyReplacementToArea(wrong, correct);
+        return;
+      }
+      if (event.target.closest('.content-lc-delete')) {
+        try {
+          await api(`/api/admin/turkish-corrections?wrong=${encodeURIComponent(wrong)}`, { method: 'DELETE' });
+          if (lcMsg) lcMsg.textContent = t('learned_deleted');
+          await loadLc();
+        } catch (error) {
+          if (lcMsg) lcMsg.textContent = String(error.message || 'Request failed');
+        }
+      }
+    });
+
+    backdrop.querySelector('#contentEditorFindNextBtn')?.addEventListener('click', findNext);
+    backdrop.querySelector('#contentEditorReplaceAllBtn')?.addEventListener('click', replaceAll);
+    findInput?.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      findNext();
+    });
+
+    if (audioEl && audioTimeline && audioTc && audioDuration) {
+      const updateAudioUi = () => {
+        if (!Number.isFinite(audioEl.duration) || audioEl.duration <= 0) return;
+        audioTimeline.max = String(audioEl.duration);
+        audioTimeline.value = String(Math.min(audioEl.duration, Math.max(0, audioEl.currentTime || 0)));
+        audioTc.textContent = formatEditorTc(audioEl.currentTime || 0);
+        audioDuration.textContent = formatEditorTc(audioEl.duration || 0);
+      };
+
+      audioEl.addEventListener('loadedmetadata', () => {
+        const start = Math.max(0, Number(mediaStartSec) || 0);
+        if (start > 0 && Number.isFinite(audioEl.duration) && start < audioEl.duration) {
+          audioEl.currentTime = start;
+        }
+        updateAudioUi();
+      });
+      audioEl.addEventListener('timeupdate', updateAudioUi);
+      audioEl.addEventListener('play', () => {
+        if (audioToggleBtn) audioToggleBtn.textContent = 'Pause';
+      });
+      audioEl.addEventListener('pause', () => {
+        if (audioToggleBtn) audioToggleBtn.textContent = 'Play';
+      });
+      audioToggleBtn?.addEventListener('click', async () => {
+        try {
+          if (audioEl.paused) await audioEl.play();
+          else audioEl.pause();
+        } catch (_error) {
+          // ignore blocked autoplay/permissions
+        }
+      });
+      audioTimeline.addEventListener('input', () => {
+        const target = Math.max(0, Number(audioTimeline.value) || 0);
+        audioTc.textContent = formatEditorTc(target);
+      });
+      audioTimeline.addEventListener('change', () => {
+        const target = Math.max(0, Number(audioTimeline.value) || 0);
+        audioEl.currentTime = target;
+      });
+      updateAudioUi();
+
+      area?.addEventListener('click', () => {
+        const text = String(area.value || '');
+        const caret = Number(area.selectionStart || 0);
+        if (!text || caret < 0 || caret > text.length) return;
+        const lineStart = text.lastIndexOf('\n', Math.max(0, caret - 1)) + 1;
+        const lineEndRaw = text.indexOf('\n', caret);
+        const lineEnd = lineEndRaw < 0 ? text.length : lineEndRaw;
+        const line = text.slice(lineStart, lineEnd);
+        const rel = caret - lineStart;
+        const tcRegex = /\b\d{2}:\d{2}:\d{2}(?:[.,:]\d{2,3})?\b/g;
+        for (const match of line.matchAll(tcRegex)) {
+          const token = String(match[0] || '');
+          const start = Number(match.index || 0);
+          const end = start + token.length;
+          if (rel < start || rel > end) continue;
+          const sec = parseEditorTcToSec(token);
+          if (!Number.isFinite(sec)) return;
+          const bounded = Number.isFinite(audioEl.duration) && audioEl.duration > 0
+            ? Math.max(0, Math.min(audioEl.duration, sec))
+            : Math.max(0, sec);
+          audioEl.currentTime = bounded;
+          updateAudioUi();
+          return;
+        }
+      });
+    }
+
+    const close = (result) => {
+      if (audioEl) {
+        audioEl.pause();
+        audioEl.removeAttribute('src');
+      }
+      backdrop.remove();
+      resolve(result);
+    };
+    backdrop.querySelector('#contentEditorCancelBtn')?.addEventListener('click', () => close(null));
+    backdrop.querySelector('#contentEditorSaveBtn')?.addEventListener('click', () => {
+      close(String(area?.value || ''));
+    });
+    backdrop.addEventListener('click', (event) => {
+      if (event.target === backdrop) close(null);
+    });
+    loadLc().catch(() => {});
+  });
+}
+
 function renderWorkflowTracking(data) {
   const totals = data.totals || {};
   const proxies = data.proxies || {};
@@ -304,6 +894,41 @@ function renderHealth(health) {
   const ffmpegLine = `<div class="${health.ffmpegOk ? 'health-ok' : 'health-bad'}">${health.ffmpegOk ? t('ffmpeg_ok') : t('ffmpeg_fail')} ${health.ffmpegInfo ? `| ${health.ffmpegInfo}` : ''}</div>`;
   const ffprobeLine = `<div class="${health.ffprobeOk ? 'health-ok' : 'health-bad'}">${health.ffprobeOk ? t('ffprobe_ok') : t('ffprobe_fail')} ${health.ffprobeInfo ? `| ${health.ffprobeInfo}` : ''}</div>`;
   ffmpegHealthEl.innerHTML = `${ffmpegLine}${ffprobeLine}`;
+}
+
+function humanBytes(value) {
+  const n = Math.max(0, Number(value) || 0);
+  if (n < 1024) return `${n} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let size = n / 1024;
+  let idx = 0;
+  while (size >= 1024 && idx < units.length - 1) {
+    size /= 1024;
+    idx += 1;
+  }
+  return `${size.toFixed(1)} ${units[idx]}`;
+}
+
+function renderSystemHealth(data) {
+  if (!systemHealthRows) return;
+  const disk = data?.disk || {};
+  const jobs = data?.jobs || {};
+  const services = data?.services || {};
+  const integrity = data?.integrity || {};
+  const serviceBadge = (entry) => {
+    const ok = Boolean(entry?.ok);
+    const status = Number(entry?.status || 0);
+    const cls = ok ? 'health-ok' : 'health-bad';
+    const label = ok ? t('health_up') : t('health_down');
+    const suffix = status > 0 ? ` (${status})` : '';
+    return `<span class="${cls}">${escapeHtml(label)}${escapeHtml(suffix)}</span>`;
+  };
+  systemHealthRows.innerHTML = [
+    `<div class="row"><strong>${escapeHtml(t('health_disk'))}</strong><span>${escapeHtml(t('health_uploads_size'))}: ${escapeHtml(humanBytes(disk.uploadsBytes))} | ${escapeHtml(t('health_uploads_files'))}: ${escapeHtml(String(disk.uploadsFiles || 0))} | ${escapeHtml(t('health_fs_free'))}: ${escapeHtml(humanBytes(disk.fsFreeBytes))} / ${escapeHtml(t('health_fs_total'))}: ${escapeHtml(humanBytes(disk.fsTotalBytes))}</span></div>`,
+    `<div class="row"><strong>${escapeHtml(t('health_services'))}</strong><span>${escapeHtml(t('health_service_app'))}: ${serviceBadge(services.app)} | ${escapeHtml(t('health_service_postgres'))}: ${serviceBadge(services.postgres)} | ${escapeHtml(t('health_service_elastic'))}: ${serviceBadge(services.elasticsearch)} | ${escapeHtml(t('health_service_keycloak'))}: ${serviceBadge(services.keycloak)} | ${escapeHtml(t('health_service_oauth2_proxy'))}: ${serviceBadge(services.oauth2Proxy)}</span></div>`,
+    `<div class="row"><strong>${escapeHtml(t('health_jobs'))}</strong><span>${escapeHtml(t('health_proxy_running'))}: ${escapeHtml(String(jobs.proxyRunning || 0))} | ${escapeHtml(t('health_subtitle_running'))}: ${escapeHtml(String(jobs.subtitleRunning || 0))} | ${escapeHtml(t('health_ocr_running'))}: ${escapeHtml(String(jobs.ocrRunning || 0))} | ${escapeHtml(t('health_proxy_failed'))}: ${escapeHtml(String(jobs.proxyFailed || 0))} | ${escapeHtml(t('health_subtitle_failed'))}: ${escapeHtml(String(jobs.subtitleFailed || 0))} | ${escapeHtml(t('health_ocr_failed'))}: ${escapeHtml(String(jobs.ocrFailed || 0))}</span></div>`,
+    `<div class="row"><strong>${escapeHtml(t('health_integrity'))}</strong><span>${escapeHtml(t('health_missing_proxy'))}: ${escapeHtml(String(integrity.missingProxy || 0))} | ${escapeHtml(t('health_missing_thumbnail'))}: ${escapeHtml(String(integrity.missingThumbnail || 0))} | ${escapeHtml(t('health_missing_subtitle'))}: ${escapeHtml(String(integrity.missingSubtitle || 0))} | ${escapeHtml(t('health_missing_ocr'))}: ${escapeHtml(String(integrity.missingOcr || 0))}</span></div>`
+  ].join('');
 }
 
 function renderProxyJob(job) {
@@ -339,10 +964,94 @@ function switchTab(tabName) {
   });
 }
 
+function switchSettingsSubtab(tabName) {
+  const target = String(tabName || 'general');
+  settingsSubTabs.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.settingsTab === target);
+  });
+  settingsSubPanels.forEach((panel) => {
+    panel.classList.toggle('active', panel.dataset.settingsPanel === target);
+  });
+}
+
+async function loadSettingsSubtabData(tabName) {
+  const tab = String(tabName || '').trim().toLowerCase();
+  if (tab === 'workflow') {
+    await refreshTrackingAndHealth();
+    return;
+  }
+  if (tab === 'proxy') {
+    await refreshTrackingAndHealth();
+    return;
+  }
+  if (tab === 'ocr') {
+    await loadOcrRecords();
+    return;
+  }
+  if (tab === 'subtitle') {
+    await loadSubtitleRecords();
+    return;
+  }
+  if (tab === 'users') {
+    await loadUserPermissions();
+  }
+}
+
 function updateProxyToolUi() {
   const mode = String(proxyToolAction?.value || 'thumbnail').trim().toLowerCase();
   const showTimecode = mode === 'thumbnail';
+  const showReplaceFile = mode === 'replace_asset' || mode === 'replace_pdf';
   if (proxyToolTimecodeWrap) proxyToolTimecodeWrap.classList.toggle('hidden', !showTimecode);
+  if (proxyToolReplaceFileWrap) proxyToolReplaceFileWrap.classList.toggle('hidden', !showReplaceFile);
+}
+
+function askReplaceGenerationOptions() {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'content-modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="content-modal proxy-replace-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('proxy_tool_action_replace_asset'))}">
+        <h4>${escapeHtml(t('proxy_tool_action_replace_asset'))}</h4>
+        <p class="proxy-replace-modal-note">${escapeHtml(t('proxy_tool_replace_options_prompt'))}</p>
+        <label class="toggle-row"><input id="proxyReplaceAskThumb" type="checkbox" /> <span>${escapeHtml(t('proxy_tool_replace_gen_thumbnail'))}</span></label>
+        <label class="toggle-row"><input id="proxyReplaceAskPreview" type="checkbox" /> <span>${escapeHtml(t('proxy_tool_replace_gen_preview'))}</span></label>
+        <div class="content-modal-actions">
+          <button type="button" id="proxyReplaceAskCancel">${escapeHtml(t('content_cancel'))}</button>
+          <button type="button" id="proxyReplaceAskOk">${escapeHtml(t('proxy_tool_run'))}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(backdrop);
+
+    const close = (value) => {
+      backdrop.remove();
+      resolve(value);
+    };
+
+    backdrop.querySelector('#proxyReplaceAskCancel')?.addEventListener('click', () => close(null));
+    backdrop.querySelector('#proxyReplaceAskOk')?.addEventListener('click', () => {
+      const generateThumbnail = Boolean(backdrop.querySelector('#proxyReplaceAskThumb')?.checked);
+      const generatePreview = Boolean(backdrop.querySelector('#proxyReplaceAskPreview')?.checked);
+      close({ generateThumbnail, generatePreview });
+    });
+    backdrop.addEventListener('click', (event) => {
+      if (event.target === backdrop) close(null);
+    });
+  });
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) return reject(new Error('Missing file'));
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Failed to read selected file'));
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const base64 = result.includes(',') ? result.split(',').pop() : result;
+      resolve(String(base64 || '').trim());
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 function escapeRegExp(value) {
@@ -450,6 +1159,7 @@ function renderUserPermissions(users) {
         <strong>${uname}</strong>
         <label><input type="checkbox" class="perm-admin-access" ${user.adminPageAccess ? 'checked' : ''} /> ${escapeHtml(t('perm_admin_access'))}</label>
         <label><input type="checkbox" class="perm-asset-delete" ${user.assetDelete ? 'checked' : ''} /> ${escapeHtml(t('perm_asset_delete'))}</label>
+        <label><input type="checkbox" class="perm-pdf-advanced" ${user.pdfAdvancedTools ? 'checked' : ''} /> ${escapeHtml(t('perm_pdf_advanced'))}</label>
         <button type="button" class="perm-save-btn">${escapeHtml(t('save_settings'))}</button>
       </div>
     `;
@@ -462,9 +1172,10 @@ function renderUserPermissions(users) {
       if (!username) return;
       const adminPageAccess = Boolean(rowEl.querySelector('.perm-admin-access')?.checked);
       const assetDelete = Boolean(rowEl.querySelector('.perm-asset-delete')?.checked);
+      const pdfAdvancedTools = Boolean(rowEl.querySelector('.perm-pdf-advanced')?.checked);
       await api(`/api/admin/user-permissions/${encodeURIComponent(username)}`, {
         method: 'PATCH',
-        body: JSON.stringify({ adminPageAccess, assetDelete })
+        body: JSON.stringify({ adminPageAccess, assetDelete, pdfAdvancedTools })
       });
       if (userPermissionsMsg) userPermissionsMsg.textContent = t('user_permissions_saved');
     });
@@ -474,6 +1185,125 @@ function renderUserPermissions(users) {
 async function loadUserPermissions() {
   const result = await api('/api/admin/user-permissions');
   renderUserPermissions(result.users || []);
+}
+
+function renderOcrRecords(records) {
+  if (!ocrRecordsRows) return;
+  const list = Array.isArray(records) ? records : [];
+  if (!list.length) {
+    ocrRecordsRows.innerHTML = `<div class="row"><span>${escapeHtml(t('ocr_none'))}</span></div>`;
+    return;
+  }
+  ocrRecordsRows.innerHTML = list.map((item) => `
+    <div class="row ocr-row" data-asset-id="${escapeHtml(item.assetId)}" data-item-id="${escapeHtml(item.itemId)}">
+      <div class="ocr-row-main">
+        <strong>${escapeHtml(item.assetTitle || item.fileName || item.assetId)}</strong>
+        <span>${escapeHtml(t('ocr_engine'))}: ${escapeHtml(item.ocrEngine || '-')} | ${escapeHtml(t('ocr_lines'))}: ${escapeHtml(String(item.lineCount || 0))} | ${escapeHtml(t('ocr_segments'))}: ${escapeHtml(String(item.segmentCount || 0))}</span>
+      </div>
+      <input type="text" class="ocr-label-input" value="${escapeHtml(item.ocrLabel || '')}" />
+      <button type="button" class="ocr-content-btn">${escapeHtml(t('content_edit'))}</button>
+      <button type="button" class="ocr-save-btn">${escapeHtml(t('ocr_edit'))}</button>
+      <button type="button" class="ocr-delete-btn">${escapeHtml(t('ocr_delete_db'))}</button>
+    </div>
+  `).join('');
+}
+
+async function loadOcrRecords() {
+  if (!ocrRecordsRows) return;
+  const q = String(ocrAdminSearchInput?.value || '').trim();
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  params.set('limit', '800');
+  const result = await api(`/api/admin/ocr-records?${params.toString()}`);
+  renderOcrRecords(result.records || []);
+}
+
+function queueLoadOcrRecords() {
+  if (ocrRecordsTimer) clearTimeout(ocrRecordsTimer);
+  ocrRecordsTimer = setTimeout(() => {
+    loadOcrRecords().catch((error) => {
+      if (ocrRecordsMsg) ocrRecordsMsg.textContent = String(error.message || 'Request failed');
+    });
+  }, 180);
+}
+
+function renderSubtitleRecords(records) {
+  if (!subtitleRecordsRows) return;
+  const list = Array.isArray(records) ? records : [];
+  if (!list.length) {
+    subtitleRecordsRows.innerHTML = `<div class="row"><span>${escapeHtml(t('subtitle_none'))}</span></div>`;
+    return;
+  }
+  subtitleRecordsRows.innerHTML = list.map((item) => `
+    <div class="row subtitle-row" data-asset-id="${escapeHtml(item.assetId)}" data-item-id="${escapeHtml(item.itemId)}">
+      <div class="subtitle-row-main">
+        <strong>${escapeHtml(item.assetTitle || item.fileName || item.assetId)}</strong>
+        <span>${escapeHtml(item.subtitleLabel || 'subtitle')} | ${escapeHtml(t('subtitle_lang'))}: ${escapeHtml(item.subtitleLang || 'tr')} ${item.active ? '| ACTIVE' : ''}</span>
+      </div>
+      <input type="text" class="subtitle-label-input" value="${escapeHtml(item.subtitleLabel || '')}" />
+      <input type="text" class="subtitle-lang-input" value="${escapeHtml(item.subtitleLang || '')}" />
+      <button type="button" class="subtitle-content-btn">${escapeHtml(t('content_edit'))}</button>
+      <button type="button" class="subtitle-set-active-btn">${escapeHtml(t('subtitle_set_active'))}</button>
+      <button type="button" class="subtitle-save-btn">${escapeHtml(t('subtitle_save'))}</button>
+      <button type="button" class="subtitle-delete-btn">${escapeHtml(t('subtitle_delete_db'))}</button>
+    </div>
+  `).join('');
+}
+
+async function loadSubtitleRecords() {
+  if (!subtitleRecordsRows) return;
+  const q = String(subtitleAdminSearchInput?.value || '').trim();
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  params.set('limit', '1200');
+  const result = await api(`/api/admin/subtitle-records?${params.toString()}`);
+  renderSubtitleRecords(result.records || []);
+}
+
+function queueLoadSubtitleRecords() {
+  if (subtitleRecordsTimer) clearTimeout(subtitleRecordsTimer);
+  subtitleRecordsTimer = setTimeout(() => {
+    loadSubtitleRecords().catch((error) => {
+      if (subtitleRecordsMsg) subtitleRecordsMsg.textContent = String(error.message || 'Request failed');
+    });
+  }, 180);
+}
+
+function renderCombinedSearch(results, query) {
+  if (!combinedSearchRows) return;
+  const list = Array.isArray(results) ? results : [];
+  if (!list.length) {
+    combinedSearchRows.innerHTML = `<div class="row"><span>${escapeHtml(t('combined_search_none'))}</span></div>`;
+    return;
+  }
+  const q = String(query || '').trim();
+  combinedSearchRows.innerHTML = list.map((item) => `
+    <div class="row combined-row">
+      <div class="combined-row-main">
+        <strong>${escapeHtml(item.assetTitle || item.assetId || '')}</strong>
+        <span>${escapeHtml(String(item.source || '').toUpperCase())} | TC ${escapeHtml(item.timecode || '00:00:00:00')} | ${escapeHtml(item.label || '-')}</span>
+        <span>${highlightSuggestion(String(item.text || ''), q)}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function runCombinedSearch() {
+  if (!combinedSearchRows) return;
+  const q = String(combinedSearchInput?.value || '').trim();
+  if (!q) {
+    renderCombinedSearch([], '');
+    if (combinedSearchMsg) combinedSearchMsg.textContent = '';
+    return;
+  }
+  const limit = Math.max(10, Math.min(500, Number(combinedSearchLimit?.value) || 120));
+  if (combinedSearchMsg) combinedSearchMsg.textContent = `${t('loading')}...`;
+  const params = new URLSearchParams();
+  params.set('q', q);
+  params.set('limit', String(limit));
+  const result = await api(`/api/admin/text-search?${params.toString()}`);
+  renderCombinedSearch(result.results || [], q);
+  if (combinedSearchMsg) combinedSearchMsg.textContent = `${(result.results || []).length} result(s)`;
 }
 
 function renderApiHelp() {
@@ -510,7 +1340,7 @@ function renderApiGuide() {
     `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_auth_title'))}</h3><p>${escapeHtml(t('api_help_auth_note'))}</p><p>${escapeHtml(bearerEnabled ? t('api_help_bearer_on') : t('api_help_bearer_off'))}</p><p>${escapeHtml(tokenEnabled ? t('api_help_token_on') : t('api_help_token_off'))}</p><p>${escapeHtml(t('api_help_token_hint'))} (${escapeHtml(masked)})</p></div>`,
     `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_quick_title'))}</h3><p><strong>${escapeHtml(t('api_help_cmd_workflow'))}</strong></p><pre>${escapeHtml(workflowCmd)}</pre><p><strong>${escapeHtml(t('api_help_cmd_assets'))}</strong></p><pre>${escapeHtml(assetsCmd)}</pre><p><strong>${escapeHtml(t('api_help_cmd_asset_by_id'))}</strong></p><pre>${escapeHtml(oneAssetCmd)}</pre><p><strong>${escapeHtml(t('api_help_cmd_create_collection'))}</strong></p><pre>${escapeHtml(collectionCmd)}</pre></div>`,
     `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_postman_title'))}</h3><ul><li>${escapeHtml(t('api_help_postman_step1'))}</li><li>${escapeHtml(postmanUrlStep)}</li><li>${escapeHtml(t('api_help_postman_step3'))}</li><li>${escapeHtml(t('api_help_postman_step4'))}</li></ul></div>`,
-    `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_endpoints_title'))}</h3><pre>${escapeHtml(`GET    /api/workflow\nGET    /api/me\nGET    /api/assets\nPOST   /api/assets\nPOST   /api/assets/upload\nGET    /api/assets/:id\nPATCH  /api/assets/:id\nPOST   /api/assets/:id/transition\nPOST   /api/assets/:id/versions\nPOST   /api/assets/:id/cuts\nPATCH  /api/assets/:id/cuts/:cutId\nDELETE /api/assets/:id/cuts/:cutId\nPOST   /api/assets/:id/trash\nPOST   /api/assets/:id/restore\nDELETE /api/assets/:id\nGET    /api/collections\nPOST   /api/collections`)}</pre></div>`
+    `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_endpoints_title'))}</h3><pre>${escapeHtml(`GET    /api/workflow\nGET    /api/me\nGET    /api/assets\nPOST   /api/assets\nPOST   /api/assets/upload\nGET    /api/assets/:id\nPATCH  /api/assets/:id\nPOST   /api/assets/:id/transition\nPOST   /api/assets/:id/versions\nPOST   /api/assets/:id/cuts\nPATCH  /api/assets/:id/cuts/:cutId\nDELETE /api/assets/:id/cuts/:cutId\nPOST   /api/assets/:id/trash\nPOST   /api/assets/:id/restore\nDELETE /api/assets/:id\nGET    /api/collections\nPOST   /api/collections\n\nGET    /api/admin/system-health\nGET    /api/admin/ocr-records\nPATCH  /api/admin/ocr-records\nDELETE /api/admin/ocr-records\nGET    /api/admin/ocr-records/content\nPATCH  /api/admin/ocr-records/content\nGET    /api/admin/subtitle-records\nPATCH  /api/admin/subtitle-records\nDELETE /api/admin/subtitle-records\nGET    /api/admin/subtitle-records/content\nPATCH  /api/admin/subtitle-records/content\nGET    /api/admin/text-search`)}</pre></div>`
   ].join('');
 }
 
@@ -528,17 +1358,31 @@ async function loadSettings() {
   if (oidcIssuerUrlInput) oidcIssuerUrlInput.value = String(settings.oidcIssuerUrl || '');
   if (oidcJwksUrlInput) oidcJwksUrlInput.value = String(settings.oidcJwksUrl || '');
   if (oidcAudienceInput) oidcAudienceInput.value = String(settings.oidcAudience || '');
+  {
+    const advancedModeInput = document.getElementById('ocrDefaultAdvancedMode');
+    const turkishFixInput = document.getElementById('ocrDefaultTurkishAiCorrect');
+    const blurFilterInput = document.getElementById('ocrDefaultEnableBlurFilter');
+    const regionModeInput = document.getElementById('ocrDefaultEnableRegionMode');
+    const staticOverlayInput = document.getElementById('ocrDefaultIgnoreStaticOverlays');
+    if (advancedModeInput) advancedModeInput.checked = Boolean(settings.ocrDefaultAdvancedMode);
+    if (turkishFixInput) turkishFixInput.checked = Boolean(settings.ocrDefaultTurkishAiCorrect);
+    if (blurFilterInput) blurFilterInput.checked = Boolean(settings.ocrDefaultEnableBlurFilter);
+    if (regionModeInput) regionModeInput.checked = Boolean(settings.ocrDefaultEnableRegionMode);
+    if (staticOverlayInput) staticOverlayInput.checked = Boolean(settings.ocrDefaultIgnoreStaticOverlays);
+  }
   renderApiHelp();
   renderApiGuide();
 }
 
 async function refreshTrackingAndHealth() {
-  const [tracking, health] = await Promise.all([
+  const [tracking, health, systemHealth] = await Promise.all([
     api('/api/admin/workflow-tracking'),
-    api('/api/admin/ffmpeg-health')
+    api('/api/admin/ffmpeg-health'),
+    api('/api/admin/system-health')
   ]);
   renderWorkflowTracking(tracking);
   renderHealth(health);
+  renderSystemHealth(systemHealth);
 }
 
 async function pollJob() {
@@ -574,6 +1418,19 @@ settingsForm.addEventListener('submit', async (event) => {
   settingsMsg.textContent = t('settings_saved');
   renderApiHelp();
   renderApiGuide();
+});
+
+ocrSettingsForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const payload = {
+    ocrDefaultAdvancedMode: Boolean(document.getElementById('ocrDefaultAdvancedMode')?.checked),
+    ocrDefaultTurkishAiCorrect: Boolean(document.getElementById('ocrDefaultTurkishAiCorrect')?.checked),
+    ocrDefaultEnableBlurFilter: Boolean(document.getElementById('ocrDefaultEnableBlurFilter')?.checked),
+    ocrDefaultEnableRegionMode: Boolean(document.getElementById('ocrDefaultEnableRegionMode')?.checked),
+    ocrDefaultIgnoreStaticOverlays: Boolean(document.getElementById('ocrDefaultIgnoreStaticOverlays')?.checked)
+  };
+  await api('/api/admin/settings', { method: 'PATCH', body: JSON.stringify(payload) });
+  if (ocrSettingsMsg) ocrSettingsMsg.textContent = t('settings_saved');
 });
 
 rotateApiTokenBtn?.addEventListener('click', async () => {
@@ -646,6 +1503,23 @@ runProxyToolBtn?.addEventListener('click', async () => {
   const mode = String(proxyToolAction?.value || 'thumbnail').trim().toLowerCase();
   const payload = { assetName, mode };
   if (mode === 'thumbnail') payload.timecode = String(proxyToolTimecode?.value || '').trim();
+  if (mode === 'replace_asset' || mode === 'replace_pdf') {
+    const file = proxyToolReplaceFile?.files?.[0] || null;
+    if (!file) {
+      if (proxyToolMsg) proxyToolMsg.textContent = t('proxy_tool_replace_file_required');
+      return;
+    }
+    const options = await askReplaceGenerationOptions();
+    if (!options) {
+      if (proxyToolMsg) proxyToolMsg.textContent = '';
+      return;
+    }
+    payload.fileName = String(file.name || '').trim() || 'replacement.bin';
+    payload.mimeType = String(file.type || '').trim();
+    payload.fileBase64 = await fileToBase64(file);
+    payload.generateThumbnail = Boolean(options.generateThumbnail);
+    payload.generatePreview = Boolean(options.generatePreview);
+  }
 
   if (proxyToolMsg) proxyToolMsg.textContent = `${t('loading')}...`;
   try {
@@ -660,6 +1534,9 @@ runProxyToolBtn?.addEventListener('click', async () => {
     const suffix = extra.length ? ` | ${extra.join(' | ')}` : '';
     if (proxyToolMsg) {
       proxyToolMsg.textContent = `${t('proxy_tool_done')}: ${result.assetTitle || result.assetId} (${result.mode})${suffix}`;
+    }
+    if ((mode === 'replace_asset' || mode === 'replace_pdf') && proxyToolReplaceFile) {
+      proxyToolReplaceFile.value = '';
     }
     await refreshTrackingAndHealth();
   } catch (error) {
@@ -728,10 +1605,210 @@ includeTrash?.addEventListener('change', () => {
   }
 });
 
+ocrAdminSearchInput?.addEventListener('input', () => {
+  queueLoadOcrRecords();
+});
+
+ocrAdminSearchInput?.addEventListener('keydown', async (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  try {
+    await loadOcrRecords();
+  } catch (error) {
+    if (ocrRecordsMsg) ocrRecordsMsg.textContent = String(error.message || 'Request failed');
+  }
+});
+
+runOcrAdminSearchBtn?.addEventListener('click', async () => {
+  try {
+    await loadOcrRecords();
+  } catch (error) {
+    if (ocrRecordsMsg) ocrRecordsMsg.textContent = String(error.message || 'Request failed');
+  }
+});
+
+subtitleAdminSearchInput?.addEventListener('input', () => {
+  queueLoadSubtitleRecords();
+});
+
+ocrRecordsRows?.addEventListener('click', async (event) => {
+  const rowEl = event.target.closest('.ocr-row');
+  if (!rowEl) return;
+  const assetId = String(rowEl.dataset.assetId || '').trim();
+  const itemId = String(rowEl.dataset.itemId || '').trim();
+  if (!assetId || !itemId) return;
+
+  if (event.target.closest('.ocr-content-btn')) {
+    try {
+      if (ocrRecordsMsg) ocrRecordsMsg.textContent = t('content_loading');
+      const readResult = await api(`/api/admin/ocr-records/content?assetId=${encodeURIComponent(assetId)}&itemId=${encodeURIComponent(itemId)}`);
+      let mediaUrl = '';
+      try {
+        const assetDetail = await api(`/api/assets/${encodeURIComponent(assetId)}`);
+        mediaUrl = String(assetDetail?.proxyUrl || assetDetail?.mediaUrl || '').trim();
+      } catch (_error) {
+        mediaUrl = '';
+      }
+      const nextContent = await openTextEditorModal({
+        title: `${t('ocr_records')} - ${rowEl.querySelector('.ocr-row-main strong')?.textContent || assetId}`,
+        content: String(readResult.content || ''),
+        mediaUrl
+      });
+      if (nextContent == null) return;
+      await api('/api/admin/ocr-records/content', {
+        method: 'PATCH',
+        body: JSON.stringify({ assetId, itemId, content: nextContent })
+      });
+      if (ocrRecordsMsg) ocrRecordsMsg.textContent = t('content_saved');
+      await loadOcrRecords();
+    } catch (error) {
+      if (ocrRecordsMsg) ocrRecordsMsg.textContent = String(error.message || 'Request failed');
+    }
+    return;
+  }
+
+  if (event.target.closest('.ocr-save-btn')) {
+    const nextLabel = String(rowEl.querySelector('.ocr-label-input')?.value || '').trim();
+    if (!nextLabel) return;
+    await api('/api/admin/ocr-records', {
+      method: 'PATCH',
+      body: JSON.stringify({ assetId, itemId, ocrLabel: nextLabel })
+    });
+    if (ocrRecordsMsg) ocrRecordsMsg.textContent = t('ocr_saved');
+    await loadOcrRecords();
+    return;
+  }
+
+  if (event.target.closest('.ocr-delete-btn')) {
+    if (!confirm(t('ocr_confirm_delete'))) return;
+    await api('/api/admin/ocr-records', {
+      method: 'DELETE',
+      body: JSON.stringify({
+        assetId,
+        itemId,
+        deleteFile: Boolean(ocrDeleteFileCheck?.checked)
+      })
+    });
+    if (ocrRecordsMsg) ocrRecordsMsg.textContent = t('ocr_deleted');
+    await loadOcrRecords();
+  }
+});
+
+subtitleRecordsRows?.addEventListener('click', async (event) => {
+  const rowEl = event.target.closest('.subtitle-row');
+  if (!rowEl) return;
+  const assetId = String(rowEl.dataset.assetId || '').trim();
+  const itemId = String(rowEl.dataset.itemId || '').trim();
+  if (!assetId || !itemId) return;
+
+  const nextLabel = String(rowEl.querySelector('.subtitle-label-input')?.value || '').trim();
+  const nextLang = String(rowEl.querySelector('.subtitle-lang-input')?.value || '').trim() || 'tr';
+
+  if (event.target.closest('.subtitle-content-btn')) {
+    try {
+      if (subtitleRecordsMsg) subtitleRecordsMsg.textContent = t('content_loading');
+      const readResult = await api(`/api/admin/subtitle-records/content?assetId=${encodeURIComponent(assetId)}&itemId=${encodeURIComponent(itemId)}`);
+      let mediaUrl = '';
+      try {
+        const assetDetail = await api(`/api/assets/${encodeURIComponent(assetId)}`);
+        mediaUrl = String(assetDetail?.proxyUrl || assetDetail?.mediaUrl || '').trim();
+      } catch (_error) {
+        mediaUrl = '';
+      }
+      const nextContent = await openTextEditorModal({
+        title: `${t('subtitle_records')} - ${rowEl.querySelector('.subtitle-row-main strong')?.textContent || assetId}`,
+        content: String(readResult.content || ''),
+        mediaUrl
+      });
+      if (nextContent == null) return;
+      await api('/api/admin/subtitle-records/content', {
+        method: 'PATCH',
+        body: JSON.stringify({ assetId, itemId, content: nextContent })
+      });
+      if (subtitleRecordsMsg) subtitleRecordsMsg.textContent = t('content_saved');
+      await loadSubtitleRecords();
+    } catch (error) {
+      if (subtitleRecordsMsg) subtitleRecordsMsg.textContent = String(error.message || 'Request failed');
+    }
+    return;
+  }
+
+  if (event.target.closest('.subtitle-set-active-btn')) {
+    if (!nextLabel) return;
+    await api('/api/admin/subtitle-records', {
+      method: 'PATCH',
+      body: JSON.stringify({ assetId, itemId, subtitleLabel: nextLabel, subtitleLang: nextLang, setActive: true })
+    });
+    if (subtitleRecordsMsg) subtitleRecordsMsg.textContent = t('subtitle_saved');
+    await loadSubtitleRecords();
+    return;
+  }
+
+  if (event.target.closest('.subtitle-save-btn')) {
+    if (!nextLabel) return;
+    await api('/api/admin/subtitle-records', {
+      method: 'PATCH',
+      body: JSON.stringify({ assetId, itemId, subtitleLabel: nextLabel, subtitleLang: nextLang })
+    });
+    if (subtitleRecordsMsg) subtitleRecordsMsg.textContent = t('subtitle_saved');
+    await loadSubtitleRecords();
+    return;
+  }
+
+  if (event.target.closest('.subtitle-delete-btn')) {
+    if (!confirm(t('subtitle_confirm_delete'))) return;
+    await api('/api/admin/subtitle-records', {
+      method: 'DELETE',
+      body: JSON.stringify({
+        assetId,
+        itemId,
+        deleteFile: Boolean(subtitleDeleteFileCheck?.checked)
+      })
+    });
+    if (subtitleRecordsMsg) subtitleRecordsMsg.textContent = t('subtitle_deleted');
+    await loadSubtitleRecords();
+  }
+});
+
+runCombinedSearchBtn?.addEventListener('click', async () => {
+  try {
+    await runCombinedSearch();
+  } catch (error) {
+    if (combinedSearchMsg) combinedSearchMsg.textContent = String(error.message || 'Request failed');
+  }
+});
+
+combinedSearchInput?.addEventListener('keydown', async (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  try {
+    await runCombinedSearch();
+  } catch (error) {
+    if (combinedSearchMsg) combinedSearchMsg.textContent = String(error.message || 'Request failed');
+  }
+});
+
 adminTabs.forEach((btn) => {
   btn.addEventListener('click', () => {
     hideProxySuggestions();
-    switchTab(btn.dataset.tab || 'apiHelp');
+    const target = btn.dataset.tab || 'apiHelp';
+    switchTab(target);
+    if (target === 'settings') {
+      const activeSub = settingsSubTabs.find((item) => item.classList.contains('active'))?.dataset?.settingsTab || 'general';
+      loadSettingsSubtabData(activeSub).catch((error) => {
+        if (settingsMsg) settingsMsg.textContent = String(error.message || 'Request failed');
+      });
+    }
+  });
+});
+
+settingsSubTabs.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const target = btn.dataset.settingsTab || 'general';
+    switchSettingsSubtab(target);
+    loadSettingsSubtabData(target).catch((error) => {
+      if (settingsMsg) settingsMsg.textContent = String(error.message || 'Request failed');
+    });
   });
 });
 
@@ -741,6 +1818,8 @@ languageSelect?.addEventListener('change', async (event) => {
   applyI18n();
   await refreshTrackingAndHealth();
   await loadUserPermissions();
+  await loadOcrRecords();
+  await loadSubtitleRecords();
   if (activeJobId) {
     const job = await api(`/api/admin/proxy-jobs/${activeJobId}`);
     renderProxyJob(job);
@@ -762,6 +1841,9 @@ languageSelect?.addEventListener('change', async (event) => {
     await loadSettings();
     await refreshTrackingAndHealth();
     await loadUserPermissions();
+    await loadOcrRecords();
+    await loadSubtitleRecords();
+    switchSettingsSubtab('general');
   } catch (error) {
     ffmpegHealthEl.textContent = error.message;
   }
