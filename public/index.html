@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Broadcast MAM Console</title>
+    <title>MAM Console</title>
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="https://vjs.zencdn.net/8.20.0/video-js.css" />
   </head>
@@ -11,7 +11,7 @@
     <main class="layout">
       <section class="panel" id="panelIngest">
         <div class="top-row">
-          <h1 data-i18n="app_title">Broadcast MAM Console</h1>
+          <h1 data-i18n="app_title">MAM Console</h1>
           <div class="top-controls">
             <div class="user-box">
               <span class="user-box-label" data-i18n="current_user">Current User</span>
@@ -125,7 +125,10 @@
       <section class="panel" id="panelDetail">
         <div class="panel-head">
           <h2 data-i18n="asset_detail_title">Asset Detail</h2>
-          <button id="closeDetailBtn" class="close-detail-btn" type="button" aria-label="Close detail panel">×</button>
+          <div class="panel-head-actions">
+            <button id="panelVideoToolsBtn" class="panel-icon-btn hidden" type="button" aria-label="Video Tools" title="Video Tools">⚙</button>
+            <button id="closeDetailBtn" class="close-detail-btn" type="button" aria-label="Close detail panel">×</button>
+          </div>
         </div>
         <div id="assetDetail" class="empty" data-i18n="select_asset">Select an asset.</div>
       </section>

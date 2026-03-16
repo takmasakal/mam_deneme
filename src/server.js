@@ -390,6 +390,22 @@ function extractOcrMatchLine(content, queryNorm) {
   return '';
 }
 
+function extractOcrMatchLines(content, queryNorm, limit = 8) {
+  const out = [];
+  const lines = String(content || '').replace(/\r\n?/g, '\n').split('\n');
+  const cap = Math.max(1, Math.min(50, Number(limit) || 8));
+  for (const raw of lines) {
+    const line = String(raw || '').trim();
+    if (!line) continue;
+    const comparable = normalizeComparableOcr(line);
+    if (comparable && comparable.includes(queryNorm)) {
+      out.push(line);
+      if (out.length >= cap) break;
+    }
+  }
+  return out;
+}
+
 function parseTimecodePrefixToSec(line) {
   const raw = String(line || '');
   const match = raw.match(/\[(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})\]/);
@@ -437,10 +453,51 @@ function findOcrMatchInRow(row, queryRaw) {
   return null;
 }
 
+function findOcrMatchesInRow(row, queryRaw, limit = 8) {
+  const qNorm = normalizeComparableOcr(queryRaw);
+  if (!qNorm) return [];
+  const cap = Math.max(1, Math.min(50, Number(limit) || 8));
+  const out = [];
+  const seen = new Set();
+  const candidates = getCandidateOcrFilePathsForRow(row);
+  for (const filePath of candidates) {
+    let raw = '';
+    try {
+      raw = fs.readFileSync(filePath, 'utf8');
+    } catch (_error) {
+      continue;
+    }
+    const lines = extractOcrMatchLines(raw, qNorm, cap);
+    if (!lines.length) continue;
+    const relative = path.relative(UPLOADS_DIR, filePath).replace(/\\/g, '/');
+    const ocrUrl = relative ? `/uploads/${relative}` : '';
+    for (const line of lines) {
+      const key = normalizeComparableOcr(line) || line.toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      const tc = parseTimecodePrefixToSec(line);
+      out.push({
+        ocrUrl,
+        line,
+        startSec: Number(tc?.startSec || 0),
+        endSec: Number(tc?.endSec || 0)
+      });
+      if (out.length >= cap) return out;
+    }
+  }
+  return out;
+}
+
 async function findOcrMatchForAssetRow(row, queryRaw) {
+  const hits = await findOcrMatchesForAssetRow(row, queryRaw, 1);
+  return hits[0] || null;
+}
+
+async function findOcrMatchesForAssetRow(row, queryRaw, limit = 8) {
   const qNorm = normalizeSubtitleSearchText(queryRaw);
   const assetId = String(row?.id || '').trim();
-  if (!assetId || !qNorm) return null;
+  const cap = Math.max(1, Math.min(50, Number(limit) || 8));
+  if (!assetId || !qNorm) return [];
   const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
   const activeOcrUrl = String(pickLatestVideoOcrUrlFromDc(dc) || '').trim();
   if (activeOcrUrl) {
@@ -452,9 +509,9 @@ async function findOcrMatchForAssetRow(row, queryRaw) {
           AND ocr_url = $2
           AND norm_text LIKE $3
         ORDER BY start_sec ASC
-        LIMIT 1
+        LIMIT $4
       `,
-      [assetId, activeOcrUrl, `%${qNorm}%`]
+      [assetId, activeOcrUrl, `%${qNorm}%`, cap]
     );
     let dbHit = await fetchDbMatch();
     if (!dbHit.rowCount) {
@@ -477,16 +534,15 @@ async function findOcrMatchForAssetRow(row, queryRaw) {
       }
     }
     if (dbHit.rowCount) {
-      const hit = dbHit.rows[0];
-      return {
+      return dbHit.rows.map((hit) => ({
         ocrUrl: activeOcrUrl,
         line: String(hit.segment_text || ''),
         startSec: Number(hit.start_sec || 0),
         endSec: Number(hit.end_sec || 0)
-      };
+      }));
     }
   }
-  return findOcrMatchInRow(row, queryRaw);
+  return findOcrMatchesInRow(row, queryRaw, cap);
 }
 
 function normalizeSubtitleTime(value) {
@@ -3371,7 +3427,9 @@ function mapAssetRow(row) {
     videoOcrSegmentCount: Math.max(0, Number(dcMetadata.videoOcrSegmentCount) || 0),
     videoOcrItems,
     ocrSearchHit: row._ocr_search_hit || null,
+    ocrSearchHits: Array.isArray(row._ocr_search_hits) ? row._ocr_search_hits : [],
     subtitleSearchHit: row._subtitle_search_hit || null,
+    subtitleSearchHits: Array.isArray(row._subtitle_search_hits) ? row._subtitle_search_hits : [],
     cuts: listCuts,
     status: row.status,
     deletedAt: row.deleted_at,
@@ -3548,29 +3606,58 @@ async function generateVideoProxy(inputPath, outputPath) {
 
     if (audioStreams.length === 1) {
       const channels = Math.max(1, Number(audioStreams[0].channels) || 2);
-      args.push(
-        '-map',
-        '0:a:0',
-        '-c:a',
-        'aac',
-        '-b:a',
-        channels > 2 ? '256k' : '128k'
-      );
+      if (channels > 2) {
+        // Multichannel in AAC/7.1 can attenuate LFE-designated channel content.
+        // Use Opus for >2 channels to keep channels full-range and faithful.
+        args.push(
+          '-map',
+          '0:a:0',
+          '-c:a',
+          'libopus',
+          '-ac',
+          String(channels),
+          '-b:a',
+          channels >= 8 ? '512k' : '320k'
+        );
+      } else {
+        args.push(
+          '-map',
+          '0:a:0',
+          '-c:a',
+          'aac',
+          '-b:a',
+          '128k'
+        );
+      }
     } else if (audioStreams.length > 1) {
       const inputs = audioStreams.map((_s, idx) => `[0:a:${idx}]`).join('');
       const mergedChannels = audioStreams.reduce((acc, s) => acc + Math.max(1, Number(s.channels) || 1), 0);
+      const mergedOutChannels = Math.max(2, mergedChannels);
       args.push(
         '-filter_complex',
         `${inputs}amerge=inputs=${audioStreams.length}[aout]`,
         '-map',
-        '[aout]',
-        '-c:a',
-        'aac',
-        '-ac',
-        String(Math.max(2, mergedChannels)),
-        '-b:a',
-        mergedChannels > 2 ? '384k' : '128k'
+        '[aout]'
       );
+      if (mergedOutChannels > 2) {
+        args.push(
+          '-c:a',
+          'libopus',
+          '-ac',
+          String(mergedOutChannels),
+          '-b:a',
+          mergedOutChannels >= 8 ? '512k' : '320k'
+        );
+      } else {
+        args.push(
+          '-c:a',
+          'aac',
+          '-ac',
+          String(mergedOutChannels),
+          '-b:a',
+          '128k'
+        );
+      }
     }
 
     args.push(
@@ -5289,6 +5376,10 @@ app.get('/api/workflow', (_req, res) => {
 });
 
 app.get('/api/me', async (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  res.set('Surrogate-Control', 'no-store');
   try {
     const effective = await resolveEffectivePermissions(req);
     res.json({
@@ -5674,8 +5765,9 @@ app.get('/api/assets', async (req, res) => {
     if (ocrQ) {
       const filtered = [];
       for (const row of rows) {
-        const hit = await findOcrMatchForAssetRow(row, ocrQ);
-        if (!hit) continue;
+        const hits = await findOcrMatchesForAssetRow(row, ocrQ, 8);
+        if (!hits.length) continue;
+        const hit = hits[0];
         row._ocr_search_hit = {
           query: ocrQ,
           text: String(hit.line || ''),
@@ -5683,6 +5775,13 @@ app.get('/api/assets', async (req, res) => {
           endSec: Number(hit.endSec || 0),
           startTc: formatTimecode(Number(hit.startSec || 0))
         };
+        row._ocr_search_hits = hits.map((item) => ({
+          query: ocrQ,
+          text: String(item.line || ''),
+          startSec: Number(item.startSec || 0),
+          endSec: Number(item.endSec || 0),
+          startTc: formatTimecode(Number(item.startSec || 0))
+        }));
         filtered.push(row);
       }
       rows = filtered;
@@ -5706,19 +5805,27 @@ app.get('/api/assets', async (req, res) => {
                 AND subtitle_url = $2
                 AND norm_text LIKE $3
               ORDER BY start_sec ASC
-              LIMIT 1
+              LIMIT 8
             `,
             [String(row.id || '').trim(), activeSubtitleUrl, `%${subtitleNorm}%`]
           );
           if (!subtitleRes.rowCount) continue;
-          const match = subtitleRes.rows[0];
-          row._subtitle_search_hit = {
+          const hits = subtitleRes.rows.map((match) => ({
             query: subtitleQ,
             text: String(match.cue_text || ''),
             startSec: Number(match.start_sec || 0),
             endSec: Number(match.end_sec || 0),
             startTc: formatTimecode(Number(match.start_sec || 0))
+          }));
+          const match = hits[0];
+          row._subtitle_search_hit = {
+            query: subtitleQ,
+            text: String(match.text || ''),
+            startSec: Number(match.startSec || 0),
+            endSec: Number(match.endSec || 0),
+            startTc: String(match.startTc || formatTimecode(Number(match.startSec || 0)))
           };
+          row._subtitle_search_hits = hits;
           filtered.push(row);
         }
         rows = filtered;

@@ -1,6 +1,6 @@
 {
   "en": {
-    "app_title": "Broadcast MAM Console",
+    "app_title": "MAM Console",
     "app_subtitle": "Dalet-style MVP: ingest, metadata, workflow, versions",
     "current_user": "Current User",
     "unknown_user": "Unknown user",
@@ -388,7 +388,7 @@
     "combined_search_none": "No match found."
   },
   "tr": {
-    "app_title": "Yayın MAM Konsolu",
+    "app_title": "MAM Konsolu",
     "app_subtitle": "Dalet benzeri MVP: ingest, metadata, iş akışı, versiyonlar",
     "current_user": "Giriş yapan",
     "unknown_user": "Bilinmeyen kullanıcı",
