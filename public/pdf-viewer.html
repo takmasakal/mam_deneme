@@ -787,6 +787,8 @@
         };
 
         const pdfChangeKinds = new Set();
+        let dirtyLatched = false;
+        let sawRealPdfMutation = false;
         const classifyPdfChangeKind = (eventPayload, fallback) => {
           const raw = String(
             eventPayload?.type
@@ -802,6 +804,22 @@
           if (blob.includes('replace') && blob.includes('text')) return 'text_insert';
           if (blob.includes('annotation') || blob.includes('comment') || blob.includes('highlight') || blob.includes('shape')) return 'annotation';
           return fallback || 'unknown';
+        };
+        const isRealPdfMutationEvent = (eventPayload) => {
+          const raw = String(
+            eventPayload?.type
+            || eventPayload?.name
+            || eventPayload?.action
+            || eventPayload?.kind
+            || eventPayload?.tool
+            || ''
+          ).toLowerCase();
+          const blob = `${raw} ${String(JSON.stringify(eventPayload || {})).toLowerCase()}`;
+          if (!blob.trim()) return false;
+          if (/(select|selected|selection|focus|hover|sidebar|panel|open|close|activate|active|inspect|preview)/.test(blob)) {
+            return false;
+          }
+          return /(add|added|create|created|update|updated|modify|modified|change|changed|delete|deleted|remove|removed|commit|apply|applied|insert|replace|redact)/.test(blob);
         };
 
         const attachDirtyTracking = async () => {
@@ -821,7 +839,7 @@
               }
             };
             const refreshDirty = () => {
-              const dirty = readDirtyFromHistory();
+              const dirty = dirtyLatched || pdfChangeKinds.size > 0 || (sawRealPdfMutation && readDirtyFromHistory());
               setDirty(dirty);
             };
             const historyCap = registry?.getPlugin?.('history')?.provides?.();
@@ -831,14 +849,26 @@
             const annotationCap = registry?.getPlugin?.('annotation')?.provides?.();
             if (annotationCap?.onAnnotationEvent) {
               unsubs.push(bindEventHook(annotationCap.onAnnotationEvent, (payload) => {
+                if (!isRealPdfMutationEvent(payload)) {
+                  refreshDirty();
+                  return;
+                }
                 pdfChangeKinds.add(classifyPdfChangeKind(payload, 'annotation'));
+                sawRealPdfMutation = true;
+                dirtyLatched = true;
                 refreshDirty();
               }));
             }
             const redactionCap = registry?.getPlugin?.('redaction')?.provides?.();
             if (redactionCap?.onRedactionEvent) {
               unsubs.push(bindEventHook(redactionCap.onRedactionEvent, (payload) => {
+                if (!isRealPdfMutationEvent(payload)) {
+                  refreshDirty();
+                  return;
+                }
                 pdfChangeKinds.add(classifyPdfChangeKind(payload, 'redaction'));
+                sawRealPdfMutation = true;
+                dirtyLatched = true;
                 refreshDirty();
               }));
             }
@@ -875,6 +905,14 @@
               throw new Error(String(saveData?.error || `HTTP ${saveRes.status}`));
             }
             const latestUrl = String(saveData?.asset?.mediaUrl || '').trim();
+            dirtyLatched = false;
+            sawRealPdfMutation = false;
+            pdfChangeKinds.clear();
+            try {
+              if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ type: 'mam-pdf-saved', assetId }, window.location.origin);
+              }
+            } catch (_error) {}
             if (latestUrl.startsWith('/uploads/')) {
               const next = new URL(window.location.href);
               next.searchParams.set('file', latestUrl);

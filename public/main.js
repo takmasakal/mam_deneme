@@ -182,6 +182,18 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
       <input type="range" class="fs-seek" min="0" max="1000" step="1" value="0" />
       <span class="fs-time">00:00:00 / 00:00:00</span>
     </div>
+    <div class="fs-tc-jump hidden">
+      <div class="fs-tc-jump-card">
+        <label class="fs-tc-jump-label">
+          <span>${escapeHtml(t('tc'))}</span>
+          <input type="text" class="fs-tc-jump-input" value="00:00:00:00" />
+        </label>
+        <div class="fs-tc-jump-actions">
+          <button type="button" class="fs-tc-jump-cancel">${escapeHtml(t('clip_editor_cancel'))}</button>
+          <button type="button" class="fs-tc-jump-go">${escapeHtml(t('jump_to_cut'))}</button>
+        </div>
+      </div>
+    </div>
   `;
   fullscreenTarget.appendChild(overlay);
 
@@ -195,6 +207,10 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
   const fsPlayBtn = overlay.querySelector('.fs-play-btn');
   const fsSeek = overlay.querySelector('.fs-seek');
   const fsTime = overlay.querySelector('.fs-time');
+  const fsTcJump = overlay.querySelector('.fs-tc-jump');
+  const fsTcJumpInput = overlay.querySelector('.fs-tc-jump-input');
+  const fsTcJumpGo = overlay.querySelector('.fs-tc-jump-go');
+  const fsTcJumpCancel = overlay.querySelector('.fs-tc-jump-cancel');
   const fsCtx = fsAudioCanvas instanceof HTMLCanvasElement ? fsAudioCanvas.getContext('2d') : null;
   if (fsBottom && fsTimecode) {
     fsBottom.appendChild(fsTimecode);
@@ -361,6 +377,38 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
     syncOverlay();
   };
 
+  const setTcJumpOpen = (open, initialTc = '') => {
+    if (!fsTcJump) return;
+    fsTcJump.classList.toggle('hidden', !open);
+    if (open && fsTcJumpInput) {
+      fsTcJumpInput.value = initialTc || String(fsTimecodeValue?.textContent || '').trim() || '00:00:00:00';
+      fsTcJumpInput.focus();
+      fsTcJumpInput.select?.();
+    }
+  };
+
+  const onTimecodeJump = async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const initialTc = String(fsTimecodeValue?.textContent || '').trim();
+    if (!initialTc || initialTc.includes('--')) return;
+    setTcJumpOpen(true, initialTc);
+  };
+
+  const onTimecodeJumpApply = async () => {
+    const nextTc = String(fsTcJumpInput?.value || '').trim();
+    if (!nextTc) return;
+    const nextSeconds = parseTimecodeInput(nextTc, PLAYER_FPS);
+    if (!Number.isFinite(nextSeconds)) {
+      alert(t('invalid_timecode'));
+      return;
+    }
+    mediaEl.currentTime = Math.max(0, nextSeconds);
+    mediaEl.pause();
+    syncOverlay();
+    setTcJumpOpen(false);
+  };
+
   const onSeekInput = () => {
     const duration = Number.isFinite(mediaEl.duration) ? mediaEl.duration : 0;
     if (!duration || !fsSeek) return;
@@ -371,6 +419,24 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
     event.preventDefault();
     event.stopPropagation();
     settingsWrap?.classList.toggle('open');
+  };
+
+  const onTcJumpCancel = (event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    setTcJumpOpen(false);
+  };
+
+  const onTcJumpKeydown = (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      onTimecodeJumpApply();
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onTcJumpCancel(event);
+    }
   };
 
   const onFullscreenChange = () => {
@@ -387,6 +453,7 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
     } else {
       mediaEl.controls = prevNativeControls;
       settingsWrap?.classList.remove('open');
+      setTcJumpOpen(false);
     }
   };
 
@@ -394,6 +461,13 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
   settingsBtn?.addEventListener('click', onSettingsButton);
   fsPlayBtn?.addEventListener('click', onPlayToggle);
   fsSeek?.addEventListener('input', onSeekInput);
+  fsTimecode?.addEventListener('click', onTimecodeJump);
+  fsTcJumpGo?.addEventListener('click', onTimecodeJumpApply);
+  fsTcJumpCancel?.addEventListener('click', onTcJumpCancel);
+  fsTcJumpInput?.addEventListener('keydown', onTcJumpKeydown);
+  fsTcJump?.addEventListener('click', (event) => {
+    if (event.target === fsTcJump) onTcJumpCancel(event);
+  });
   mediaEl.addEventListener('timeupdate', syncOverlay);
   mediaEl.addEventListener('play', syncOverlay);
   mediaEl.addEventListener('pause', syncOverlay);
@@ -410,6 +484,10 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
     settingsBtn?.removeEventListener('click', onSettingsButton);
     fsPlayBtn?.removeEventListener('click', onPlayToggle);
     fsSeek?.removeEventListener('input', onSeekInput);
+    fsTimecode?.removeEventListener('click', onTimecodeJump);
+    fsTcJumpGo?.removeEventListener('click', onTimecodeJumpApply);
+    fsTcJumpCancel?.removeEventListener('click', onTcJumpCancel);
+    fsTcJumpInput?.removeEventListener('keydown', onTcJumpKeydown);
     mediaEl.removeEventListener('timeupdate', syncOverlay);
     mediaEl.removeEventListener('play', syncOverlay);
     mediaEl.removeEventListener('pause', syncOverlay);
@@ -714,7 +792,7 @@ let i18n = {
     fullscreen_overlay_show_controls: 'Show controls',
     fullscreen_overlay_show_timecode: 'Show timecode',
     fullscreen_overlay_show_subtitles: 'Show subtitles',
-    fullscreen_overlay_show_audio_graph: 'Show thin audio graph',
+    fullscreen_overlay_show_audio_graph: 'Show audio graph',
     subtitle_current: 'Current subtitle',
     subtitle_overlay_enabled: 'Show subtitles'
   },
@@ -989,7 +1067,7 @@ let i18n = {
     fullscreen_overlay_show_controls: 'Kontrolleri göster',
     fullscreen_overlay_show_timecode: 'Timecode göster',
     fullscreen_overlay_show_subtitles: 'Altyazı göster',
-    fullscreen_overlay_show_audio_graph: 'İnce ses grafiği göster',
+    fullscreen_overlay_show_audio_graph: 'Ses grafiği göster',
     subtitle_current: 'Mevcut altyazı',
     subtitle_overlay_enabled: 'Altyazı göster'
   }
@@ -2408,6 +2486,121 @@ function openClipEditorDialog(initial) {
   });
 }
 
+function openVersionEditDialog(initial) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'clip-modal-backdrop';
+    overlay.innerHTML = `
+      <div class="clip-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('edit_version_name'))}">
+        <h4>${escapeHtml(t('edit_version_name'))}</h4>
+        <label>${escapeHtml(t('edit_version_name_prompt'))}
+          <input id="versionEditorName" type="text" value="${escapeHtml(initial.label || '')}" />
+        </label>
+        <label>${escapeHtml(t('edit_version_note_prompt'))}
+          <input id="versionEditorNote" type="text" value="${escapeHtml(initial.note || '')}" />
+        </label>
+        <div class="clip-modal-actions">
+          <button type="button" id="versionEditorCancel">${escapeHtml(t('clip_editor_cancel'))}</button>
+          <button type="button" id="versionEditorSave">${escapeHtml(t('clip_editor_save'))}</button>
+        </div>
+      </div>
+    `;
+
+    const close = (result) => {
+      overlay.remove();
+      resolve(result);
+    };
+
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) close(null);
+    });
+
+    document.body.appendChild(overlay);
+    const nameInput = overlay.querySelector('#versionEditorName');
+    const noteInput = overlay.querySelector('#versionEditorNote');
+    overlay.querySelector('#versionEditorCancel')?.addEventListener('click', () => close(null));
+    overlay.querySelector('#versionEditorSave')?.addEventListener('click', () => {
+      close({
+        label: String(nameInput?.value || '').trim(),
+        note: String(noteInput?.value || '').trim()
+      });
+    });
+    nameInput?.focus();
+    nameInput?.select?.();
+  });
+}
+
+function openVersionDeleteDialog() {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'clip-modal-backdrop';
+    overlay.innerHTML = `
+      <div class="clip-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('delete_version'))}">
+        <h4>${escapeHtml(t('delete_version'))}</h4>
+        <p>${escapeHtml(t('delete_version_confirm'))}</p>
+        <div class="clip-modal-actions">
+          <button type="button" id="versionDeleteCancel">${escapeHtml(t('clip_editor_cancel'))}</button>
+          <button type="button" id="versionDeleteConfirm" class="danger">${escapeHtml(t('delete_version'))}</button>
+        </div>
+      </div>
+    `;
+
+    const close = (result) => {
+      overlay.remove();
+      resolve(result);
+    };
+
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) close(false);
+    });
+
+    document.body.appendChild(overlay);
+    overlay.querySelector('#versionDeleteCancel')?.addEventListener('click', () => close(false));
+    overlay.querySelector('#versionDeleteConfirm')?.addEventListener('click', () => close(true));
+  });
+}
+
+function openTimecodeJumpDialog(initialTc = '') {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'clip-modal-backdrop';
+    overlay.innerHTML = `
+      <div class="clip-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('tc'))}">
+        <h4>${escapeHtml(t('tc'))}</h4>
+        <label>${escapeHtml(t('tc'))}
+          <input id="timecodeJumpInput" type="text" value="${escapeHtml(initialTc || '')}" />
+        </label>
+        <div class="clip-modal-actions">
+          <button type="button" id="timecodeJumpCancel">${escapeHtml(t('clip_editor_cancel'))}</button>
+          <button type="button" id="timecodeJumpGo">${escapeHtml(t('jump_to_cut'))}</button>
+        </div>
+      </div>
+    `;
+
+    const close = (result) => {
+      overlay.remove();
+      resolve(result);
+    };
+
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) close(null);
+    });
+
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('#timecodeJumpInput');
+    overlay.querySelector('#timecodeJumpCancel')?.addEventListener('click', () => close(null));
+    overlay.querySelector('#timecodeJumpGo')?.addEventListener('click', () => close(String(input?.value || '').trim()));
+    input?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        close(String(input?.value || '').trim());
+      }
+    });
+    input?.focus();
+    input?.select?.();
+  });
+}
+
 function thumbnailMarkup(asset) {
   const thumbSrc = escapeHtml(asset.thumbnailUrl || '');
   if (isImage(asset)) {
@@ -2674,13 +2867,15 @@ function mediaViewer(asset, options = {}) {
               <strong>${t('audio_channels')}</strong>
             </div>
             <div class="collapsible-body">
-              <canvas id="audioGraph" class="audio-graph audio-graph-vertical" width="320" height="320"></canvas>
-              <div class="audio-graph-controls-box">
-                <div id="channelControls" class="channel-controls"></div>
-                <div class="audio-graph-options">
-                  <label><input type="checkbox" id="groupChannels" checked /> ${t('group_channel_selection')}</label>
-                  <label class="compact-toggle"><input type="checkbox" id="toggleGraphInput" checked /> ${t('show_audio_graph')}</label>
-                  ${includeSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
+              <div class="audio-graph-frame">
+                <canvas id="audioGraph" class="audio-graph audio-graph-vertical" width="320" height="320"></canvas>
+                <div class="audio-graph-controls-box">
+                  <div id="channelControls" class="channel-controls"></div>
+                  <div class="audio-graph-options">
+                    <label><input type="checkbox" id="groupChannels" checked /> ${t('group_channel_selection')}</label>
+                    <label class="compact-toggle"><input type="checkbox" id="toggleGraphInput" checked /> ${t('show_audio_graph')}</label>
+                    ${includeSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
+                  </div>
                 </div>
               </div>
             </div>
@@ -2789,13 +2984,15 @@ function mediaViewer(asset, options = {}) {
             <strong>${t('audio_channels')}</strong>
           </div>
           <div class="collapsible-body">
-            <canvas id="audioGraph" class="audio-graph audio-graph-vertical" width="900" height="260"></canvas>
-            <div class="audio-graph-controls-box">
-              <div id="channelControls" class="channel-controls"></div>
-              <div class="audio-graph-options">
-                <label><input type="checkbox" id="groupChannels" checked /> ${t('group_channel_selection')}</label>
-                <label class="compact-toggle"><input type="checkbox" id="toggleGraphInput" checked /> ${t('show_audio_graph')}</label>
-                ${includeSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
+            <div class="audio-graph-frame">
+              <canvas id="audioGraph" class="audio-graph audio-graph-vertical" width="900" height="260"></canvas>
+              <div class="audio-graph-controls-box">
+                <div id="channelControls" class="channel-controls"></div>
+                <div class="audio-graph-options">
+                  <label><input type="checkbox" id="groupChannels" checked /> ${t('group_channel_selection')}</label>
+                  <label class="compact-toggle"><input type="checkbox" id="toggleGraphInput" checked /> ${t('show_audio_graph')}</label>
+                  ${includeSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
+                </div>
               </div>
             </div>
           </div>
@@ -2833,12 +3030,14 @@ function mediaViewer(asset, options = {}) {
         <div class="audio-tools-header">
           <strong>${t('audio_channels')}</strong>
         </div>
-        <canvas id="audioGraph" class="audio-graph" width="900" height="240"></canvas>
-        <div class="audio-graph-controls-box">
-          <div id="channelControls" class="channel-controls"></div>
-          <div class="audio-graph-options">
-            <label><input type="checkbox" id="groupChannels" checked /> ${t('group_channel_selection')}</label>
-            <label class="compact-toggle"><input type="checkbox" id="toggleGraphInput" checked /> ${t('show_audio_graph')}</label>
+        <div class="audio-graph-frame">
+          <canvas id="audioGraph" class="audio-graph" width="900" height="240"></canvas>
+          <div class="audio-graph-controls-box">
+            <div id="channelControls" class="channel-controls"></div>
+            <div class="audio-graph-options">
+              <label><input type="checkbox" id="groupChannels" checked /> ${t('group_channel_selection')}</label>
+              <label class="compact-toggle"><input type="checkbox" id="toggleGraphInput" checked /> ${t('show_audio_graph')}</label>
+            </div>
           </div>
         </div>
       </div>
@@ -3096,6 +3295,7 @@ function detailMarkup(asset, workflow) {
         <button type="button" id="restorePdfOriginalBtn">${escapeHtml(t('restore_pdf_original'))}</button>
       </div>
     ` : ''}
+    <div id="assetVersionsList">
     ${asset.versions
       .map((v) => {
         const isPdfAsset = assetIsPdf;
@@ -3107,7 +3307,7 @@ function detailMarkup(asset, workflow) {
         const changeKindLabel = actionType === 'pdf_save' ? renderPdfChangeKindLabel(v) : '';
         const cleanNote = cleanVersionNoteText(v.note);
         return `
-          <div class="version ${canRestore ? 'version-restorable' : ''}" ${canRestore ? `data-restore-version-id="${escapeHtml(v.versionId)}"` : ''}>
+          <div class="version ${canRestore ? 'version-restorable' : ''}" data-version-id="${escapeHtml(v.versionId)}" ${canRestore ? `data-restore-version-id="${escapeHtml(v.versionId)}"` : ''}>
             <strong>${escapeHtml(v.label)}</strong> - ${escapeHtml(cleanNote)}<br />
             <span class="asset-meta">${new Date(v.createdAt).toLocaleString()}</span><br />
             <span class="asset-meta">${escapeHtml(t('version_action'))}: ${escapeHtml(t(`action_${actionType}`) || String(v.actionType || 'manual'))} | ${escapeHtml(t('version_actor'))}: ${escapeHtml(v.actorUsername || '-')}</span>
@@ -3125,6 +3325,7 @@ function detailMarkup(asset, workflow) {
         `;
       })
       .join('')}
+    </div>
   ` : '';
 
   const metadataSection = `
@@ -3176,6 +3377,7 @@ async function openMultiSelectionDetail() {
     activeDetailPinCleanup();
     activeDetailPinCleanup = null;
   }
+  clearDetailHeaderTimecode();
   assetDetail.classList.remove('detail-video-pinned');
 
   assetDetail.innerHTML = multiSelectionDetailMarkup(selectedAssets);
@@ -3217,11 +3419,12 @@ async function openMultiSelectionDetail() {
 
 function initFrameControls(mediaEl, asset, root = document) {
   const byId = (id) => root.querySelector(`#${id}`);
+  const byIdGlobal = (id) => byId(id) || document.getElementById(id);
   const playBtn = byId('playBtn');
   const stopBtn = byId('stopBtn');
   const reverseFrameBtn = byId('reverseFrameBtn');
   const forwardFrameBtn = byId('forwardFrameBtn');
-  const currentTimecodeEl = byId('currentTimecode');
+  const currentTimecodeEl = byIdGlobal('currentTimecode');
   const markSummary = byId('markSummary');
   const markInTick = byId('markInTick');
   const markOutTick = byId('markOutTick');
@@ -3236,7 +3439,7 @@ function initFrameControls(mediaEl, asset, root = document) {
   const saveCutBtn = byId('saveCutBtn');
   const cutLabelInput = byId('cutLabelInput');
   const cutsList = byId('cutsList');
-  const videoToolsSurfaceToggle = Boolean(root.querySelector('.video-tools-modal-body'));
+  const allowSurfaceToggle = isVideo(asset) && !useVideoJsPlayerUI();
   const resolveFullscreenTarget = () =>
     mediaEl.closest('.viewer-core')
     || mediaEl.closest('.viewer-shell')
@@ -3283,7 +3486,12 @@ function initFrameControls(mediaEl, asset, root = document) {
         activeCutPlayOutSec = null;
       }
     }
-    currentTimecodeEl.textContent = secondsToTimecode(mediaEl.currentTime, getFps());
+    const currentTc = secondsToTimecode(mediaEl.currentTime, getFps());
+    currentTimecodeEl.textContent = currentTc;
+    const currentTcHost = currentTimecodeEl.closest('.viewer-tc') || currentTimecodeEl;
+    currentTcHost.dataset.tcEditable = '1';
+    currentTcHost.dataset.tcValue = currentTc;
+    currentTcHost.classList.add('editable-tc-chip');
     syncMarkTicks();
   };
 
@@ -3293,7 +3501,13 @@ function initFrameControls(mediaEl, asset, root = document) {
     const segment = marks.in != null && marks.out != null && marks.out >= marks.in
       ? secondsToTimecode(marks.out - marks.in, getFps())
       : '--:--:--:--';
-    markSummary.innerHTML = `<span class="tc-in-label">${escapeHtml(t('in_label'))}</span>: ${escapeHtml(inTc)} | <span class="tc-out-label">${escapeHtml(t('out_label'))}</span>: ${escapeHtml(outTc)} | ${escapeHtml(t('segment'))}: ${escapeHtml(segment)}`;
+    markSummary.innerHTML = `
+      <button type="button" class="inline-tc-btn tc-in-label" data-tc-editable="1" data-tc-value="${escapeHtml(inTc)}">${escapeHtml(t('in_label'))}: ${escapeHtml(inTc)}</button>
+      <span>|</span>
+      <button type="button" class="inline-tc-btn tc-out-label" data-tc-editable="1" data-tc-value="${escapeHtml(outTc)}">${escapeHtml(t('out_label'))}: ${escapeHtml(outTc)}</button>
+      <span>|</span>
+      <span>${escapeHtml(t('segment'))}: ${escapeHtml(segment)}</span>
+    `;
     syncMarkTicks();
   };
 
@@ -3355,8 +3569,8 @@ function initFrameControls(mediaEl, asset, root = document) {
             <div class="cut-item-meta">
               <strong>${highlightMatch(cut.label || 'Cut', currentSearchQuery)}</strong>
               <div class="cut-item-tc-row">
-                <span class="tc-in-label">${t('in_label')}: ${secondsToTimecode(cut.inPointSeconds, getFps())}</span>
-                <span class="tc-out-label">${t('out_label')}: ${secondsToTimecode(cut.outPointSeconds, getFps())}</span>
+                <button type="button" class="inline-tc-btn tc-in-label" data-tc-editable="1" data-tc-value="${secondsToTimecode(cut.inPointSeconds, getFps())}">${t('in_label')}: ${secondsToTimecode(cut.inPointSeconds, getFps())}</button>
+                <button type="button" class="inline-tc-btn tc-out-label" data-tc-editable="1" data-tc-value="${secondsToTimecode(cut.outPointSeconds, getFps())}">${t('out_label')}: ${secondsToTimecode(cut.outPointSeconds, getFps())}</button>
                 <span>${t('segment')}: ${secondsToTimecode(seg, getFps())}</span>
               </div>
             </div>
@@ -3467,6 +3681,8 @@ function initFrameControls(mediaEl, asset, root = document) {
   };
 
   const onCutsAction = async (event) => {
+    const tcButton = event.target.closest('[data-tc-editable="1"]');
+    if (tcButton) return;
     const button = event.target.closest('button[data-cut-action]');
     if (!button) return;
     const cutId = button.dataset.cutId;
@@ -3541,7 +3757,32 @@ function initFrameControls(mediaEl, asset, root = document) {
     }
   };
 
+  const onTimecodeJump = async (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const tcNode = target.closest('[data-tc-editable="1"]');
+    if (!tcNode) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const initialTc = String(tcNode.dataset.tcValue || '').trim();
+    if (!initialTc || initialTc.includes('--')) return;
+    const nextTc = await openTimecodeJumpDialog(initialTc);
+    if (!nextTc) return;
+    const nextSeconds = parseTimecodeInput(nextTc, getFps());
+    if (!Number.isFinite(nextSeconds)) {
+      alert(t('invalid_timecode'));
+      return;
+    }
+    mediaEl.currentTime = snapToFrame(nextSeconds);
+    mediaEl.pause();
+    updateTimecode();
+  };
+
   playBtn.addEventListener('click', onPlay);
+  markSummary.addEventListener('click', onTimecodeJump);
+  root.addEventListener('click', onTimecodeJump);
+  const headerTcSlot = document.getElementById('panelDetailTcSlot');
+  headerTcSlot?.addEventListener('click', onTimecodeJump);
   const onDoubleClickFullscreen = async (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -3567,7 +3808,7 @@ function initFrameControls(mediaEl, asset, root = document) {
   };
   document.addEventListener('dblclick', onDocumentDblClickCapture, true);
   const onSurfaceToggle = async (event) => {
-    if (!videoToolsSurfaceToggle) return;
+    if (!allowSurfaceToggle) return;
     const target = event.target;
     if (!(target instanceof Element)) return;
     if (target.closest('button, input, select, textarea, a, .custom-player-bar, .player-controls-box, .video-js-control-bar')) return;
@@ -3592,6 +3833,7 @@ function initFrameControls(mediaEl, asset, root = document) {
   clearMarksBtn?.addEventListener('click', onClear);
   saveCutBtn?.addEventListener('click', onSaveCut);
   cutsList?.addEventListener('click', onCutsAction);
+  cutsList?.addEventListener('click', onTimecodeJump);
 
   mediaEl.addEventListener('timeupdate', updateTimecode);
   mediaEl.addEventListener('seeked', updateTimecode);
@@ -3609,6 +3851,9 @@ function initFrameControls(mediaEl, asset, root = document) {
   return () => {
     fullscreenOverlayCleanup?.();
     playBtn.removeEventListener('click', onPlay);
+    markSummary.removeEventListener('click', onTimecodeJump);
+    root.removeEventListener('click', onTimecodeJump);
+    headerTcSlot?.removeEventListener('click', onTimecodeJump);
     mediaEl.removeEventListener('dblclick', onDoubleClickFullscreen, true);
     document.removeEventListener('dblclick', onDocumentDblClickCapture, true);
     mediaEl.removeEventListener('click', onSurfaceToggle);
@@ -3621,6 +3866,7 @@ function initFrameControls(mediaEl, asset, root = document) {
     clearMarksBtn?.removeEventListener('click', onClear);
     saveCutBtn?.removeEventListener('click', onSaveCut);
     cutsList?.removeEventListener('click', onCutsAction);
+    cutsList?.removeEventListener('click', onTimecodeJump);
     mediaEl.removeEventListener('timeupdate', updateTimecode);
     mediaEl.removeEventListener('seeked', updateTimecode);
     mediaEl.removeEventListener('loadedmetadata', syncMarkTicks);
@@ -3637,9 +3883,16 @@ function initDetailVideoPin(root = document) {
   if (!pinBtn) return () => {};
   const mediaEl = root.querySelector('#assetMediaEl');
   const customLikeMode = useCustomLikeTimelineUI();
+  const videoMainCol = root.querySelector('.detail-video-fixed .video-main-col');
+  const overlayControls = Array.from(root.querySelectorAll('.detail-video-fixed .custom-player-bar, .detail-video-fixed .player-controls-box'));
+
+  const showPinnedOverlayControls = (show) => {
+    root.classList.toggle('detail-video-show-overlay-controls', Boolean(show && detailVideoPinned));
+  };
 
   const applyPinUi = () => {
     root.classList.toggle('detail-video-pinned', detailVideoPinned);
+    if (!detailVideoPinned) showPinnedOverlayControls(false);
     pinBtn.classList.toggle('active', detailVideoPinned);
     const label = detailVideoPinned ? t('unpin_video') : t('pin_video');
     pinBtn.title = label;
@@ -3657,10 +3910,45 @@ function initDetailVideoPin(root = document) {
     applyPinUi();
   };
 
+  const onPinnedMouseMove = (event) => {
+    if (!detailVideoPinned || !videoMainCol) return;
+    const rect = videoMainCol.getBoundingClientRect();
+    if (!rect.width || !rect.height) {
+      showPinnedOverlayControls(false);
+      return;
+    }
+    const relativeY = event.clientY - rect.top;
+    showPinnedOverlayControls(relativeY >= (rect.height / 2));
+  };
+
+  const onPinnedMouseLeave = () => {
+    showPinnedOverlayControls(false);
+  };
+
+  const onOverlayControlsEnter = () => {
+    if (detailVideoPinned) showPinnedOverlayControls(true);
+  };
+
+  const onOverlayControlsLeave = () => {
+    showPinnedOverlayControls(false);
+  };
+
   pinBtn.addEventListener('click', onPinToggle);
+  videoMainCol?.addEventListener('mousemove', onPinnedMouseMove);
+  videoMainCol?.addEventListener('mouseleave', onPinnedMouseLeave);
+  overlayControls.forEach((node) => {
+    node.addEventListener('mouseenter', onOverlayControlsEnter);
+    node.addEventListener('mouseleave', onOverlayControlsLeave);
+  });
   applyPinUi();
   return () => {
     pinBtn.removeEventListener('click', onPinToggle);
+    videoMainCol?.removeEventListener('mousemove', onPinnedMouseMove);
+    videoMainCol?.removeEventListener('mouseleave', onPinnedMouseLeave);
+    overlayControls.forEach((node) => {
+      node.removeEventListener('mouseenter', onOverlayControlsEnter);
+      node.removeEventListener('mouseleave', onOverlayControlsLeave);
+    });
   };
 }
 
@@ -3900,13 +4188,13 @@ function initAudioTools(mediaEl, root = document) {
   controlsWrap.innerHTML = selected
     .map(
       (_enabled, displayIndex) => `
-        <label class="channel-pill">
-          <input type="checkbox" data-channel-index="${displayIndex}" checked />
-          <span class="channel-pill-text">CH ${displayIndex + 1}</span>
+        <label class="channel-toggle-cell" title="CH ${displayIndex + 1}">
+          <input type="checkbox" data-channel-index="${displayIndex}" checked aria-label="CH ${displayIndex + 1}" />
         </label>
       `
     )
     .join('');
+  controlsWrap.style.setProperty('--channel-count', String(channelCount));
 
   const applyGains = () => {
     gains.forEach((gain, decodedIndex) => {
@@ -4013,8 +4301,20 @@ function initAudioTools(mediaEl, root = document) {
 
     const cols = channelCount;
     const gap = 10;
-    const meterW = Math.max(18, Math.floor((width - ((cols + 1) * gap)) / cols));
+    const isDetailGraph = Boolean(graphCanvas.closest('#assetDetail'));
+    const baselineCols = 8;
+    const baselineMeterW = Math.max(18, Math.floor((width - ((baselineCols + 1) * gap)) / baselineCols));
+    const computedMeterW = Math.max(18, Math.floor((width - ((cols + 1) * gap)) / cols));
+    const meterW = isDetailGraph ? Math.min(computedMeterW, baselineMeterW) : computedMeterW;
     const meterH = Math.max(80, height - 44);
+    const totalMetersW = (cols * meterW) + ((cols - 1) * gap);
+    const startX = Math.max(gap, Math.round((width - totalMetersW) / 2));
+    controlsWrap.style.gridTemplateColumns = `repeat(${cols}, ${meterW}px)`;
+    controlsWrap.style.columnGap = `${gap}px`;
+    controlsWrap.style.rowGap = '2px';
+    controlsWrap.style.width = `${totalMetersW}px`;
+    controlsWrap.style.marginLeft = `${startX}px`;
+    controlsWrap.style.marginRight = '0';
     const frameLevels = Array.from({ length: channelCount }, () => 0);
     analysers.forEach((analyser, decodedIndex) => {
       const channelIndex = decodedToDisplay[decodedIndex] ?? decodedIndex;
@@ -4031,7 +4331,7 @@ function initAudioTools(mediaEl, root = document) {
       frameLevels[channelIndex] = level;
       peakHold[channelIndex] = Math.max(level, peakHold[channelIndex] * 0.96);
 
-      const x = gap + (channelIndex * (meterW + gap));
+      const x = startX + (channelIndex * (meterW + gap));
       const y = 10;
       g.fillStyle = '#1f2430';
       g.fillRect(x, y, meterW, meterH);
@@ -5524,6 +5824,26 @@ async function loadAssets() {
   renderAssets(currentAssets);
 }
 
+function clearDetailHeaderTimecode() {
+  const slot = document.getElementById('panelDetailTcSlot');
+  if (!slot) return;
+  slot.innerHTML = '';
+  slot.classList.add('hidden');
+}
+
+function syncDetailHeaderTimecode(root = document) {
+  const slot = document.getElementById('panelDetailTcSlot');
+  if (!slot) return;
+  slot.innerHTML = '';
+  const tcEl = root.querySelector('.viewer-head .viewer-tc');
+  if (!tcEl) {
+    slot.classList.add('hidden');
+    return;
+  }
+  slot.appendChild(tcEl);
+  slot.classList.remove('hidden');
+}
+
 async function openAsset(id, workflow, options = {}) {
   if (isVideoToolsPageMode) {
     panelVisibility.panelIngest = false;
@@ -5556,6 +5876,7 @@ async function openAsset(id, workflow, options = {}) {
     activeDetailPinCleanup();
     activeDetailPinCleanup = null;
   }
+  clearDetailHeaderTimecode();
 
   if (isVideoToolsPageMode && isVideo(asset)) {
     assetDetail.innerHTML = videoToolsPageMarkup(asset);
@@ -5577,6 +5898,7 @@ async function openAsset(id, workflow, options = {}) {
   assetDetail.innerHTML = detailMarkup(asset, workflow);
   assetDetail.classList.toggle('video-detail-mode', isVideo(asset));
   assetDetail.classList.remove('video-tools-page-detail');
+  if (isVideo(asset)) syncDetailHeaderTimecode(assetDetail);
   if (isVideo(asset)) {
     activeDetailPinCleanup = initDetailVideoPin(assetDetail);
   } else {
@@ -5639,22 +5961,6 @@ async function openAsset(id, workflow, options = {}) {
     await openAsset(id, workflow);
   });
 
-  Array.from(document.querySelectorAll('.restorePdfVersionBtn')).forEach((btn) => {
-    btn.addEventListener('click', async (event) => {
-      if (!currentUserCanAccessAdmin || !currentUserCanUsePdfAdvancedTools) return;
-      const versionId = String(event.currentTarget?.dataset?.versionId || '').trim();
-      if (!versionId) return;
-      const ok = confirm(t('restore_pdf_confirm'));
-      if (!ok) return;
-      await api(`/api/assets/${id}/pdf-restore`, {
-        method: 'POST',
-        body: JSON.stringify({ versionId })
-      });
-      await loadAssets();
-      await openAsset(id, workflow);
-    });
-  });
-
   const restorePdfOriginalBtn = document.getElementById('restorePdfOriginalBtn');
   restorePdfOriginalBtn?.addEventListener('click', async () => {
     if (!currentUserCanAccessAdmin || !currentUserCanUsePdfAdvancedTools) return;
@@ -5665,65 +5971,18 @@ async function openAsset(id, workflow, options = {}) {
     await openAsset(id, workflow);
   });
 
-  Array.from(document.querySelectorAll('.deleteVersionBtn')).forEach((btn) => {
-    btn.addEventListener('click', async (event) => {
+  const assetVersionsListEl = document.getElementById('assetVersionsList');
+  assetVersionsListEl?.addEventListener('click', async (event) => {
+    const targetNode = event.target;
+    const target = targetNode instanceof Element ? targetNode : targetNode?.parentElement;
+    if (!(target instanceof Element)) return;
+
+    const restoreBtn = target.closest('.restorePdfVersionBtn');
+    if (restoreBtn) {
       event.preventDefault();
       event.stopPropagation();
-      if (!currentUserCanAccessAdmin || (assetIsPdf && !currentUserCanUsePdfAdvancedTools)) return;
-      const versionId = String(event.currentTarget?.dataset?.versionId || '').trim();
-      if (!versionId) return;
-      const ok = confirm(t('delete_version_confirm'));
-      if (!ok) return;
-      const buttonEl = event.currentTarget;
-      const rowEl = buttonEl?.closest?.('.version');
-      const prevLabel = String(buttonEl?.textContent || '').trim() || t('delete_version');
-      if (buttonEl) {
-        buttonEl.disabled = true;
-        buttonEl.textContent = currentLang === 'tr' ? 'Siliniyor...' : 'Deleting...';
-      }
-      if (rowEl) rowEl.classList.add('is-busy');
-      try {
-        await api(`/api/assets/${id}/versions/${encodeURIComponent(versionId)}`, { method: 'DELETE' });
-        // Fast visual response, then refresh canonical data from backend.
-        rowEl?.remove();
-        await Promise.allSettled([openAsset(id, workflow), loadAssets()]);
-      } catch (error) {
-        if (buttonEl) {
-          buttonEl.disabled = false;
-          buttonEl.textContent = prevLabel;
-        }
-        if (rowEl) rowEl.classList.remove('is-busy');
-        alert(String(error?.message || 'Failed to delete version'));
-      }
-    });
-  });
-
-  Array.from(document.querySelectorAll('.editVersionBtn')).forEach((btn) => {
-    btn.addEventListener('click', async (event) => {
-      if (!currentUserCanAccessAdmin || (assetIsPdf && !currentUserCanUsePdfAdvancedTools)) return;
-      const versionId = String(event.currentTarget?.dataset?.versionId || '').trim();
-      if (!versionId) return;
-      const current = (asset.versions || []).find((v) => String(v.versionId || '') === versionId);
-      const currentLabel = String(current?.label || '').trim();
-      const currentNote = cleanVersionNoteText(String(current?.note || ''));
-      const nextLabel = String(prompt(t('edit_version_name_prompt'), currentLabel) || '').trim();
-      if (!nextLabel) return;
-      const nextNote = String(prompt(t('edit_version_note_prompt'), currentNote) || '').trim();
-      await api(`/api/assets/${id}/versions/${encodeURIComponent(versionId)}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ label: nextLabel, note: nextNote })
-      });
-      await loadAssets();
-      await openAsset(id, workflow);
-    });
-  });
-
-  Array.from(document.querySelectorAll('.version-restorable[data-restore-version-id]')).forEach((row) => {
-    row.addEventListener('click', async (event) => {
-      const ignore = event.target?.closest?.('button, a, input, textarea, select, label');
-      if (ignore) return;
       if (!currentUserCanAccessAdmin || !currentUserCanUsePdfAdvancedTools) return;
-      const versionId = String(row.dataset.restoreVersionId || '').trim();
+      const versionId = String(restoreBtn.dataset.versionId || '').trim();
       if (!versionId) return;
       const ok = confirm(t('restore_pdf_confirm'));
       if (!ok) return;
@@ -5733,8 +5992,96 @@ async function openAsset(id, workflow, options = {}) {
       });
       await loadAssets();
       await openAsset(id, workflow);
+      return;
+    }
+
+    const deleteBtnEl = target.closest('.deleteVersionBtn');
+    if (deleteBtnEl) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!currentUserCanAccessAdmin || (assetIsPdf && !currentUserCanUsePdfAdvancedTools)) return;
+      const versionId = String(deleteBtnEl.dataset.versionId || '').trim();
+      if (!versionId) return;
+      const ok = await openVersionDeleteDialog();
+      if (!ok) return;
+      const rowEl = deleteBtnEl.closest('.version');
+      const prevLabel = String(deleteBtnEl.textContent || '').trim() || t('delete_version');
+      deleteBtnEl.disabled = true;
+      deleteBtnEl.textContent = currentLang === 'tr' ? 'Siliniyor...' : 'Deleting...';
+      rowEl?.classList.add('is-busy');
+      try {
+        await api(`/api/assets/${id}/versions/${encodeURIComponent(versionId)}`, { method: 'DELETE' });
+        rowEl?.remove();
+        if (Array.isArray(asset.versions)) {
+          asset.versions = asset.versions.filter((v) => String(v.versionId || '') !== versionId);
+        }
+        loadAssets().catch(() => {});
+      } catch (error) {
+        deleteBtnEl.disabled = false;
+        deleteBtnEl.textContent = prevLabel;
+        rowEl?.classList.remove('is-busy');
+        alert(String(error?.message || 'Failed to delete version'));
+      }
+      return;
+    }
+
+    const editBtnEl = target.closest('.editVersionBtn');
+    if (editBtnEl) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!currentUserCanAccessAdmin || (assetIsPdf && !currentUserCanUsePdfAdvancedTools)) return;
+      const versionId = String(editBtnEl.dataset.versionId || '').trim();
+      if (!versionId) return;
+      const current = (asset.versions || []).find((v) => String(v.versionId || '') === versionId);
+      const currentLabel = String(current?.label || '').trim();
+      const currentNote = cleanVersionNoteText(String(current?.note || ''));
+      const next = await openVersionEditDialog({ label: currentLabel, note: currentNote });
+      if (!next?.label) return;
+      editBtnEl.disabled = true;
+      try {
+        const updated = await api(`/api/assets/${id}/versions/${encodeURIComponent(versionId)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ label: next.label, note: next.note || '' })
+        });
+        const updatedVersion = updated?.version || null;
+        const rowEl = editBtnEl.closest('.version');
+        if (updatedVersion && rowEl) {
+          const titleEl = rowEl.querySelector('strong');
+          if (titleEl) titleEl.textContent = String(updatedVersion.label || '');
+          const noteText = cleanVersionNoteText(String(updatedVersion.note || ''));
+          if (titleEl && titleEl.nextSibling) {
+            titleEl.nextSibling.nodeValue = ` - ${noteText}`;
+          }
+          if (Array.isArray(asset.versions)) {
+            const idx = asset.versions.findIndex((v) => String(v.versionId || '') === versionId);
+            if (idx >= 0) asset.versions[idx] = { ...asset.versions[idx], ...updatedVersion };
+          }
+        }
+        editBtnEl.disabled = false;
+        loadAssets().catch(() => {});
+      } catch (error) {
+        editBtnEl.disabled = false;
+        alert(String(error?.message || 'Failed to update version'));
+      }
+      return;
+    }
+
+    const row = target.closest('.version-restorable[data-restore-version-id]');
+    if (!row) return;
+    const ignore = target.closest('button, a, input, textarea, select, label');
+    if (ignore) return;
+    if (!currentUserCanAccessAdmin || !currentUserCanUsePdfAdvancedTools) return;
+    const versionId = String(row.dataset.restoreVersionId || '').trim();
+    if (!versionId) return;
+    const ok = confirm(t('restore_pdf_confirm'));
+    if (!ok) return;
+    await api(`/api/assets/${id}/pdf-restore`, {
+      method: 'POST',
+      body: JSON.stringify({ versionId })
     });
-  });
+    await loadAssets();
+    await openAsset(id, workflow);
+  }, true);
 
   const trashBtn = document.getElementById('trashAssetBtn');
   const restoreBtn = document.getElementById('restoreAssetBtn');
@@ -6298,6 +6645,21 @@ document.addEventListener('click', (event) => {
   if (currentUserBtn.contains(event.target)) return;
   if (userMenu.contains(event.target)) return;
   userMenu.classList.add('hidden');
+});
+
+window.addEventListener('message', async (event) => {
+  if (event.origin !== window.location.origin) return;
+  const type = String(event.data?.type || '').trim();
+  if (type !== 'mam-pdf-saved') return;
+  const assetId = String(event.data?.assetId || '').trim();
+  if (!assetId || assetId !== selectedAssetId) return;
+  try {
+    const workflow = await api('/api/workflow');
+    await loadAssets();
+    await openAsset(assetId, workflow);
+  } catch (_error) {
+    // Best effort refresh only.
+  }
 });
 
 logoutBtn?.addEventListener('click', async () => {
