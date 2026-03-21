@@ -222,14 +222,35 @@ async function removeAssetFromElastic(assetId) {
 }
 
 async function searchAssetIdsElastic(queryText, limit = 500) {
+  const q = String(queryText || '').trim();
+  if (!q) return [];
   await ensureElasticIndex();
   const result = await elasticRequest('POST', `/${ELASTIC_INDEX}/_search`, {
     size: limit,
     query: {
-      query_string: {
-        query: String(queryText || '').trim(),
-        default_operator: 'AND',
-        fields: ['title^4', 'description^2', 'owner^2', 'tags^2', 'dc', 'clips^3', 'type', 'status']
+      bool: {
+        should: [
+          {
+            query_string: {
+              query: q,
+              default_operator: 'AND',
+              fields: ['title^4', 'description^2', 'owner^2', 'tags^2', 'dc', 'clips^3', 'type', 'status'],
+              boost: 5
+            }
+          },
+          {
+            multi_match: {
+              query: q,
+              type: 'bool_prefix',
+              fields: ['title^4', 'description^2', 'owner^2', 'tags^2', 'dc', 'clips^3'],
+              boost: 3
+            }
+          },
+          { match_phrase_prefix: { title: { query: q, boost: 6 } } },
+          { match_phrase_prefix: { clips: { query: q, boost: 5 } } },
+          { match_phrase_prefix: { dc: { query: q, boost: 2 } } }
+        ],
+        minimum_should_match: 1
       }
     },
     _source: false
@@ -330,6 +351,62 @@ function sanitizeVideoOcrItems(value) {
       };
     })
     .filter(Boolean);
+}
+
+function toAsciiUpperToken(value, fallback = 'OCR') {
+  const text = String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .trim();
+  if (!text) return fallback;
+  const compact = text.replace(/\s+/g, '');
+  return (compact || fallback).toUpperCase();
+}
+
+function buildAssetInitials(value, fallback = 'ASSET') {
+  const text = String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .trim();
+  if (!text) return fallback;
+  const words = text.split(/\s+/).filter(Boolean);
+  const initials = words.slice(0, 4).map((word) => word.charAt(0).toUpperCase()).join('');
+  return initials || fallback;
+}
+
+function formatLabelDateYmd(value, fallbackIso = '') {
+  const raw = value || fallbackIso || new Date().toISOString();
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    const fallback = new Date(fallbackIso || Date.now());
+    if (Number.isNaN(fallback.getTime())) return '00000000';
+    return fallback.toISOString().slice(0, 10).replace(/-/g, '');
+  }
+  return date.toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+function buildOcrDisplayLabel({ assetTitle = '', fileName = '', createdAt = '', engine = '', version = 1 }) {
+  const initials = buildAssetInitials(assetTitle || fileName || 'asset');
+  const datePart = formatLabelDateYmd(createdAt);
+  const engineToken = toAsciiUpperToken(engine || 'paddle', 'PADDLE');
+  const versionToken = `v${String(Math.max(1, Number(version) || 1)).padStart(2, '0')}`;
+  return `${initials}-${datePart}-OCR-${engineToken}-${versionToken}`;
+}
+
+function relabelOcrItemsForAsset(assetTitle, fileName, items = []) {
+  return sanitizeVideoOcrItems(items).map((item, index) => ({
+    ...item,
+    ocrLabel: buildOcrDisplayLabel({
+      assetTitle,
+      fileName,
+      createdAt: item.createdAt,
+      engine: item.ocrEngine,
+      version: index + 1
+    })
+  }));
 }
 
 function pickLatestVideoOcrUrlFromDc(dcMetadata) {
@@ -940,6 +1017,45 @@ function chooseBetterOcrText(current, candidate) {
   if (!cur) return next;
   if (!next) return cur;
   return scoreOcrDisplayText(next) >= scoreOcrDisplayText(cur) ? next : cur;
+}
+
+function buildComparableTokenSet(text) {
+  return new Set(
+    String(normalizeComparableOcr(text) || '')
+      .split(/\s+/)
+      .map((token) => token.trim())
+      .filter((token) => token.length >= 2)
+  );
+}
+
+function tokenOverlapSimilarity(a, b) {
+  const left = buildComparableTokenSet(a);
+  const right = buildComparableTokenSet(b);
+  if (!left.size || !right.size) return 0;
+  let overlap = 0;
+  left.forEach((token) => {
+    if (right.has(token)) overlap += 1;
+  });
+  return overlap / Math.max(left.size, right.size, 1);
+}
+
+function isLikelySameOcrDisplayText(a, b, options = {}) {
+  const editThreshold = Math.max(0.55, Math.min(0.98, Number(options.editThreshold) || 0.78));
+  const tokenThreshold = Math.max(0.45, Math.min(0.98, Number(options.tokenThreshold) || 0.72));
+  const containsThreshold = Math.max(0.45, Math.min(0.98, Number(options.containsThreshold) || 0.82));
+  const leftNorm = normalizeComparableOcr(a);
+  const rightNorm = normalizeComparableOcr(b);
+  if (!leftNorm && !rightNorm) return true;
+  if (!leftNorm || !rightNorm) return false;
+  if (leftNorm === rightNorm) return true;
+  const editSim = normalizedEditSimilarity(leftNorm, rightNorm);
+  if (editSim >= editThreshold) return true;
+  const tokenSim = tokenOverlapSimilarity(leftNorm, rightNorm);
+  if (tokenSim >= tokenThreshold) return true;
+  const shorter = leftNorm.length <= rightNorm.length ? leftNorm : rightNorm;
+  const longer = shorter === leftNorm ? rightNorm : leftNorm;
+  if (shorter.length >= 6 && longer.includes(shorter) && tokenSim >= containsThreshold) return true;
+  return false;
 }
 
 const TURKISH_OCR_CHAR_FIXES = [
@@ -1581,7 +1697,12 @@ function buildDisplaySegments(frameEntries, options = {}) {
 
     const gap = Math.max(0, sec - active.endSec);
     const similarity = normalizedEditSimilarity(active.text, text);
-    if (similarity >= 0.82 || (gap <= mergeGapSec && similarity >= 0.68)) {
+    const sameDisplay = isLikelySameOcrDisplayText(active.text, text, {
+      editThreshold: 0.82,
+      tokenThreshold: 0.74,
+      containsThreshold: 0.84
+    });
+    if (sameDisplay || (gap <= mergeGapSec && similarity >= 0.68)) {
       active.endSec = sec + intervalSec;
       active.text = chooseBetterOcrText(active.text, text);
       return;
@@ -1601,7 +1722,12 @@ function buildDisplaySegments(frameEntries, options = {}) {
     }
     const gap = Math.max(0, seg.startSec - prev.endSec);
     const similarity = normalizedEditSimilarity(prev.text, seg.text);
-    if (gap <= mergeGapSec && similarity >= 0.78) {
+    const sameDisplay = isLikelySameOcrDisplayText(prev.text, seg.text, {
+      editThreshold: 0.78,
+      tokenThreshold: 0.7,
+      containsThreshold: 0.82
+    });
+    if (gap <= mergeGapSec && (sameDisplay || similarity >= 0.78)) {
       prev.endSec = seg.endSec;
       prev.text = chooseBetterOcrText(prev.text, seg.text);
     } else {
@@ -1635,7 +1761,12 @@ function mergeRepeatedSegments(segments = [], options = {}) {
     }
     const gap = Math.max(0, seg.startSec - prev.endSec);
     const similarity = normalizedEditSimilarity(prev.text, seg.text);
-    if (gap <= mergeGapSec && similarity >= similarityThreshold) {
+    const sameDisplay = isLikelySameOcrDisplayText(prev.text, seg.text, {
+      editThreshold: similarityThreshold,
+      tokenThreshold: Math.max(0.62, similarityThreshold - 0.08),
+      containsThreshold: Math.max(0.72, similarityThreshold)
+    });
+    if (gap <= mergeGapSec && (sameDisplay || similarity >= similarityThreshold)) {
       prev.endSec = Math.max(prev.endSec, seg.endSec);
       prev.text = chooseBetterOcrText(prev.text, seg.text);
     } else {
@@ -1663,29 +1794,38 @@ function collapseFrameEntriesToSegments(frameEntries = [], intervalSec = 4) {
     .sort((a, b) => (a.sec - b.sec) || a.text.localeCompare(b.text));
   if (!sorted.length) return [];
 
-  const groups = new Map();
+  const groups = [];
   sorted.forEach((item) => {
-    const key = normalizeComparableOcr(item.text) || item.text.toLowerCase();
-    const list = groups.get(key) || [];
-    list.push(item);
-    groups.set(key, list);
+    const existing = groups.find((group) => isLikelySameOcrDisplayText(group.text, item.text, {
+      editThreshold: 0.82,
+      tokenThreshold: 0.74,
+      containsThreshold: 0.84
+    }));
+    if (existing) {
+      existing.items.push(item);
+      existing.text = chooseBetterOcrText(existing.text, item.text);
+      return;
+    }
+    groups.push({ text: item.text, items: [item] });
   });
 
   const segments = [];
-  groups.forEach((items) => {
+  groups.forEach((group) => {
+    const items = Array.isArray(group.items) ? group.items : [];
     items.sort((a, b) => a.sec - b.sec);
     let cur = null;
     items.forEach((item) => {
       if (!cur) {
-        cur = { startSec: item.sec, endSec: item.sec + step, text: item.text };
+        cur = { startSec: item.sec, endSec: item.sec + step, text: group.text || item.text };
         return;
       }
       const gap = item.sec - cur.endSec;
       if (gap <= (step * 1.2)) {
         cur.endSec = Math.max(cur.endSec, item.sec + step);
+        cur.text = chooseBetterOcrText(cur.text, item.text);
       } else {
         segments.push(cur);
-        cur = { startSec: item.sec, endSec: item.sec + step, text: item.text };
+        cur = { startSec: item.sec, endSec: item.sec + step, text: group.text || item.text };
       }
     });
     if (cur) segments.push(cur);
@@ -2351,10 +2491,17 @@ async function saveAssetVideoOcrMetadata(assetId, row, job) {
   const now = new Date().toISOString();
   const existingDc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
   const items = sanitizeVideoOcrItems(existingDc.videoOcrItems);
+  const nextVersion = items.length + 1;
   items.push({
     id: nanoid(),
     ocrUrl: String(job.resultUrl || '').trim(),
-    ocrLabel: String(job.resultLabel || '').trim() || 'video-ocr.txt',
+    ocrLabel: buildOcrDisplayLabel({
+      assetTitle: String(row?.title || ''),
+      fileName: String(row?.file_name || ''),
+      createdAt: now,
+      engine: normalizeOcrEngine(job.ocrEngine || job.requestedEngine || 'paddle'),
+      version: nextVersion
+    }),
     ocrEngine: normalizeOcrEngine(job.ocrEngine || job.requestedEngine || 'paddle'),
     lineCount: Math.max(0, Number(job.lineCount) || 0),
     segmentCount: Math.max(0, Number(job.segmentCount) || 0),
@@ -3418,7 +3565,12 @@ function mapAssetRow(row) {
         if (!item || typeof item !== 'object') return null;
         const label = String(item.label || '').trim();
         if (!label) return null;
-        return { label };
+        return {
+          cutId: String(item.cutId || '').trim(),
+          label,
+          inPointSeconds: Math.max(0, Number(item.inPointSeconds || 0)),
+          outPointSeconds: Math.max(0, Number(item.outPointSeconds || 0))
+        };
       })
       .filter(Boolean)
     : [];
@@ -4162,6 +4314,9 @@ function queueVideoOcrJob(row, options = {}) {
   const turkishAiCorrect = options.turkishAiCorrect == null
     ? true
     : Boolean(options.turkishAiCorrect);
+  const useZemberekLexicon = options.useZemberekLexicon == null
+    ? false
+    : Boolean(options.useZemberekLexicon);
   const preprocessProfile = normalizeOcrPreprocessProfile(options.preprocessProfile);
   const enableBlurFilter = Boolean(options.enableBlurFilter);
   const blurThreshold = Math.max(0, Math.min(300, Number(options.blurThreshold) || 80));
@@ -5864,7 +6019,12 @@ app.get('/api/assets', async (req, res) => {
         (
           SELECT COALESCE(
             json_agg(
-              json_build_object('label', c.label)
+              json_build_object(
+                'cutId', c.cut_id,
+                'label', c.label,
+                'inPointSeconds', c.in_point_seconds,
+                'outPointSeconds', c.out_point_seconds
+              )
               ORDER BY c.created_at DESC
             ),
             '[]'::json
@@ -6174,7 +6334,8 @@ app.get('/api/assets/subtitle-suggest', async (req, res) => {
 app.post('/api/assets', async (req, res) => {
   try {
     const effective = await resolveEffectivePermissions(req).catch(() => null);
-    const owner = String(effective?.username || effective?.displayName || '').trim() || 'Unknown';
+    const context = effective || buildUserContextFromRequest(req);
+    const owner = String(context?.displayName || context?.username || context?.email || '').trim() || 'Unknown';
     const payload = {
       ...(req.body && typeof req.body === 'object' ? req.body : {}),
       owner
@@ -6274,7 +6435,8 @@ app.post('/api/assets/upload', async (req, res) => {
   }
 
   const effective = await resolveEffectivePermissions(req).catch(() => null);
-  const owner = String(effective?.username || effective?.displayName || '').trim() || 'Unknown';
+  const context = effective || buildUserContextFromRequest(req);
+  const owner = String(context?.displayName || context?.username || context?.email || '').trim() || 'Unknown';
   const payload = {
     ...metadata,
     owner,
@@ -8095,7 +8257,13 @@ app.patch('/api/admin/ocr-records/content', async (req, res) => {
       items.push({
         id: nanoid(),
         ocrUrl: String(target.ocrUrl || '').trim(),
-        ocrLabel: String(target.ocrLabel || path.basename(filePath) || 'video-ocr').trim() || 'video-ocr',
+        ocrLabel: buildOcrDisplayLabel({
+          assetTitle: String(row?.title || ''),
+          fileName: String(row?.file_name || ''),
+          createdAt: new Date().toISOString(),
+          engine: normalizeOcrEngine(target.ocrEngine || 'paddle'),
+          version: items.length + 1
+        }),
         ocrEngine: normalizeOcrEngine(target.ocrEngine || 'paddle'),
         lineCount: Math.max(0, Number(stats.lineCount) || 0),
         segmentCount: Math.max(0, Number(stats.segmentCount) || 0),
@@ -8109,8 +8277,9 @@ app.patch('/api/admin/ocr-records/content', async (req, res) => {
         segmentCount: Math.max(0, Number(stats.segmentCount) || 0)
       };
     }
+    const persistedItem = items[idx] || null;
     const activeUrl = String(dc.videoOcrUrl || '').trim();
-    const activeItem = items.find((it) => String(it.ocrUrl || '').trim() === activeUrl) || items[idx];
+    const activeItem = items.find((it) => String(it.ocrUrl || '').trim() === activeUrl) || persistedItem;
     const updatedDc = {
       ...dc,
       videoOcrItems: items,
@@ -8719,6 +8888,28 @@ async function checkHttpService(url, timeoutMs = 2200) {
 
 app.get('/api/admin/system-health', async (_req, res) => {
   try {
+    const buildHealthMediaJobSummary = (row) => {
+      if (!row) return null;
+      const jobType = normalizeMediaJobType(row.job_type);
+      const mapped = jobType === 'subtitle' ? mapSubtitleJobFromDbRow(row) : mapVideoOcrJobFromDbRow(row);
+      return {
+        jobId: mapped.jobId,
+        assetId: mapped.assetId,
+        assetTitle: String(row.asset_title || row.title || '').trim(),
+        status: mapped.status,
+        progress: Math.max(0, Math.min(100, Number(row.progress) || 0)),
+        updatedAt: mapped.updatedAt,
+        finishedAt: mapped.finishedAt,
+        warning: String(mapped.warning || ''),
+        error: String(mapped.error || ''),
+        label: jobType === 'subtitle' ? String(mapped.subtitleLabel || '') : String(mapped.resultLabel || ''),
+        model: jobType === 'subtitle' ? String(mapped.model || '') : '',
+        engine: jobType === 'video_ocr' ? String(mapped.ocrEngine || '') : '',
+        lineCount: jobType === 'video_ocr' ? Number(mapped.lineCount || 0) : 0,
+        segmentCount: jobType === 'video_ocr' ? Number(mapped.segmentCount || 0) : 0
+      };
+    };
+
     const [proxyRunning, proxyFailed] = [
       Array.from(proxyJobs.values()).filter((job) => ['running', 'queued'].includes(String(job.status || ''))).length,
       Array.from(proxyJobs.values()).filter((job) => String(job.status || '') === 'failed').length
@@ -8772,6 +8963,36 @@ app.get('/api/admin/system-health', async (_req, res) => {
       checkHttpService('http://oauth2-proxy:4180/ping')
     ]);
 
+    const recentJobsResult = await pool.query(
+      `
+        SELECT mpj.*, a.title AS asset_title
+        FROM media_processing_jobs mpj
+        LEFT JOIN assets a ON a.id = mpj.asset_id
+        WHERE mpj.job_type IN ('subtitle', 'video_ocr')
+        ORDER BY mpj.updated_at DESC
+        LIMIT 200
+      `
+    );
+    const recentJobs = {
+      subtitle: { active: null, latestCompleted: null, latestFailed: null },
+      ocr: { active: null, latestCompleted: null, latestFailed: null }
+    };
+    recentJobsResult.rows.forEach((row) => {
+      const typeKey = String(row.job_type || '') === 'video_ocr' ? 'ocr' : 'subtitle';
+      const status = normalizeMediaJobStatus(row.status);
+      const summary = buildHealthMediaJobSummary(row);
+      if (!summary) return;
+      if (!recentJobs[typeKey].active && (status === 'running' || status === 'queued')) {
+        recentJobs[typeKey].active = summary;
+      }
+      if (!recentJobs[typeKey].latestCompleted && status === 'completed') {
+        recentJobs[typeKey].latestCompleted = summary;
+      }
+      if (!recentJobs[typeKey].latestFailed && status === 'failed') {
+        recentJobs[typeKey].latestFailed = summary;
+      }
+    });
+
     return res.json({
       disk: {
         uploadsBytes,
@@ -8799,7 +9020,8 @@ app.get('/api/admin/system-health', async (_req, res) => {
         missingThumbnail,
         missingSubtitle,
         missingOcr
-      }
+      },
+      recentJobs
     });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to load system health' });

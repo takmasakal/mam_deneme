@@ -3,6 +3,7 @@ const I18N_PATH = '/i18n.json';
 
 const ffmpegHealthEl = document.getElementById('ffmpegHealth');
 const systemHealthRows = document.getElementById('systemHealthRows');
+const systemJobStatusEl = document.getElementById('systemJobStatus');
 const settingsForm = document.getElementById('settingsForm');
 const settingsMsg = document.getElementById('settingsMsg');
 const ocrSettingsForm = document.getElementById('ocrSettingsForm');
@@ -203,6 +204,28 @@ let i18n = {
     health_service_oauth2_proxy: 'OAuth2 Proxy',
     health_up: 'UP',
     health_down: 'DOWN',
+    health_recent_jobs: 'Recent Media Jobs',
+    health_subtitle_jobs: 'Subtitle Jobs',
+    health_ocr_jobs: 'OCR Jobs',
+    health_job_running_now: 'Running now',
+    health_job_latest_done: 'Latest completed',
+    health_job_latest_failed: 'Latest failed',
+    health_job_idle: 'No recent job',
+    health_job_asset: 'Asset',
+    health_job_label: 'Label',
+    health_job_engine: 'Engine',
+    health_job_model: 'Model',
+    health_job_updated: 'Updated',
+    health_job_finished: 'Finished',
+    health_job_progress: 'Progress',
+    health_job_lines: 'Lines',
+    health_job_segments: 'Segments',
+    health_job_warning: 'Warning',
+    health_job_error: 'Error',
+    health_job_status_running: 'Running',
+    health_job_status_queued: 'Queued',
+    health_job_status_completed: 'Completed',
+    health_job_status_failed: 'Failed',
     user_settings: 'User Settings',
     perm_admin_access: 'Admin page access',
     perm_asset_delete: 'Asset delete',
@@ -405,6 +428,28 @@ let i18n = {
     health_service_oauth2_proxy: 'OAuth2 Proxy',
     health_up: 'AYAKTA',
     health_down: 'KAPALI',
+    health_recent_jobs: 'Son Medya İşleri',
+    health_subtitle_jobs: 'Altyazı İşleri',
+    health_ocr_jobs: 'OCR İşleri',
+    health_job_running_now: 'Şu an çalışan',
+    health_job_latest_done: 'Son tamamlanan',
+    health_job_latest_failed: 'Son hatalı',
+    health_job_idle: 'Yakın zamanda iş yok',
+    health_job_asset: 'Varlık',
+    health_job_label: 'Etiket',
+    health_job_engine: 'Motor',
+    health_job_model: 'Model',
+    health_job_updated: 'Güncellendi',
+    health_job_finished: 'Bitti',
+    health_job_progress: 'İlerleme',
+    health_job_lines: 'Satır',
+    health_job_segments: 'Segment',
+    health_job_warning: 'Uyarı',
+    health_job_error: 'Hata',
+    health_job_status_running: 'Çalışıyor',
+    health_job_status_queued: 'Kuyrukta',
+    health_job_status_completed: 'Tamamlandı',
+    health_job_status_failed: 'Hatalı',
     user_settings: 'Kullanıcı Ayarları',
     perm_admin_access: 'Yönetim sayfasına erişim',
     perm_asset_delete: 'Varlık silme',
@@ -556,16 +601,28 @@ function parseEditorTcToSec(rawTc) {
   return (hh * 3600) + (mm * 60) + ss + fracSec;
 }
 
-function openTextEditorModal({ title, content, mediaUrl = '', mediaStartSec = 0 }) {
+function openTextEditorModal({
+  title,
+  content,
+  mediaUrl = '',
+  mediaStartSec = 0,
+  previewMode = 'audio',
+  onSave = null
+}) {
   return new Promise((resolve) => {
     const safeMediaUrl = String(mediaUrl || '').trim();
-    const hasMedia = Boolean(safeMediaUrl);
+    const mode = String(previewMode || 'audio').trim().toLowerCase();
+    const hasAudio = Boolean(mode === 'audio' && safeMediaUrl);
+    const hasVideo = Boolean(mode === 'video' && safeMediaUrl);
     const backdrop = document.createElement('div');
     backdrop.className = 'content-modal-backdrop';
     backdrop.innerHTML = `
       <div class="content-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title || 'Editor')}">
-        <h4>${escapeHtml(title || 'Editor')}</h4>
-        ${hasMedia ? `
+        <div class="content-modal-head">
+          <h4>${escapeHtml(title || 'Editor')}</h4>
+          <button type="button" id="contentEditorCloseBtn" class="content-modal-close" aria-label="${escapeHtml(t('content_cancel'))}">×</button>
+        </div>
+        ${hasAudio ? `
         <div class="content-modal-audio" role="group" aria-label="${escapeHtml(t('content_audio_player'))}">
           <div class="content-modal-audio-head">
             <span>${escapeHtml(t('content_audio_player'))}</span>
@@ -579,18 +636,21 @@ function openTextEditorModal({ title, content, mediaUrl = '', mediaStartSec = 0 
           </div>
         </div>
         ` : ''}
+        ${hasVideo ? `
+        <div class="content-modal-video" role="group" aria-label="${escapeHtml(t('type_video'))}">
+          <div class="content-modal-video-overlay">
+            <span class="content-modal-audio-tc">${escapeHtml(t('content_audio_tc'))}: <strong id="contentEditorVideoTc">00:00:00.000</strong></span>
+          </div>
+          <video id="contentEditorVideo" class="content-modal-video-el" controls preload="metadata" src="${escapeHtml(safeMediaUrl)}"></video>
+        </div>
+        ` : ''}
         <div class="content-modal-toolbar">
-          <label>
-            <span>${escapeHtml(t('find_label'))}</span>
-            <input id="contentEditorFindInput" type="text" />
-          </label>
-          <label>
-            <span>${escapeHtml(t('replace_label'))}</span>
-            <input id="contentEditorReplaceInput" type="text" />
-          </label>
+          <input id="contentEditorFindInput" type="text" placeholder="${escapeHtml(t('find_label'))}" />
+          <input id="contentEditorReplaceInput" type="text" placeholder="${escapeHtml(t('replace_label'))}" />
           <button type="button" id="contentEditorFindNextBtn">${escapeHtml(t('find_next'))}</button>
           <button type="button" id="contentEditorReplaceAllBtn">${escapeHtml(t('replace_all'))}</button>
         </div>
+        <div id="contentEditorSaveMsg" class="content-modal-save-msg"></div>
         <div class="content-modal-layout">
           <textarea id="contentEditorArea"></textarea>
           <aside class="content-modal-side">
@@ -621,11 +681,14 @@ function openTextEditorModal({ title, content, mediaUrl = '', mediaStartSec = 0 
     const lcCorrectInput = backdrop.querySelector('#contentEditorLcCorrect');
     const lcMsg = backdrop.querySelector('#contentEditorLcMsg');
     const lcRows = backdrop.querySelector('#contentEditorLcRows');
+    const saveMsg = backdrop.querySelector('#contentEditorSaveMsg');
     const audioEl = backdrop.querySelector('#contentEditorAudio');
     const audioToggleBtn = backdrop.querySelector('#contentEditorAudioToggle');
     const audioTimeline = backdrop.querySelector('#contentEditorAudioTimeline');
     const audioTc = backdrop.querySelector('#contentEditorAudioTc');
     const audioDuration = backdrop.querySelector('#contentEditorAudioDuration');
+    const videoEl = backdrop.querySelector('#contentEditorVideo');
+    const videoTc = backdrop.querySelector('#contentEditorVideoTc');
     if (area) area.value = String(content || '');
     let lastFindPos = 0;
     let lastFindQuery = '';
@@ -787,6 +850,34 @@ function openTextEditorModal({ title, content, mediaUrl = '', mediaStartSec = 0 
       findNext();
     });
 
+    const wireTimecodeSeek = (mediaEl, updateUi) => {
+      area?.addEventListener('click', () => {
+        const text = String(area.value || '');
+        const caret = Number(area.selectionStart || 0);
+        if (!text || caret < 0 || caret > text.length) return;
+        const lineStart = text.lastIndexOf('\n', Math.max(0, caret - 1)) + 1;
+        const lineEndRaw = text.indexOf('\n', caret);
+        const lineEnd = lineEndRaw < 0 ? text.length : lineEndRaw;
+        const line = text.slice(lineStart, lineEnd);
+        const rel = caret - lineStart;
+        const tcRegex = /\b\d{2}:\d{2}:\d{2}(?:[.,:]\d{2,3})?\b/g;
+        for (const match of line.matchAll(tcRegex)) {
+          const token = String(match[0] || '');
+          const start = Number(match.index || 0);
+          const end = start + token.length;
+          if (rel < start || rel > end) continue;
+          const sec = parseEditorTcToSec(token);
+          if (!Number.isFinite(sec)) return;
+          const bounded = Number.isFinite(mediaEl.duration) && mediaEl.duration > 0
+            ? Math.max(0, Math.min(mediaEl.duration, sec))
+            : Math.max(0, sec);
+          mediaEl.currentTime = bounded;
+          updateUi();
+          return;
+        }
+      });
+    };
+
     if (audioEl && audioTimeline && audioTc && audioDuration) {
       const updateAudioUi = () => {
         if (!Number.isFinite(audioEl.duration) || audioEl.duration <= 0) return;
@@ -827,32 +918,24 @@ function openTextEditorModal({ title, content, mediaUrl = '', mediaStartSec = 0 
         audioEl.currentTime = target;
       });
       updateAudioUi();
+      wireTimecodeSeek(audioEl, updateAudioUi);
+    }
 
-      area?.addEventListener('click', () => {
-        const text = String(area.value || '');
-        const caret = Number(area.selectionStart || 0);
-        if (!text || caret < 0 || caret > text.length) return;
-        const lineStart = text.lastIndexOf('\n', Math.max(0, caret - 1)) + 1;
-        const lineEndRaw = text.indexOf('\n', caret);
-        const lineEnd = lineEndRaw < 0 ? text.length : lineEndRaw;
-        const line = text.slice(lineStart, lineEnd);
-        const rel = caret - lineStart;
-        const tcRegex = /\b\d{2}:\d{2}:\d{2}(?:[.,:]\d{2,3})?\b/g;
-        for (const match of line.matchAll(tcRegex)) {
-          const token = String(match[0] || '');
-          const start = Number(match.index || 0);
-          const end = start + token.length;
-          if (rel < start || rel > end) continue;
-          const sec = parseEditorTcToSec(token);
-          if (!Number.isFinite(sec)) return;
-          const bounded = Number.isFinite(audioEl.duration) && audioEl.duration > 0
-            ? Math.max(0, Math.min(audioEl.duration, sec))
-            : Math.max(0, sec);
-          audioEl.currentTime = bounded;
-          updateAudioUi();
-          return;
+    if (videoEl && videoTc) {
+      const updateVideoUi = () => {
+        videoTc.textContent = formatEditorTc(videoEl.currentTime || 0);
+      };
+      videoEl.addEventListener('loadedmetadata', () => {
+        const start = Math.max(0, Number(mediaStartSec) || 0);
+        if (start > 0 && Number.isFinite(videoEl.duration) && start < videoEl.duration) {
+          videoEl.currentTime = start;
         }
+        updateVideoUi();
       });
+      videoEl.addEventListener('timeupdate', updateVideoUi);
+      videoEl.addEventListener('seeked', updateVideoUi);
+      updateVideoUi();
+      wireTimecodeSeek(videoEl, updateVideoUi);
     }
 
     const close = (result) => {
@@ -860,12 +943,27 @@ function openTextEditorModal({ title, content, mediaUrl = '', mediaStartSec = 0 
         audioEl.pause();
         audioEl.removeAttribute('src');
       }
+      if (videoEl) {
+        videoEl.pause();
+        videoEl.removeAttribute('src');
+      }
       backdrop.remove();
       resolve(result);
     };
+    backdrop.querySelector('#contentEditorCloseBtn')?.addEventListener('click', () => close(String(area?.value || '')));
     backdrop.querySelector('#contentEditorCancelBtn')?.addEventListener('click', () => close(null));
-    backdrop.querySelector('#contentEditorSaveBtn')?.addEventListener('click', () => {
-      close(String(area?.value || ''));
+    backdrop.querySelector('#contentEditorSaveBtn')?.addEventListener('click', async () => {
+      if (typeof onSave !== 'function') {
+        if (saveMsg) saveMsg.textContent = '';
+        return;
+      }
+      try {
+        if (saveMsg) saveMsg.textContent = `${t('loading')}...`;
+        await onSave(String(area?.value || ''));
+        if (saveMsg) saveMsg.textContent = t('content_saved');
+      } catch (error) {
+        if (saveMsg) saveMsg.textContent = String(error.message || 'Request failed');
+      }
     });
     backdrop.addEventListener('click', (event) => {
       if (event.target === backdrop) close(null);
@@ -910,12 +1008,89 @@ function humanBytes(value) {
   return `${size.toFixed(1)} ${units[idx]}`;
 }
 
+function formatAdminDateTime(value) {
+  if (!value) return '-';
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return '-';
+  return dt.toLocaleString(currentLang === 'tr' ? 'tr-TR' : 'en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function jobStatusLabel(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'running') return t('health_job_status_running');
+  if (normalized === 'queued') return t('health_job_status_queued');
+  if (normalized === 'completed') return t('health_job_status_completed');
+  if (normalized === 'failed') return t('health_job_status_failed');
+  return normalized || '-';
+}
+
+function renderSystemJobSlot(titleKey, job, type) {
+  if (!job) {
+    return `
+      <div class="system-job-slot is-empty">
+        <div class="system-job-slot-title">${escapeHtml(t(titleKey))}</div>
+        <div class="system-job-empty">${escapeHtml(t('health_job_idle'))}</div>
+      </div>
+    `;
+  }
+  const status = String(job.status || '').trim().toLowerCase();
+  const badgeClass = status === 'completed' ? 'health-ok' : status === 'failed' ? 'health-bad' : 'health-warn';
+  const typeIsSubtitle = type === 'subtitle';
+  const details = [
+    [t('health_job_asset'), job.assetTitle || '-'],
+    [typeIsSubtitle ? t('health_job_label') : t('health_job_engine'), typeIsSubtitle ? (job.label || '-') : (job.engine || '-')],
+    [typeIsSubtitle ? t('health_job_model') : t('health_job_segments'), typeIsSubtitle ? (job.model || '-') : String(job.segmentCount || 0)],
+    [t('health_job_updated'), formatAdminDateTime(job.updatedAt)],
+    [t('health_job_finished'), formatAdminDateTime(job.finishedAt)],
+    [t('health_job_progress'), `${Math.max(0, Math.min(100, Number(job.progress) || 0))}%`]
+  ];
+  if (!typeIsSubtitle) {
+    details.splice(3, 0, [t('health_job_lines'), String(job.lineCount || 0)]);
+  }
+  const warningText = String(job.warning || '').trim();
+  const errorText = String(job.error || '').trim();
+  return `
+    <div class="system-job-slot">
+      <div class="system-job-slot-head">
+        <div class="system-job-slot-title">${escapeHtml(t(titleKey))}</div>
+        <span class="${badgeClass}">${escapeHtml(jobStatusLabel(status))}</span>
+      </div>
+      <div class="system-job-name">${escapeHtml(job.assetTitle || '-')}</div>
+      <div class="system-job-details">
+        ${details.map(([label, value]) => `<div class="system-job-detail"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value || '-')}</span></div>`).join('')}
+        ${warningText ? `<div class="system-job-detail"><strong>${escapeHtml(t('health_job_warning'))}</strong><span>${escapeHtml(warningText)}</span></div>` : ''}
+        ${errorText ? `<div class="system-job-detail"><strong>${escapeHtml(t('health_job_error'))}</strong><span>${escapeHtml(errorText)}</span></div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function renderSystemJobGroup(titleKey, group, type) {
+  return `
+    <section class="system-job-card">
+      <h3>${escapeHtml(t(titleKey))}</h3>
+      <div class="system-job-card-body">
+        ${renderSystemJobSlot('health_job_running_now', group?.active || null, type)}
+        ${renderSystemJobSlot('health_job_latest_done', group?.latestCompleted || null, type)}
+        ${renderSystemJobSlot('health_job_latest_failed', group?.latestFailed || null, type)}
+      </div>
+    </section>
+  `;
+}
+
 function renderSystemHealth(data) {
   if (!systemHealthRows) return;
   const disk = data?.disk || {};
   const jobs = data?.jobs || {};
   const services = data?.services || {};
   const integrity = data?.integrity || {};
+  const recent = data?.recentJobs || {};
   const serviceBadge = (entry) => {
     const ok = Boolean(entry?.ok);
     const status = Number(entry?.status || 0);
@@ -930,6 +1105,15 @@ function renderSystemHealth(data) {
     `<div class="row"><strong>${escapeHtml(t('health_jobs'))}</strong><span>${escapeHtml(t('health_proxy_running'))}: ${escapeHtml(String(jobs.proxyRunning || 0))} | ${escapeHtml(t('health_subtitle_running'))}: ${escapeHtml(String(jobs.subtitleRunning || 0))} | ${escapeHtml(t('health_ocr_running'))}: ${escapeHtml(String(jobs.ocrRunning || 0))} | ${escapeHtml(t('health_proxy_failed'))}: ${escapeHtml(String(jobs.proxyFailed || 0))} | ${escapeHtml(t('health_subtitle_failed'))}: ${escapeHtml(String(jobs.subtitleFailed || 0))} | ${escapeHtml(t('health_ocr_failed'))}: ${escapeHtml(String(jobs.ocrFailed || 0))}</span></div>`,
     `<div class="row"><strong>${escapeHtml(t('health_integrity'))}</strong><span>${escapeHtml(t('health_missing_proxy'))}: ${escapeHtml(String(integrity.missingProxy || 0))} | ${escapeHtml(t('health_missing_thumbnail'))}: ${escapeHtml(String(integrity.missingThumbnail || 0))} | ${escapeHtml(t('health_missing_subtitle'))}: ${escapeHtml(String(integrity.missingSubtitle || 0))} | ${escapeHtml(t('health_missing_ocr'))}: ${escapeHtml(String(integrity.missingOcr || 0))}</span></div>`
   ].join('');
+  if (systemJobStatusEl) {
+    systemJobStatusEl.innerHTML = `
+      <h3>${escapeHtml(t('health_recent_jobs'))}</h3>
+      <div class="system-job-grid">
+        ${renderSystemJobGroup('health_subtitle_jobs', recent.subtitle || {}, 'subtitle')}
+        ${renderSystemJobGroup('health_ocr_jobs', recent.ocr || {}, 'ocr')}
+      </div>
+    `;
+  }
 }
 
 function renderProxyJob(job) {
@@ -1237,18 +1421,63 @@ function renderOcrRecords(records) {
     ocrRecordsRows.innerHTML = `<div class="row"><span>${escapeHtml(t('ocr_none'))}</span></div>`;
     return;
   }
-  ocrRecordsRows.innerHTML = list.map((item) => `
-    <div class="row ocr-row" data-asset-id="${escapeHtml(item.assetId)}" data-item-id="${escapeHtml(item.itemId)}">
-      <div class="ocr-row-main">
-        <strong>${escapeHtml(item.assetTitle || item.fileName || item.assetId)}</strong>
-        <span>${escapeHtml(t('ocr_engine'))}: ${escapeHtml(item.ocrEngine || '-')} | ${escapeHtml(t('ocr_lines'))}: ${escapeHtml(String(item.lineCount || 0))} | ${escapeHtml(t('ocr_segments'))}: ${escapeHtml(String(item.segmentCount || 0))}</span>
+  const groups = new Map();
+  list.forEach((item) => {
+    const assetId = String(item.assetId || '').trim();
+    if (!assetId) return;
+    if (!groups.has(assetId)) {
+      groups.set(assetId, {
+        assetId,
+        assetTitle: String(item.assetTitle || item.fileName || item.assetId || '').trim(),
+        items: []
+      });
+    }
+    groups.get(assetId).items.push(item);
+  });
+  ocrRecordsRows.innerHTML = Array.from(groups.values()).map((group) => {
+    const options = group.items.map((item, index) => `
+      <option
+        value="${escapeHtml(item.itemId || '')}"
+        data-label="${escapeHtml(item.ocrLabel || '')}"
+        data-engine="${escapeHtml(item.ocrEngine || '-')}"
+        data-lines="${escapeHtml(String(item.lineCount || 0))}"
+        data-segments="${escapeHtml(String(item.segmentCount || 0))}"
+        ${index === 0 ? 'selected' : ''}
+      >${escapeHtml(item.ocrLabel || item.itemId || 'ocr')}</option>
+    `).join('');
+    const first = group.items[0] || {};
+    return `
+      <div class="row ocr-row" data-asset-id="${escapeHtml(group.assetId)}">
+        <div class="ocr-row-main">
+          <strong>${escapeHtml(group.assetTitle || group.assetId)}</strong>
+          <span class="ocr-selected-meta">${escapeHtml(t('ocr_engine'))}: ${escapeHtml(first.ocrEngine || '-')} | ${escapeHtml(t('ocr_lines'))}: ${escapeHtml(String(first.lineCount || 0))} | ${escapeHtml(t('ocr_segments'))}: ${escapeHtml(String(first.segmentCount || 0))}</span>
+        </div>
+        <select class="ocr-item-select">${options}</select>
+        <input type="text" class="ocr-label-input" value="${escapeHtml(first.ocrLabel || '')}" />
+        <button type="button" class="ocr-content-btn">${escapeHtml(t('content_edit'))}</button>
+        <button type="button" class="ocr-save-btn">${escapeHtml(t('ocr_edit'))}</button>
+        <button type="button" class="ocr-delete-btn">${escapeHtml(t('ocr_delete_db'))}</button>
       </div>
-      <input type="text" class="ocr-label-input" value="${escapeHtml(item.ocrLabel || '')}" />
-      <button type="button" class="ocr-content-btn">${escapeHtml(t('content_edit'))}</button>
-      <button type="button" class="ocr-save-btn">${escapeHtml(t('ocr_edit'))}</button>
-      <button type="button" class="ocr-delete-btn">${escapeHtml(t('ocr_delete_db'))}</button>
-    </div>
-  `).join('');
+    `;
+  }).join('');
+}
+
+function syncOcrRowSelection(rowEl) {
+  if (!(rowEl instanceof Element)) return null;
+  const selectEl = rowEl.querySelector('.ocr-item-select');
+  if (!(selectEl instanceof HTMLSelectElement)) return null;
+  const option = selectEl.selectedOptions?.[0];
+  if (!option) return null;
+  const itemId = String(option.value || '').trim();
+  const label = String(option.dataset.label || '').trim();
+  const engine = String(option.dataset.engine || '-').trim();
+  const lines = String(option.dataset.lines || '0').trim();
+  const segments = String(option.dataset.segments || '0').trim();
+  const labelInput = rowEl.querySelector('.ocr-label-input');
+  const meta = rowEl.querySelector('.ocr-selected-meta');
+  if (labelInput instanceof HTMLInputElement) labelInput.value = label;
+  if (meta) meta.textContent = `${t('ocr_engine')}: ${engine} | ${t('ocr_lines')}: ${lines} | ${t('ocr_segments')}: ${segments}`;
+  return { itemId, label, engine, lines, segments };
 }
 
 async function loadOcrRecords() {
@@ -1277,20 +1506,67 @@ function renderSubtitleRecords(records) {
     subtitleRecordsRows.innerHTML = `<div class="row"><span>${escapeHtml(t('subtitle_none'))}</span></div>`;
     return;
   }
-  subtitleRecordsRows.innerHTML = list.map((item) => `
-    <div class="row subtitle-row" data-asset-id="${escapeHtml(item.assetId)}" data-item-id="${escapeHtml(item.itemId)}">
-      <div class="subtitle-row-main">
-        <strong>${escapeHtml(item.assetTitle || item.fileName || item.assetId)}</strong>
-        <span>${escapeHtml(item.subtitleLabel || 'subtitle')} | ${escapeHtml(t('subtitle_lang'))}: ${escapeHtml(item.subtitleLang || 'tr')} ${item.active ? '| ACTIVE' : ''}</span>
+  const groups = new Map();
+  list.forEach((item) => {
+    const assetId = String(item.assetId || '').trim();
+    if (!assetId) return;
+    if (!groups.has(assetId)) {
+      groups.set(assetId, {
+        assetId,
+        assetTitle: String(item.assetTitle || item.fileName || item.assetId || '').trim(),
+        items: []
+      });
+    }
+    groups.get(assetId).items.push(item);
+  });
+  subtitleRecordsRows.innerHTML = Array.from(groups.values()).map((group) => {
+    const options = group.items.map((item, index) => `
+      <option
+        value="${escapeHtml(item.itemId || '')}"
+        data-label="${escapeHtml(item.subtitleLabel || '')}"
+        data-lang="${escapeHtml(item.subtitleLang || 'tr')}"
+        data-active="${item.active ? '1' : '0'}"
+        ${index === 0 ? 'selected' : ''}
+      >${escapeHtml(item.subtitleLabel || 'subtitle')}${item.active ? ' (ACTIVE)' : ''}</option>
+    `).join('');
+    const first = group.items[0] || {};
+    const firstLabel = String(first.subtitleLabel || '').trim();
+    const firstLang = String(first.subtitleLang || 'tr').trim() || 'tr';
+    return `
+      <div class="row subtitle-row" data-asset-id="${escapeHtml(group.assetId)}">
+        <div class="subtitle-row-main">
+          <strong>${escapeHtml(group.assetTitle || group.assetId)}</strong>
+          <span class="subtitle-selected-meta">${escapeHtml(firstLabel || 'subtitle')} | ${escapeHtml(t('subtitle_lang'))}: ${escapeHtml(firstLang)}${first.active ? ' | ACTIVE' : ''}</span>
+        </div>
+        <select class="subtitle-item-select">${options}</select>
+        <input type="text" class="subtitle-label-input" value="${escapeHtml(firstLabel)}" />
+        <input type="text" class="subtitle-lang-input" value="${escapeHtml(firstLang)}" />
+        <button type="button" class="subtitle-content-btn">${escapeHtml(t('content_edit'))}</button>
+        <button type="button" class="subtitle-set-active-btn">${escapeHtml(t('subtitle_set_active'))}</button>
+        <button type="button" class="subtitle-save-btn">${escapeHtml(t('subtitle_save'))}</button>
+        <button type="button" class="subtitle-delete-btn">${escapeHtml(t('subtitle_delete_db'))}</button>
       </div>
-      <input type="text" class="subtitle-label-input" value="${escapeHtml(item.subtitleLabel || '')}" />
-      <input type="text" class="subtitle-lang-input" value="${escapeHtml(item.subtitleLang || '')}" />
-      <button type="button" class="subtitle-content-btn">${escapeHtml(t('content_edit'))}</button>
-      <button type="button" class="subtitle-set-active-btn">${escapeHtml(t('subtitle_set_active'))}</button>
-      <button type="button" class="subtitle-save-btn">${escapeHtml(t('subtitle_save'))}</button>
-      <button type="button" class="subtitle-delete-btn">${escapeHtml(t('subtitle_delete_db'))}</button>
-    </div>
-  `).join('');
+    `;
+  }).join('');
+}
+
+function syncSubtitleRowSelection(rowEl) {
+  if (!(rowEl instanceof Element)) return null;
+  const selectEl = rowEl.querySelector('.subtitle-item-select');
+  if (!(selectEl instanceof HTMLSelectElement)) return null;
+  const option = selectEl.selectedOptions?.[0];
+  if (!option) return null;
+  const itemId = String(option.value || '').trim();
+  const label = String(option.dataset.label || '').trim();
+  const lang = String(option.dataset.lang || 'tr').trim() || 'tr';
+  const active = String(option.dataset.active || '') === '1';
+  const labelInput = rowEl.querySelector('.subtitle-label-input');
+  const langInput = rowEl.querySelector('.subtitle-lang-input');
+  const meta = rowEl.querySelector('.subtitle-selected-meta');
+  if (labelInput instanceof HTMLInputElement) labelInput.value = label;
+  if (langInput instanceof HTMLInputElement) langInput.value = lang;
+  if (meta) meta.textContent = `${label || 'subtitle'} | ${t('subtitle_lang')}: ${lang}${active ? ' | ACTIVE' : ''}`;
+  return { itemId, label, lang, active };
 }
 
 async function loadSubtitleRecords() {
@@ -1678,7 +1954,8 @@ ocrRecordsRows?.addEventListener('click', async (event) => {
   const rowEl = event.target.closest('.ocr-row');
   if (!rowEl) return;
   const assetId = String(rowEl.dataset.assetId || '').trim();
-  const itemId = String(rowEl.dataset.itemId || '').trim();
+  const selected = syncOcrRowSelection(rowEl);
+  const itemId = String(selected?.itemId || '').trim();
   if (!assetId || !itemId) return;
 
   if (event.target.closest('.ocr-content-btn')) {
@@ -1692,18 +1969,20 @@ ocrRecordsRows?.addEventListener('click', async (event) => {
       } catch (_error) {
         mediaUrl = '';
       }
-      const nextContent = await openTextEditorModal({
+      await openTextEditorModal({
         title: `${t('ocr_records')} - ${rowEl.querySelector('.ocr-row-main strong')?.textContent || assetId}`,
         content: String(readResult.content || ''),
-        mediaUrl
+        mediaUrl,
+        previewMode: 'video',
+        onSave: async (nextContent) => {
+          await api('/api/admin/ocr-records/content', {
+            method: 'PATCH',
+            body: JSON.stringify({ assetId, itemId, content: nextContent })
+          });
+          if (ocrRecordsMsg) ocrRecordsMsg.textContent = t('content_saved');
+          await loadOcrRecords();
+        }
       });
-      if (nextContent == null) return;
-      await api('/api/admin/ocr-records/content', {
-        method: 'PATCH',
-        body: JSON.stringify({ assetId, itemId, content: nextContent })
-      });
-      if (ocrRecordsMsg) ocrRecordsMsg.textContent = t('content_saved');
-      await loadOcrRecords();
     } catch (error) {
       if (ocrRecordsMsg) ocrRecordsMsg.textContent = String(error.message || 'Request failed');
     }
@@ -1737,11 +2016,20 @@ ocrRecordsRows?.addEventListener('click', async (event) => {
   }
 });
 
+ocrRecordsRows?.addEventListener('change', (event) => {
+  const rowEl = event.target.closest('.ocr-row');
+  if (!rowEl) return;
+  if (event.target.closest('.ocr-item-select')) {
+    syncOcrRowSelection(rowEl);
+  }
+});
+
 subtitleRecordsRows?.addEventListener('click', async (event) => {
   const rowEl = event.target.closest('.subtitle-row');
   if (!rowEl) return;
   const assetId = String(rowEl.dataset.assetId || '').trim();
-  const itemId = String(rowEl.dataset.itemId || '').trim();
+  const selected = syncSubtitleRowSelection(rowEl);
+  const itemId = String(selected?.itemId || '').trim();
   if (!assetId || !itemId) return;
 
   const nextLabel = String(rowEl.querySelector('.subtitle-label-input')?.value || '').trim();
@@ -1758,18 +2046,20 @@ subtitleRecordsRows?.addEventListener('click', async (event) => {
       } catch (_error) {
         mediaUrl = '';
       }
-      const nextContent = await openTextEditorModal({
+      await openTextEditorModal({
         title: `${t('subtitle_records')} - ${rowEl.querySelector('.subtitle-row-main strong')?.textContent || assetId}`,
         content: String(readResult.content || ''),
-        mediaUrl
+        mediaUrl,
+        previewMode: 'audio',
+        onSave: async (nextContent) => {
+          await api('/api/admin/subtitle-records/content', {
+            method: 'PATCH',
+            body: JSON.stringify({ assetId, itemId, content: nextContent })
+          });
+          if (subtitleRecordsMsg) subtitleRecordsMsg.textContent = t('content_saved');
+          await loadSubtitleRecords();
+        }
       });
-      if (nextContent == null) return;
-      await api('/api/admin/subtitle-records/content', {
-        method: 'PATCH',
-        body: JSON.stringify({ assetId, itemId, content: nextContent })
-      });
-      if (subtitleRecordsMsg) subtitleRecordsMsg.textContent = t('content_saved');
-      await loadSubtitleRecords();
     } catch (error) {
       if (subtitleRecordsMsg) subtitleRecordsMsg.textContent = String(error.message || 'Request failed');
     }
@@ -1810,6 +2100,14 @@ subtitleRecordsRows?.addEventListener('click', async (event) => {
     });
     if (subtitleRecordsMsg) subtitleRecordsMsg.textContent = t('subtitle_deleted');
     await loadSubtitleRecords();
+  }
+});
+
+subtitleRecordsRows?.addEventListener('change', (event) => {
+  const rowEl = event.target.closest('.subtitle-row');
+  if (!rowEl) return;
+  if (event.target.closest('.subtitle-item-select')) {
+    syncSubtitleRowSelection(rowEl);
   }
 });
 

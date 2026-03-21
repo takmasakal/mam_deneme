@@ -537,6 +537,7 @@ let i18n = {
     asset_detail_title: 'Asset Detail',
     select_asset: 'Select an asset.',
     ph_title: 'Title',
+    title: 'Title',
     ph_type: 'Type',
     type_video: 'Video',
     type_audio: 'Audio',
@@ -549,6 +550,8 @@ let i18n = {
     ph_duration_auto: 'Duration auto-detected',
     ph_source: 'Source path',
     ph_description: 'Description',
+    description: 'Description',
+    tags: 'Tags',
     ph_query: 'Query',
     ph_ocr_query: 'OCR Search',
     ph_subtitle_query: 'Subtitle Search',
@@ -812,6 +815,7 @@ let i18n = {
     asset_detail_title: 'Varlık Detayı',
     select_asset: 'Bir varlık seçin.',
     ph_title: 'Başlık',
+    title: 'Başlık',
     ph_type: 'Tür',
     type_video: 'Video',
     type_audio: 'Ses',
@@ -824,6 +828,8 @@ let i18n = {
     ph_duration_auto: 'Süre otomatik algılanır',
     ph_source: 'Kaynak yolu',
     ph_description: 'Açıklama',
+    description: 'Açıklama',
+    tags: 'Etiketler',
     ph_query: 'Sorgu',
     ph_ocr_query: 'OCR Arama',
     ph_subtitle_query: 'Altyazı Arama',
@@ -2324,7 +2330,84 @@ function dcHighlightSnippet(asset, query) {
     .slice(0, 2);
   if (!entries.length) return '';
   return entries
-    .map(([key, value]) => `<span class="dc-hit"><strong>${escapeHtml(key)}:</strong> ${highlightMatch(value, query)}</span>`)
+    .map(([key, value]) => {
+      const normalizedKey = String(key || '').trim().toLowerCase();
+      const inputName = ({
+        title: 'dcTitle',
+        creator: 'dcCreator',
+        subject: 'dcSubject',
+        description: 'dcDescription',
+        publisher: 'dcPublisher',
+        contributor: 'dcContributor',
+        date: 'dcDate',
+        type: 'dcType',
+        format: 'dcFormat',
+        identifier: 'dcIdentifier',
+        source: 'dcSource',
+        language: 'dcLanguage',
+        relation: 'dcRelation',
+        coverage: 'dcCoverage',
+        rights: 'dcRights'
+      })[normalizedKey] || '';
+      const labelKey = ({
+        title: 'dc_title',
+        creator: 'dc_creator',
+        subject: 'dc_subject',
+        description: 'dc_description',
+        publisher: 'dc_publisher',
+        contributor: 'dc_contributor',
+        date: 'dc_date',
+        type: 'dc_type',
+        format: 'dc_format',
+        identifier: 'dc_identifier',
+        source: 'dc_source',
+        language: 'dc_language',
+        relation: 'dc_relation',
+        coverage: 'dc_coverage',
+        rights: 'dc_rights'
+      })[normalizedKey] || normalizedKey;
+      return `<button type="button" class="dc-hit field-hit-jump" data-field-jump="1" data-id="${escapeHtml(String(asset.id || ''))}" data-field-name="${escapeHtml(inputName)}"><strong>${escapeHtml(t(labelKey))}:</strong> ${highlightMatch(value, query)}</button>`;
+    })
+    .join(' ');
+}
+
+function metadataHighlightSnippet(asset, query) {
+  const terms = extractHighlightTerms(query);
+  if (!terms.length || !asset) return '';
+  const hits = [];
+  const description = String(asset.description || '').trim();
+  if (description) {
+    const text = description.toLowerCase();
+    if (terms.some((term) => text.includes(term))) {
+      hits.push(`
+        <button
+          type="button"
+          class="dc-hit field-hit-jump"
+          data-field-jump="1"
+          data-id="${escapeHtml(String(asset.id || ''))}"
+          data-field-name="description"
+        ><strong>${escapeHtml(t('description'))}:</strong> ${highlightMatch(description, query)}</button>
+      `.trim());
+    }
+  }
+  return hits.slice(0, 2).join(' ');
+}
+
+function tagHighlightSnippet(asset, query) {
+  const terms = extractHighlightTerms(query);
+  const tags = Array.isArray(asset?.tags) ? asset.tags : [];
+  if (!terms.length || !tags.length) return '';
+  const hits = tags
+    .map((tag) => String(tag || '').trim())
+    .filter(Boolean)
+    .filter((tag) => {
+      const text = tag.toLowerCase();
+      return terms.some((term) => text.includes(term));
+    })
+    .slice(0, 3);
+  if (!hits.length) return '';
+  return hits
+    .map((tag) => `<button type="button" class="dc-hit field-hit-jump" data-field-jump="1" data-id="${escapeHtml(String(asset.id || ''))}" data-field-name="tags" data-focus-tag="${escapeHtml(tag)}"><strong>${escapeHtml(t('tags'))}:</strong> ${highlightMatch(tag, query)}</button>`)
     .join(' ');
 }
 
@@ -2332,17 +2415,31 @@ function clipHighlightSnippet(asset, query) {
   const terms = extractHighlightTerms(query);
   if (!terms.length || !asset || !Array.isArray(asset.cuts)) return '';
   const clips = asset.cuts
-    .map((cut) => String(cut?.label || '').trim())
-    .filter(Boolean)
-    .filter((label) => {
-      const text = label.toLowerCase();
-      return terms.some((term) => text.includes(term));
+    .map((cut) => ({
+      cutId: String(cut?.cutId || '').trim(),
+      label: String(cut?.label || '').trim(),
+      inPointSeconds: Math.max(0, Number(cut?.inPointSeconds || 0))
+    }))
+    .filter((cut) => {
+      const text = cut.label.toLowerCase();
+      return cut.cutId && cut.label && terms.some((term) => text.includes(term));
     })
     .slice(0, 2);
   if (!clips.length) return '';
   return clips
-    .map((label) => `<span class="dc-hit"><strong>${escapeHtml(t('clip_name'))}:</strong> ${highlightMatch(label, query)}</span>`)
+    .map((cut) => {
+      const startTc = secondsToTimecode(cut.inPointSeconds, PLAYER_FPS);
+      return `<button type="button" class="dc-hit clip-hit-jump" data-clip-jump="1" data-id="${escapeHtml(String(asset.id || ''))}" data-cut-id="${escapeHtml(String(cut.cutId || ''))}" data-start-sec="${escapeHtml(String(cut.inPointSeconds))}"><strong>${escapeHtml(t('clip_name'))}:</strong> ${highlightMatch(cut.label, query)} <span class="dc-hit-tc">TC ${escapeHtml(startTc)}</span></button>`;
+    })
     .join(' ');
+}
+
+function buildInlineFieldMatch(value, query) {
+  const text = String(value || '').trim();
+  if (!text || !query) return '';
+  const highlighted = highlightMatch(text, query);
+  if (highlighted === escapeHtml(text)) return '';
+  return `<span class="field-inline-match">${highlighted}</span>`;
 }
 
 function extractHighlightTerms(query) {
@@ -2648,7 +2745,9 @@ function renderAssets(assets) {
       const selected = selectedAssetIds.has(asset.id) ? 'selected' : '';
       const trashClass = asset.inTrash ? 'in-trash' : '';
       const styleClass = 'card-art-glass';
+      const metadataHits = metadataHighlightSnippet(asset, currentSearchQuery);
       const dcHits = dcHighlightSnippet(asset, currentSearchQuery);
+      const tagHits = tagHighlightSnippet(asset, currentSearchQuery);
       const clipHits = clipHighlightSnippet(asset, currentSearchQuery);
       const ocrHitQuery = String(asset?.ocrSearchHit?.query || currentOcrQuery || '').trim();
       const ocrHitsRaw = Array.isArray(asset?.ocrSearchHits) && asset.ocrSearchHits.length
@@ -2691,6 +2790,8 @@ function renderAssets(assets) {
             <h3><span class="type-icon" aria-hidden="true">${assetTypeIcon(asset)}</span> ${highlightMatch(asset.title, currentSearchQuery)}</h3>
             <div class="asset-meta">${highlightMatch(asset.type, currentSearchQuery)} | ${highlightMatch(asset.owner, currentSearchQuery)}</div>
             <div class="asset-meta">${escapeHtml(workflowLabel(asset.status))}${(isVideo(asset) || isAudio(asset)) ? ` | ${escapeHtml(formatDuration(asset.durationSeconds))}` : ''}</div>
+            ${metadataHits ? `<div class="asset-meta dc-hit-row">${metadataHits}</div>` : ''}
+            ${tagHits ? `<div class="asset-meta dc-hit-row">${tagHits}</div>` : ''}
             ${dcHits ? `<div class="asset-meta dc-hit-row">${dcHits}</div>` : ''}
             ${clipHits ? `<div class="asset-meta dc-hit-row">${clipHits}</div>` : ''}
             ${subtitleHit}
@@ -3053,11 +3154,8 @@ function mediaViewer(asset, options = {}) {
   if (isPdf(asset)) {
     const viewerSrc = `/pdf-viewer.html?file=${encodeURIComponent(String(asset.mediaUrl || '').split('#')[0])}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&pdfAdvanced=${currentUserCanUsePdfAdvancedTools ? '1' : '0'}`;
     return `
-      <div class="viewer-resizable">
+      <div class="viewer-resizable pdf-viewer-resizable">
         <iframe id="pdfViewerFrame" class="asset-viewer pdf-viewer-frame" src="${escapeHtml(viewerSrc)}" title="PDF Viewer" loading="lazy"></iframe>
-      </div>
-      <div class="doc-preview-shell">
-        <div class="viewer-meta">${t('open_pdf')}: <a id="pdfOpenFileLink" href="${playbackUrl}" target="_blank" rel="noreferrer">${t('open_file')}</a></div>
       </div>
     `;
   }
@@ -3214,6 +3312,17 @@ function detailMarkup(asset, workflow) {
       ${mediaViewer(asset)}
     `;
 
+  const tagsMarkup = asset.tags.length
+    ? `
+      <div class="meta-label-row">
+        <span class="meta-label-title">${escapeHtml(t('tags'))}</span>
+        <div class="chips">
+          ${asset.tags.map((tag) => `<button type="button" class="chip chip-tag-filter" data-chip-tag="${escapeHtml(tag)}" style="${tagColorStyle(tag)}">${highlightMatch(tag, currentSearchQuery)}</button>`).join('')}
+        </div>
+      </div>
+    `
+    : '';
+
   const metadataTopSection = `
     <h3>${highlightMatch(asset.title, currentSearchQuery)}</h3>
     <p>${highlightMatch(asset.description || t('no_description'), currentSearchQuery)}</p>
@@ -3221,12 +3330,10 @@ function detailMarkup(asset, workflow) {
     <div class="asset-meta">${t('status')}: <strong>${escapeHtml(workflowLabel(asset.status))}</strong></div>
     <div class="asset-meta">${t('trash')}: ${trashStatus}</div>
     ${dcHighlightSnippet(asset, currentSearchQuery) ? `<div class="asset-meta dc-hit-row">${dcHighlightSnippet(asset, currentSearchQuery)}</div>` : ''}
+    ${tagsMarkup}
     <div class="timecode-bar">
       ${asset.mediaUrl ? `<button type="button" id="downloadAssetBtn">${t('download_asset')}</button>` : ''}
       ${trashActions}
-    </div>
-    <div class="chips">
-      ${asset.tags.map((tag) => `<button type="button" class="chip chip-tag-filter" data-chip-tag="${escapeHtml(tag)}" style="${tagColorStyle(tag)}">${highlightMatch(tag, currentSearchQuery)}</button>`).join('')}
     </div>
     ${isVideo(asset) ? `
       <div class="tech-info-box">
@@ -3237,28 +3344,28 @@ function detailMarkup(asset, workflow) {
 
     <form id="editForm" class="inline-grid">
       <h4>${t('edit_metadata')}</h4>
-      <input name="title" value="${escapeHtml(asset.title)}" required />
-      <input name="owner" value="${escapeHtml(asset.owner)}" required />
-      <input name="tags" value="${escapeHtml(asset.tags.join(', '))}" placeholder="${escapeHtml(t('ph_inline_tags'))}" />
-      <textarea name="description">${escapeHtml(asset.description || '')}</textarea>
-      <input name="durationSeconds" type="number" min="0" value="${escapeHtml(asset.durationSeconds)}" />
+      <label>${t('title')}<input name="title" value="${escapeHtml(asset.title)}" required />${buildInlineFieldMatch(asset.title, currentSearchQuery)}</label>
+      <label>${t('owner')}<input name="owner" value="${escapeHtml(asset.owner)}" required />${buildInlineFieldMatch(asset.owner, currentSearchQuery)}</label>
+      <label>${t('tags')}<input name="tags" value="${escapeHtml(asset.tags.join(', '))}" placeholder="${escapeHtml(t('ph_inline_tags'))}" />${buildInlineFieldMatch(asset.tags.join(', '), currentSearchQuery)}</label>
+      <label>${t('description')}<textarea name="description">${escapeHtml(asset.description || '')}</textarea>${buildInlineFieldMatch(asset.description || '', currentSearchQuery)}</label>
+      <label>${t('duration')}<input name="durationSeconds" type="number" min="0" value="${escapeHtml(asset.durationSeconds)}" />${buildInlineFieldMatch(asset.durationSeconds ? `${asset.durationSeconds}s` : '', currentSearchQuery)}</label>
       <h4>${t('dublin_core')}</h4>
       <div class="dc-grid">
-        <label>${t('dc_title')}<input name="dcTitle" value="${escapeHtml(dc.title || '')}" /></label>
-        <label>${t('dc_creator')}<input name="dcCreator" value="${escapeHtml(dc.creator || '')}" /></label>
-        <label>${t('dc_subject')}<input name="dcSubject" value="${escapeHtml(dc.subject || '')}" /></label>
-        <label>${t('dc_description')}<textarea name="dcDescription">${escapeHtml(dc.description || '')}</textarea></label>
-        <label>${t('dc_publisher')}<input name="dcPublisher" value="${escapeHtml(dc.publisher || '')}" /></label>
-        <label>${t('dc_contributor')}<input name="dcContributor" value="${escapeHtml(dc.contributor || '')}" /></label>
-        <label>${t('dc_date')}<input name="dcDate" value="${escapeHtml(dc.date || '')}" /></label>
-        <label>${t('dc_type')}<input name="dcType" value="${escapeHtml(dc.type || '')}" /></label>
-        <label>${t('dc_format')}<input name="dcFormat" value="${escapeHtml(dc.format || '')}" /></label>
-        <label>${t('dc_identifier')}<input name="dcIdentifier" value="${escapeHtml(dc.identifier || '')}" /></label>
-        <label>${t('dc_source')}<input name="dcSource" value="${escapeHtml(dc.source || '')}" /></label>
-        <label>${t('dc_language')}<input name="dcLanguage" value="${escapeHtml(dc.language || '')}" /></label>
-        <label>${t('dc_relation')}<input name="dcRelation" value="${escapeHtml(dc.relation || '')}" /></label>
-        <label>${t('dc_coverage')}<input name="dcCoverage" value="${escapeHtml(dc.coverage || '')}" /></label>
-        <label>${t('dc_rights')}<input name="dcRights" value="${escapeHtml(dc.rights || '')}" /></label>
+        <label>${t('dc_title')}<input name="dcTitle" value="${escapeHtml(dc.title || '')}" />${buildInlineFieldMatch(dc.title || '', currentSearchQuery)}</label>
+        <label>${t('dc_creator')}<input name="dcCreator" value="${escapeHtml(dc.creator || '')}" />${buildInlineFieldMatch(dc.creator || '', currentSearchQuery)}</label>
+        <label>${t('dc_subject')}<input name="dcSubject" value="${escapeHtml(dc.subject || '')}" />${buildInlineFieldMatch(dc.subject || '', currentSearchQuery)}</label>
+        <label>${t('dc_description')}<textarea name="dcDescription">${escapeHtml(dc.description || '')}</textarea>${buildInlineFieldMatch(dc.description || '', currentSearchQuery)}</label>
+        <label>${t('dc_publisher')}<input name="dcPublisher" value="${escapeHtml(dc.publisher || '')}" />${buildInlineFieldMatch(dc.publisher || '', currentSearchQuery)}</label>
+        <label>${t('dc_contributor')}<input name="dcContributor" value="${escapeHtml(dc.contributor || '')}" />${buildInlineFieldMatch(dc.contributor || '', currentSearchQuery)}</label>
+        <label>${t('dc_date')}<input name="dcDate" value="${escapeHtml(dc.date || '')}" />${buildInlineFieldMatch(dc.date || '', currentSearchQuery)}</label>
+        <label>${t('dc_type')}<input name="dcType" value="${escapeHtml(dc.type || '')}" />${buildInlineFieldMatch(dc.type || '', currentSearchQuery)}</label>
+        <label>${t('dc_format')}<input name="dcFormat" value="${escapeHtml(dc.format || '')}" />${buildInlineFieldMatch(dc.format || '', currentSearchQuery)}</label>
+        <label>${t('dc_identifier')}<input name="dcIdentifier" value="${escapeHtml(dc.identifier || '')}" />${buildInlineFieldMatch(dc.identifier || '', currentSearchQuery)}</label>
+        <label>${t('dc_source')}<input name="dcSource" value="${escapeHtml(dc.source || '')}" />${buildInlineFieldMatch(dc.source || '', currentSearchQuery)}</label>
+        <label>${t('dc_language')}<input name="dcLanguage" value="${escapeHtml(dc.language || '')}" />${buildInlineFieldMatch(dc.language || '', currentSearchQuery)}</label>
+        <label>${t('dc_relation')}<input name="dcRelation" value="${escapeHtml(dc.relation || '')}" />${buildInlineFieldMatch(dc.relation || '', currentSearchQuery)}</label>
+        <label>${t('dc_coverage')}<input name="dcCoverage" value="${escapeHtml(dc.coverage || '')}" />${buildInlineFieldMatch(dc.coverage || '', currentSearchQuery)}</label>
+        <label>${t('dc_rights')}<input name="dcRights" value="${escapeHtml(dc.rights || '')}" />${buildInlineFieldMatch(dc.rights || '', currentSearchQuery)}</label>
       </div>
       <button type="submit">${t('save_metadata')}</button>
     </form>
@@ -3457,7 +3564,7 @@ async function openMultiSelectionDetail() {
   return true;
 }
 
-function initFrameControls(mediaEl, asset, root = document) {
+function initFrameControls(mediaEl, asset, root = document, options = {}) {
   const byId = (id) => root.querySelector(`#${id}`);
   const byIdGlobal = (id) => byId(id) || document.getElementById(id);
   const playBtn = byId('playBtn');
@@ -3504,8 +3611,8 @@ function initFrameControls(mediaEl, asset, root = document) {
   const marks = cutMarksByAsset.get(asset.id) || { in: null, out: null };
   cutMarksByAsset.set(asset.id, marks);
   const cuts = Array.isArray(asset.cuts) ? [...asset.cuts] : [];
-  let activeCutId = null;
-  let showActiveCutTicks = false;
+  let activeCutId = String(options.focusCutId || '').trim() || null;
+  let showActiveCutTicks = Boolean(activeCutId);
   let activeCutPlayOutSec = null;
 
   const getFps = () => PLAYER_FPS;
@@ -3624,6 +3731,10 @@ function initFrameControls(mediaEl, asset, root = document) {
         `;
       })
       .join('');
+    if (activeCutId) {
+      const activeRow = cutsList.querySelector(`.cut-item[data-cut-id="${CSS.escape(activeCutId)}"]`);
+      activeRow?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
   };
 
   const step = (direction) => {
@@ -5767,7 +5878,7 @@ function initAssetPlayer(asset, root = document, options = {}) {
     if (isVideo(asset)) {
       if (useMpegDashPlayerUI()) cleanups.push(initMpegDashPlayer(mediaEl, asset, root));
       if (useVideoJsPlayerUI()) cleanups.push(initVideoJsPlayer(mediaEl, root));
-      cleanups.push(initFrameControls(mediaEl, asset, root));
+      cleanups.push(initFrameControls(mediaEl, asset, root, options));
       if (useCustomLikeTimelineUI()) cleanups.push(initCustomVideoControls(mediaEl, root));
       cleanups.push(initVideoSubtitleTools(mediaEl, asset, root));
       cleanups.push(initVideoOcrTools(asset, root));
@@ -5884,6 +5995,68 @@ function syncDetailHeaderTimecode(root = document) {
   slot.classList.remove('hidden');
 }
 
+function scrollElementIntoContainerView(container, element, align = 0.38, offsetTop = 0) {
+  if (!(container instanceof Element) || !(element instanceof Element)) return;
+  const containerRect = container.getBoundingClientRect();
+  const elementRect = element.getBoundingClientRect();
+  const targetTop = container.scrollTop + (elementRect.top - containerRect.top) - (container.clientHeight * align) - Math.max(0, Number(offsetTop) || 0);
+  container.scrollTo({
+    top: Math.max(0, targetTop),
+    behavior: 'smooth'
+  });
+}
+
+function focusCutRowInDetail(root = document, cutId = '') {
+  const targetCutId = String(cutId || '').trim();
+  if (!targetCutId || !(root instanceof Element)) return;
+  let wasPinned = detailVideoPinned || root.classList.contains('detail-video-pinned');
+  if (wasPinned) {
+    const pinBtn = root.querySelector('#detailVideoPinBtn');
+    if (pinBtn instanceof HTMLButtonElement) {
+      pinBtn.click();
+    } else {
+      detailVideoPinned = false;
+      localStorage.setItem(LOCAL_DETAIL_VIDEO_PIN, '0');
+      root.classList.remove('detail-video-pinned', 'detail-video-show-overlay-controls');
+    }
+    wasPinned = false;
+  }
+  const stickyVideo = root.querySelector('.detail-video-fixed');
+  const stickyOffset = wasPinned && stickyVideo instanceof HTMLElement
+    ? Math.max(0, stickyVideo.getBoundingClientRect().height - 24)
+    : 0;
+  const clipsSection = root.querySelector('.collapsible-section[data-section="clips"]');
+  if (clipsSection) {
+    clipsSection.classList.remove('collapsed');
+    const hideCheck = clipsSection.querySelector('.section-hide-check');
+    if (hideCheck) hideCheck.checked = false;
+  }
+  const tryFocus = (attemptsLeft = 10) => {
+    const row = root.querySelector(`.cut-item[data-cut-id="${CSS.escape(targetCutId)}"]`);
+    if (row) {
+      const clipsBody = clipsSection?.querySelector('.collapsible-body');
+      if (clipsSection) {
+        scrollElementIntoContainerView(root, clipsSection, 0.18, stickyOffset);
+      }
+      if (clipsBody instanceof Element) {
+        requestAnimationFrame(() => {
+          scrollElementIntoContainerView(root, row, 0.24, stickyOffset);
+        });
+      } else {
+        scrollElementIntoContainerView(root, row, 0.24, stickyOffset);
+      }
+      row.classList.add('search-hit-active');
+      setTimeout(() => row.classList.remove('search-hit-active'), 1800);
+      return;
+    }
+    if (attemptsLeft <= 0) return;
+    requestAnimationFrame(() => {
+      setTimeout(() => tryFocus(attemptsLeft - 1), 24);
+    });
+  };
+  requestAnimationFrame(() => tryFocus());
+}
+
 async function openAsset(id, workflow, options = {}) {
   if (isVideoToolsPageMode) {
     panelVisibility.panelIngest = false;
@@ -5923,7 +6096,8 @@ async function openAsset(id, workflow, options = {}) {
     assetDetail.classList.remove('empty');
     assetDetail.classList.add('video-tools-page-detail');
     activePlayerCleanup = initAssetPlayer(asset, assetDetail, {
-      startAtSeconds: Number(options.startAtSeconds) || 0
+      startAtSeconds: Number(options.startAtSeconds) || 0,
+      focusCutId: String(options.focusCutId || '').trim()
     });
     const leaveBtn = document.getElementById('leaveVideoToolsPageBtn');
     leaveBtn?.addEventListener('click', () => {
@@ -5953,8 +6127,33 @@ async function openAsset(id, workflow, options = {}) {
     openVideoToolsPage(asset.id, startAtSeconds);
   });
   activePlayerCleanup = initAssetPlayer(asset, assetDetail, {
-    startAtSeconds: Number(options.startAtSeconds) || 0
+    startAtSeconds: Number(options.startAtSeconds) || 0,
+    focusCutId: String(options.focusCutId || '').trim()
   });
+  const focusFieldName = String(options.focusFieldName || '').trim();
+  const focusTag = String(options.focusTag || '').trim();
+  const focusCutId = String(options.focusCutId || '').trim();
+  if (focusFieldName) {
+    requestAnimationFrame(() => {
+      const fieldEl = assetDetail.querySelector(`[name="${CSS.escape(focusFieldName)}"]`);
+      if (!fieldEl) return;
+      fieldEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      try { fieldEl.focus({ preventScroll: true }); } catch (_error) {}
+    });
+  }
+  if (focusTag) {
+    requestAnimationFrame(() => {
+      const tagButton = Array.from(assetDetail.querySelectorAll('.chip-tag-filter'))
+        .find((el) => String(el.textContent || '').trim().toLowerCase() === focusTag.toLowerCase());
+      if (!tagButton) return;
+      tagButton.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+      tagButton.classList.add('search-hit-active');
+      setTimeout(() => tagButton.classList.remove('search-hit-active'), 1800);
+    });
+  }
+  if (focusCutId) {
+    focusCutRowInDetail(assetDetail, focusCutId);
+  }
   loadAssetTechnicalInfo(asset).catch(() => {});
   const ensureProxyBtn = document.getElementById('ensureProxyBtn');
   ensureProxyBtn?.addEventListener('click', async () => {
@@ -6214,6 +6413,34 @@ assetGrid.addEventListener('click', async (event) => {
     setSingleSelection(id);
     const workflow = await api('/api/workflow');
     await openAsset(id, workflow, { startAtSeconds });
+    return;
+  }
+
+  const clipJumpBtn = event.target.closest('[data-clip-jump]');
+  if (clipJumpBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const id = String(clipJumpBtn.dataset.id || '').trim();
+    const focusCutId = String(clipJumpBtn.dataset.cutId || '').trim();
+    const startAtSeconds = Math.max(0, Number(clipJumpBtn.dataset.startSec || 0));
+    if (!id) return;
+    setSingleSelection(id);
+    const workflow = await api('/api/workflow');
+    await openAsset(id, workflow, { startAtSeconds, focusCutId });
+    return;
+  }
+
+  const fieldJumpBtn = event.target.closest('[data-field-jump]');
+  if (fieldJumpBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    const id = String(fieldJumpBtn.dataset.id || '').trim();
+    const focusFieldName = String(fieldJumpBtn.dataset.fieldName || '').trim();
+    const focusTag = String(fieldJumpBtn.dataset.focusTag || '').trim();
+    if (!id || (!focusFieldName && !focusTag)) return;
+    setSingleSelection(id);
+    const workflow = await api('/api/workflow');
+    await openAsset(id, workflow, { focusFieldName, focusTag });
     return;
   }
 
