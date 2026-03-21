@@ -50,6 +50,29 @@ function normalizePlayerUiMode(value) {
   return 'native';
 }
 const DEFAULT_USER_PERMISSIONS = {};
+const PERMISSION_DEFINITIONS = [
+  {
+    key: 'admin.access',
+    legacyField: 'adminPageAccess',
+    roleNames: ['mam-admin', 'mam-admin-access'],
+    labelKey: 'perm_admin_access'
+  },
+  {
+    key: 'asset.delete',
+    legacyField: 'assetDelete',
+    roleNames: ['mam-asset-delete'],
+    labelKey: 'perm_asset_delete'
+  },
+  {
+    key: 'pdf.advanced',
+    legacyField: 'pdfAdvancedTools',
+    roleNames: ['mam-pdf-advanced'],
+    labelKey: 'perm_pdf_advanced'
+  }
+];
+const PERMISSION_KEYS = PERMISSION_DEFINITIONS.map((item) => item.key);
+const SUPER_ADMIN_ROLE_NAMES = ['admin', 'realm-admin', 'mam-super-admin'];
+const SUPER_ADMIN_USERNAMES = ['admin', 'mamadmin'];
 const ELASTIC_URL = process.env.ELASTIC_URL || 'http://localhost:9200';
 const ELASTIC_INDEX = process.env.ELASTIC_INDEX || 'mam_assets';
 const WHISPER_MODEL = process.env.WHISPER_MODEL || 'small';
@@ -5157,6 +5180,58 @@ function decodeJwtPayload(token) {
   }
 }
 
+function normalizePrincipalNames(values) {
+  return (Array.isArray(values) ? values : [])
+    .flatMap((value) => String(value || '').split(/[,\s]+/))
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function getPermissionDefinitionsPayload() {
+  return PERMISSION_DEFINITIONS.map((item) => ({
+    key: item.key,
+    legacyField: item.legacyField,
+    labelKey: item.labelKey,
+    roleNames: [...item.roleNames]
+  }));
+}
+
+function resolvePermissionKeysFromPrincipals({ username = '', groups = [], roles = [] } = {}) {
+  const normalizedUsername = String(username || '').trim().toLowerCase();
+  const principalNames = new Set([
+    ...normalizePrincipalNames(groups),
+    ...normalizePrincipalNames(roles)
+  ]);
+  const permissionKeys = new Set();
+  const isSuperAdmin =
+    SUPER_ADMIN_USERNAMES.includes(normalizedUsername)
+    || [...principalNames].some((name) => SUPER_ADMIN_ROLE_NAMES.includes(name));
+
+  if (isSuperAdmin) {
+    PERMISSION_KEYS.forEach((key) => permissionKeys.add(key));
+  }
+
+  PERMISSION_DEFINITIONS.forEach((definition) => {
+    if (definition.roleNames.some((roleName) => principalNames.has(roleName))) {
+      permissionKeys.add(definition.key);
+    }
+  });
+
+  return {
+    permissionKeys: Array.from(permissionKeys),
+    isSuperAdmin
+  };
+}
+
+function permissionKeysToLegacyFlags(keys) {
+  const activeKeys = new Set(Array.isArray(keys) ? keys : []);
+  const result = {};
+  PERMISSION_DEFINITIONS.forEach((definition) => {
+    result[definition.legacyField] = activeKeys.has(definition.key);
+  });
+  return result;
+}
+
 function buildUserContextFromRequest(req) {
   const usernameRaw =
     getHeaderString(req, 'x-forwarded-user') ||
@@ -5190,19 +5265,22 @@ function buildUserContextFromRequest(req) {
     .concat(resourceRoles)
     .map((r) => String(r || '').trim().toLowerCase())
     .filter(Boolean);
-  const adminByGroup = groups.some((g) => g === 'admin' || g === 'realm-admin' || g === 'mam-admin');
-  const adminByRole = allRoles.some((r) => r === 'admin' || r === 'realm-admin' || r === 'mam-admin');
-  const adminByUser = ['mamadmin', 'admin'].includes(String(username || '').toLowerCase());
-  const isAdmin = adminByGroup || adminByRole || adminByUser;
+  const resolved = resolvePermissionKeysFromPrincipals({
+    username,
+    groups,
+    roles: allRoles
+  });
   return {
     username,
     displayName,
     email: emailRaw || '',
-    baseIsAdmin: isAdmin
+    baseIsAdmin: resolved.permissionKeys.includes('admin.access'),
+    basePermissionKeys: resolved.permissionKeys,
+    baseIsSuperAdmin: resolved.isSuperAdmin
   };
 }
 
-function normalizePermissionEntry(input, fallbackAdmin) {
+function normalizePermissionEntry(input, fallbackPermissions) {
   const raw = input && typeof input === 'object' ? input : {};
   const toBool = (value, fallback) => {
     if (value == null) return Boolean(fallback);
@@ -5214,27 +5292,60 @@ function normalizePermissionEntry(input, fallbackAdmin) {
     if (['false', '0', 'no', 'n', 'off', 'null', 'undefined'].includes(text)) return false;
     return Boolean(fallback);
   };
-  const adminPageAccess = Object.prototype.hasOwnProperty.call(raw, 'adminPageAccess')
-    ? toBool(raw.adminPageAccess, fallbackAdmin)
-    : Boolean(fallbackAdmin);
-  const assetDelete = Object.prototype.hasOwnProperty.call(raw, 'assetDelete')
-    ? toBool(raw.assetDelete, fallbackAdmin)
-    : Boolean(fallbackAdmin);
-  const pdfAdvancedTools = Object.prototype.hasOwnProperty.call(raw, 'pdfAdvancedTools')
-    ? toBool(raw.pdfAdvancedTools, fallbackAdmin)
-    : Boolean(fallbackAdmin);
-  return { adminPageAccess, assetDelete, pdfAdvancedTools };
+  const fallbackSet = new Set(
+    Array.isArray(fallbackPermissions)
+      ? fallbackPermissions
+      : (fallbackPermissions ? PERMISSION_KEYS : [])
+  );
+  const explicitKeys = new Set();
+
+  if (Array.isArray(raw.permissionKeys)) {
+    raw.permissionKeys.forEach((key) => {
+      const normalized = String(key || '').trim();
+      if (PERMISSION_KEYS.includes(normalized)) explicitKeys.add(normalized);
+    });
+  }
+
+  if (raw.permissions && typeof raw.permissions === 'object') {
+    Object.entries(raw.permissions).forEach(([key, value]) => {
+      const normalized = String(key || '').trim();
+      if (!PERMISSION_KEYS.includes(normalized)) return;
+      if (toBool(value, fallbackSet.has(normalized))) explicitKeys.add(normalized);
+      else explicitKeys.delete(normalized);
+    });
+  }
+
+  PERMISSION_DEFINITIONS.forEach((definition) => {
+    if (!Object.prototype.hasOwnProperty.call(raw, definition.legacyField)) return;
+    if (toBool(raw[definition.legacyField], fallbackSet.has(definition.key))) explicitKeys.add(definition.key);
+    else explicitKeys.delete(definition.key);
+  });
+
+  const mergedKeys = new Set(fallbackSet);
+  if (
+    Array.isArray(raw.permissionKeys)
+    || (raw.permissions && typeof raw.permissions === 'object')
+    || PERMISSION_DEFINITIONS.some((definition) => Object.prototype.hasOwnProperty.call(raw, definition.legacyField))
+  ) {
+    mergedKeys.clear();
+    explicitKeys.forEach((key) => mergedKeys.add(key));
+  }
+
+  const permissionKeys = PERMISSION_KEYS.filter((key) => mergedKeys.has(key));
+  return {
+    permissionKeys,
+    ...permissionKeysToLegacyFlags(permissionKeys)
+  };
 }
 
 function isAdminName(value) {
   const normalized = String(value || '').trim().toLowerCase();
-  return normalized === 'admin' || normalized === 'mamadmin';
+  return SUPER_ADMIN_USERNAMES.includes(normalized);
 }
 
 function isAdminByGroupsOrRoles(groupsOrRoles) {
-  return (Array.isArray(groupsOrRoles) ? groupsOrRoles : [])
-    .map((item) => String(item || '').trim().toLowerCase())
-    .some((name) => name === 'admin' || name === 'realm-admin' || name === 'mam-admin');
+  return normalizePrincipalNames(groupsOrRoles)
+    .some((name) => SUPER_ADMIN_ROLE_NAMES.includes(name) || name === 'mam-admin' || name === 'mam-admin-access');
 }
 
 function getKeycloakCandidateRealms() {
@@ -5321,7 +5432,7 @@ function isVisibleKeycloakUser(user) {
   return true;
 }
 
-async function fetchKeycloakUserAdminFlags(users, realmByUsername) {
+async function fetchKeycloakUserPermissionDefaults(users, realmByUsername) {
   const token = await getKeycloakAdminAccessToken();
   if (!token) return new Map();
   const candidateRealms = getKeycloakCandidateRealms();
@@ -5348,8 +5459,12 @@ async function fetchKeycloakUserAdminFlags(users, realmByUsername) {
       const groupNames = (Array.isArray(groups) ? groups : [])
         .map((item) => String(item?.path || item?.name || '').trim())
         .filter(Boolean);
-      const baseIsAdmin = isAdminName(username) || isAdminByGroupsOrRoles(roleNames) || isAdminByGroupsOrRoles(groupNames);
-      results.set(username, baseIsAdmin);
+      const defaults = resolvePermissionKeysFromPrincipals({
+        username,
+        groups: groupNames,
+        roles: roleNames
+      });
+      results.set(username, defaults.permissionKeys);
     })
   );
   return results;
@@ -5360,14 +5475,15 @@ async function resolveEffectivePermissions(req) {
   const usernameKey = String(user.username || '').trim().toLowerCase();
   const settings = await getUserPermissionsSettings();
   const override = usernameKey ? settings[usernameKey] : null;
-  const effective = normalizePermissionEntry(override, user.baseIsAdmin);
+  const effective = normalizePermissionEntry(override, user.basePermissionKeys || []);
   return {
     ...user,
     isAdmin: Boolean(effective.adminPageAccess),
     canAccessAdmin: Boolean(effective.adminPageAccess),
     canDeleteAssets: Boolean(effective.assetDelete),
     canUsePdfAdvancedTools: Boolean(effective.pdfAdvancedTools),
-    permissions: effective
+    permissions: effective,
+    permissionKeys: effective.permissionKeys
   };
 }
 
@@ -5389,7 +5505,8 @@ app.get('/api/me', async (req, res) => {
       isAdmin: effective.isAdmin,
       canAccessAdmin: effective.canAccessAdmin,
       canDeleteAssets: effective.canDeleteAssets,
-      canUsePdfAdvancedTools: effective.canUsePdfAdvancedTools
+      canUsePdfAdvancedTools: effective.canUsePdfAdvancedTools,
+      permissionKeys: effective.permissionKeys
     });
   } catch (_error) {
     res.status(500).json({ error: 'Failed to resolve user profile' });
@@ -7365,17 +7482,17 @@ app.post('/api/assets/:id/pdf-restore-original', requireAdminAccess, async (req,
   }
 });
 
-app.delete('/api/assets/:id/versions/:versionId', requireAdminAccess, async (req, res) => {
+app.delete('/api/assets/:id/versions/:versionId', requirePdfAdvancedTools, async (req, res) => {
   try {
-    if (!req.userPermissions?.canUsePdfAdvancedTools) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
     const assetId = String(req.params.id || '').trim();
     const versionId = String(req.params.versionId || '').trim();
     if (!assetId || !versionId) return res.status(400).json({ error: 'assetId and versionId are required' });
     const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
     const row = versionResult.rows[0];
     if (!row) return res.status(404).json({ error: 'Version not found' });
+    if (!canManagePdfVersionRow(req.userPermissions, row)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     if (String(row.action_type || '').trim().toLowerCase() === 'pdf_original') {
       return res.status(400).json({ error: 'Protected version cannot be deleted' });
     }
@@ -7386,11 +7503,8 @@ app.delete('/api/assets/:id/versions/:versionId', requireAdminAccess, async (req
   }
 });
 
-app.patch('/api/assets/:id/versions/:versionId', requireAdminAccess, async (req, res) => {
+app.patch('/api/assets/:id/versions/:versionId', requirePdfAdvancedTools, async (req, res) => {
   try {
-    if (!req.userPermissions?.canUsePdfAdvancedTools) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
     const assetId = String(req.params.id || '').trim();
     const versionId = String(req.params.versionId || '').trim();
     if (!assetId || !versionId) return res.status(400).json({ error: 'assetId and versionId are required' });
@@ -7398,6 +7512,9 @@ app.patch('/api/assets/:id/versions/:versionId', requireAdminAccess, async (req,
     const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
     const row = versionResult.rows[0];
     if (!row) return res.status(404).json({ error: 'Version not found' });
+    if (!canManagePdfVersionRow(req.userPermissions, row)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
 
     const nextLabel = String(req.body?.label || '').trim();
     const nextNote = String(req.body?.note || '').trim();
@@ -7606,6 +7723,14 @@ async function requirePdfAdvancedTools(req, res, next) {
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to verify PDF advanced permissions' });
   }
+}
+
+function canManagePdfVersionRow(userPermissions, versionRow) {
+  if (!userPermissions?.canUsePdfAdvancedTools || !versionRow) return false;
+  if (userPermissions?.canAccessAdmin) return true;
+  const actorUsername = String(versionRow.actor_username || '').trim().toLowerCase();
+  const currentUsername = String(userPermissions?.username || '').trim().toLowerCase();
+  return Boolean(actorUsername && currentUsername && actorUsername === currentUsername);
 }
 
 app.use('/api/admin', requireAdminAccess);
@@ -8435,7 +8560,7 @@ app.get('/api/admin/user-permissions', async (req, res) => {
     if (!kcUsers.length) {
       return res.status(503).json({ error: 'Failed to fetch users from Keycloak' });
     }
-    const adminFlagsByUser = await fetchKeycloakUserAdminFlags(kcUsers, kcData?.realmByUsername);
+    const permissionDefaultsByUser = await fetchKeycloakUserPermissionDefaults(kcUsers, kcData?.realmByUsername);
     const usernames = new Set();
     kcUsers.forEach((row) => {
       const username = String(row?.username || '').trim().toLowerCase();
@@ -8450,12 +8575,13 @@ app.get('/api/admin/user-permissions', async (req, res) => {
     const users = Array.from(usernames)
       .sort((a, b) => a.localeCompare(b))
       .map((username) => {
-        const defaults = adminFlagsByUser.has(username)
-          ? Boolean(adminFlagsByUser.get(username))
-          : isAdminName(username);
+        const defaults = permissionDefaultsByUser.has(username)
+          ? permissionDefaultsByUser.get(username)
+          : resolvePermissionKeysFromPrincipals({ username }).permissionKeys;
         const effective = normalizePermissionEntry(saved?.[username], defaults);
         return {
           username,
+          permissionKeys: effective.permissionKeys,
           adminPageAccess: effective.adminPageAccess,
           assetDelete: effective.assetDelete,
           pdfAdvancedTools: effective.pdfAdvancedTools
@@ -8463,6 +8589,7 @@ app.get('/api/admin/user-permissions', async (req, res) => {
       });
     return res.json({
       users,
+      availablePermissions: getPermissionDefinitionsPayload(),
       source: kcUsers.length ? 'keycloak' : 'fallback'
     });
   } catch (_error) {
@@ -8486,13 +8613,17 @@ app.patch('/api/admin/user-permissions/:username', async (req, res) => {
     }
 
     const current = await getUserPermissionsSettings();
+    const requestedPermissionKeys = Array.isArray(req.body?.permissionKeys)
+      ? req.body.permissionKeys.filter((key) => PERMISSION_KEYS.includes(String(key || '').trim()))
+      : null;
     const nextEntry = normalizePermissionEntry(
       {
+        permissionKeys: requestedPermissionKeys,
         adminPageAccess: req.body?.adminPageAccess,
         assetDelete: req.body?.assetDelete,
         pdfAdvancedTools: req.body?.pdfAdvancedTools
       },
-      ['admin', 'mamadmin'].includes(username)
+      resolvePermissionKeysFromPrincipals({ username }).permissionKeys
     );
     const next = {
       ...current,
@@ -8501,6 +8632,7 @@ app.patch('/api/admin/user-permissions/:username', async (req, res) => {
     await saveUserPermissionsSettings(next);
     return res.json({
       username,
+      permissionKeys: nextEntry.permissionKeys,
       ...nextEntry
     });
   } catch (_error) {

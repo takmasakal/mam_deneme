@@ -63,6 +63,7 @@ let proxySuggestActiveIndex = -1;
 let proxySuggestHideTimer = null;
 let ocrRecordsTimer = null;
 let subtitleRecordsTimer = null;
+let availableUserPermissions = [];
 
 let i18n = {
   en: {
@@ -1149,17 +1150,52 @@ function queueProxySuggestionRequest() {
   }, 180);
 }
 
-function renderUserPermissions(users) {
+function formatPermissionLabel(definition) {
+  const labelKey = String(definition?.labelKey || '').trim();
+  if (labelKey && labelKey !== 'undefined') {
+    const translated = t(labelKey);
+    if (translated && translated !== labelKey) return translated;
+  }
+  const key = String(definition?.key || '').trim();
+  if (!key) return '';
+  return key
+    .split(/[._-]+/)
+    .map((part) => part ? part.charAt(0).toUpperCase() + part.slice(1) : '')
+    .join(' ');
+}
+
+function renderUserPermissions(users, definitions = []) {
   if (!userPermissionsRows) return;
   const list = Array.isArray(users) ? users : [];
+  const defs = Array.isArray(definitions) && definitions.length
+    ? definitions
+    : [
+        { key: 'admin.access', legacyField: 'adminPageAccess', labelKey: 'perm_admin_access' },
+        { key: 'asset.delete', legacyField: 'assetDelete', labelKey: 'perm_asset_delete' },
+        { key: 'pdf.advanced', legacyField: 'pdfAdvancedTools', labelKey: 'perm_pdf_advanced' }
+      ];
   userPermissionsRows.innerHTML = list.map((user) => {
     const uname = escapeHtml(user.username || '');
+    const activeKeys = new Set(Array.isArray(user.permissionKeys) ? user.permissionKeys : []);
+    const checkboxes = defs.map((definition) => {
+      const checked = activeKeys.has(definition.key)
+        || Boolean(user?.[definition.legacyField]);
+      return `
+        <label>
+          <input
+            type="checkbox"
+            class="perm-checkbox"
+            data-permission-key="${escapeHtml(definition.key)}"
+            ${checked ? 'checked' : ''}
+          />
+          ${escapeHtml(formatPermissionLabel(definition))}
+        </label>
+      `;
+    }).join('');
     return `
       <div class="row user-perm-row" data-username="${uname}">
         <strong>${uname}</strong>
-        <label><input type="checkbox" class="perm-admin-access" ${user.adminPageAccess ? 'checked' : ''} /> ${escapeHtml(t('perm_admin_access'))}</label>
-        <label><input type="checkbox" class="perm-asset-delete" ${user.assetDelete ? 'checked' : ''} /> ${escapeHtml(t('perm_asset_delete'))}</label>
-        <label><input type="checkbox" class="perm-pdf-advanced" ${user.pdfAdvancedTools ? 'checked' : ''} /> ${escapeHtml(t('perm_pdf_advanced'))}</label>
+        ${checkboxes}
         <button type="button" class="perm-save-btn">${escapeHtml(t('save_settings'))}</button>
       </div>
     `;
@@ -1170,12 +1206,18 @@ function renderUserPermissions(users) {
       const rowEl = event.currentTarget.closest('.user-perm-row');
       const username = rowEl?.dataset?.username || '';
       if (!username) return;
-      const adminPageAccess = Boolean(rowEl.querySelector('.perm-admin-access')?.checked);
-      const assetDelete = Boolean(rowEl.querySelector('.perm-asset-delete')?.checked);
-      const pdfAdvancedTools = Boolean(rowEl.querySelector('.perm-pdf-advanced')?.checked);
+      const permissionKeys = Array.from(rowEl.querySelectorAll('.perm-checkbox:checked'))
+        .map((input) => String(input?.dataset?.permissionKey || '').trim())
+        .filter(Boolean);
+      const legacyFlags = Object.fromEntries(
+        (availableUserPermissions || []).map((definition) => [
+          definition.legacyField,
+          permissionKeys.includes(definition.key)
+        ])
+      );
       await api(`/api/admin/user-permissions/${encodeURIComponent(username)}`, {
         method: 'PATCH',
-        body: JSON.stringify({ adminPageAccess, assetDelete, pdfAdvancedTools })
+        body: JSON.stringify({ permissionKeys, ...legacyFlags })
       });
       if (userPermissionsMsg) userPermissionsMsg.textContent = t('user_permissions_saved');
     });
@@ -1184,7 +1226,8 @@ function renderUserPermissions(users) {
 
 async function loadUserPermissions() {
   const result = await api('/api/admin/user-permissions');
-  renderUserPermissions(result.users || []);
+  availableUserPermissions = Array.isArray(result.availablePermissions) ? result.availablePermissions : [];
+  renderUserPermissions(result.users || [], availableUserPermissions);
 }
 
 function renderOcrRecords(records) {

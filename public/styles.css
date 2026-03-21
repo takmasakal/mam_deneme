@@ -2724,7 +2724,14 @@ button:hover {
 
 .version .timecode-bar {
   position: relative;
-  z-index: 2;
+  z-index: 5;
+  pointer-events: auto;
+}
+
+.version .timecode-bar button {
+  position: relative;
+  z-index: 6;
+  pointer-events: auto;
 }
 
 .timecode-bar button:hover {

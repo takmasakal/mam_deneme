@@ -67,6 +67,7 @@ let selectedAssetId = null;
 let currentUserIsAdmin = false;
 let currentUserCanAccessAdmin = false;
 let currentUserCanUsePdfAdvancedTools = false;
+let currentUsername = '';
 const selectedAssetIds = new Set();
 let lastSelectedAssetId = null;
 let currentSearchQuery = '';
@@ -1196,6 +1197,7 @@ async function loadCurrentUser() {
     currentUserCanAccessAdmin = canAccessAdmin;
     currentUserIsAdmin = canDeleteAssets;
     currentUserCanUsePdfAdvancedTools = canUsePdfAdvancedTools;
+    currentUsername = username.toLowerCase();
     const value = displayName || username || (email.includes('@') ? email.split('@')[0] : '') || t('unknown_user');
     currentUserBtn.dataset.value = value;
     currentUserBtn.textContent = value;
@@ -3276,7 +3278,14 @@ function detailMarkup(asset, workflow) {
   `;
 
   const assetIsPdf = String(asset.mimeType || '').toLowerCase().includes('pdf');
-  const canManageVersions = Boolean(currentUserCanAccessAdmin && (!assetIsPdf || currentUserCanUsePdfAdvancedTools));
+  const canViewVersions = Boolean(
+    assetIsPdf ? currentUserCanUsePdfAdvancedTools : currentUserCanAccessAdmin
+  );
+  const canManageVersions = Boolean(
+    assetIsPdf
+      ? currentUserCanUsePdfAdvancedTools
+      : currentUserCanAccessAdmin
+  );
   const versionSection = canManageVersions ? `
     <form id="versionForm" class="inline-grid">
       <h4>${t('add_version')}</h4>
@@ -3302,8 +3311,19 @@ function detailMarkup(asset, workflow) {
         const actionType = String(v.actionType || 'manual').toLowerCase();
         if (actionType === 'pdf_original') return '';
         const hasSnapshot = String(v.snapshotMediaUrl || '').startsWith('/uploads/');
+        const actorUsername = String(v.actorUsername || '').trim().toLowerCase();
+        const isOwnVersion = Boolean(currentUsername && actorUsername && currentUsername === actorUsername);
         const canRestore = Boolean(currentUserCanAccessAdmin && isPdfAsset && hasSnapshot);
-        const canDeleteVersion = Boolean(currentUserCanAccessAdmin);
+        const canDeleteVersion = Boolean(
+          assetIsPdf
+            ? (currentUserCanUsePdfAdvancedTools && (currentUserCanAccessAdmin || isOwnVersion))
+            : currentUserCanAccessAdmin
+        );
+        const canEditVersion = Boolean(
+          assetIsPdf
+            ? (currentUserCanUsePdfAdvancedTools && (currentUserCanAccessAdmin || isOwnVersion))
+            : currentUserCanAccessAdmin
+        );
         const changeKindLabel = actionType === 'pdf_save' ? renderPdfChangeKindLabel(v) : '';
         const cleanNote = cleanVersionNoteText(v.note);
         return `
@@ -3313,11 +3333,11 @@ function detailMarkup(asset, workflow) {
             <span class="asset-meta">${escapeHtml(t('version_action'))}: ${escapeHtml(t(`action_${actionType}`) || String(v.actionType || 'manual'))} | ${escapeHtml(t('version_actor'))}: ${escapeHtml(v.actorUsername || '-')}</span>
             ${changeKindLabel ? `<br /><span class="asset-meta">${escapeHtml(t('version_change_type'))}: ${escapeHtml(changeKindLabel)}</span>` : ''}
             ${(
-              currentUserCanAccessAdmin
+              assetIsPdf ? currentUserCanUsePdfAdvancedTools : currentUserCanAccessAdmin
             ) ? `
               <div class="timecode-bar" style="margin-top:8px;">
                 ${isPdfAsset ? `<button type="button" class="restorePdfVersionBtn" data-version-id="${escapeHtml(v.versionId)}" ${canRestore ? '' : 'disabled'}>${escapeHtml(canRestore ? t('restore_pdf_version') : t('restore_pdf_unavailable'))}</button>` : ''}
-                <button type="button" class="editVersionBtn" data-version-id="${escapeHtml(v.versionId)}">${escapeHtml(t('edit_version_name'))}</button>
+                <button type="button" class="editVersionBtn" data-version-id="${escapeHtml(v.versionId)}" ${canEditVersion ? '' : 'disabled'}>${escapeHtml(t('edit_version_name'))}</button>
                 ${canDeleteVersion ? `<button type="button" class="deleteVersionBtn danger" data-version-id="${escapeHtml(v.versionId)}">${escapeHtml(t('delete_version'))}</button>` : ''}
               </div>
             ` : ''}
@@ -3326,7 +3346,27 @@ function detailMarkup(asset, workflow) {
       })
       .join('')}
     </div>
-  ` : '';
+  ` : (canViewVersions ? `
+    <h4>${t('versions')}</h4>
+    <div id="assetVersionsList">
+    ${asset.versions
+      .map((v) => {
+        const actionType = String(v.actionType || 'manual').toLowerCase();
+        if (actionType === 'pdf_original') return '';
+        const changeKindLabel = actionType === 'pdf_save' ? renderPdfChangeKindLabel(v) : '';
+        const cleanNote = cleanVersionNoteText(v.note);
+        return `
+          <div class="version" data-version-id="${escapeHtml(v.versionId)}">
+            <strong>${escapeHtml(v.label)}</strong> - ${escapeHtml(cleanNote)}<br />
+            <span class="asset-meta">${new Date(v.createdAt).toLocaleString()}</span><br />
+            <span class="asset-meta">${escapeHtml(t('version_action'))}: ${escapeHtml(t(`action_${actionType}`) || String(v.actionType || 'manual'))} | ${escapeHtml(t('version_actor'))}: ${escapeHtml(v.actorUsername || '-')}</span>
+            ${changeKindLabel ? `<br /><span class="asset-meta">${escapeHtml(t('version_change_type'))}: ${escapeHtml(changeKindLabel)}</span>` : ''}
+          </div>
+        `;
+      })
+      .join('')}
+    </div>
+  ` : '');
 
   const metadataSection = `
     ${isVideo(asset) ? metadataTopSection : viewerSection}
@@ -5972,15 +6012,7 @@ async function openAsset(id, workflow, options = {}) {
   });
 
   const assetVersionsListEl = document.getElementById('assetVersionsList');
-  assetVersionsListEl?.addEventListener('click', async (event) => {
-    const targetNode = event.target;
-    const target = targetNode instanceof Element ? targetNode : targetNode?.parentElement;
-    if (!(target instanceof Element)) return;
-
-    const restoreBtn = target.closest('.restorePdfVersionBtn');
-    if (restoreBtn) {
-      event.preventDefault();
-      event.stopPropagation();
+  const handleRestoreVersion = async (restoreBtn) => {
       if (!currentUserCanAccessAdmin || !currentUserCanUsePdfAdvancedTools) return;
       const versionId = String(restoreBtn.dataset.versionId || '').trim();
       if (!versionId) return;
@@ -5992,14 +6024,10 @@ async function openAsset(id, workflow, options = {}) {
       });
       await loadAssets();
       await openAsset(id, workflow);
-      return;
-    }
+  };
 
-    const deleteBtnEl = target.closest('.deleteVersionBtn');
-    if (deleteBtnEl) {
-      event.preventDefault();
-      event.stopPropagation();
-      if (!currentUserCanAccessAdmin || (assetIsPdf && !currentUserCanUsePdfAdvancedTools)) return;
+  const handleDeleteVersion = async (deleteBtnEl) => {
+      if (deleteBtnEl.disabled) return;
       const versionId = String(deleteBtnEl.dataset.versionId || '').trim();
       if (!versionId) return;
       const ok = await openVersionDeleteDialog();
@@ -6022,14 +6050,10 @@ async function openAsset(id, workflow, options = {}) {
         rowEl?.classList.remove('is-busy');
         alert(String(error?.message || 'Failed to delete version'));
       }
-      return;
-    }
+  };
 
-    const editBtnEl = target.closest('.editVersionBtn');
-    if (editBtnEl) {
-      event.preventDefault();
-      event.stopPropagation();
-      if (!currentUserCanAccessAdmin || (assetIsPdf && !currentUserCanUsePdfAdvancedTools)) return;
+  const handleEditVersion = async (editBtnEl) => {
+      if (editBtnEl.disabled) return;
       const versionId = String(editBtnEl.dataset.versionId || '').trim();
       if (!versionId) return;
       const current = (asset.versions || []).find((v) => String(v.versionId || '') === versionId);
@@ -6063,8 +6087,36 @@ async function openAsset(id, workflow, options = {}) {
         editBtnEl.disabled = false;
         alert(String(error?.message || 'Failed to update version'));
       }
-      return;
-    }
+  };
+
+  assetVersionsListEl?.querySelectorAll('.restorePdfVersionBtn').forEach((btn) => {
+    btn.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await handleRestoreVersion(event.currentTarget);
+    });
+  });
+
+  assetVersionsListEl?.querySelectorAll('.deleteVersionBtn').forEach((btn) => {
+    btn.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await handleDeleteVersion(event.currentTarget);
+    });
+  });
+
+  assetVersionsListEl?.querySelectorAll('.editVersionBtn').forEach((btn) => {
+    btn.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await handleEditVersion(event.currentTarget);
+    });
+  });
+
+  assetVersionsListEl?.addEventListener('click', async (event) => {
+    const targetNode = event.target;
+    const target = targetNode instanceof Element ? targetNode : targetNode?.parentElement;
+    if (!(target instanceof Element)) return;
 
     const row = target.closest('.version-restorable[data-restore-version-id]');
     if (!row) return;
