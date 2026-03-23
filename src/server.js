@@ -298,6 +298,10 @@ function sqlTagFold(expression) {
   return `REPLACE(LOWER(TRANSLATE(${expression}, 'İIı', 'iii')), U&'\\0307', '')`;
 }
 
+function sqlTextFold(expression) {
+  return `REPLACE(LOWER(TRANSLATE(COALESCE(${expression}, ''), 'İIı', 'iii')), U&'\\0307', '')`;
+}
+
 function sanitizeFileName(fileName) {
   const cleaned = String(fileName || 'asset.bin').trim().replace(/[^a-zA-Z0-9._-]/g, '_');
   return cleaned || 'asset.bin';
@@ -394,6 +398,14 @@ function buildOcrDisplayLabel({ assetTitle = '', fileName = '', createdAt = '', 
   const engineToken = toAsciiUpperToken(engine || 'paddle', 'PADDLE');
   const versionToken = `v${String(Math.max(1, Number(version) || 1)).padStart(2, '0')}`;
   return `${initials}-${datePart}-OCR-${engineToken}-${versionToken}`;
+}
+
+function normalizeRequestedOcrLabel(value, fallback = '') {
+  const raw = String(value || '').trim();
+  const chosen = raw || String(fallback || '').trim();
+  if (!chosen) return '';
+  const sanitized = sanitizeFileName(chosen.replace(/\.txt$/i, '').trim());
+  return sanitized ? `${sanitized}.txt` : '';
 }
 
 function relabelOcrItemsForAsset(assetTitle, fileName, items = []) {
@@ -1128,25 +1140,78 @@ function escapeRegex(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function buildTurkishFlexibleRegexFragment(value) {
+  return Array.from(String(value || ''))
+    .map((char) => {
+      switch (char) {
+        case 'i':
+        case 'ı':
+        case 'I':
+        case 'İ':
+          return '[iıİI]';
+        case 's':
+        case 'ş':
+        case 'S':
+        case 'Ş':
+          return '[sşSŞ]';
+        case 'g':
+        case 'ğ':
+        case 'G':
+        case 'Ğ':
+          return '[gğGĞ]';
+        case 'u':
+        case 'ü':
+        case 'U':
+        case 'Ü':
+          return '[uüUÜ]';
+        case 'o':
+        case 'ö':
+        case 'O':
+        case 'Ö':
+          return '[oöOÖ]';
+        case 'c':
+        case 'ç':
+        case 'C':
+        case 'Ç':
+          return '[cçCÇ]';
+        default:
+          return escapeRegex(char);
+      }
+    })
+    .join('');
+}
+
 function compileLearnedTurkishCorrections() {
   learnedTurkishCorrectionsCompiled = Array.from(learnedTurkishCorrections.entries())
     .map(([wrong, correct]) => {
       const key = normalizeLearnedCorrectionKey(wrong);
       const value = String(correct || '').trim();
       if (!key || !value) return null;
+      const trailingPunctuation = (key.match(/([?!.,:;…]+)\s*$/u)?.[1] || '').trim();
       const core = key
         .replace(/^[^0-9A-Za-zÇĞİÖŞÜçğıöşü]+/u, '')
         .replace(/[^0-9A-Za-zÇĞİÖŞÜçğıöşü]+$/u, '')
         .trim();
       const patternSource = core || key;
       const isSingleWord = !/\s/u.test(patternSource);
+      const normalizedPattern = isSingleWord
+        ? buildTurkishFlexibleRegexFragment(patternSource)
+        : patternSource
+            .split(/\s+/u)
+            .filter(Boolean)
+            .map((part) => buildTurkishFlexibleRegexFragment(part))
+            .join('\\s+');
+      const punctuationPattern = trailingPunctuation
+        ? `(?:\\s*${escapeRegex(trailingPunctuation)})?`
+        : '(?:\\s*[?!.,:;…]+)?';
       const regex = isSingleWord
-        ? new RegExp(`\\b${escapeRegex(patternSource)}\\b`, 'giu')
-        : new RegExp(escapeRegex(patternSource), 'giu');
+        ? new RegExp(`\\b${normalizedPattern}\\b${punctuationPattern}`, 'giu')
+        : new RegExp(`${normalizedPattern}${punctuationPattern}`, 'giu');
       return {
         wrong: key,
         correct: value,
-        regex
+        regex,
+        trailingPunctuation
       };
     })
     .filter(Boolean);
@@ -1266,7 +1331,13 @@ function applyLearnedTurkishCorrections(text) {
   let out = String(text || '');
   if (!out || !learnedTurkishCorrectionsCompiled.length) return out;
   learnedTurkishCorrectionsCompiled.forEach((rule) => {
-    out = out.replace(rule.regex, rule.correct);
+    out = out.replace(rule.regex, (matched) => {
+      const tail = String(matched || '').match(/([?!.,:;…]+)\s*$/u)?.[1] || '';
+      const corrected = String(rule.correct || '').trim();
+      if (!tail) return corrected;
+      if (/[?!.,:;…]\s*$/u.test(corrected)) return corrected;
+      return `${corrected}${tail}`;
+    });
   });
   return out;
 }
@@ -2352,6 +2423,7 @@ function buildVideoOcrDbRequestPayload(job) {
   return {
     intervalSec: Number(job.intervalSec || 0),
     ocrLang: String(job.ocrLang || ''),
+    ocrLabel: String(job.ocrLabel || ''),
     ocrEngine: normalizeOcrEngine(job.ocrEngine || job.requestedEngine || 'paddle'),
     requestedEngine: normalizeOcrEngine(job.requestedEngine || job.ocrEngine || 'paddle'),
     mode: String(job.mode || 'basic'),
@@ -2404,6 +2476,7 @@ function mapVideoOcrJobFromDbRow(row) {
     status,
     intervalSec: Number(request.intervalSec || 0),
     ocrLang: String(request.ocrLang || ''),
+    ocrLabel: String(request.ocrLabel || ''),
     ocrEngine,
     requestedEngine: normalizeOcrEngine(request.requestedEngine || request.ocrEngine || 'paddle'),
     resultUrl,
@@ -2449,6 +2522,8 @@ function buildSubtitleDbRequestPayload(job) {
     subtitleLabel: String(job.subtitleLabel || 'auto-whisper'),
     turkishAiCorrect: Boolean(job.turkishAiCorrect),
     useZemberekLexicon: Boolean(job.useZemberekLexicon),
+    audioStreamIndex: Number.isFinite(Number(job.audioStreamIndex)) ? Number(job.audioStreamIndex) : null,
+    audioChannelIndex: Number.isFinite(Number(job.audioChannelIndex)) ? Number(job.audioChannelIndex) : null,
     subtitleBackend: normalizeSubtitleBackend(job.subtitleBackendRequested || job.subtitleBackend)
   };
 }
@@ -2477,6 +2552,8 @@ function mapSubtitleJobFromDbRow(row) {
     model: String(result.model || request.model || ''),
     turkishAiCorrect: Boolean(request.turkishAiCorrect),
     useZemberekLexicon: Boolean(request.useZemberekLexicon),
+    audioStreamIndex: Number.isFinite(Number(request.audioStreamIndex)) ? Number(request.audioStreamIndex) : null,
+    audioChannelIndex: Number.isFinite(Number(request.audioChannelIndex)) ? Number(request.audioChannelIndex) : null,
     subtitleBackend: normalizeSubtitleBackend(result.subtitleBackend || request.subtitleBackend),
     warning: String(result.warning || ''),
     asset: null,
@@ -2492,16 +2569,20 @@ async function saveAssetVideoOcrMetadata(assetId, row, job) {
   const existingDc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
   const items = sanitizeVideoOcrItems(existingDc.videoOcrItems);
   const nextVersion = items.length + 1;
-  items.push({
-    id: nanoid(),
-    ocrUrl: String(job.resultUrl || '').trim(),
-    ocrLabel: buildOcrDisplayLabel({
+  const requestedLabel = normalizeRequestedOcrLabel(
+    job.ocrLabel,
+    buildOcrDisplayLabel({
       assetTitle: String(row?.title || ''),
       fileName: String(row?.file_name || ''),
       createdAt: now,
       engine: normalizeOcrEngine(job.ocrEngine || job.requestedEngine || 'paddle'),
       version: nextVersion
-    }),
+    })
+  );
+  items.push({
+    id: nanoid(),
+    ocrUrl: String(job.resultUrl || '').trim(),
+    ocrLabel: requestedLabel,
     ocrEngine: normalizeOcrEngine(job.ocrEngine || job.requestedEngine || 'paddle'),
     lineCount: Math.max(0, Number(job.lineCount) || 0),
     segmentCount: Math.max(0, Number(job.segmentCount) || 0),
@@ -3595,6 +3676,7 @@ function mapAssetRow(row) {
     subtitleLang: dcMetadata.subtitleUrl ? normalizeSubtitleLang(dcMetadata.subtitleLang) : '',
     subtitleLabel: String(dcMetadata.subtitleLabel || '').trim(),
     subtitleItems,
+    audioStreamOptions: Array.isArray(dcMetadata.audioStreamOptions) ? dcMetadata.audioStreamOptions : [],
     videoOcrUrl: String(dcMetadata.videoOcrUrl || '').trim(),
     videoOcrLabel: String(dcMetadata.videoOcrLabel || '').trim(),
     videoOcrEngine: normalizeOcrEngine(dcMetadata.videoOcrEngine || 'paddle'),
@@ -3915,11 +3997,23 @@ async function transcribeMediaToVtt(inputPath, outputPath, options = {}) {
     ? path.join(__dirname, 'transcribe_whisperx.py')
     : path.join(__dirname, 'transcribe_whisper.py');
   const lang = String(options.lang || '').trim().toLowerCase();
-  const model = String(options.model || WHISPER_MODEL || 'small').trim();
+  const model = normalizeSubtitleModel(options.model || WHISPER_MODEL || 'small');
+  const audioStreamIndex = Number.isFinite(Number(options.audioStreamIndex)) ? Number(options.audioStreamIndex) : null;
+  const audioChannelIndex = Number.isFinite(Number(options.audioChannelIndex)) ? Number(options.audioChannelIndex) : null;
+  let preparedInputPath = inputPath;
+  let cleanupPreparedInput = () => {};
+  if (audioStreamIndex != null || audioChannelIndex != null) {
+    const prepared = await prepareAudioInputForTranscription(inputPath, {
+      audioStreamIndex,
+      audioChannelIndex
+    });
+    preparedInputPath = prepared.path;
+    cleanupPreparedInput = prepared.cleanup;
+  }
   const args = [
     scriptPath,
     '--input',
-    inputPath,
+    preparedInputPath,
     '--output',
     outputPath,
     '--model',
@@ -3928,7 +4022,57 @@ async function transcribeMediaToVtt(inputPath, outputPath, options = {}) {
   if (lang) {
     args.push('--lang', lang);
   }
-  return runCommandCapture('python3', args);
+  try {
+    return await runCommandCapture('python3', args);
+  } finally {
+    try { cleanupPreparedInput(); } catch (_error) {}
+  }
+}
+
+function normalizeSubtitleModel(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return String(WHISPER_MODEL || 'small').trim() || 'small';
+  return raw;
+}
+
+async function prepareAudioInputForTranscription(inputPath, options = {}) {
+  const audioStreamIndex = Number.isFinite(Number(options.audioStreamIndex)) ? Number(options.audioStreamIndex) : null;
+  const audioChannelIndex = Number.isFinite(Number(options.audioChannelIndex)) ? Number(options.audioChannelIndex) : null;
+  if (audioStreamIndex == null && audioChannelIndex == null) {
+    return { path: inputPath, cleanup: () => {} };
+  }
+  const tempPath = path.join('/tmp', `${Date.now()}-${nanoid()}-subtitle-audio.wav`);
+  const args = ['-y', '-i', inputPath];
+  if (audioStreamIndex != null) {
+    args.push('-map', `0:${audioStreamIndex}`);
+  } else {
+    args.push('-map', '0:a:0');
+  }
+  args.push('-vn');
+  if (audioChannelIndex != null && audioChannelIndex >= 1) {
+    const ffChannelIndex = Math.max(0, audioChannelIndex - 1);
+    args.push('-af', `pan=mono|c0=c${ffChannelIndex}`, '-ac', '1');
+  }
+  args.push('-c:a', 'pcm_s16le', tempPath);
+  const result = await runCommandCapture('ffmpeg', args);
+  if (!result.ok || !fs.existsSync(tempPath)) {
+    try {
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    } catch (_error) {
+      // ignore temp cleanup failure
+    }
+    throw new Error(String(result.stderr || result.stdout || 'Failed to prepare selected audio for subtitle transcription'));
+  }
+  return {
+    path: tempPath,
+    cleanup: () => {
+      try {
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      } catch (_error) {
+        // ignore temp cleanup failure
+      }
+    }
+  };
 }
 
 async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
@@ -4305,10 +4449,103 @@ async function extractVideoOcrFrameTextPaddle({ workDir, files, intervalSec, ocr
   return { frameEntries, engine: 'paddle' };
 }
 
+function wordsToSimpleLine(words = []) {
+  const lines = [];
+  let current = [];
+  let lastTop = null;
+  const sorted = [...words]
+    .filter((item) => item && String(item.text || '').trim())
+    .sort((a, b) => {
+      const topDiff = (Number(a.top) || 0) - (Number(b.top) || 0);
+      if (Math.abs(topDiff) > 8) return topDiff;
+      return (Number(a.left) || 0) - (Number(b.left) || 0);
+    });
+  sorted.forEach((word) => {
+    const top = Number(word.top) || 0;
+    if (lastTop == null || Math.abs(top - lastTop) <= 14) {
+      current.push(word);
+      lastTop = lastTop == null ? top : ((lastTop + top) / 2);
+      return;
+    }
+    if (current.length) {
+      lines.push(current);
+    }
+    current = [word];
+    lastTop = top;
+  });
+  if (current.length) lines.push(current);
+  return lines
+    .map((line) => line.sort((a, b) => (Number(a.left) || 0) - (Number(b.left) || 0)).map((w) => normalizeOcrLine(w.text)).filter(Boolean).join(' '))
+    .map((line) => normalizeOcrLine(line))
+    .filter(Boolean);
+}
+
+async function extractVideoOcrFrameTextTesseract({ workDir, files, intervalSec, ocrLang, tickerMap = {} }) {
+  const frameEntries = [];
+  for (let i = 0; i < files.length; i += 1) {
+    const frameName = String(files[i] || '').trim();
+    if (!frameName) continue;
+    const framePath = path.join(workDir, frameName);
+    if (!fs.existsSync(framePath)) continue;
+    const tsv = await runCommandCapture('tesseract', [
+      framePath,
+      'stdout',
+      '-l',
+      ocrLang,
+      '--psm',
+      '6',
+      'tsv'
+    ]);
+    if (!tsv.ok) continue;
+    const words = parseTesseractTsvWords(tsv.stdout || '');
+    const lines = wordsToSimpleLine(words);
+    const tickerName = String(tickerMap[frameName] || '').trim();
+    let tickerLines = [];
+    if (tickerName) {
+      const tickerPath = path.join(workDir, tickerName);
+      if (fs.existsSync(tickerPath)) {
+        const tickerTsv = await runCommandCapture('tesseract', [
+          tickerPath,
+          'stdout',
+          '-l',
+          ocrLang,
+          '--psm',
+          '6',
+          'tsv'
+        ]);
+        if (tickerTsv.ok) {
+          tickerLines = wordsToSimpleLine(parseTesseractTsvWords(tickerTsv.stdout || ''));
+        }
+      }
+    }
+    const mergedLines = dedupeTextList([...(lines || []), ...(tickerLines || [])]);
+    if (!mergedLines.length) continue;
+    const sec = frameSecFromName(frameName, intervalSec, i);
+    frameEntries.push({
+      sec,
+      text: normalizeOcrText(mergedLines.join(' ')),
+      frame: frameName,
+      frameType: isSceneFrameName(frameName) ? 'scene' : 'periodic',
+      confidence: 0.6
+    });
+  }
+  return { frameEntries, engine: 'tesseract' };
+}
+
 function queueVideoOcrJob(row, options = {}) {
   const jobId = nanoid();
   const intervalSec = Math.max(1, Math.min(30, Number(options.intervalSec) || 4));
   const ocrLang = String(options.ocrLang || 'eng+tur').trim() || 'eng+tur';
+  const existingDc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+  const nextVersion = sanitizeVideoOcrItems(existingDc.videoOcrItems).length + 1;
+  const autoOcrLabel = buildOcrDisplayLabel({
+    assetTitle: String(row?.title || ''),
+    fileName: String(row?.file_name || ''),
+    createdAt: new Date().toISOString(),
+    engine: normalizeOcrEngine(options.ocrEngine || 'paddle'),
+    version: nextVersion
+  });
+  const ocrLabel = normalizeRequestedOcrLabel(options.ocrLabel, autoOcrLabel);
   const ocrEngine = normalizeOcrEngine(options.ocrEngine);
   const advancedMode = Boolean(options.advancedMode);
   const turkishAiCorrect = options.turkishAiCorrect == null
@@ -4339,6 +4576,7 @@ function queueVideoOcrJob(row, options = {}) {
     status: 'queued',
     intervalSec,
     ocrLang,
+    ocrLabel,
     ocrEngine,
     requestedEngine: ocrEngine,
     resultUrl: '',
@@ -4415,9 +4653,12 @@ function queueVideoOcrJob(row, options = {}) {
     try {
       const inputPath = resolveAssetInputPath(row);
       if (!inputPath) throw new Error('Source media not found');
-      const base = sanitizeFileName(path.basename(String(row.file_name || row.id), path.extname(String(row.file_name || ''))));
       const selectedEngine = ocrEngine;
-      const outName = `${Date.now()}-${nanoid()}-${base}-ocr-${selectedEngine}.txt`;
+      const preferredLabel = normalizeRequestedOcrLabel(
+        running.ocrLabel,
+        autoOcrLabel
+      );
+      const outName = `${Date.now()}-${nanoid()}-${preferredLabel}`;
       let out = buildArtifactPath('ocr', outName, row.created_at);
       const frameDir = createOcrFrameWorkDir(row.created_at);
       running.frameDir = frameDir;
@@ -4447,7 +4688,7 @@ function queueVideoOcrJob(row, options = {}) {
       running.status = 'completed';
       running.resultUrl = out.publicUrl;
       running.resultPath = out.absolutePath;
-      running.resultLabel = outName;
+      running.resultLabel = preferredLabel;
       running.lineCount = Number(result.lines || 0);
       running.segmentCount = Number(result.segments || 0);
       running.detectedStaticPhrases = Array.isArray(result.autoIgnoredPhrases) ? result.autoIgnoredPhrases : [];
@@ -4517,7 +4758,9 @@ function queueSubtitleGenerationJob(row, options = {}) {
   const jobId = nanoid();
   const subtitleLang = normalizeSubtitleLang(options.lang);
   const subtitleLabel = String(options.label || 'auto-whisper').trim() || 'auto-whisper';
-  const model = String(options.model || WHISPER_MODEL || 'tiny').trim() || 'tiny';
+  const model = String(options.model || WHISPER_MODEL || 'small').trim() || 'small';
+  const audioStreamIndex = Number.isFinite(Number(options.audioStreamIndex)) ? Number(options.audioStreamIndex) : null;
+  const audioChannelIndex = Number.isFinite(Number(options.audioChannelIndex)) ? Number(options.audioChannelIndex) : null;
   const requestedSubtitleBackend = normalizeSubtitleBackend(
     options.subtitleBackend || (options.useWhisperX ? 'whisperx' : 'whisper')
   );
@@ -4533,6 +4776,8 @@ function queueSubtitleGenerationJob(row, options = {}) {
     assetId: row.id,
     status: 'queued',
     model,
+    audioStreamIndex,
+    audioChannelIndex,
     turkishAiCorrect,
     useZemberekLexicon,
     subtitleBackendRequested: requestedSubtitleBackend,
@@ -4592,7 +4837,9 @@ function queueSubtitleGenerationJob(row, options = {}) {
       let transcription = await transcribeMediaToVtt(inputPath, subtitleOut.absolutePath, {
         lang: subtitleLang,
         model,
-        subtitleBackend: usedSubtitleBackend
+        subtitleBackend: usedSubtitleBackend,
+        audioStreamIndex,
+        audioChannelIndex
       });
       let subtitleReady = transcription.ok && fs.existsSync(subtitleOut.absolutePath) && fs.statSync(subtitleOut.absolutePath).size >= 16;
       if (!subtitleReady && usedSubtitleBackend === 'whisperx') {
@@ -4604,7 +4851,9 @@ function queueSubtitleGenerationJob(row, options = {}) {
         transcription = await transcribeMediaToVtt(inputPath, subtitleOut.absolutePath, {
           lang: subtitleLang,
           model,
-          subtitleBackend: usedSubtitleBackend
+          subtitleBackend: usedSubtitleBackend,
+          audioStreamIndex,
+          audioChannelIndex
         });
         subtitleReady = transcription.ok && fs.existsSync(subtitleOut.absolutePath) && fs.statSync(subtitleOut.absolutePath).size >= 16;
         if (subtitleReady) {
@@ -4998,6 +5247,51 @@ async function getMediaAudioStreams(inputPath) {
         channels: Number.isFinite(Number(s?.channels)) ? Math.max(0, Math.floor(Number(s.channels))) : 0
       }))
       .filter((s) => Number.isFinite(s.index));
+  } catch (_error) {
+    return [];
+  }
+}
+
+async function getMediaAudioStreamOptions(inputPath) {
+  if (!inputPath || !fs.existsSync(inputPath)) return [];
+  const probe = await runCommandCapture('ffprobe', [
+    '-v',
+    'error',
+    '-select_streams',
+    'a',
+    '-show_entries',
+    'stream=index,channels,codec_name:stream_tags=language,title',
+    '-of',
+    'json',
+    inputPath
+  ]);
+  if (!probe.ok) return [];
+  try {
+    const parsed = JSON.parse(String(probe.stdout || '{}'));
+    const streams = Array.isArray(parsed?.streams) ? parsed.streams : [];
+    return streams.map((s, order) => {
+      const index = Number.isFinite(Number(s?.index)) ? Number(s.index) : order;
+      const channels = Number.isFinite(Number(s?.channels)) ? Math.max(0, Math.floor(Number(s.channels))) : 0;
+      const codec = String(s?.codec_name || '').trim();
+      const language = String(s?.tags?.language || '').trim().toLowerCase();
+      const title = String(s?.tags?.title || '').trim();
+      const labelParts = [
+        `A${order + 1}`,
+        title || '',
+        language ? language.toUpperCase() : '',
+        channels > 0 ? `${channels}ch` : '',
+        codec ? codec : ''
+      ].filter(Boolean);
+      return {
+        order,
+        index,
+        channels,
+        codec,
+        language,
+        title,
+        label: labelParts.join(' • ')
+      };
+    });
   } catch (_error) {
     return [];
   }
@@ -5799,7 +6093,7 @@ async function queryAssetSuggestions(options = {}) {
   const types = Array.isArray(options.types)
     ? options.types.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean)
     : normalizeTypesInput(options.types);
-  const qLower = q.toLowerCase();
+  const qFold = normalizeForSearch(q);
 
   const owner = String(options.owner || '').trim();
 
@@ -5870,18 +6164,18 @@ async function queryAssetSuggestions(options = {}) {
 
   if (!rows.length) {
     const fallbackValues = [...baseValues];
-    fallbackValues.push(`%${qLower}%`);
+    fallbackValues.push(`%${qFold}%`);
     const likeIdx = fallbackValues.length;
-    fallbackValues.push(qLower);
+    fallbackValues.push(qFold);
     const eqIdx = fallbackValues.length;
-    fallbackValues.push(`${qLower}%`);
+    fallbackValues.push(`${qFold}%`);
     const prefixIdx = fallbackValues.length;
     fallbackValues.push(limit);
     const fallbackLimitIdx = fallbackValues.length;
 
     const fallbackWhere = [
       ...baseWhere,
-      `(LOWER(title) LIKE $${likeIdx} OR LOWER(file_name) LIKE $${likeIdx} OR LOWER(owner) LIKE $${likeIdx})`
+      `(${sqlTextFold('title')} LIKE $${likeIdx} OR ${sqlTextFold('file_name')} LIKE $${likeIdx} OR ${sqlTextFold('owner')} LIKE $${likeIdx})`
     ];
     const fallback = await pool.query(
       `
@@ -5890,10 +6184,10 @@ async function queryAssetSuggestions(options = {}) {
         WHERE ${fallbackWhere.join(' AND ')}
         ORDER BY
           CASE
-            WHEN LOWER(title) = $${eqIdx} THEN 0
-            WHEN LOWER(file_name) = $${eqIdx} THEN 1
-            WHEN LOWER(title) LIKE $${prefixIdx} THEN 2
-            WHEN LOWER(file_name) LIKE $${prefixIdx} THEN 3
+            WHEN ${sqlTextFold('title')} = $${eqIdx} THEN 0
+            WHEN ${sqlTextFold('file_name')} = $${eqIdx} THEN 1
+            WHEN ${sqlTextFold('title')} LIKE $${prefixIdx} THEN 2
+            WHEN ${sqlTextFold('file_name')} LIKE $${prefixIdx} THEN 3
             ELSE 4
           END,
           updated_at DESC
@@ -5940,16 +6234,16 @@ app.get('/api/assets', async (req, res) => {
     if (q) {
       rankedIds = await searchAssetIdsElastic(q);
       if (rankedIds === null) {
-        values.push(`%${q.toLowerCase()}%`);
+        values.push(`%${normalizeForSearch(q)}%`);
         where.push(`(
-          LOWER(title) LIKE $${values.length}
-          OR LOWER(description) LIKE $${values.length}
-          OR LOWER(owner) LIKE $${values.length}
-          OR LOWER(COALESCE(dc_metadata::text, '')) LIKE $${values.length}
+          ${sqlTextFold('title')} LIKE $${values.length}
+          OR ${sqlTextFold('description')} LIKE $${values.length}
+          OR ${sqlTextFold('owner')} LIKE $${values.length}
+          OR ${sqlTextFold("dc_metadata::text")} LIKE $${values.length}
           OR EXISTS (
             SELECT 1
             FROM asset_cuts c
-            WHERE c.asset_id = assets.id AND LOWER(c.label) LIKE $${values.length}
+            WHERE c.asset_id = assets.id AND ${sqlTextFold('c.label')} LIKE $${values.length}
           )
         )`);
       } else if (!rankedIds.length) {
@@ -6492,6 +6786,10 @@ app.get('/api/assets/:id', async (req, res) => {
       const playbackPath = resolvePlaybackInputPath(assetResult.rows[0]);
       asset.audioChannels = await getMediaAudioChannelCount(playbackPath);
     }
+    if (audioCandidate) {
+      const playbackPath = resolvePlaybackInputPath(assetResult.rows[0]);
+      asset.audioStreamOptions = await getMediaAudioStreamOptions(playbackPath);
+    }
     asset.versions = versionsResult.rows.map(mapVersionRow);
     asset.cuts = cutsResult.rows.map(mapCutRow);
     res.json(asset);
@@ -6609,7 +6907,9 @@ app.post('/api/assets/:id/subtitles/generate', async (req, res) => {
 
     const subtitleLang = normalizeSubtitleLang(req.body?.lang);
     const subtitleLabel = String(req.body?.label || 'auto-whisper').trim() || 'auto-whisper';
-    const model = String(req.body?.model || WHISPER_MODEL || 'tiny').trim() || 'tiny';
+    const model = String(req.body?.model || WHISPER_MODEL || 'small').trim() || 'small';
+    const audioStreamIndex = Number.isFinite(Number(req.body?.audioStreamIndex)) ? Number(req.body.audioStreamIndex) : null;
+    const audioChannelIndex = Number.isFinite(Number(req.body?.audioChannelIndex)) ? Number(req.body.audioChannelIndex) : null;
     const turkishAiCorrect = req.body?.turkishAiCorrect;
     const useZemberekLexicon = req.body?.useZemberekLexicon;
     const subtitleBackend = normalizeSubtitleBackend(
@@ -6619,6 +6919,8 @@ app.post('/api/assets/:id/subtitles/generate', async (req, res) => {
       lang: subtitleLang,
       label: subtitleLabel,
       model,
+      audioStreamIndex,
+      audioChannelIndex,
       turkishAiCorrect,
       useZemberekLexicon,
       subtitleBackend
@@ -6629,6 +6931,8 @@ app.post('/api/assets/:id/subtitles/generate', async (req, res) => {
       subtitleLang,
       subtitleLabel,
       model,
+      audioStreamIndex,
+      audioChannelIndex,
       turkishAiCorrect: job.turkishAiCorrect,
       useZemberekLexicon: Boolean(job.useZemberekLexicon),
       subtitleBackend: normalizeSubtitleBackend(job.subtitleBackend || job.subtitleBackendRequested),
@@ -6684,6 +6988,7 @@ app.post('/api/assets/:id/video-ocr/extract', async (req, res) => {
     const job = queueVideoOcrJob(row, {
       intervalSec: req.body?.intervalSec,
       ocrLang: req.body?.ocrLang,
+      ocrLabel: req.body?.ocrLabel,
       ocrEngine: req.body?.ocrEngine,
       advancedMode: req.body?.advancedMode,
       turkishAiCorrect: req.body?.turkishAiCorrect,
@@ -6707,6 +7012,7 @@ app.post('/api/assets/:id/video-ocr/extract', async (req, res) => {
       status: job.status,
       intervalSec: job.intervalSec,
       ocrLang: job.ocrLang,
+      ocrLabel: job.ocrLabel,
       ocrEngine: job.ocrEngine,
       mode: job.mode,
       advancedMode: job.advancedMode,

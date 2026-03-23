@@ -13,7 +13,7 @@ const panelIngest = document.getElementById('panelIngest');
 const panelAssets = document.getElementById('panelAssets');
 const assetViewThumbBtn = document.getElementById('assetViewThumbBtn');
 const assetViewListBtn = document.getElementById('assetViewListBtn');
-const typesSelectAllBtn = document.getElementById('typesSelectAllBtn');
+const assetsTitleToggleBtn = panelAssets?.querySelector('.panel-head h2');
 const assetTypeFilters = Array.from(document.querySelectorAll('.asset-type-filter'));
 const panelDetail = document.getElementById('panelDetail');
 const closeDetailBtn = document.getElementById('closeDetailBtn');
@@ -50,6 +50,7 @@ const LOCAL_VIDEO_TOOLS_ORDER = 'mam.video.tools.order';
 const LOCAL_ASSET_VIEW_MODE = 'mam.assets.view.mode';
 const LOCAL_DETAIL_VIDEO_PIN = 'mam.detail.video.pin';
 const I18N_PATH = '/i18n.json';
+const DETAIL_PANEL_BASE_MIN_PX = 377;
 const PANELS = [
   { id: 'panelIngest', defaultSize: 1 },
   { id: 'panelAssets', defaultSize: 1.2 },
@@ -77,6 +78,7 @@ const cutMarksByAsset = new Map();
 const subtitleOverlayEnabledByAsset = new Map();
 let panelSizes = Object.fromEntries(PANELS.map((p) => [p.id, p.defaultSize]));
 let panelVisibility = { panelIngest: true, panelAssets: true, panelDetail: true };
+let dynamicDetailMinPx = DETAIL_PANEL_BASE_MIN_PX;
 let assetViewMode = localStorage.getItem(LOCAL_ASSET_VIEW_MODE) === 'list' ? 'list' : 'grid';
 let searchSuggestTimer = null;
 let searchSuggestReqSeq = 0;
@@ -510,7 +512,7 @@ function setPanelVideoToolsButtonState(visible, onClick = null) {
   if (!panelVideoToolsBtn) return;
   const show = Boolean(visible);
   panelVideoToolsBtn.classList.toggle('hidden', !show);
-  panelVideoToolsBtn.title = t('video_tools');
+  panelVideoToolsBtn.removeAttribute('title');
   panelVideoToolsBtn.setAttribute('aria-label', t('video_tools'));
   panelVideoToolsBtn.dataset.tooltip = t('video_tools');
   panelVideoToolsBtn.onclick = show && typeof onClick === 'function' ? onClick : null;
@@ -519,6 +521,32 @@ function setPanelVideoToolsButtonState(visible, onClick = null) {
 function syncOcrQueryInputs(source) {
   if (!source || source === ocrQueryInput) return;
   if (ocrQueryInput) ocrQueryInput.value = String(source.value || '');
+}
+
+function setSubtitleOverlayEnabled(assetId, enabled) {
+  const key = String(assetId || '').trim();
+  if (!key) return false;
+  subtitleOverlayEnabledByAsset.set(key, Boolean(enabled));
+  return subtitleOverlayEnabledByAsset.get(key) === true;
+}
+
+let shortcutToastTimer = null;
+function showShortcutToast(message) {
+  const text = String(message || '').trim();
+  if (!text) return;
+  let toast = document.getElementById('shortcutToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'shortcutToast';
+    toast.className = 'shortcut-toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = text;
+  toast.classList.add('visible');
+  if (shortcutToastTimer) clearTimeout(shortcutToastTimer);
+  shortcutToastTimer = setTimeout(() => {
+    toast.classList.remove('visible');
+  }, 1000);
 }
 
 let i18n = {
@@ -733,6 +761,15 @@ let i18n = {
     subtitle_upload: 'Upload Subtitle',
     subtitle_generate: 'Generate Subtitle',
     subtitle_use_whisperx: 'Use WhisperX align',
+    subtitle_model: 'Model',
+    subtitle_model_tiny: 'Tiny',
+    subtitle_model_base: 'Base',
+    subtitle_model_small: 'Small',
+    subtitle_use_zemberek: 'Use Zemberek correction',
+    subtitle_audio_stream: 'Audio stream',
+    subtitle_audio_stream_default: 'Default stream',
+    subtitle_audio_channel: 'Channel',
+    subtitle_audio_channel_mix: 'Mix all channels',
     subtitle_upload_success: 'Subtitle uploaded.',
     subtitle_generate_success: 'Subtitle generated.',
     subtitle_file_required: 'Please choose a .srt or .vtt subtitle file first.',
@@ -764,6 +801,8 @@ let i18n = {
     video_ocr_region_mode: 'Ticker mode',
     video_ocr_ticker_height: 'Ticker height (%)',
     video_ocr_engine_paddle: 'PaddleOCR',
+    video_ocr_name: 'OCR name',
+    video_ocr_name_ph: 'Optional OCR file name',
     video_ocr_advanced: 'Advanced OCR',
     video_ocr_ai_correct: 'Turkish offline correction',
     video_ocr_static_filter: 'Filter static overlays',
@@ -785,6 +824,8 @@ let i18n = {
     subtitle_rename_success: 'Subtitle name saved.',
     subtitle_job_started: 'Subtitle generation started. Please wait...',
     subtitle_job_failed: 'Subtitle generation failed.',
+    subtitle_shortcut_on: 'Subtitles on',
+    subtitle_shortcut_off: 'Subtitles off',
     video_tools: 'Video Tools',
     video_tools_title: 'Video Tools',
     video_tools_page_back: 'Back to Main View',
@@ -1011,6 +1052,15 @@ let i18n = {
     subtitle_upload: 'Altyazı Yükle',
     subtitle_generate: 'Altyazı Oluştur',
     subtitle_use_whisperx: 'WhisperX hizalama kullan',
+    subtitle_model: 'Model',
+    subtitle_model_tiny: 'Tiny',
+    subtitle_model_base: 'Base',
+    subtitle_model_small: 'Small',
+    subtitle_use_zemberek: 'Zemberek düzeltmesi kullan',
+    subtitle_audio_stream: 'Ses akışı',
+    subtitle_audio_stream_default: 'Varsayılan akış',
+    subtitle_audio_channel: 'Kanal',
+    subtitle_audio_channel_mix: 'Tüm kanalları karıştır',
     subtitle_upload_success: 'Altyazı yüklendi.',
     subtitle_generate_success: 'Altyazı oluşturuldu.',
     subtitle_file_required: 'Önce bir .srt veya .vtt altyazı dosyası seçin.',
@@ -1042,6 +1092,8 @@ let i18n = {
     video_ocr_region_mode: 'Ticker modu',
     video_ocr_ticker_height: 'Ticker yüksekliği (%)',
     video_ocr_engine_paddle: 'PaddleOCR',
+    video_ocr_name: 'OCR adı',
+    video_ocr_name_ph: 'Opsiyonel OCR dosya adı',
     video_ocr_advanced: 'Gelişmiş OCR',
     video_ocr_ai_correct: 'Türkçe çevrimdışı düzeltme',
     video_ocr_static_filter: 'Sabit yazıları filtrele',
@@ -1063,6 +1115,8 @@ let i18n = {
     subtitle_rename_success: 'Altyazı adı kaydedildi.',
     subtitle_job_started: 'Altyazı üretimi başladı. Lütfen bekleyin...',
     subtitle_job_failed: 'Altyazı üretimi başarısız.',
+    subtitle_shortcut_on: 'Altyazı açık',
+    subtitle_shortcut_off: 'Altyazı kapalı',
     video_tools: 'Video Araçları',
     video_tools_title: 'Video Araçları',
     video_tools_page_back: 'Ana Görünüme Dön',
@@ -1152,6 +1206,10 @@ async function loadUiSettings() {
 }
 
 function applyStaticI18n() {
+  document.title = t('app_title');
+  document.documentElement.lang = currentLang === 'tr' ? 'tr' : 'en';
+  document.body.classList.toggle('lang-tr', currentLang === 'tr');
+  document.body.classList.toggle('lang-en', currentLang !== 'tr');
   document.querySelectorAll('[data-i18n]').forEach((el) => {
     const key = el.getAttribute('data-i18n');
     if (key) el.textContent = t(key);
@@ -1172,12 +1230,12 @@ function applyStaticI18n() {
     currentUserBtn.textContent = t('unknown_user');
   }
   if (assetViewThumbBtn) {
-    assetViewThumbBtn.title = t('thumbnail_view');
+    assetViewThumbBtn.removeAttribute('title');
     assetViewThumbBtn.setAttribute('aria-label', t('thumbnail_view'));
     assetViewThumbBtn.dataset.tooltip = t('thumbnail_view');
   }
   if (assetViewListBtn) {
-    assetViewListBtn.title = t('list_view');
+    assetViewListBtn.removeAttribute('title');
     assetViewListBtn.setAttribute('aria-label', t('list_view'));
     assetViewListBtn.dataset.tooltip = t('list_view');
   }
@@ -1278,6 +1336,91 @@ function setPanelVisible(panelId, nextVisible) {
   if (!isVideoToolsPageMode) savePanelVisibilityPrefs();
 }
 
+function getEffectiveDetailMinPx() {
+  return Math.max(DETAIL_PANEL_BASE_MIN_PX, Math.round(Number(dynamicDetailMinPx) || 0));
+}
+
+function ensureDetailPanelMinWidth(requiredPx) {
+  const targetPx = Math.max(getEffectiveDetailMinPx(), Math.round(Number(requiredPx) || 0));
+  dynamicDetailMinPx = targetPx;
+  if (panelDetail) panelDetail.style.minWidth = `${targetPx}px`;
+  if (!isPanelVisible('panelDetail')) return;
+  const currentPx = Math.round(panelDetail.getBoundingClientRect().width || 0);
+  if (currentPx >= targetPx - 1) {
+    applyPanelLayout();
+    return;
+  }
+
+  const assetsVisible = isPanelVisible('panelAssets');
+  const ingestVisible = isPanelVisible('panelIngest');
+  const donorId = assetsVisible ? 'panelAssets' : (ingestVisible ? 'panelIngest' : '');
+  if (!donorId) {
+    applyPanelLayout();
+    return;
+  }
+
+  const donorEl = donorId === 'panelAssets' ? panelAssets : panelIngest;
+  const donorStartPx = Math.round(donorEl?.getBoundingClientRect().width || 0);
+  const detailStartPx = currentPx;
+  const donorStartFr = Number(panelSizes[donorId]) || 1;
+  const detailStartFr = Number(panelSizes.panelDetail) || 1;
+  const pairWidth = donorStartPx + detailStartPx;
+  const pairFr = donorStartFr + detailStartFr;
+  const unitPx = pairWidth > 0 && pairFr > 0 ? (pairWidth / pairFr) : 0;
+  if (!unitPx) {
+    applyPanelLayout();
+    return;
+  }
+
+  const needPx = Math.max(0, targetPx - detailStartPx);
+  if (needPx <= 0) {
+    applyPanelLayout();
+    return;
+  }
+
+  const donorMinFr = donorId === 'panelIngest'
+    ? Math.max(0.45, 235 / unitPx)
+    : 0.45;
+  const targetMinFr = Math.max(0.22, targetPx / unitPx);
+  let nextDonorFr = donorStartFr - (needPx / unitPx);
+  let nextDetailFr = detailStartFr + (needPx / unitPx);
+  if (nextDonorFr < donorMinFr) {
+    const shortage = donorMinFr - nextDonorFr;
+    nextDonorFr = donorMinFr;
+    nextDetailFr = Math.max(targetMinFr, nextDetailFr - shortage);
+  }
+  panelSizes[donorId] = nextDonorFr;
+  panelSizes.panelDetail = Math.max(targetMinFr, nextDetailFr);
+  applyPanelLayout();
+}
+
+function resetDetailPanelDynamicMinWidth() {
+  dynamicDetailMinPx = DETAIL_PANEL_BASE_MIN_PX;
+  if (panelDetail) panelDetail.style.minWidth = `${DETAIL_PANEL_BASE_MIN_PX}px`;
+  applyPanelLayout();
+}
+
+function measureClipsPanelRequiredWidth(root = document) {
+  const clipsSection = root.querySelector('.collapsible-section[data-section="clips"]');
+  if (!clipsSection || clipsSection.classList.contains('collapsed')) return DETAIL_PANEL_BASE_MIN_PX;
+  const head = clipsSection.querySelector('.collapsible-head');
+  const body = clipsSection.querySelector('.collapsible-body');
+  const markSummary = clipsSection.querySelector('#markSummary');
+  const cutsList = clipsSection.querySelector('#cutsList');
+  const labelRow = clipsSection.querySelector('.cut-label-row');
+  const actionsRow = clipsSection.querySelector('.cut-actions');
+  const widths = [
+    clipsSection.scrollWidth,
+    head?.scrollWidth || 0,
+    body?.scrollWidth || 0,
+    markSummary?.scrollWidth || 0,
+    cutsList?.scrollWidth || 0,
+    labelRow?.scrollWidth || 0,
+    actionsRow?.scrollWidth || 0
+  ];
+  return Math.max(DETAIL_PANEL_BASE_MIN_PX, Math.ceil(Math.max(...widths) + 28));
+}
+
 function applyPanelLayout() {
   const ingest = Math.max(0.34, Number(panelSizes.panelIngest) || 1);
   const assets = Math.max(0.45, Number(panelSizes.panelAssets) || 1);
@@ -1285,11 +1428,18 @@ function applyPanelLayout() {
   const ingestVisible = isPanelVisible('panelIngest');
   const assetsVisible = isPanelVisible('panelAssets');
   const detailVisible = isPanelVisible('panelDetail');
+  const detailOnlyMode = detailVisible && !ingestVisible && !assetsVisible;
 
-  layout.style.gridTemplateColumns = `${ingestVisible ? `${ingest}fr` : '0px'} 5px ${assetsVisible ? `${assets}fr` : '0px'} 5px ${detailVisible ? `${detail}fr` : '0px'}`;
+  if (detailOnlyMode) {
+    layout.style.gridTemplateColumns = '0px 0px 0px 0px 1fr';
+  } else {
+    layout.style.gridTemplateColumns = `${ingestVisible ? `${ingest}fr` : '0px'} ${ingestVisible && assetsVisible ? '5px' : '0px'} ${assetsVisible ? `${assets}fr` : '0px'} ${assetsVisible && detailVisible ? '5px' : '0px'} ${detailVisible ? `${detail}fr` : '0px'}`;
+  }
   panelIngest.style.display = ingestVisible ? '' : 'none';
   panelAssets.style.display = assetsVisible ? '' : 'none';
   panelDetail.style.display = detailVisible ? '' : 'none';
+  panelDetail.style.minWidth = detailVisible ? `${getEffectiveDetailMinPx()}px` : '0px';
+  layout.classList.toggle('detail-only-mode', detailOnlyMode);
 
   splitterTabs.forEach((tab) => {
     const panelId = tab.dataset.showPanel;
@@ -1301,7 +1451,7 @@ function applyPanelLayout() {
 function initPanelSplitters() {
   const isMobile = () => window.matchMedia('(max-width: 760px)').matches;
   const MIN_INGEST_PX = 235;
-  const MIN_DETAIL_PX = 377;
+  const MIN_ASSETS_PX = 290;
   const minSize = 0.45;
   const minDetail = 0.22;
 
@@ -1359,7 +1509,7 @@ function initPanelSplitters() {
           let nextIngest = ingestStart + deltaFr;
           let nextDetail = detailStart - deltaFr;
           const minIngest = Math.max(minSize, MIN_INGEST_PX / unitPx);
-          const minDetailFr = Math.max(minDetail, MIN_DETAIL_PX / unitPx);
+          const minDetailFr = Math.max(minDetail, getEffectiveDetailMinPx() / unitPx);
           [nextIngest, nextDetail] = clampPair(nextIngest, nextDetail, minIngest, minDetailFr);
           panelSizes.panelIngest = nextIngest;
           panelSizes.panelDetail = nextDetail;
@@ -1367,14 +1517,16 @@ function initPanelSplitters() {
           let nextIngest = ingestStart + deltaFr;
           let nextAssets = assetsStart - deltaFr;
           const minIngest = Math.max(minSize, MIN_INGEST_PX / unitPx);
-          [nextIngest, nextAssets] = clampPair(nextIngest, nextAssets, minIngest, minSize);
+          const minAssets = Math.max(minSize, MIN_ASSETS_PX / unitPx);
+          [nextIngest, nextAssets] = clampPair(nextIngest, nextAssets, minIngest, minAssets);
           panelSizes.panelIngest = nextIngest;
           panelSizes.panelAssets = nextAssets;
         } else {
           let nextAssets = assetsStart + deltaFr;
           let nextDetail = detailStart - deltaFr;
-          const minDetailFr = Math.max(minDetail, MIN_DETAIL_PX / unitPx);
-          [nextAssets, nextDetail] = clampPair(nextAssets, nextDetail, minSize, minDetailFr);
+          const minAssets = Math.max(minSize, MIN_ASSETS_PX / unitPx);
+          const minDetailFr = Math.max(minDetail, getEffectiveDetailMinPx() / unitPx);
+          [nextAssets, nextDetail] = clampPair(nextAssets, nextDetail, minAssets, minDetailFr);
           panelSizes.panelAssets = nextAssets;
           panelSizes.panelDetail = nextDetail;
         }
@@ -1561,12 +1713,7 @@ function escapeRegexForSuggest(value) {
 }
 
 function highlightSuggestText(text, query) {
-  const raw = String(text || '');
-  const q = String(query || '').trim();
-  if (!raw) return '';
-  if (!q) return escapeHtml(raw);
-  const matcher = new RegExp(`(${escapeRegexForSuggest(q)})`, 'ig');
-  return escapeHtml(raw).replace(matcher, '<mark>$1</mark>');
+  return highlightMatch(text, query);
 }
 
 function normalizeTrashScopeForSuggest(value) {
@@ -2240,16 +2387,26 @@ function extractDcMetadataFromPayload(payload) {
   return dcMetadata;
 }
 
+function foldSearchText(value) {
+  return String(value || '')
+    .toLocaleLowerCase('tr-TR')
+    .normalize('NFD')
+    .replace(/\p{M}+/gu, '');
+}
+
+function textIncludesSearchTerm(text, term) {
+  const haystack = foldSearchText(text);
+  const needle = foldSearchText(term);
+  if (!haystack || !needle) return false;
+  return haystack.includes(needle);
+}
+
 function highlightMatch(value, query) {
   const raw = String(value ?? '');
   const terms = extractHighlightTerms(query);
   if (!terms.length) return escapeHtml(raw);
 
   const foldChar = (ch) => String(ch || '')
-    .toLocaleLowerCase('tr-TR')
-    .normalize('NFD')
-    .replace(/\p{M}+/gu, '');
-  const foldText = (text) => String(text || '')
     .toLocaleLowerCase('tr-TR')
     .normalize('NFD')
     .replace(/\p{M}+/gu, '');
@@ -2268,7 +2425,7 @@ function highlightMatch(value, query) {
   if (!folded || !foldedToOriginal.length) return escapeHtml(raw);
 
   const foldedTerms = terms
-    .map((term) => foldText(term))
+    .map((term) => foldSearchText(term))
     .filter(Boolean)
     .sort((a, b) => b.length - a.length);
   if (!foldedTerms.length) return escapeHtml(raw);
@@ -2324,8 +2481,7 @@ function dcHighlightSnippet(asset, query) {
       if (ignoredKeys.has(foldedKey)) return false;
       if (value === null || value === undefined) return false;
       if (typeof value === 'object') return false;
-      const text = String(value).toLowerCase();
-      return terms.some((term) => text.includes(term));
+      return terms.some((term) => textIncludesSearchTerm(value, term));
     })
     .slice(0, 2);
   if (!entries.length) return '';
@@ -2377,8 +2533,7 @@ function metadataHighlightSnippet(asset, query) {
   const hits = [];
   const description = String(asset.description || '').trim();
   if (description) {
-    const text = description.toLowerCase();
-    if (terms.some((term) => text.includes(term))) {
+    if (terms.some((term) => textIncludesSearchTerm(description, term))) {
       hits.push(`
         <button
           type="button"
@@ -2401,8 +2556,7 @@ function tagHighlightSnippet(asset, query) {
     .map((tag) => String(tag || '').trim())
     .filter(Boolean)
     .filter((tag) => {
-      const text = tag.toLowerCase();
-      return terms.some((term) => text.includes(term));
+      return terms.some((term) => textIncludesSearchTerm(tag, term));
     })
     .slice(0, 3);
   if (!hits.length) return '';
@@ -2421,8 +2575,7 @@ function clipHighlightSnippet(asset, query) {
       inPointSeconds: Math.max(0, Number(cut?.inPointSeconds || 0))
     }))
     .filter((cut) => {
-      const text = cut.label.toLowerCase();
-      return cut.cutId && cut.label && terms.some((term) => text.includes(term));
+      return cut.cutId && cut.label && terms.some((term) => textIncludesSearchTerm(cut.label, term));
     })
     .slice(0, 2);
   if (!clips.length) return '';
@@ -2877,6 +3030,8 @@ function mediaViewer(asset, options = {}) {
   const showVideoToolsButton = options.showVideoToolsButton !== false;
   const includeSubtitleTools = options.includeSubtitleTools !== false;
   const includeSectionHide = options.includeSectionHide === true;
+  const includeClipSectionHide = options.includeClipSectionHide == null ? includeSectionHide : options.includeClipSectionHide === true;
+  const includeAudioSectionHide = options.includeAudioSectionHide == null ? includeSectionHide : options.includeAudioSectionHide === true;
   const audioSideLayout = options.audioSideLayout === true;
   const includeDetailPin = options.includeDetailPin === true;
   const tcInControlBar = options.tcInControlBar === true;
@@ -2975,11 +3130,10 @@ function mediaViewer(asset, options = {}) {
                 <div class="audio-graph-controls-box">
                   <div id="channelControls" class="channel-controls"></div>
                   <div class="audio-graph-options">
-                    <label><input type="checkbox" id="groupChannels" checked /> ${t('group_channel_selection')}</label>
-                    <label class="compact-toggle"><input type="checkbox" id="toggleGraphInput" checked /> ${t('show_audio_graph')}</label>
-                    ${includeSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
-                  </div>
+                  <label><input type="checkbox" id="groupChannels" checked /> ${t('group_channel_selection')}</label>
+                  ${includeSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
                 </div>
+              </div>
               </div>
             </div>
           </div>
@@ -3026,7 +3180,15 @@ function mediaViewer(asset, options = {}) {
               <input id="subtitleLangInput" class="subtitle-lang-input" type="text" maxlength="12" value="${escapeHtml(asset.subtitleLang || currentLang || 'tr')}" />
               <label for="subtitleLabelInput">${t('subtitle_name')}</label>
               <input id="subtitleLabelInput" class="subtitle-name-input" type="text" maxlength="120" value="${escapeHtml(asset.subtitleLabel || '')}" />
-              <label class="video-tools-check subtitle-backend-check"><input id="subtitleWhisperxCheck" type="checkbox" /> ${t('subtitle_use_whisperx')}</label>
+              <label for="subtitleModelSelect">${t('subtitle_model')}</label>
+              <select id="subtitleModelSelect" class="subtitle-lang-input">
+                <option value="small" selected>${t('subtitle_model_small')}</option>
+              </select>
+              <label for="subtitleAudioStreamSelect">${t('subtitle_audio_stream')}</label>
+              <select id="subtitleAudioStreamSelect" class="subtitle-lang-input"></select>
+              <label for="subtitleAudioChannelSelect">${t('subtitle_audio_channel')}</label>
+              <select id="subtitleAudioChannelSelect" class="subtitle-lang-input"></select>
+              <label class="video-tools-check subtitle-backend-check"><input id="subtitleZemberekCheck" type="checkbox" checked /> ${t('subtitle_use_zemberek')}</label>
               <button type="button" id="subtitleGenerateBtn">${t('subtitle_generate')}</button>
               <button type="button" id="subtitleRenameBtn">${t('subtitle_save_name')}</button>
               <input id="subtitleFileInput" type="file" accept=".vtt,.srt,text/vtt,application/x-subrip" />
@@ -3049,6 +3211,8 @@ function mediaViewer(asset, options = {}) {
               <input id="videoOcrIntervalInput" class="subtitle-lang-input" type="number" min="1" max="30" step="1" value="4" />
               <label for="videoOcrLangInput">${t('video_ocr_lang')}</label>
               <input id="videoOcrLangInput" class="subtitle-name-input" type="text" maxlength="32" value="eng+tur" />
+              <label for="videoOcrLabelInput">${t('video_ocr_name')}</label>
+              <input id="videoOcrLabelInput" class="subtitle-name-input" type="text" maxlength="120" placeholder="${escapeHtml(t('video_ocr_name_ph'))}" value="${escapeHtml(asset.videoOcrLabel || '')}" />
               <label for="videoOcrEngineSelect">${t('video_ocr_engine')}</label>
               <select id="videoOcrEngineSelect" class="subtitle-lang-input">
                 <option value="paddle">${t('video_ocr_engine_paddle')}</option>
@@ -3093,8 +3257,7 @@ function mediaViewer(asset, options = {}) {
                 <div id="channelControls" class="channel-controls"></div>
                 <div class="audio-graph-options">
                   <label><input type="checkbox" id="groupChannels" checked /> ${t('group_channel_selection')}</label>
-                  <label class="compact-toggle"><input type="checkbox" id="toggleGraphInput" checked /> ${t('show_audio_graph')}</label>
-                  ${includeSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
+                  ${includeAudioSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
                 </div>
               </div>
             </div>
@@ -3104,7 +3267,7 @@ function mediaViewer(asset, options = {}) {
         <div class="cut-box collapsible-section" data-section="clips">
           <div class="collapsible-head">
             <strong>${t('video_clips')}</strong>
-            ${includeSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
+            ${includeClipSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
           </div>
           <div class="collapsible-body">
             <div class="viewer-meta" id="markSummary"><span class="tc-in-label">${t('in_label')}</span>: --:--:--:-- | <span class="tc-out-label">${t('out_label')}</span>: --:--:--:-- | ${t('segment')}: --:--:--:--</div>
@@ -3139,7 +3302,6 @@ function mediaViewer(asset, options = {}) {
             <div id="channelControls" class="channel-controls"></div>
             <div class="audio-graph-options">
               <label><input type="checkbox" id="groupChannels" checked /> ${t('group_channel_selection')}</label>
-              <label class="compact-toggle"><input type="checkbox" id="toggleGraphInput" checked /> ${t('show_audio_graph')}</label>
             </div>
           </div>
         </div>
@@ -3306,7 +3468,7 @@ function detailMarkup(asset, workflow) {
 
   const viewerSection = isVideo(asset)
     ? `
-      ${mediaViewer(asset, { showVideoToolsButton: false, includeSubtitleTools: false, includeSectionHide: true, audioSideLayout: false, includeDetailPin: true })}
+      ${mediaViewer(asset, { showVideoToolsButton: false, includeSubtitleTools: false, includeSectionHide: true, includeClipSectionHide: false, includeAudioSectionHide: false, audioSideLayout: false, includeDetailPin: true })}
     `
     : `
       ${mediaViewer(asset)}
@@ -3525,7 +3687,9 @@ async function openMultiSelectionDetail() {
     activeDetailPinCleanup = null;
   }
   clearDetailHeaderTimecode();
+  resetDetailPanelDynamicMinWidth();
   assetDetail.classList.remove('detail-video-pinned');
+  panelDetail?.classList.remove('panel-video-detail');
 
   assetDetail.innerHTML = multiSelectionDetailMarkup(selectedAssets);
   assetDetail.classList.remove('video-detail-mode');
@@ -3549,6 +3713,7 @@ async function openMultiSelectionDetail() {
     setSingleSelection(null);
     assetDetail.textContent = t('select_asset');
     assetDetail.classList.remove('video-detail-mode');
+    panelDetail?.classList.remove('panel-video-detail');
     setPanelVideoToolsButtonState(false);
     await loadAssets();
   });
@@ -3558,6 +3723,7 @@ async function openMultiSelectionDetail() {
     renderAssets(currentAssets);
     assetDetail.textContent = t('select_asset');
     assetDetail.classList.remove('video-detail-mode');
+    panelDetail?.classList.remove('panel-video-detail');
     setPanelVideoToolsButtonState(false);
   });
 
@@ -3586,6 +3752,7 @@ function initFrameControls(mediaEl, asset, root = document, options = {}) {
   const saveCutBtn = byId('saveCutBtn');
   const cutLabelInput = byId('cutLabelInput');
   const cutsList = byId('cutsList');
+  const clipsSection = root.querySelector('.collapsible-section[data-section="clips"]');
   const allowSurfaceToggle = isVideo(asset) && !useVideoJsPlayerUI();
   const resolveFullscreenTarget = () =>
     mediaEl.closest('.viewer-core')
@@ -3614,6 +3781,7 @@ function initFrameControls(mediaEl, asset, root = document, options = {}) {
   let activeCutId = String(options.focusCutId || '').trim() || null;
   let showActiveCutTicks = Boolean(activeCutId);
   let activeCutPlayOutSec = null;
+  const subtitleOverlayCheck = root.querySelector('#subtitleOverlayCheck');
 
   const getFps = () => PLAYER_FPS;
   const snapToFrame = (seconds) => {
@@ -3735,6 +3903,9 @@ function initFrameControls(mediaEl, asset, root = document, options = {}) {
       const activeRow = cutsList.querySelector(`.cut-item[data-cut-id="${CSS.escape(activeCutId)}"]`);
       activeRow?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }
+    if (clipsSection && !clipsSection.classList.contains('collapsed')) {
+      requestAnimationFrame(() => ensureDetailPanelMinWidth(measureClipsPanelRequiredWidth(root)));
+    }
   };
 
   const step = (direction) => {
@@ -3750,6 +3921,20 @@ function initFrameControls(mediaEl, asset, root = document, options = {}) {
     playBtn.textContent = isPaused ? '▶' : '⏸';
     playBtn.title = isPaused ? t('play') : t('pause');
     playBtn.setAttribute('aria-label', isPaused ? t('play') : t('pause'));
+  };
+
+  const onClipsSectionPointerDown = () => {
+    if (!clipsSection || clipsSection.classList.contains('collapsed')) return;
+    ensureDetailPanelMinWidth(measureClipsPanelRequiredWidth(root));
+  };
+  clipsSection?.addEventListener('pointerdown', onClipsSectionPointerDown);
+
+  const clearActiveCutOverlay = () => {
+    activeCutId = null;
+    activeCutPlayOutSec = null;
+    showActiveCutTicks = false;
+    renderCuts();
+    syncMarkTicks();
   };
 
   const onPlay = async () => {
@@ -3908,6 +4093,25 @@ function initFrameControls(mediaEl, asset, root = document, options = {}) {
     }
   };
 
+  const onEscapeClearCutOverlay = (event) => {
+    if (event.key !== 'Escape') return;
+    if (!showActiveCutTicks && !activeCutId && activeCutPlayOutSec == null) return;
+    clearActiveCutOverlay();
+  };
+
+  const onSubtitleOverlayShortcut = (event) => {
+    if (event.key !== 'A' || !event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+    const target = event.target;
+    if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"]')) return;
+    const nextEnabled = !getSubtitleOverlayEnabled(asset.id, false);
+    setSubtitleOverlayEnabled(asset.id, nextEnabled);
+    if (subtitleOverlayCheck) subtitleOverlayCheck.checked = nextEnabled;
+    syncSubtitleOverlayInOpenPlayers(asset);
+    showShortcutToast(nextEnabled ? t('subtitle_shortcut_on') : t('subtitle_shortcut_off'));
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
   const onTimecodeJump = async (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -3974,6 +4178,8 @@ function initFrameControls(mediaEl, asset, root = document, options = {}) {
     event.preventDefault();
   };
   mediaEl.addEventListener('contextmenu', onMediaContextMenu);
+  document.addEventListener('keydown', onEscapeClearCutOverlay);
+  document.addEventListener('keydown', onSubtitleOverlayShortcut);
   stopBtn?.addEventListener('click', onStop);
   reverseFrameBtn.addEventListener('click', () => step(-1));
   forwardFrameBtn.addEventListener('click', () => step(1));
@@ -4001,6 +4207,7 @@ function initFrameControls(mediaEl, asset, root = document, options = {}) {
 
   return () => {
     fullscreenOverlayCleanup?.();
+    clipsSection?.removeEventListener('pointerdown', onClipsSectionPointerDown);
     playBtn.removeEventListener('click', onPlay);
     markSummary.removeEventListener('click', onTimecodeJump);
     root.removeEventListener('click', onTimecodeJump);
@@ -4009,6 +4216,8 @@ function initFrameControls(mediaEl, asset, root = document, options = {}) {
     document.removeEventListener('dblclick', onDocumentDblClickCapture, true);
     mediaEl.removeEventListener('click', onSurfaceToggle);
     mediaEl.removeEventListener('contextmenu', onMediaContextMenu);
+    document.removeEventListener('keydown', onEscapeClearCutOverlay);
+    document.removeEventListener('keydown', onSubtitleOverlayShortcut);
     stopBtn?.removeEventListener('click', onStop);
     markInBtn?.removeEventListener('click', onMarkIn);
     markOutBtn?.removeEventListener('click', onMarkOut);
@@ -4258,10 +4467,9 @@ function initAudioTools(mediaEl, root = document) {
   const byId = (id) => root.querySelector(`#${id}`);
   const controlsWrap = byId('channelControls');
   const graphCanvas = byId('audioGraph');
-  const toggleGraphInput = byId('toggleGraphInput');
   const groupChannelsInput = byId('groupChannels');
 
-  if (!controlsWrap || !graphCanvas || !toggleGraphInput || !groupChannelsInput) {
+  if (!controlsWrap || !graphCanvas || !groupChannelsInput) {
     return () => {};
   }
 
@@ -4576,15 +4784,7 @@ function initAudioTools(mediaEl, root = document) {
 
   draw();
 
-  const onToggleGraph = () => {
-    graphCanvas.classList.toggle('hidden', !toggleGraphInput.checked);
-  };
-
-  toggleGraphInput.addEventListener('change', onToggleGraph);
-  onToggleGraph();
-
   return () => {
-    toggleGraphInput.removeEventListener('change', onToggleGraph);
     controlsWrap.removeEventListener('change', onChannelChange);
     mediaEl.removeEventListener('play', onMediaPlay);
     mediaEl.removeEventListener('playing', ensureAudioContext);
@@ -5055,7 +5255,10 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
   const overlayCheck = byId('subtitleOverlayCheck');
   const langInput = byId('subtitleLangInput');
   const labelInput = byId('subtitleLabelInput');
-  const whisperxCheck = byId('subtitleWhisperxCheck');
+  const modelSelect = byId('subtitleModelSelect');
+  const audioStreamSelect = byId('subtitleAudioStreamSelect');
+  const audioChannelSelect = byId('subtitleAudioChannelSelect');
+  const zemberekCheck = byId('subtitleZemberekCheck');
   const renameBtn = byId('subtitleRenameBtn');
   const fileInput = byId('subtitleFileInput');
   const uploadBtn = byId('subtitleUploadBtn');
@@ -5064,12 +5267,22 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
   const searchBtn = byId('subtitleSearchBtn');
   const searchSuggestEl = byId('subtitleSearchSuggest');
   const searchResultsEl = byId('subtitleSearchResults');
-  if (!statusEl || !itemsEl || !langInput || !labelInput || !renameBtn || !fileInput || !uploadBtn || !generateBtn || !searchInput || !searchBtn || !searchResultsEl || !searchSuggestEl || !whisperxCheck) return () => {};
+  if (!statusEl || !itemsEl || !langInput || !labelInput || !modelSelect || !audioStreamSelect || !audioChannelSelect || !zemberekCheck || !renameBtn || !fileInput || !uploadBtn || !generateBtn || !searchInput || !searchBtn || !searchResultsEl || !searchSuggestEl) return () => {};
   let subtitleSuggestItems = [];
   let subtitleSuggestActive = -1;
   let subtitleSuggestTimer = null;
 
   const getLang = () => String(langInput.value || '').trim().toLowerCase().slice(0, 12) || 'tr';
+  const getModel = () => 'small';
+  const getAudioStreamOptions = () => Array.isArray(asset.audioStreamOptions) ? asset.audioStreamOptions : [];
+  const getSelectedAudioStream = () => {
+    const value = String(audioStreamSelect.value || '').trim();
+    return value ? Number(value) : null;
+  };
+  const getSelectedAudioChannel = () => {
+    const value = String(audioChannelSelect.value || '').trim();
+    return value ? Number(value) : null;
+  };
   const getOverlayEnabled = () => getSubtitleOverlayEnabled(asset.id, false);
 
   const setStatus = (text) => {
@@ -5081,8 +5294,37 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     renameBtn.disabled = busy;
     uploadBtn.disabled = busy;
     generateBtn.disabled = busy;
-    whisperxCheck.disabled = busy;
+    modelSelect.disabled = busy;
+    audioStreamSelect.disabled = busy || getAudioStreamOptions().length <= 1;
+    audioChannelSelect.disabled = busy || audioChannelSelect.options.length <= 1;
+    zemberekCheck.disabled = busy;
     searchBtn.disabled = busy;
+  };
+
+  const renderAudioChannelOptions = () => {
+    const selectedStreamIndex = getSelectedAudioStream();
+    const selectedStream = getAudioStreamOptions().find((item) => Number(item.index) === selectedStreamIndex) || null;
+    const channelCount = Math.max(0, Number(selectedStream?.channels) || 0);
+    const rows = [`<option value="">${escapeHtml(t('subtitle_audio_channel_mix'))}</option>`];
+    for (let i = 1; i <= channelCount; i += 1) {
+      rows.push(`<option value="${i}">CH ${i}</option>`);
+    }
+    audioChannelSelect.innerHTML = rows.join('');
+    audioChannelSelect.disabled = channelCount <= 1;
+  };
+
+  const renderAudioStreamOptions = () => {
+    const streamOptions = getAudioStreamOptions();
+    const rows = [`<option value="">${escapeHtml(t('subtitle_audio_stream_default'))}</option>`];
+    streamOptions.forEach((item) => {
+      rows.push(`<option value="${escapeHtml(String(item.index))}">${escapeHtml(item.label || `A${Number(item.order || 0) + 1}`)}</option>`);
+    });
+    audioStreamSelect.innerHTML = rows.join('');
+    if (streamOptions.length === 1) {
+      audioStreamSelect.value = String(streamOptions[0].index);
+    }
+    audioStreamSelect.disabled = streamOptions.length <= 1;
+    renderAudioChannelOptions();
   };
 
   const applyTrackMode = () => {
@@ -5109,6 +5351,7 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     asset.subtitleLang = mappedAsset.subtitleLang || asset.subtitleLang || getLang();
     asset.subtitleLabel = mappedAsset.subtitleLabel || asset.subtitleLabel || '';
     asset.subtitleItems = Array.isArray(mappedAsset.subtitleItems) ? mappedAsset.subtitleItems : (asset.subtitleItems || []);
+    asset.audioStreamOptions = Array.isArray(mappedAsset.audioStreamOptions) ? mappedAsset.audioStreamOptions : (asset.audioStreamOptions || []);
   };
   const renderSearchResults = (matches = []) => {
     if (!Array.isArray(matches) || !matches.length) {
@@ -5305,10 +5548,12 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
         body: JSON.stringify({
           lang: getLang(),
           label: requestedLabel,
-          model: 'tiny',
-          useWhisperX: Boolean(whisperxCheck.checked),
+          model: getModel(),
+          useWhisperX: false,
           turkishAiCorrect: String(getLang() || '').toLowerCase().startsWith('tr'),
-          useZemberekLexicon: String(getLang() || '').toLowerCase().startsWith('tr')
+          useZemberekLexicon: String(getLang() || '').toLowerCase().startsWith('tr') && Boolean(zemberekCheck.checked),
+          audioStreamIndex: getSelectedAudioStream(),
+          audioChannelIndex: getSelectedAudioChannel()
         })
       });
       setStatus(t('subtitle_job_started'));
@@ -5433,6 +5678,9 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     onSubtitleSearch();
   });
   overlayCheck?.addEventListener('change', onOverlayChange);
+  audioStreamSelect.addEventListener('change', renderAudioChannelOptions);
+
+  renderAudioStreamOptions();
 
   if (asset.subtitleUrl) {
     applyTrack(asset.subtitleUrl, asset.subtitleLang, asset.subtitleLabel);
@@ -5454,6 +5702,7 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     searchInput.removeEventListener('input', queueSubtitleSuggest);
     searchInput.removeEventListener('focus', queueSubtitleSuggest);
     overlayCheck?.removeEventListener('change', onOverlayChange);
+    audioStreamSelect.removeEventListener('change', renderAudioChannelOptions);
   };
 }
 
@@ -5463,6 +5712,7 @@ function initVideoOcrTools(asset, root = document) {
   const busyEl = byId('videoOcrBusy');
   const intervalInput = byId('videoOcrIntervalInput');
   const langInput = byId('videoOcrLangInput');
+  const labelInput = byId('videoOcrLabelInput');
   const engineSelect = byId('videoOcrEngineSelect');
   const preprocessSelect = byId('videoOcrPreprocessSelect');
   const advancedCheck = byId('videoOcrAdvancedCheck');
@@ -5482,6 +5732,7 @@ function initVideoOcrTools(asset, root = document) {
     || !busyEl
     || !intervalInput
     || !langInput
+    || !labelInput
     || !engineSelect
     || !preprocessSelect
     || !advancedCheck
@@ -5506,6 +5757,7 @@ function initVideoOcrTools(asset, root = document) {
     extractBtn.disabled = busy;
     intervalInput.disabled = busy;
     langInput.disabled = busy;
+    labelInput.disabled = busy;
     engineSelect.disabled = busy;
     preprocessSelect.disabled = busy;
     advancedCheck.disabled = busy;
@@ -5613,6 +5865,7 @@ function initVideoOcrTools(asset, root = document) {
         body: JSON.stringify({
           intervalSec: Number(intervalInput.value || 4),
           ocrLang: String(langInput.value || '').trim() || 'eng+tur',
+          ocrLabel: String(labelInput.value || '').trim(),
           ocrEngine: String(engineSelect.value || 'paddle'),
           preprocessProfile: String(preprocessSelect.value || 'light'),
           advancedMode: Boolean(advancedCheck.checked),
@@ -5679,6 +5932,13 @@ function initCollapsibleSections(root = document) {
       const collapsed = Boolean(nextCollapsed);
       section.classList.toggle('collapsed', collapsed);
       if (check) check.checked = collapsed;
+      if (sectionKey === 'clips') {
+        if (collapsed) {
+          resetDetailPanelDynamicMinWidth();
+        } else {
+          requestAnimationFrame(() => ensureDetailPanelMinWidth(measureClipsPanelRequiredWidth(root)));
+        }
+      }
     };
     if (isVideoToolsModal && defaultCollapsedInVideoTools.has(sectionKey)) {
       setCollapsed(true);
@@ -6090,8 +6350,10 @@ async function openAsset(id, workflow, options = {}) {
     activeDetailPinCleanup = null;
   }
   clearDetailHeaderTimecode();
+  resetDetailPanelDynamicMinWidth();
 
   if (isVideoToolsPageMode && isVideo(asset)) {
+    panelDetail?.classList.add('panel-video-detail');
     assetDetail.innerHTML = videoToolsPageMarkup(asset);
     assetDetail.classList.remove('empty');
     assetDetail.classList.add('video-tools-page-detail');
@@ -6111,12 +6373,14 @@ async function openAsset(id, workflow, options = {}) {
 
   assetDetail.innerHTML = detailMarkup(asset, workflow);
   assetDetail.classList.toggle('video-detail-mode', isVideo(asset));
+  panelDetail?.classList.toggle('panel-video-detail', isVideo(asset));
   assetDetail.classList.remove('video-tools-page-detail');
   if (isVideo(asset)) syncDetailHeaderTimecode(assetDetail);
   if (isVideo(asset)) {
     activeDetailPinCleanup = initDetailVideoPin(assetDetail);
   } else {
     assetDetail.classList.remove('detail-video-pinned');
+    resetDetailPanelDynamicMinWidth();
   }
   setPanelVideoToolsButtonState(isVideo(asset) && !isVideoToolsPageMode, () => {
     const panelMedia = assetDetail.querySelector('#assetMediaEl');
@@ -6539,7 +6803,7 @@ assetTypeFilters.forEach((input) => {
   });
 });
 
-typesSelectAllBtn?.addEventListener('click', () => {
+assetsTitleToggleBtn?.addEventListener('click', () => {
   const allSelected = assetTypeFilters.every((input) => input.checked);
   const nextChecked = !allSelected;
   assetTypeFilters.forEach((input) => {

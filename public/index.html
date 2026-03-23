@@ -99,19 +99,16 @@
       <section class="panel" id="panelAssets">
         <div class="panel-head">
           <h2 data-i18n="assets_title">Assets</h2>
-          <div class="asset-view-switch" role="group" aria-label="Asset view mode">
-            <button type="button" id="assetViewThumbBtn" class="asset-view-btn asset-view-btn-thumb" aria-label="Thumbnail view" title="Thumbnail view"></button>
-            <button type="button" id="assetViewListBtn" class="asset-view-btn asset-view-btn-list" aria-label="List view" title="List view"></button>
-          </div>
-        </div>
-        <div class="asset-toolbar">
-          <div class="asset-toolbar-row">
-            <strong id="typesSelectAllBtn" class="types-select-all" data-i18n="filter_types">Types</strong>
+          <div class="asset-head-filters">
             <label><input type="checkbox" class="asset-type-filter" value="video" checked /> <span data-i18n="type_video">Video</span></label>
             <label><input type="checkbox" class="asset-type-filter" value="audio" checked /> <span data-i18n="type_audio">Audio</span></label>
             <label><input type="checkbox" class="asset-type-filter" value="document" checked /> <span data-i18n="type_document">Document</span></label>
             <label><input type="checkbox" class="asset-type-filter" value="photo" checked /> <span data-i18n="type_photo">Photo</span></label>
             <label><input type="checkbox" class="asset-type-filter" value="other" checked /> <span data-i18n="type_other">Other</span></label>
+          </div>
+          <div class="asset-view-switch" role="group" aria-label="Asset view mode">
+            <button type="button" id="assetViewThumbBtn" class="asset-view-btn asset-view-btn-thumb" aria-label="Thumbnail view" title="Thumbnail view"></button>
+            <button type="button" id="assetViewListBtn" class="asset-view-btn asset-view-btn-list" aria-label="List view" title="List view"></button>
           </div>
         </div>
         <div id="assetGrid" class="asset-grid"></div>

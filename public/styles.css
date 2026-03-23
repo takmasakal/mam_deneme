@@ -21,6 +21,33 @@ body {
   overflow: hidden;
 }
 
+.shortcut-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%) translateY(8px);
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(130, 171, 255, 0.35);
+  background: rgba(20, 26, 39, 0.82);
+  color: #eef4ff;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 140ms ease, transform 140ms ease;
+  z-index: 10000;
+}
+
+.shortcut-toast.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
 .layout {
   display: grid;
   gap: 4px;
@@ -29,6 +56,10 @@ body {
   align-items: stretch;
   height: 100vh;
   min-height: 0;
+}
+
+.layout.detail-only-mode {
+  grid-template-columns: 0px 0px 0px 0px 1fr !important;
 }
 
 body.video-tools-page-mode .layout {
@@ -69,7 +100,7 @@ body.video-tools-page-mode #assetDetail {
 .panel-splitter[data-splitter="left"] {
   grid-column: 2;
   grid-row: 1;
-  z-index: 30;
+  z-index: 60;
 }
 
 #panelAssets {
@@ -80,12 +111,17 @@ body.video-tools-page-mode #assetDetail {
 .panel-splitter[data-splitter="right"] {
   grid-column: 4;
   grid-row: 1;
-  z-index: 20;
+  z-index: 40;
 }
 
 #panelDetail {
   grid-column: 5;
   grid-row: 1;
+}
+
+.layout.detail-only-mode #panelDetail {
+  width: 100%;
+  max-width: 100%;
 }
 
 .panel {
@@ -111,6 +147,10 @@ body.video-tools-page-mode #assetDetail {
   line-height: 1.2;
 }
 
+#panelDetail .panel-head h2 {
+  font-size: 1.12rem;
+}
+
 .panel-head-actions {
   display: inline-flex;
   align-items: center;
@@ -123,6 +163,12 @@ body.video-tools-page-mode #assetDetail {
 
 #panelDetail .panel-head {
   position: relative;
+  z-index: 70;
+}
+
+#panelDetail .panel-head-actions {
+  position: relative;
+  z-index: 71;
 }
 
 .detail-panel-tc-slot {
@@ -134,7 +180,7 @@ body.video-tools-page-mode #assetDetail {
   align-items: center;
   justify-content: center;
   min-width: 0;
-  max-width: min(58%, calc(100% - 130px));
+  max-width: min(56%, calc(100% - 150px));
   pointer-events: auto;
   z-index: 1;
 }
@@ -178,7 +224,7 @@ body.video-tools-page-mode #assetDetail {
   padding: 4px 7px;
   font-size: 11px;
   line-height: 1.2;
-  z-index: 50;
+  z-index: 90;
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.25);
 }
 
@@ -188,6 +234,8 @@ body.video-tools-page-mode #assetDetail {
   gap: 6px;
   margin-left: auto;
   transform: translateY(-4px);
+  position: relative;
+  z-index: 21;
 }
 
 .asset-view-btn {
@@ -474,6 +522,7 @@ body.video-tools-page-mode #assetDetail {
   display: none;
   position: absolute;
   top: 56px;
+  left: calc(100% - 1px);
   width: auto;
   min-width: 0;
   padding: 8px 7px;
@@ -495,24 +544,24 @@ body.video-tools-page-mode #assetDetail {
 
 .splitter-tab-search {
   top: 56px;
-  left: 50%;
-  transform: translateX(12%);
   background: #d6452f;
-  z-index: 3;
+  z-index: 10;
 }
 
 .splitter-tab-assets {
-  top: 130px;
-  left: 50%;
+  top: 148px;
   right: auto;
-  transform: translateX(12%);
   border-radius: 0 10px 10px 0;
   border-left: none;
   border-right: 1px solid rgba(0, 0, 0, 0.18);
   background: #2d61d6;
-  z-index: 2;
+  z-index: 6;
   writing-mode: vertical-rl;
   text-orientation: mixed;
+}
+
+body.lang-en .splitter-tab-assets {
+  top: 164px;
 }
 
 .splitter-tab:hover {
@@ -791,10 +840,44 @@ button:hover {
 
 #panelAssets h2 {
   flex: 0 0 auto;
+  cursor: pointer;
+  user-select: none;
 }
 
 #panelAssets .panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
   margin-bottom: 8px;
+  position: relative;
+  z-index: 20;
+}
+
+.asset-head-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.asset-head-filters label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #d7deec;
+  white-space: nowrap;
+}
+
+.asset-head-filters input[type="checkbox"] {
+  margin: 0;
+}
+
+.asset-head-filters span {
+  line-height: 1;
 }
 
 .asset-toolbar {
@@ -1971,11 +2054,13 @@ button:hover {
 }
 
 .viewer-extra {
-  margin-top: 8px;
+  margin-top: 4px;
   border: 1px solid #2c2c2c;
   border-radius: 10px;
   background: #111;
   padding: 8px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .video-tools-sortable-host {
@@ -2057,8 +2142,8 @@ button:hover {
   display: block;
   min-height: auto;
   gap: 8px;
-  padding-left: 14px;
-  padding-right: 8px;
+  padding-left: 2px;
+  padding-right: 1px;
 }
 
 .detail-video-fixed {
@@ -2068,9 +2153,17 @@ button:hover {
 
 #assetDetail.video-detail-mode .detail-video-fixed .viewer-shell,
 #assetDetail.video-detail-mode .detail-video-meta > .viewer-shell {
-  max-width: min(980px, calc(100% - 18px));
+  max-width: min(980px, calc(100% - 2px));
   margin-left: auto;
   margin-right: auto;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.layout.detail-only-mode #assetDetail.video-detail-mode .detail-video-fixed .viewer-shell,
+.layout.detail-only-mode #assetDetail.video-detail-mode .detail-video-meta > .viewer-shell {
+  max-width: none;
+  width: 100%;
 }
 
 #assetDetail.video-detail-mode .detail-video-fixed .viewer-core {
@@ -2254,14 +2347,14 @@ button:hover {
 
 .detail-video-meta {
   border-top: 1px solid var(--line);
-  padding-top: 8px;
+  padding-top: 4px;
   padding-right: 2px;
 }
 
 .viewer-meta {
   color: #c4cad8;
   font-size: 12px;
-  margin: 8px 0;
+  margin: 4px 0;
 }
 
 #markSummary.viewer-meta {
@@ -2996,11 +3089,13 @@ select.subtitle-lang-input {
 }
 
 .audio-tools {
-  margin-top: 10px;
+  margin-top: 6px;
   border: 1px solid #2e2e2e;
   border-radius: 10px;
   padding: 8px;
   background: #151515;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .audio-side-col .audio-tools {
@@ -3075,6 +3170,8 @@ select.subtitle-lang-input {
   border-radius: 10px;
   background: #171d2a;
   padding: 8px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .audio-graph-controls-box {
@@ -3115,7 +3212,7 @@ select.subtitle-lang-input {
 }
 
 .cut-box {
-  margin-top: 10px;
+  margin-top: 6px;
   border: 1px solid #353535;
   border-radius: 10px;
   background: #131313;
