@@ -58,6 +58,12 @@ const PERMISSION_DEFINITIONS = [
     labelKey: 'perm_admin_access'
   },
   {
+    key: 'metadata.edit',
+    legacyField: 'metadataEdit',
+    roleNames: ['mam-metadata-edit'],
+    labelKey: 'perm_metadata_edit'
+  },
+  {
     key: 'asset.delete',
     legacyField: 'assetDelete',
     roleNames: ['mam-asset-delete'],
@@ -1488,6 +1494,14 @@ function normalizeOcrPreprocessProfile(value) {
   return 'light';
 }
 
+function normalizeOcrPreset(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'ticker') return 'ticker';
+  if (raw === 'credits' || raw === 'credit' || raw === 'roll' || raw === 'caption') return 'credits';
+  if (raw === 'static') return 'static';
+  return 'general';
+}
+
 function buildOcrVisualEnhanceFilter(preprocessProfile = 'light') {
   const profile = normalizeOcrPreprocessProfile(preprocessProfile);
   if (profile === 'off') return '';
@@ -2423,6 +2437,7 @@ function buildVideoOcrDbRequestPayload(job) {
   return {
     intervalSec: Number(job.intervalSec || 0),
     ocrLang: String(job.ocrLang || ''),
+    ocrPreset: normalizeOcrPreset(job.ocrPreset),
     ocrLabel: String(job.ocrLabel || ''),
     ocrEngine: normalizeOcrEngine(job.ocrEngine || job.requestedEngine || 'paddle'),
     requestedEngine: normalizeOcrEngine(job.requestedEngine || job.ocrEngine || 'paddle'),
@@ -2476,6 +2491,7 @@ function mapVideoOcrJobFromDbRow(row) {
     status,
     intervalSec: Number(request.intervalSec || 0),
     ocrLang: String(request.ocrLang || ''),
+    ocrPreset: normalizeOcrPreset(request.ocrPreset),
     ocrLabel: String(request.ocrLabel || ''),
     ocrEngine,
     requestedEngine: normalizeOcrEngine(request.requestedEngine || request.ocrEngine || 'paddle'),
@@ -4079,6 +4095,7 @@ async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
   const intervalSec = Math.max(1, Math.min(30, Number(options.intervalSec) || 4));
   const ocrLang = String(options.ocrLang || 'eng+tur').trim() || 'eng+tur';
   const ocrEngine = normalizeOcrEngine(options.ocrEngine);
+  const ocrPreset = normalizeOcrPreset(options.ocrPreset);
   const advancedMode = Boolean(options.advancedMode);
   const turkishAiCorrect = options.turkishAiCorrect == null
     ? true
@@ -4089,18 +4106,24 @@ async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
   const preprocessProfile = normalizeOcrPreprocessProfile(options.preprocessProfile);
   const enableBlurFilter = Boolean(options.enableBlurFilter);
   const blurThreshold = Math.max(0, Math.min(300, Number(options.blurThreshold) || 80));
-  const enableRegionMode = Boolean(options.enableRegionMode);
+  const enableRegionMode = options.enableRegionMode == null
+    ? ocrPreset === 'ticker'
+    : Boolean(options.enableRegionMode);
   const tickerHeightPct = Math.max(10, Math.min(40, Number(options.tickerHeightPct) || 20));
-  const ignoreStaticOverlays = Boolean(options.ignoreStaticOverlays);
+  const ignoreStaticOverlays = options.ignoreStaticOverlays == null
+    ? ocrPreset === 'static'
+    : Boolean(options.ignoreStaticOverlays);
   const ignorePhrases = String(options.ignorePhrases || '').trim();
   const minDisplaySec = Math.max(intervalSec, Math.min(60, Number(options.minDisplaySec) || intervalSec * 2));
   const mergeGapSec = Math.max(0, Math.min(30, Number(options.mergeGapSec) || intervalSec));
   const enableSceneSampling = options.enableSceneSampling == null
-    ? advancedMode
+    ? (advancedMode || ocrPreset === 'credits' || ocrPreset === 'ticker')
     : Boolean(options.enableSceneSampling);
-  const sceneThreshold = Math.max(0.08, Math.min(0.95, Number(options.sceneThreshold) || 0.34));
+  const sceneThreshold = Math.max(0.08, Math.min(0.95, Number(options.sceneThreshold) || (ocrPreset === 'credits' ? 0.24 : 0.34)));
   const maxSceneFrames = Math.max(0, Math.min(180, Number(options.maxSceneFrames) || 24));
-  const sceneMinGapSec = Math.max(0.15, Math.min(30, Number(options.sceneMinGapSec) || Math.max(1.8, intervalSec * 0.85)));
+  const sceneMinGapSec = Math.max(0.15, Math.min(30, Number(options.sceneMinGapSec) || (ocrPreset === 'credits'
+    ? Math.max(0.6, intervalSec * 0.4)
+    : Math.max(1.8, intervalSec * 0.85))));
   const assetId = String(options.assetId || '').trim();
   const workDir = String(options.workDir || '').trim() || createOcrFrameWorkDir();
   fs.mkdirSync(workDir, { recursive: true });
@@ -4223,7 +4246,23 @@ async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
 
   let output = '';
   let segmentCount = 0;
-  if (advancedMode) {
+  if (ocrPreset === 'credits') {
+    const rawSegments = buildDisplaySegments(effectiveEntries, {
+      intervalSec,
+      minDisplaySec: Math.max(minDisplaySec, intervalSec * 3),
+      mergeGapSec: Math.max(mergeGapSec, intervalSec * 2)
+    });
+    const segments = mergeRepeatedSegments(rawSegments, {
+      mergeGapSec: Math.max(mergeGapSec, intervalSec * 2),
+      similarityThreshold: 0.66
+    });
+    segmentCount = segments.length;
+    const allSegments = [...segments, ...overlaySegments]
+      .sort((a, b) => (a.startSec - b.startSec) || a.text.localeCompare(b.text));
+    output = segmentCount
+      ? formatOcrSegmentsOutput(allSegments)
+      : formatOcrFrameLinesOutput(effectiveEntries, intervalSec);
+  } else if (advancedMode) {
     const rawSegments = buildDisplaySegments(effectiveEntries, {
       intervalSec,
       minDisplaySec,
@@ -4257,7 +4296,8 @@ async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
     lines: baseLines.length,
     segments: segmentCount,
     engine: result.engine,
-    mode: advancedMode ? 'advanced' : 'basic',
+    mode: ocrPreset === 'credits' ? 'credits' : (advancedMode ? 'advanced' : 'basic'),
+    preset: ocrPreset,
     autoIgnoredPhrases,
     skippedBlur: Number(prep.skippedBlur || 0),
     sampledFrames: files.length,
@@ -4547,6 +4587,7 @@ function queueVideoOcrJob(row, options = {}) {
   });
   const ocrLabel = normalizeRequestedOcrLabel(options.ocrLabel, autoOcrLabel);
   const ocrEngine = normalizeOcrEngine(options.ocrEngine);
+  const ocrPreset = normalizeOcrPreset(options.ocrPreset);
   const advancedMode = Boolean(options.advancedMode);
   const turkishAiCorrect = options.turkishAiCorrect == null
     ? true
@@ -4578,13 +4619,14 @@ function queueVideoOcrJob(row, options = {}) {
     ocrLang,
     ocrLabel,
     ocrEngine,
+    ocrPreset,
     requestedEngine: ocrEngine,
     resultUrl: '',
     resultPath: '',
     resultLabel: '',
     lineCount: 0,
     segmentCount: 0,
-    mode: advancedMode ? 'advanced' : 'basic',
+    mode: ocrPreset === 'credits' ? 'credits' : (advancedMode ? 'advanced' : 'basic'),
     advancedMode,
     turkishAiCorrect,
     useZemberekLexicon,
@@ -4666,6 +4708,7 @@ function queueVideoOcrJob(row, options = {}) {
         assetId: row.id,
         intervalSec,
         ocrLang,
+        ocrPreset,
         ocrEngine: selectedEngine,
         advancedMode,
         turkishAiCorrect,
@@ -4701,7 +4744,8 @@ function queueVideoOcrJob(row, options = {}) {
       running.sceneThreshold = Number(result.sceneThreshold || running.sceneThreshold || 0);
       running.maxSceneFrames = Number(result.maxSceneFrames || running.maxSceneFrames || 0);
       running.sceneMinGapSec = Number(result.sceneMinGapSec || running.sceneMinGapSec || 0);
-      running.mode = String(result.mode || (advancedMode ? 'advanced' : 'basic'));
+      running.mode = String(result.mode || (ocrPreset === 'credits' ? 'credits' : (advancedMode ? 'advanced' : 'basic')));
+      running.ocrPreset = normalizeOcrPreset(result.preset || ocrPreset);
       running.ocrEngine = normalizeOcrEngine(result.engine || selectedEngine);
       const prepWarning = String(result.preprocessingWarning || '').trim();
       if (prepWarning) {
@@ -5929,6 +5973,7 @@ async function resolveEffectivePermissions(req) {
     ...user,
     isAdmin: Boolean(effective.adminPageAccess),
     canAccessAdmin: Boolean(effective.adminPageAccess),
+    canEditMetadata: Boolean(effective.metadataEdit),
     canDeleteAssets: Boolean(effective.assetDelete),
     canUsePdfAdvancedTools: Boolean(effective.pdfAdvancedTools),
     permissions: effective,
@@ -5953,6 +5998,7 @@ app.get('/api/me', async (req, res) => {
       email: effective.email || '',
       isAdmin: effective.isAdmin,
       canAccessAdmin: effective.canAccessAdmin,
+      canEditMetadata: effective.canEditMetadata,
       canDeleteAssets: effective.canDeleteAssets,
       canUsePdfAdvancedTools: effective.canUsePdfAdvancedTools,
       permissionKeys: effective.permissionKeys
@@ -6988,6 +7034,7 @@ app.post('/api/assets/:id/video-ocr/extract', async (req, res) => {
     const job = queueVideoOcrJob(row, {
       intervalSec: req.body?.intervalSec,
       ocrLang: req.body?.ocrLang,
+      ocrPreset: req.body?.ocrPreset,
       ocrLabel: req.body?.ocrLabel,
       ocrEngine: req.body?.ocrEngine,
       advancedMode: req.body?.advancedMode,
@@ -7012,6 +7059,7 @@ app.post('/api/assets/:id/video-ocr/extract', async (req, res) => {
       status: job.status,
       intervalSec: job.intervalSec,
       ocrLang: job.ocrLang,
+      ocrPreset: job.ocrPreset,
       ocrLabel: job.ocrLabel,
       ocrEngine: job.ocrEngine,
       mode: job.mode,
@@ -7046,6 +7094,7 @@ app.get('/api/video-ocr-jobs/:jobId', async (req, res) => {
       status: job.status,
       intervalSec: job.intervalSec,
       ocrLang: job.ocrLang,
+      ocrPreset: job.ocrPreset,
       ocrEngine: job.ocrEngine,
       requestedEngine: job.requestedEngine,
       resultUrl: job.resultUrl || '',
@@ -7105,6 +7154,7 @@ app.get('/api/assets/:id/video-ocr/latest', async (req, res) => {
         status: latest.status,
         intervalSec: latest.intervalSec,
         ocrLang: latest.ocrLang,
+        ocrPreset: latest.ocrPreset,
         ocrEngine: latest.ocrEngine,
         requestedEngine: latest.requestedEngine,
         resultUrl: latest.resultUrl || '',
@@ -8182,6 +8232,17 @@ async function requireAssetDelete(req, res, next) {
   }
 }
 
+async function requireMetadataEdit(req, res, next) {
+  try {
+    const effective = await resolveEffectivePermissions(req);
+    if (!effective.canEditMetadata) return res.status(403).json({ error: 'Forbidden' });
+    req.userPermissions = effective;
+    return next();
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to verify metadata edit permissions' });
+  }
+}
+
 async function requirePdfAdvancedTools(req, res, next) {
   try {
     const effective = await resolveEffectivePermissions(req);
@@ -9058,6 +9119,7 @@ app.get('/api/admin/user-permissions', async (req, res) => {
           username,
           permissionKeys: effective.permissionKeys,
           adminPageAccess: effective.adminPageAccess,
+          metadataEdit: effective.metadataEdit,
           assetDelete: effective.assetDelete,
           pdfAdvancedTools: effective.pdfAdvancedTools
         };
@@ -9095,6 +9157,7 @@ app.patch('/api/admin/user-permissions/:username', async (req, res) => {
       {
         permissionKeys: requestedPermissionKeys,
         adminPageAccess: req.body?.adminPageAccess,
+        metadataEdit: req.body?.metadataEdit,
         assetDelete: req.body?.assetDelete,
         pdfAdvancedTools: req.body?.pdfAdvancedTools
       },
@@ -9784,7 +9847,7 @@ app.delete('/api/assets/:id', requireAssetDelete, async (req, res) => {
   }
 });
 
-app.patch('/api/assets/:id', async (req, res) => {
+app.patch('/api/assets/:id', requireMetadataEdit, async (req, res) => {
   try {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const existing = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);

@@ -228,6 +228,7 @@ let i18n = {
     health_job_status_failed: 'Failed',
     user_settings: 'User Settings',
     perm_admin_access: 'Admin page access',
+    perm_metadata_edit: 'Metadata edit',
     perm_asset_delete: 'Asset delete',
     perm_pdf_advanced: 'PDF advanced tools',
     user_permissions_saved: 'User permissions saved.',
@@ -452,6 +453,7 @@ let i18n = {
     health_job_status_failed: 'Hatalı',
     user_settings: 'Kullanıcı Ayarları',
     perm_admin_access: 'Yönetim sayfasına erişim',
+    perm_metadata_edit: 'Metadata düzenleme',
     perm_asset_delete: 'Varlık silme',
     perm_pdf_advanced: 'PDF gelişmiş araçlar',
     user_permissions_saved: 'Kullanıcı yetkileri kaydedildi.',
@@ -576,8 +578,8 @@ function formatEditorTc(sec = 0) {
   const hh = String(Math.floor(safe / 3600)).padStart(2, '0');
   const mm = String(Math.floor((safe % 3600) / 60)).padStart(2, '0');
   const ss = String(Math.floor(safe % 60)).padStart(2, '0');
-  const ms = String(Math.floor((safe % 1) * 1000)).padStart(3, '0');
-  return `${hh}:${mm}:${ss}.${ms}`;
+  const ff = String(Math.floor((safe % 1) * 25)).padStart(2, '0');
+  return `${hh}:${mm}:${ss}:${ff}`;
 }
 
 function parseEditorTcToSec(rawTc) {
@@ -627,20 +629,20 @@ function openTextEditorModal({
         <div class="content-modal-audio" role="group" aria-label="${escapeHtml(t('content_audio_player'))}">
           <div class="content-modal-audio-head">
             <span>${escapeHtml(t('content_audio_player'))}</span>
-            <span class="content-modal-audio-tc">${escapeHtml(t('content_audio_tc'))}: <strong id="contentEditorAudioTc">00:00:00.000</strong></span>
+            <span class="content-modal-audio-tc">${escapeHtml(t('content_audio_tc'))}: <strong id="contentEditorAudioTc">00:00:00:00</strong></span>
           </div>
           <audio id="contentEditorAudio" preload="metadata" src="${escapeHtml(safeMediaUrl)}"></audio>
           <div class="content-modal-audio-controls">
             <button type="button" id="contentEditorAudioToggle">Play</button>
             <input id="contentEditorAudioTimeline" type="range" min="0" max="0" step="0.01" value="0" />
-            <span class="content-modal-audio-duration" id="contentEditorAudioDuration">00:00:00.000</span>
+            <span class="content-modal-audio-duration" id="contentEditorAudioDuration">00:00:00:00</span>
           </div>
         </div>
         ` : ''}
         ${hasVideo ? `
         <div class="content-modal-video" role="group" aria-label="${escapeHtml(t('type_video'))}">
           <div class="content-modal-video-overlay">
-            <span class="content-modal-audio-tc">${escapeHtml(t('content_audio_tc'))}: <strong id="contentEditorVideoTc">00:00:00.000</strong></span>
+            <span class="content-modal-audio-tc">${escapeHtml(t('content_audio_tc'))}: <strong id="contentEditorVideoTc">00:00:00:00</strong></span>
           </div>
           <video id="contentEditorVideo" class="content-modal-video-el" controls preload="metadata" src="${escapeHtml(safeMediaUrl)}"></video>
         </div>
@@ -1353,9 +1355,10 @@ function renderUserPermissions(users, definitions = []) {
   if (!userPermissionsRows) return;
   const list = Array.isArray(users) ? users : [];
   const defs = Array.isArray(definitions) && definitions.length
-    ? definitions
-    : [
+      ? definitions
+      : [
         { key: 'admin.access', legacyField: 'adminPageAccess', labelKey: 'perm_admin_access' },
+        { key: 'metadata.edit', legacyField: 'metadataEdit', labelKey: 'perm_metadata_edit' },
         { key: 'asset.delete', legacyField: 'assetDelete', labelKey: 'perm_asset_delete' },
         { key: 'pdf.advanced', legacyField: 'pdfAdvancedTools', labelKey: 'perm_pdf_advanced' }
       ];
@@ -1366,21 +1369,25 @@ function renderUserPermissions(users, definitions = []) {
       const checked = activeKeys.has(definition.key)
         || Boolean(user?.[definition.legacyField]);
       return `
-        <label>
+        <label class="perm-option">
           <input
             type="checkbox"
             class="perm-checkbox"
             data-permission-key="${escapeHtml(definition.key)}"
             ${checked ? 'checked' : ''}
           />
-          ${escapeHtml(formatPermissionLabel(definition))}
+          <span>${escapeHtml(formatPermissionLabel(definition))}</span>
         </label>
       `;
     }).join('');
     return `
       <div class="row user-perm-row" data-username="${uname}">
-        <strong>${uname}</strong>
-        ${checkboxes}
+        <div class="user-perm-identity">
+          <strong>${uname}</strong>
+        </div>
+        <div class="user-perm-options">
+          ${checkboxes}
+        </div>
         <button type="button" class="perm-save-btn">${escapeHtml(t('save_settings'))}</button>
       </div>
     `;
@@ -2167,6 +2174,20 @@ languageSelect?.addEventListener('change', async (event) => {
     renderProxyJob(job);
   }
 });
+
+const onLanguageShortcut = (event) => {
+  if (event.key !== 'L' || !event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+  const target = event.target;
+  if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"]')) return;
+  if (!languageSelect) return;
+  const nextLang = languageSelect.value === 'tr' ? 'en' : 'tr';
+  languageSelect.value = nextLang;
+  languageSelect.dispatchEvent(new Event('change', { bubbles: true }));
+  event.preventDefault();
+  event.stopPropagation();
+};
+
+document.addEventListener('keydown', onLanguageShortcut);
 
 (async () => {
   try {

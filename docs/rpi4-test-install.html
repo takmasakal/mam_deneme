@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <title>Raspberry Pi 4 Test Kurulum Rehberi</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+      color: #1f2937;
+      margin: 40px;
+    }
+    h1, h2 {
+      color: #111827;
+    }
+    h1 {
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+    h2 {
+      font-size: 20px;
+      margin-top: 28px;
+      margin-bottom: 10px;
+      border-bottom: 1px solid #d1d5db;
+      padding-bottom: 6px;
+    }
+    pre {
+      background: #0f172a;
+      color: #e5e7eb;
+      padding: 14px;
+      border-radius: 8px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+    code {
+      font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+    }
+    ul, ol {
+      padding-left: 22px;
+    }
+    .note {
+      background: #f3f4f6;
+      border-left: 4px solid #2563eb;
+      padding: 12px 14px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Raspberry Pi 4 Test Kurulum Rehberi</h1>
+  <p>Bu rehber, <code>codex/next-task</code> branch'indeki mevcut MAM sürümünü Raspberry Pi 4 üzerinde test amaçlı çalıştırmak içindir.</p>
+
+  <h2>Ön Koşullar</h2>
+  <ul>
+    <li>Raspberry Pi 4</li>
+    <li>64-bit Raspberry Pi OS</li>
+    <li>İnternet bağlantısı</li>
+    <li>En az 8 GB RAM önerilir</li>
+    <li>Mümkünse microSD yerine SSD önerilir</li>
+  </ul>
+
+  <h2>1. Sistem Paketlerini Kur</h2>
+  <pre><code>sudo apt update
+sudo apt install -y git docker.io docker-compose-plugin
+sudo usermod -aG docker $USER
+newgrp docker</code></pre>
+
+  <p>Kontrol:</p>
+  <pre><code>docker --version
+docker compose version
+git --version</code></pre>
+
+  <h2>2. Repo'yu İndir</h2>
+  <pre><code>git clone https://github.com/takmasakal/mam_deneme.git
+cd mam_deneme
+git checkout codex/next-task</code></pre>
+
+  <p>Eğer repo zaten varsa:</p>
+  <pre><code>cd mam_deneme
+git fetch origin
+git checkout codex/next-task
+git pull</code></pre>
+
+  <h2>3. Disk Klasörlerini Hazırla</h2>
+  <pre><code>mkdir -p uploads/proxies uploads/thumbnails uploads/subtitles uploads/ocr
+mkdir -p data</code></pre>
+
+  <h2>4. Test Amaçlı Stack'i Ayağa Kaldır</h2>
+  <pre><code>docker compose -f docker-compose.easy.yml up -d</code></pre>
+  <div class="note">İlk çalıştırmada image build ve Python bağımlılıkları nedeniyle süre uzun olabilir.</div>
+
+  <h2>5. Servisleri Kontrol Et</h2>
+  <pre><code>docker compose -f docker-compose.easy.yml ps
+docker compose -f docker-compose.easy.yml logs -f app</code></pre>
+
+  <p>Diğer faydalı loglar:</p>
+  <pre><code>docker compose -f docker-compose.easy.yml logs -f postgres
+docker compose -f docker-compose.easy.yml logs -f elasticsearch
+docker compose -f docker-compose.easy.yml logs -f keycloak
+docker compose -f docker-compose.easy.yml logs -f oauth2-proxy</code></pre>
+
+  <h2>6. Tarayıcıdan Aç</h2>
+  <ul>
+    <li>MAM: <code>http://&lt;RPI_IP&gt;:3000</code></li>
+    <li>Keycloak Admin: <code>http://&lt;RPI_IP&gt;:8081</code></li>
+  </ul>
+
+  <p>Pi IP'sini öğrenmek için:</p>
+  <pre><code>hostname -I</code></pre>
+
+  <h2>7. İlk Giriş</h2>
+  <p>Varsayılan Keycloak admin:</p>
+  <ul>
+    <li>Kullanıcı adı: <code>admin</code></li>
+    <li>Şifre: <code>admin</code></li>
+  </ul>
+
+  <p>İlk girişten sonra:</p>
+  <ol>
+    <li><code>mam</code> realm'ini kontrol et veya oluştur</li>
+    <li>Test kullanıcısı oluştur</li>
+    <li>Gerekirse rol ata
+      <ul>
+        <li><code>mam-super-admin</code></li>
+        <li>veya daha dar roller</li>
+      </ul>
+    </li>
+  </ol>
+
+  <h2>8. Durdurma / Yeniden Başlatma</h2>
+  <p>Durdur:</p>
+  <pre><code>docker compose -f docker-compose.easy.yml down</code></pre>
+
+  <p>Yeniden başlat:</p>
+  <pre><code>docker compose -f docker-compose.easy.yml up -d</code></pre>
+
+  <p>Tam temizleme:</p>
+  <pre><code>docker compose -f docker-compose.easy.yml down -v</code></pre>
+
+  <p>Not: <code>-v</code> PostgreSQL ve Elasticsearch verilerini de siler.</p>
+
+  <h2>9. Güncelleme</h2>
+  <pre><code>cd mam_deneme
+git fetch origin
+git checkout codex/next-task
+git pull
+docker compose -f docker-compose.easy.yml up -d --build</code></pre>
+
+  <h2>10. Raspberry Pi 4 İçin Gerçekçi Beklenti</h2>
+  <ul>
+    <li>Arayüz ve temel kullanım çalışır</li>
+    <li>Proxy üretimi çalışır</li>
+    <li>OCR ve altyazı üretimi x86 makinaya göre daha yavaş olur</li>
+    <li>PaddleOCR ve Whisper <code>small</code> yoğun kullanımda Pi 4'ü zorlayabilir</li>
+  </ul>
+
+  <p>Bu yüzden Pi 4 bu aşamada en uygun kullanım:</p>
+  <ul>
+    <li>test</li>
+    <li>demo</li>
+    <li>hafif ingest</li>
+    <li>temel UI doğrulama</li>
+  </ul>
+
+  <p>Ağır OCR / subtitle batch işleri için daha güçlü bir makine daha uygundur.</p>
+</body>
+</html>

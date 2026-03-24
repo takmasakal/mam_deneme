@@ -67,6 +67,7 @@ let detailVideoPinned = localStorage.getItem(LOCAL_DETAIL_VIDEO_PIN) === '1';
 let selectedAssetId = null;
 let currentUserIsAdmin = false;
 let currentUserCanAccessAdmin = false;
+let currentUserCanEditMetadata = false;
 let currentUserCanUsePdfAdvancedTools = false;
 let currentUsername = '';
 const selectedAssetIds = new Set();
@@ -675,6 +676,7 @@ let i18n = {
     edit_metadata: 'Edit Metadata',
     save_metadata: 'Save Metadata',
     metadata_save_failed: 'Metadata save failed.',
+    metadata_edit_locked: 'You do not have permission to edit metadata.',
     dublin_core: 'Dublin Core Metadata',
     dc_title: 'DC Title',
     dc_creator: 'DC Creator',
@@ -772,6 +774,7 @@ let i18n = {
     subtitle_audio_channel_mix: 'Mix all channels',
     subtitle_upload_success: 'Subtitle uploaded.',
     subtitle_generate_success: 'Subtitle generated.',
+    tool_options: 'Options',
     subtitle_file_required: 'Please choose a .srt or .vtt subtitle file first.',
     subtitle_name: 'Subtitle name',
     subtitle_save_name: 'Save name',
@@ -791,6 +794,14 @@ let i18n = {
     video_ocr: 'Video OCR',
     video_ocr_interval: 'Interval (sec)',
     video_ocr_lang: 'OCR lang',
+    video_ocr_preset: 'Preset',
+    video_ocr_preset_general: 'General',
+    video_ocr_preset_ticker: 'Ticker (right to left)',
+    video_ocr_preset_credits: 'Credits (bottom to top)',
+    video_ocr_preset_static: 'Static text',
+    ocr_stage_preprocess: 'Pre-process',
+    ocr_stage_process: 'Process',
+    ocr_stage_postprocess: 'Post-process',
     video_ocr_engine: 'Engine',
     video_ocr_preprocess: 'Preprocess',
     video_ocr_preprocess_off: 'Off',
@@ -803,7 +814,8 @@ let i18n = {
     video_ocr_engine_paddle: 'PaddleOCR',
     video_ocr_name: 'OCR name',
     video_ocr_name_ph: 'Optional OCR file name',
-    video_ocr_advanced: 'Advanced OCR',
+    video_ocr_advanced: 'Scene-based OCR',
+    video_ocr_advanced_help: 'Samples extra frames on scene changes and merges repeated text into longer time ranges.',
     video_ocr_ai_correct: 'Turkish offline correction',
     video_ocr_static_filter: 'Filter static overlays',
     video_ocr_ignore_phrases: 'Ignore phrases',
@@ -966,6 +978,7 @@ let i18n = {
     edit_metadata: 'Metadata Düzenle',
     save_metadata: 'Metadata Kaydet',
     metadata_save_failed: 'Metadata kaydetme basarisiz.',
+    metadata_edit_locked: 'Metadata düzenleme yetkiniz yok.',
     dublin_core: 'Dublin Core Metadata',
     dc_title: 'DC Baslik',
     dc_creator: 'DC Olusturan',
@@ -1063,6 +1076,7 @@ let i18n = {
     subtitle_audio_channel_mix: 'Tüm kanalları karıştır',
     subtitle_upload_success: 'Altyazı yüklendi.',
     subtitle_generate_success: 'Altyazı oluşturuldu.',
+    tool_options: 'Opsiyonlar',
     subtitle_file_required: 'Önce bir .srt veya .vtt altyazı dosyası seçin.',
     subtitle_name: 'Altyazı adı',
     subtitle_save_name: 'Adı kaydet',
@@ -1082,6 +1096,14 @@ let i18n = {
     video_ocr: 'Video OCR',
     video_ocr_interval: 'Aralık (sn)',
     video_ocr_lang: 'OCR dil',
+    video_ocr_preset: 'Preset',
+    video_ocr_preset_general: 'Genel',
+    video_ocr_preset_ticker: 'Ticker (sağdan sola)',
+    video_ocr_preset_credits: 'Credits (aşağıdan yukarı)',
+    video_ocr_preset_static: 'Sabit yazı',
+    ocr_stage_preprocess: 'Ön İşlem',
+    ocr_stage_process: 'Karakter Algılama',
+    ocr_stage_postprocess: 'Son İşlem',
     video_ocr_engine: 'Motor',
     video_ocr_preprocess: 'Ön işlem',
     video_ocr_preprocess_off: 'Kapalı',
@@ -1094,7 +1116,8 @@ let i18n = {
     video_ocr_engine_paddle: 'PaddleOCR',
     video_ocr_name: 'OCR adı',
     video_ocr_name_ph: 'Opsiyonel OCR dosya adı',
-    video_ocr_advanced: 'Gelişmiş OCR',
+    video_ocr_advanced: 'Sahne tabanlı OCR',
+    video_ocr_advanced_help: 'Sahne değişimlerinde ek kare örnekler ve tekrar eden metni daha uzun süre aralıklarında birleştirir.',
     video_ocr_ai_correct: 'Türkçe çevrimdışı düzeltme',
     video_ocr_static_filter: 'Sabit yazıları filtrele',
     video_ocr_ignore_phrases: 'Hariç kelimeler',
@@ -1256,9 +1279,11 @@ async function loadCurrentUser() {
     const displayName = String(me.displayName || '').trim();
     const email = String(me.email || '').trim();
     const canAccessAdmin = toStrictBool(me.canAccessAdmin, toStrictBool(me.isAdmin, false));
+    const canEditMetadata = toStrictBool(me.canEditMetadata, false);
     const canDeleteAssets = toStrictBool(me.canDeleteAssets, toStrictBool(me.isAdmin, false));
     const canUsePdfAdvancedTools = toStrictBool(me.canUsePdfAdvancedTools, toStrictBool(me.isAdmin, false));
     currentUserCanAccessAdmin = canAccessAdmin;
+    currentUserCanEditMetadata = canEditMetadata;
     currentUserIsAdmin = canDeleteAssets;
     currentUserCanUsePdfAdvancedTools = canUsePdfAdvancedTools;
     currentUsername = username.toLowerCase();
@@ -1271,6 +1296,7 @@ async function loadCurrentUser() {
     }
   } catch (_error) {
     currentUserCanAccessAdmin = false;
+    currentUserCanEditMetadata = false;
     currentUserIsAdmin = false;
     currentUserCanUsePdfAdvancedTools = false;
     currentUserBtn.dataset.value = '';
@@ -1429,9 +1455,12 @@ function applyPanelLayout() {
   const assetsVisible = isPanelVisible('panelAssets');
   const detailVisible = isPanelVisible('panelDetail');
   const detailOnlyMode = detailVisible && !ingestVisible && !assetsVisible;
+  const assetsOnlyMode = assetsVisible && !ingestVisible && !detailVisible;
 
   if (detailOnlyMode) {
     layout.style.gridTemplateColumns = '0px 0px 0px 0px 1fr';
+  } else if (assetsOnlyMode) {
+    layout.style.gridTemplateColumns = '0px 0px 1fr 0px 0px';
   } else {
     layout.style.gridTemplateColumns = `${ingestVisible ? `${ingest}fr` : '0px'} ${ingestVisible && assetsVisible ? '5px' : '0px'} ${assetsVisible ? `${assets}fr` : '0px'} ${assetsVisible && detailVisible ? '5px' : '0px'} ${detailVisible ? `${detail}fr` : '0px'}`;
   }
@@ -3033,6 +3062,7 @@ function mediaViewer(asset, options = {}) {
   const includeClipSectionHide = options.includeClipSectionHide == null ? includeSectionHide : options.includeClipSectionHide === true;
   const includeAudioSectionHide = options.includeAudioSectionHide == null ? includeSectionHide : options.includeAudioSectionHide === true;
   const audioSideLayout = options.audioSideLayout === true;
+  const audioOverlayInViewer = options.audioOverlayInViewer === true;
   const includeDetailPin = options.includeDetailPin === true;
   const tcInControlBar = options.tcInControlBar === true;
   if (!asset.mediaUrl) return `<div class="empty">${escapeHtml(t('no_media'))}</div>`;
@@ -3059,6 +3089,25 @@ function mediaViewer(asset, options = {}) {
         <button type="button" id="ensureProxyBtn">${t('generate_proxy')}</button>
       `;
     }
+    const audioToolsMarkup = `
+          <div class="audio-tools collapsible-section" data-section="audio">
+            <div class="audio-tools-header collapsible-head">
+              <strong>${t('audio_channels')}</strong>
+            </div>
+            <div class="collapsible-body">
+              <div class="audio-graph-frame">
+                <canvas id="audioGraph" class="audio-graph audio-graph-vertical" width="${audioOverlayInViewer ? '180' : '320'}" height="${audioOverlayInViewer ? '220' : '320'}"></canvas>
+                <div class="audio-graph-controls-box">
+                  <div id="channelControls" class="channel-controls"></div>
+                  <div class="audio-graph-options">
+                  <label><input type="checkbox" id="groupChannels" checked /> ${t('group_channel_selection')}</label>
+                  ${includeSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
+                </div>
+              </div>
+              </div>
+            </div>
+          </div>
+    `;
     return `
       <div class="viewer-shell">
       <div class="viewer-core">
@@ -3069,10 +3118,11 @@ function mediaViewer(asset, options = {}) {
         </div>
         <div class="video-top-layout${audioSideLayout ? '' : ' no-audio-side'}">
           <div class="video-main-col">
-            <div class="viewer-resizable video-resizable">
+            <div class="viewer-resizable video-resizable${audioOverlayInViewer ? ' video-resizable-audio-overlay' : ''}">
               <video id="assetMediaEl" data-asset-id="${escapeHtml(asset.id)}" class="asset-viewer${videoJsMode ? ' video-js vjs-default-skin' : ''}"${nativeControlsAttr} preload="metadata"${srcAttr}${dashManifestAttr} poster="${escapeHtml(asset.thumbnailUrl || '')}"${audioChannelsAttr}>
                 ${subtitleTrackMarkup(asset)}
               </video>
+              ${audioOverlayInViewer ? `<div class="video-audio-overlay-panel">${audioToolsMarkup}</div>` : ''}
             </div>
             ${customMode ? `
             <div class="custom-player-bar" id="customPlayerBar">
@@ -3120,23 +3170,7 @@ function mediaViewer(asset, options = {}) {
           </div>
           ${audioSideLayout ? `
           <div class="audio-side-col">
-          <div class="audio-tools collapsible-section" data-section="audio">
-            <div class="audio-tools-header collapsible-head">
-              <strong>${t('audio_channels')}</strong>
-            </div>
-            <div class="collapsible-body">
-              <div class="audio-graph-frame">
-                <canvas id="audioGraph" class="audio-graph audio-graph-vertical" width="320" height="320"></canvas>
-                <div class="audio-graph-controls-box">
-                  <div id="channelControls" class="channel-controls"></div>
-                  <div class="audio-graph-options">
-                  <label><input type="checkbox" id="groupChannels" checked /> ${t('group_channel_selection')}</label>
-                  ${includeSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
-                </div>
-              </div>
-              </div>
-            </div>
-          </div>
+          ${audioOverlayInViewer ? '' : audioToolsMarkup}
           </div>
           ` : ''}
         </div>
@@ -3175,24 +3209,23 @@ function mediaViewer(asset, options = {}) {
               </div>
               <div id="subtitleSearchResults" class="subtitle-items"></div>
             </div>
-            <div class="subtitle-tools-row">
-              <label for="subtitleLangInput">${t('subtitle_lang')}</label>
-              <input id="subtitleLangInput" class="subtitle-lang-input" type="text" maxlength="12" value="${escapeHtml(asset.subtitleLang || currentLang || 'tr')}" />
-              <label for="subtitleLabelInput">${t('subtitle_name')}</label>
-              <input id="subtitleLabelInput" class="subtitle-name-input" type="text" maxlength="120" value="${escapeHtml(asset.subtitleLabel || '')}" />
-              <label for="subtitleModelSelect">${t('subtitle_model')}</label>
-              <select id="subtitleModelSelect" class="subtitle-lang-input">
-                <option value="small" selected>${t('subtitle_model_small')}</option>
-              </select>
-              <label for="subtitleAudioStreamSelect">${t('subtitle_audio_stream')}</label>
-              <select id="subtitleAudioStreamSelect" class="subtitle-lang-input"></select>
-              <label for="subtitleAudioChannelSelect">${t('subtitle_audio_channel')}</label>
-              <select id="subtitleAudioChannelSelect" class="subtitle-lang-input"></select>
-              <label class="video-tools-check subtitle-backend-check"><input id="subtitleZemberekCheck" type="checkbox" checked /> ${t('subtitle_use_zemberek')}</label>
-              <button type="button" id="subtitleGenerateBtn">${t('subtitle_generate')}</button>
-              <button type="button" id="subtitleRenameBtn">${t('subtitle_save_name')}</button>
-              <input id="subtitleFileInput" type="file" accept=".vtt,.srt,text/vtt,application/x-subrip" />
-              <button type="button" id="subtitleUploadBtn">${t('subtitle_upload')}</button>
+            <div class="subtitle-tools-layout">
+              <div class="tool-grid tool-grid-subtitle">
+                <label class="tool-field" for="subtitleLangInput"><span>${t('subtitle_lang')}</span><input id="subtitleLangInput" class="subtitle-lang-input" type="text" maxlength="12" value="${escapeHtml(asset.subtitleLang || currentLang || 'tr')}" /></label>
+                <label class="tool-field" for="subtitleLabelInput"><span>${t('subtitle_name')}</span><input id="subtitleLabelInput" class="subtitle-name-input" type="text" maxlength="120" value="${escapeHtml(asset.subtitleLabel || '')}" /></label>
+                <label class="tool-field" for="subtitleModelSelect"><span>${t('subtitle_model')}</span><select id="subtitleModelSelect" class="subtitle-lang-input"><option value="small" selected>${t('subtitle_model_small')}</option></select></label>
+                <label class="tool-field" for="subtitleAudioStreamSelect"><span>${t('subtitle_audio_stream')}</span><select id="subtitleAudioStreamSelect" class="subtitle-lang-input"></select></label>
+                <label class="tool-field" for="subtitleAudioChannelSelect"><span>${t('subtitle_audio_channel')}</span><select id="subtitleAudioChannelSelect" class="subtitle-lang-input"></select></label>
+              </div>
+              <div class="tool-actions">
+                <label class="video-tools-check subtitle-backend-check tool-toggle-pill"><input id="subtitleZemberekCheck" type="checkbox" checked /> ${t('subtitle_use_zemberek')}</label>
+                <button type="button" id="subtitleGenerateBtn">${t('subtitle_generate')}</button>
+                <button type="button" id="subtitleRenameBtn">${t('subtitle_save_name')}</button>
+                <div class="tool-file-wrap">
+                  <input id="subtitleFileInput" type="file" accept=".vtt,.srt,text/vtt,application/x-subrip" />
+                  <button type="button" id="subtitleUploadBtn">${t('subtitle_upload')}</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -3206,41 +3239,54 @@ function mediaViewer(asset, options = {}) {
               <span id="videoOcrStatus" class="subtitle-status"></span>
               <span id="videoOcrBusy" class="subtitle-busy hidden"><span class="spinner"></span>${t('processing')}</span>
             </div>
-            <div class="subtitle-tools-row">
-              <label for="videoOcrIntervalInput">${t('video_ocr_interval')}</label>
-              <input id="videoOcrIntervalInput" class="subtitle-lang-input" type="number" min="1" max="30" step="1" value="4" />
-              <label for="videoOcrLangInput">${t('video_ocr_lang')}</label>
-              <input id="videoOcrLangInput" class="subtitle-name-input" type="text" maxlength="32" value="eng+tur" />
-              <label for="videoOcrLabelInput">${t('video_ocr_name')}</label>
-              <input id="videoOcrLabelInput" class="subtitle-name-input" type="text" maxlength="120" placeholder="${escapeHtml(t('video_ocr_name_ph'))}" value="${escapeHtml(asset.videoOcrLabel || '')}" />
-              <label for="videoOcrEngineSelect">${t('video_ocr_engine')}</label>
-              <select id="videoOcrEngineSelect" class="subtitle-lang-input">
-                <option value="paddle">${t('video_ocr_engine_paddle')}</option>
-              </select>
-              <label for="videoOcrPreprocessSelect">${t('video_ocr_preprocess')}</label>
-              <select id="videoOcrPreprocessSelect" class="subtitle-lang-input">
-                <option value="off">${t('video_ocr_preprocess_off')}</option>
-                <option value="light" selected>${t('video_ocr_preprocess_light')}</option>
-                <option value="strong">${t('video_ocr_preprocess_strong')}</option>
-              </select>
-              <label class="video-tools-check"><input id="videoOcrAdvancedCheck" type="checkbox" checked /> ${t('video_ocr_advanced')}</label>
-              <label class="video-tools-check"><input id="videoOcrAiCorrectCheck" type="checkbox" checked /> ${t('video_ocr_ai_correct')}</label>
-              <label class="video-tools-check"><input id="videoOcrBlurFilterCheck" type="checkbox" checked /> ${t('video_ocr_blur_filter')}</label>
-              <label for="videoOcrBlurThresholdInput">${t('video_ocr_blur_threshold')}</label>
-              <input id="videoOcrBlurThresholdInput" class="subtitle-lang-input" type="number" min="0" max="300" step="1" value="80" />
-              <label class="video-tools-check"><input id="videoOcrRegionModeCheck" type="checkbox" /> ${t('video_ocr_region_mode')}</label>
-              <label for="videoOcrTickerHeightInput">${t('video_ocr_ticker_height')}</label>
-              <input id="videoOcrTickerHeightInput" class="subtitle-lang-input" type="number" min="10" max="40" step="1" value="20" />
-              <label class="video-tools-check"><input id="videoOcrStaticFilterCheck" type="checkbox" checked /> ${t('video_ocr_static_filter')}</label>
-              <label for="videoOcrIgnorePhrasesInput">${t('video_ocr_ignore_phrases')}</label>
-              <input id="videoOcrIgnorePhrasesInput" class="subtitle-name-input" type="text" maxlength="220" placeholder="${escapeHtml(t('video_ocr_ignore_phrases_ph'))}" />
-              <label for="videoOcrMinDisplayInput">${t('video_ocr_min_display')}</label>
-              <input id="videoOcrMinDisplayInput" class="subtitle-lang-input" type="number" min="1" max="60" step="1" value="8" />
-              <label for="videoOcrMergeGapInput">${t('video_ocr_merge_gap')}</label>
-              <input id="videoOcrMergeGapInput" class="subtitle-lang-input" type="number" min="0" max="30" step="1" value="4" />
-              <button type="button" id="videoOcrExtractBtn">${t('video_ocr_extract')}</button>
-              <a id="videoOcrDownloadLink" class="subtitle-item-download-btn hidden" href="#" download target="_blank" rel="noreferrer">${t('video_ocr_download')}</a>
-              <button type="button" id="videoOcrSaveBtn" class="hidden">${t('video_ocr_save_db')}</button>
+            <div class="subtitle-tools-layout">
+              <details class="tool-options-menu tool-options-menu-ocr">
+                <summary>${t('tool_options')}</summary>
+                <div class="ocr-flow-diagram">
+                  <section class="ocr-flow-stage ocr-flow-stage-pre">
+                    <h5>${t('ocr_stage_preprocess')}</h5>
+                    <div class="ocr-flow-stage-body">
+                      <label class="tool-field" for="videoOcrPresetSelect"><span>${t('video_ocr_preset')}</span><select id="videoOcrPresetSelect" class="subtitle-lang-input"><option value="general">${t('video_ocr_preset_general')}</option><option value="ticker">${t('video_ocr_preset_ticker')}</option><option value="credits">${t('video_ocr_preset_credits')}</option><option value="static">${t('video_ocr_preset_static')}</option></select></label>
+                      <label class="tool-field" for="videoOcrPreprocessSelect"><span>${t('video_ocr_preprocess')}</span><select id="videoOcrPreprocessSelect" class="subtitle-lang-input"><option value="off">${t('video_ocr_preprocess_off')}</option><option value="light" selected>${t('video_ocr_preprocess_light')}</option><option value="strong">${t('video_ocr_preprocess_strong')}</option></select></label>
+                      <div class="tool-option-group">
+                        <label class="video-tools-check tool-toggle-pill"><input id="videoOcrBlurFilterCheck" type="checkbox" checked /> ${t('video_ocr_blur_filter')}</label>
+                        <label class="tool-field tool-field-compact" for="videoOcrBlurThresholdInput"><span>${t('video_ocr_blur_threshold')}</span><input id="videoOcrBlurThresholdInput" class="subtitle-lang-input" type="number" min="0" max="300" step="1" value="80" /></label>
+                      </div>
+                      <div class="tool-option-group">
+                        <label class="video-tools-check tool-toggle-pill"><input id="videoOcrRegionModeCheck" type="checkbox" /> ${t('video_ocr_region_mode')}</label>
+                        <label class="tool-field tool-field-compact" for="videoOcrTickerHeightInput"><span>${t('video_ocr_ticker_height')}</span><input id="videoOcrTickerHeightInput" class="subtitle-lang-input" type="number" min="10" max="40" step="1" value="20" /></label>
+                      </div>
+                    </div>
+                  </section>
+                  <section class="ocr-flow-stage ocr-flow-stage-core">
+                    <h5>${t('ocr_stage_process')}</h5>
+                    <div class="ocr-flow-stage-body">
+                      <label class="tool-field" for="videoOcrIntervalInput"><span>${t('video_ocr_interval')}</span><input id="videoOcrIntervalInput" class="subtitle-lang-input" type="number" min="1" max="30" step="1" value="4" /></label>
+                      <label class="tool-field" for="videoOcrLangInput"><span>${t('video_ocr_lang')}</span><input id="videoOcrLangInput" class="subtitle-name-input" type="text" maxlength="32" value="eng+tur" /></label>
+                      <label class="tool-field" for="videoOcrEngineSelect"><span>${t('video_ocr_engine')}</span><select id="videoOcrEngineSelect" class="subtitle-lang-input"><option value="paddle">${t('video_ocr_engine_paddle')}</option></select></label>
+                      <div class="tool-option-group">
+                        <label class="video-tools-check tool-toggle-pill"><input id="videoOcrAdvancedCheck" type="checkbox" checked /> ${t('video_ocr_advanced')} <span class="tool-inline-help" data-tooltip="${escapeHtml(t('video_ocr_advanced_help'))}">i</span></label>
+                        <label class="tool-field tool-field-compact" for="videoOcrMinDisplayInput"><span>${t('video_ocr_min_display')}</span><input id="videoOcrMinDisplayInput" class="subtitle-lang-input" type="number" min="1" max="60" step="1" value="8" /></label>
+                        <label class="tool-field tool-field-compact" for="videoOcrMergeGapInput"><span>${t('video_ocr_merge_gap')}</span><input id="videoOcrMergeGapInput" class="subtitle-lang-input" type="number" min="0" max="30" step="1" value="4" /></label>
+                      </div>
+                    </div>
+                  </section>
+                  <section class="ocr-flow-stage ocr-flow-stage-post">
+                    <h5>${t('ocr_stage_postprocess')}</h5>
+                    <div class="ocr-flow-stage-body">
+                      <label class="video-tools-check tool-toggle-pill"><input id="videoOcrAiCorrectCheck" type="checkbox" checked /> ${t('video_ocr_ai_correct')}</label>
+                      <label class="video-tools-check tool-toggle-pill"><input id="videoOcrStaticFilterCheck" type="checkbox" checked /> ${t('video_ocr_static_filter')}</label>
+                      <label class="tool-field tool-field-wide" for="videoOcrIgnorePhrasesInput"><span>${t('video_ocr_ignore_phrases')}</span><input id="videoOcrIgnorePhrasesInput" class="subtitle-name-input" type="text" maxlength="220" placeholder="${escapeHtml(t('video_ocr_ignore_phrases_ph'))}" /></label>
+                      <label class="tool-field" for="videoOcrLabelInput"><span>${t('video_ocr_name')}</span><input id="videoOcrLabelInput" class="subtitle-name-input" type="text" maxlength="120" placeholder="${escapeHtml(t('video_ocr_name_ph'))}" value="${escapeHtml(asset.videoOcrLabel || '')}" /></label>
+                    </div>
+                  </section>
+                </div>
+              </details>
+              <div class="tool-actions">
+                <button type="button" id="videoOcrExtractBtn">${t('video_ocr_extract')}</button>
+                <a id="videoOcrDownloadLink" class="subtitle-item-download-btn hidden" href="#" download target="_blank" rel="noreferrer">${t('video_ocr_download')}</a>
+                <button type="button" id="videoOcrSaveBtn" class="hidden">${t('video_ocr_save_db')}</button>
+              </div>
             </div>
           </div>
         </div>
@@ -3328,9 +3374,6 @@ function mediaViewer(asset, options = {}) {
       <div class="viewer-resizable">
         <iframe id="docViewerFrame" class="asset-viewer pdf-viewer-frame" src="${escapeHtml(viewerSrc)}" title="Document Viewer" loading="lazy"></iframe>
       </div>
-      <div class="doc-preview-shell">
-        <div class="viewer-meta">${t('open_document')}: <a id="docOpenFileLink" href="${playbackUrl}" target="_blank" rel="noreferrer">${t('open_file')}</a></div>
-      </div>
     `;
   }
 
@@ -3348,6 +3391,7 @@ function videoToolsPageMarkup(asset) {
             includeSubtitleTools: true,
             includeSectionHide: false,
             audioSideLayout: true,
+            audioOverlayInViewer: false,
             tcInControlBar: true
           })}
         </div>
@@ -3484,6 +3528,11 @@ function detailMarkup(asset, workflow) {
       </div>
     `
     : '';
+  const canEditMetadata = currentUserCanEditMetadata;
+  const metadataLockNotice = canEditMetadata
+    ? ''
+    : `<div class="asset-meta metadata-lock-note">${escapeHtml(t('metadata_edit_locked'))}</div>`;
+  const metadataFieldsetOpen = canEditMetadata ? '<fieldset class="metadata-fieldset">' : '<fieldset class="metadata-fieldset" disabled>';
 
   const metadataTopSection = `
     <h3>${highlightMatch(asset.title, currentSearchQuery)}</h3>
@@ -3506,30 +3555,33 @@ function detailMarkup(asset, workflow) {
 
     <form id="editForm" class="inline-grid">
       <h4>${t('edit_metadata')}</h4>
-      <label>${t('title')}<input name="title" value="${escapeHtml(asset.title)}" required />${buildInlineFieldMatch(asset.title, currentSearchQuery)}</label>
-      <label>${t('owner')}<input name="owner" value="${escapeHtml(asset.owner)}" required />${buildInlineFieldMatch(asset.owner, currentSearchQuery)}</label>
-      <label>${t('tags')}<input name="tags" value="${escapeHtml(asset.tags.join(', '))}" placeholder="${escapeHtml(t('ph_inline_tags'))}" />${buildInlineFieldMatch(asset.tags.join(', '), currentSearchQuery)}</label>
-      <label>${t('description')}<textarea name="description">${escapeHtml(asset.description || '')}</textarea>${buildInlineFieldMatch(asset.description || '', currentSearchQuery)}</label>
-      <label>${t('duration')}<input name="durationSeconds" type="number" min="0" value="${escapeHtml(asset.durationSeconds)}" />${buildInlineFieldMatch(asset.durationSeconds ? `${asset.durationSeconds}s` : '', currentSearchQuery)}</label>
-      <h4>${t('dublin_core')}</h4>
-      <div class="dc-grid">
-        <label>${t('dc_title')}<input name="dcTitle" value="${escapeHtml(dc.title || '')}" />${buildInlineFieldMatch(dc.title || '', currentSearchQuery)}</label>
-        <label>${t('dc_creator')}<input name="dcCreator" value="${escapeHtml(dc.creator || '')}" />${buildInlineFieldMatch(dc.creator || '', currentSearchQuery)}</label>
-        <label>${t('dc_subject')}<input name="dcSubject" value="${escapeHtml(dc.subject || '')}" />${buildInlineFieldMatch(dc.subject || '', currentSearchQuery)}</label>
-        <label>${t('dc_description')}<textarea name="dcDescription">${escapeHtml(dc.description || '')}</textarea>${buildInlineFieldMatch(dc.description || '', currentSearchQuery)}</label>
-        <label>${t('dc_publisher')}<input name="dcPublisher" value="${escapeHtml(dc.publisher || '')}" />${buildInlineFieldMatch(dc.publisher || '', currentSearchQuery)}</label>
-        <label>${t('dc_contributor')}<input name="dcContributor" value="${escapeHtml(dc.contributor || '')}" />${buildInlineFieldMatch(dc.contributor || '', currentSearchQuery)}</label>
-        <label>${t('dc_date')}<input name="dcDate" value="${escapeHtml(dc.date || '')}" />${buildInlineFieldMatch(dc.date || '', currentSearchQuery)}</label>
-        <label>${t('dc_type')}<input name="dcType" value="${escapeHtml(dc.type || '')}" />${buildInlineFieldMatch(dc.type || '', currentSearchQuery)}</label>
-        <label>${t('dc_format')}<input name="dcFormat" value="${escapeHtml(dc.format || '')}" />${buildInlineFieldMatch(dc.format || '', currentSearchQuery)}</label>
-        <label>${t('dc_identifier')}<input name="dcIdentifier" value="${escapeHtml(dc.identifier || '')}" />${buildInlineFieldMatch(dc.identifier || '', currentSearchQuery)}</label>
-        <label>${t('dc_source')}<input name="dcSource" value="${escapeHtml(dc.source || '')}" />${buildInlineFieldMatch(dc.source || '', currentSearchQuery)}</label>
-        <label>${t('dc_language')}<input name="dcLanguage" value="${escapeHtml(dc.language || '')}" />${buildInlineFieldMatch(dc.language || '', currentSearchQuery)}</label>
-        <label>${t('dc_relation')}<input name="dcRelation" value="${escapeHtml(dc.relation || '')}" />${buildInlineFieldMatch(dc.relation || '', currentSearchQuery)}</label>
-        <label>${t('dc_coverage')}<input name="dcCoverage" value="${escapeHtml(dc.coverage || '')}" />${buildInlineFieldMatch(dc.coverage || '', currentSearchQuery)}</label>
-        <label>${t('dc_rights')}<input name="dcRights" value="${escapeHtml(dc.rights || '')}" />${buildInlineFieldMatch(dc.rights || '', currentSearchQuery)}</label>
-      </div>
-      <button type="submit">${t('save_metadata')}</button>
+      ${metadataLockNotice}
+      ${metadataFieldsetOpen}
+        <label>${t('title')}<input name="title" value="${escapeHtml(asset.title)}" required />${buildInlineFieldMatch(asset.title, currentSearchQuery)}</label>
+        <label>${t('owner')}<input name="owner" value="${escapeHtml(asset.owner)}" required />${buildInlineFieldMatch(asset.owner, currentSearchQuery)}</label>
+        <label>${t('tags')}<input name="tags" value="${escapeHtml(asset.tags.join(', '))}" placeholder="${escapeHtml(t('ph_inline_tags'))}" />${buildInlineFieldMatch(asset.tags.join(', '), currentSearchQuery)}</label>
+        <label>${t('description')}<textarea name="description">${escapeHtml(asset.description || '')}</textarea>${buildInlineFieldMatch(asset.description || '', currentSearchQuery)}</label>
+        <label>${t('duration')}<input name="durationSeconds" type="number" min="0" value="${escapeHtml(asset.durationSeconds)}" />${buildInlineFieldMatch(asset.durationSeconds ? `${asset.durationSeconds}s` : '', currentSearchQuery)}</label>
+        <h4>${t('dublin_core')}</h4>
+        <div class="dc-grid">
+          <label>${t('dc_title')}<input name="dcTitle" value="${escapeHtml(dc.title || '')}" />${buildInlineFieldMatch(dc.title || '', currentSearchQuery)}</label>
+          <label>${t('dc_creator')}<input name="dcCreator" value="${escapeHtml(dc.creator || '')}" />${buildInlineFieldMatch(dc.creator || '', currentSearchQuery)}</label>
+          <label>${t('dc_subject')}<input name="dcSubject" value="${escapeHtml(dc.subject || '')}" />${buildInlineFieldMatch(dc.subject || '', currentSearchQuery)}</label>
+          <label>${t('dc_description')}<textarea name="dcDescription">${escapeHtml(dc.description || '')}</textarea>${buildInlineFieldMatch(dc.description || '', currentSearchQuery)}</label>
+          <label>${t('dc_publisher')}<input name="dcPublisher" value="${escapeHtml(dc.publisher || '')}" />${buildInlineFieldMatch(dc.publisher || '', currentSearchQuery)}</label>
+          <label>${t('dc_contributor')}<input name="dcContributor" value="${escapeHtml(dc.contributor || '')}" />${buildInlineFieldMatch(dc.contributor || '', currentSearchQuery)}</label>
+          <label>${t('dc_date')}<input name="dcDate" value="${escapeHtml(dc.date || '')}" />${buildInlineFieldMatch(dc.date || '', currentSearchQuery)}</label>
+          <label>${t('dc_type')}<input name="dcType" value="${escapeHtml(dc.type || '')}" />${buildInlineFieldMatch(dc.type || '', currentSearchQuery)}</label>
+          <label>${t('dc_format')}<input name="dcFormat" value="${escapeHtml(dc.format || '')}" />${buildInlineFieldMatch(dc.format || '', currentSearchQuery)}</label>
+          <label>${t('dc_identifier')}<input name="dcIdentifier" value="${escapeHtml(dc.identifier || '')}" />${buildInlineFieldMatch(dc.identifier || '', currentSearchQuery)}</label>
+          <label>${t('dc_source')}<input name="dcSource" value="${escapeHtml(dc.source || '')}" />${buildInlineFieldMatch(dc.source || '', currentSearchQuery)}</label>
+          <label>${t('dc_language')}<input name="dcLanguage" value="${escapeHtml(dc.language || '')}" />${buildInlineFieldMatch(dc.language || '', currentSearchQuery)}</label>
+          <label>${t('dc_relation')}<input name="dcRelation" value="${escapeHtml(dc.relation || '')}" />${buildInlineFieldMatch(dc.relation || '', currentSearchQuery)}</label>
+          <label>${t('dc_coverage')}<input name="dcCoverage" value="${escapeHtml(dc.coverage || '')}" />${buildInlineFieldMatch(dc.coverage || '', currentSearchQuery)}</label>
+          <label>${t('dc_rights')}<input name="dcRights" value="${escapeHtml(dc.rights || '')}" />${buildInlineFieldMatch(dc.rights || '', currentSearchQuery)}</label>
+        </div>
+        <button type="submit">${t('save_metadata')}</button>
+      </fieldset>
     </form>
 
     <form id="transitionForm" class="inline-grid">
@@ -5712,6 +5764,7 @@ function initVideoOcrTools(asset, root = document) {
   const busyEl = byId('videoOcrBusy');
   const intervalInput = byId('videoOcrIntervalInput');
   const langInput = byId('videoOcrLangInput');
+  const presetSelect = byId('videoOcrPresetSelect');
   const labelInput = byId('videoOcrLabelInput');
   const engineSelect = byId('videoOcrEngineSelect');
   const preprocessSelect = byId('videoOcrPreprocessSelect');
@@ -5732,6 +5785,7 @@ function initVideoOcrTools(asset, root = document) {
     || !busyEl
     || !intervalInput
     || !langInput
+    || !presetSelect
     || !labelInput
     || !engineSelect
     || !preprocessSelect
@@ -5757,6 +5811,7 @@ function initVideoOcrTools(asset, root = document) {
     extractBtn.disabled = busy;
     intervalInput.disabled = busy;
     langInput.disabled = busy;
+    presetSelect.disabled = busy;
     labelInput.disabled = busy;
     engineSelect.disabled = busy;
     preprocessSelect.disabled = busy;
@@ -5787,6 +5842,55 @@ function initVideoOcrTools(asset, root = document) {
   const setSaveVisible = (visible, jobId = '') => {
     saveTargetJobId = visible ? String(jobId || '') : '';
     saveBtn.classList.toggle('hidden', !visible);
+  };
+  const applyPresetDefaults = () => {
+    const preset = String(presetSelect.value || 'general').trim();
+    if (preset === 'ticker') {
+      intervalInput.value = '2';
+      preprocessSelect.value = 'strong';
+      advancedCheck.checked = true;
+      blurFilterCheck.checked = true;
+      blurThresholdInput.value = '80';
+      regionModeCheck.checked = true;
+      tickerHeightInput.value = '20';
+      staticFilterCheck.checked = false;
+      minDisplayInput.value = '6';
+      mergeGapInput.value = '2';
+      return;
+    }
+    if (preset === 'credits') {
+      intervalInput.value = '2';
+      preprocessSelect.value = 'strong';
+      advancedCheck.checked = true;
+      blurFilterCheck.checked = true;
+      blurThresholdInput.value = '80';
+      regionModeCheck.checked = false;
+      staticFilterCheck.checked = false;
+      minDisplayInput.value = '10';
+      mergeGapInput.value = '6';
+      return;
+    }
+    if (preset === 'static') {
+      intervalInput.value = '4';
+      preprocessSelect.value = 'light';
+      advancedCheck.checked = true;
+      blurFilterCheck.checked = true;
+      blurThresholdInput.value = '80';
+      regionModeCheck.checked = false;
+      staticFilterCheck.checked = true;
+      minDisplayInput.value = '12';
+      mergeGapInput.value = '8';
+      return;
+    }
+    intervalInput.value = '4';
+    preprocessSelect.value = 'light';
+    advancedCheck.checked = true;
+    blurFilterCheck.checked = true;
+    blurThresholdInput.value = '80';
+    regionModeCheck.checked = false;
+    staticFilterCheck.checked = true;
+    minDisplayInput.value = '8';
+    mergeGapInput.value = '4';
   };
   const applyJobStatus = (job, options = {}) => {
     const status = String(job?.status || '').trim();
@@ -5865,6 +5969,7 @@ function initVideoOcrTools(asset, root = document) {
         body: JSON.stringify({
           intervalSec: Number(intervalInput.value || 4),
           ocrLang: String(langInput.value || '').trim() || 'eng+tur',
+          ocrPreset: String(presetSelect.value || 'general').trim() || 'general',
           ocrLabel: String(labelInput.value || '').trim(),
           ocrEngine: String(engineSelect.value || 'paddle'),
           preprocessProfile: String(preprocessSelect.value || 'light'),
@@ -5906,15 +6011,18 @@ function initVideoOcrTools(asset, root = document) {
 
   extractBtn.addEventListener('click', onExtract);
   saveBtn.addEventListener('click', onSave);
+  presetSelect.addEventListener('change', applyPresetDefaults);
   setStatus('');
   setDownload('');
   setSaveVisible(false, '');
+  applyPresetDefaults();
   restoreLatest();
 
   return () => {
     disposed = true;
     extractBtn.removeEventListener('click', onExtract);
     saveBtn.removeEventListener('click', onSave);
+    presetSelect.removeEventListener('change', applyPresetDefaults);
   };
 }
 
@@ -6431,6 +6539,10 @@ async function openAsset(id, workflow, options = {}) {
   });
   document.getElementById('editForm').addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (!currentUserCanEditMetadata) {
+      alert(t('metadata_edit_locked'));
+      return;
+    }
     const formEl = event.target;
     const saveBtn = formEl.querySelector('button[type="submit"]');
     if (saveBtn) saveBtn.disabled = true;
@@ -7152,6 +7264,20 @@ languageSelect?.addEventListener('change', async (event) => {
     setPanelVideoToolsButtonState(false);
   }
 });
+
+const onLanguageShortcut = (event) => {
+  if (event.key !== 'L' || !event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+  const target = event.target;
+  if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"]')) return;
+  if (!languageSelect) return;
+  const nextLang = languageSelect.value === 'tr' ? 'en' : 'tr';
+  languageSelect.value = nextLang;
+  languageSelect.dispatchEvent(new Event('change', { bubbles: true }));
+  event.preventDefault();
+  event.stopPropagation();
+};
+
+document.addEventListener('keydown', onLanguageShortcut);
 
 closeDetailBtn?.addEventListener('click', () => {
   setPanelVisible('panelDetail', false);
