@@ -229,6 +229,7 @@ let i18n = {
     user_settings: 'User Settings',
     perm_admin_access: 'Admin page access',
     perm_metadata_edit: 'Metadata edit',
+    perm_office_edit: 'Office edit',
     perm_asset_delete: 'Asset delete',
     perm_pdf_advanced: 'PDF advanced tools',
     user_permissions_saved: 'User permissions saved.',
@@ -454,6 +455,7 @@ let i18n = {
     user_settings: 'Kullanıcı Ayarları',
     perm_admin_access: 'Yönetim sayfasına erişim',
     perm_metadata_edit: 'Metadata düzenleme',
+    perm_office_edit: 'Office düzenleme',
     perm_asset_delete: 'Varlık silme',
     perm_pdf_advanced: 'PDF gelişmiş araçlar',
     user_permissions_saved: 'Kullanıcı yetkileri kaydedildi.',
@@ -1395,6 +1397,7 @@ function renderUserPermissions(users, definitions = []) {
       : [
         { key: 'admin.access', legacyField: 'adminPageAccess', labelKey: 'perm_admin_access' },
         { key: 'metadata.edit', legacyField: 'metadataEdit', labelKey: 'perm_metadata_edit' },
+        { key: 'office.edit', legacyField: 'officeEdit', labelKey: 'perm_office_edit' },
         { key: 'asset.delete', legacyField: 'assetDelete', labelKey: 'perm_asset_delete' },
         { key: 'pdf.advanced', legacyField: 'pdfAdvancedTools', labelKey: 'perm_pdf_advanced' }
       ];

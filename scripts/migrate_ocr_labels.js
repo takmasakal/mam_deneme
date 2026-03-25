@@ -1,11 +1,8 @@
 const { pool } = require('../src/db');
 
 function normalizeOcrEngine(value) {
-  const text = String(value || '').trim().toLowerCase();
-  if (!text) return 'paddle';
-  if (text.includes('tesseract')) return 'tesseract';
-  if (text.includes('paddle')) return 'paddle';
-  return text;
+  void value;
+  return 'paddle';
 }
 
 function sanitizeVideoOcrItems(value) {

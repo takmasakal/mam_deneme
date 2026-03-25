@@ -68,6 +68,7 @@ let selectedAssetId = null;
 let currentUserIsAdmin = false;
 let currentUserCanAccessAdmin = false;
 let currentUserCanEditMetadata = false;
+let currentUserCanEditOffice = false;
 let currentUserCanUsePdfAdvancedTools = false;
 let currentUsername = '';
 const selectedAssetIds = new Set();
@@ -702,9 +703,12 @@ let i18n = {
     ph_version_label: 'v2',
     versions: 'Versions',
     restore_pdf_version: 'Restore PDF',
+    restore_office_version: 'Restore Office',
     restore_pdf_original: 'Restore Original PDF',
+    restore_office_original: 'Restore Original Office',
     restore_pdf_confirm: 'Restore this PDF version? Current PDF state will be saved as a new restore version.',
     restore_pdf_original_confirm: 'Restore the original PDF snapshot?',
+    restore_office_original_confirm: 'Restore the original Office snapshot?',
     restore_pdf_unavailable: 'No snapshot',
     delete_pdf_version: 'Delete PDF Edit',
     delete_pdf_version_confirm: 'Delete this PDF edit version entry?',
@@ -718,9 +722,13 @@ let i18n = {
     version_change_type: 'Change Type',
     action_ingest: 'Ingest',
     action_manual: 'Manual',
+    action_office_save: 'Office Save',
     action_pdf_save: 'PDF Save',
     action_pdf_restore: 'PDF Restore',
     action_pdf_restore_original: 'PDF Original Restore',
+    action_office_restore: 'Office Restore',
+    action_office_restore_original: 'Office Original Restore',
+    restore_office_confirm: 'Restore this Office version?',
     action_file_replace: 'File Replace',
     pdf_change_redaction: 'Redaction',
     pdf_change_text_insert: 'Text Insert',
@@ -1004,9 +1012,12 @@ let i18n = {
     ph_version_label: 'v2',
     versions: 'Versiyonlar',
     restore_pdf_version: 'PDF Geri Yükle',
+    restore_office_version: 'Office Geri Yükle',
     restore_pdf_original: "Orijinal PDF'ye Dön",
+    restore_office_original: "Orijinal Office'e Dön",
     restore_pdf_confirm: 'Bu PDF sürümüne geri dönülsün mü? Mevcut PDF durumu yeni bir restore sürümü olarak kaydedilir.',
     restore_pdf_original_confirm: 'Orijinal PDF snapshotına geri dönülsün mü?',
+    restore_office_original_confirm: 'Orijinal Office snapshotına geri dönülsün mü?',
     restore_pdf_unavailable: 'Snapshot yok',
     delete_pdf_version: 'PDF Edit Sürümünü Sil',
     delete_pdf_version_confirm: 'Bu PDF edit sürüm kaydı silinsin mi?',
@@ -1020,9 +1031,13 @@ let i18n = {
     version_change_type: 'Değişiklik Türü',
     action_ingest: 'Yükleme',
     action_manual: 'Manuel',
+    action_office_save: 'Office Kaydetme',
     action_pdf_save: 'PDF Kaydetme',
     action_pdf_restore: 'PDF Geri Yükleme',
     action_pdf_restore_original: 'PDF Orijinaline Dönüş',
+    action_office_restore: 'Office Geri Yükleme',
+    action_office_restore_original: 'Office Orijinaline Dönüş',
+    restore_office_confirm: 'Bu Office sürümüne geri dönülsün mü?',
     action_file_replace: 'Dosya Değiştirme',
     pdf_change_redaction: 'Karartma',
     pdf_change_text_insert: 'Yazı Ekleme',
@@ -1280,10 +1295,12 @@ async function loadCurrentUser() {
     const email = String(me.email || '').trim();
     const canAccessAdmin = toStrictBool(me.canAccessAdmin, toStrictBool(me.isAdmin, false));
     const canEditMetadata = toStrictBool(me.canEditMetadata, false);
+    const canEditOffice = toStrictBool(me.canEditOffice, false);
     const canDeleteAssets = toStrictBool(me.canDeleteAssets, toStrictBool(me.isAdmin, false));
     const canUsePdfAdvancedTools = toStrictBool(me.canUsePdfAdvancedTools, toStrictBool(me.isAdmin, false));
     currentUserCanAccessAdmin = canAccessAdmin;
     currentUserCanEditMetadata = canEditMetadata;
+    currentUserCanEditOffice = canEditOffice;
     currentUserIsAdmin = canDeleteAssets;
     currentUserCanUsePdfAdvancedTools = canUsePdfAdvancedTools;
     currentUsername = username.toLowerCase();
@@ -1297,6 +1314,7 @@ async function loadCurrentUser() {
   } catch (_error) {
     currentUserCanAccessAdmin = false;
     currentUserCanEditMetadata = false;
+    currentUserCanEditOffice = false;
     currentUserIsAdmin = false;
     currentUserCanUsePdfAdvancedTools = false;
     currentUserBtn.dataset.value = '';
@@ -3617,12 +3635,19 @@ function detailMarkup(asset, workflow) {
   `;
 
   const assetIsPdf = String(asset.mimeType || '').toLowerCase().includes('pdf');
+  const assetIsOffice = isOfficeDocument(asset);
   const canViewVersions = Boolean(
-    assetIsPdf ? currentUserCanUsePdfAdvancedTools : currentUserCanAccessAdmin
+    assetIsPdf
+      ? currentUserCanUsePdfAdvancedTools
+      : assetIsOffice
+        ? (currentUserCanEditOffice || currentUserCanAccessAdmin)
+        : currentUserCanAccessAdmin
   );
   const canManageVersions = Boolean(
     assetIsPdf
       ? currentUserCanUsePdfAdvancedTools
+      : assetIsOffice
+        ? currentUserCanEditOffice
       : currentUserCanAccessAdmin
   );
   const versionSection = canManageVersions ? `
@@ -3643,24 +3668,38 @@ function detailMarkup(asset, workflow) {
         <button type="button" id="restorePdfOriginalBtn">${escapeHtml(t('restore_pdf_original'))}</button>
       </div>
     ` : ''}
+    ${(
+      currentUserCanAccessAdmin
+      && assetIsOffice
+    ) ? `
+      <div class="timecode-bar" style="margin: 0 0 8px 0;">
+        <button type="button" id="restoreOfficeOriginalBtn">${escapeHtml(t('restore_office_original'))}</button>
+      </div>
+    ` : ''}
     <div id="assetVersionsList">
     ${asset.versions
       .map((v) => {
         const isPdfAsset = assetIsPdf;
+        const isOfficeAsset = assetIsOffice;
         const actionType = String(v.actionType || 'manual').toLowerCase();
         if (actionType === 'pdf_original') return '';
         const hasSnapshot = String(v.snapshotMediaUrl || '').startsWith('/uploads/');
         const actorUsername = String(v.actorUsername || '').trim().toLowerCase();
         const isOwnVersion = Boolean(currentUsername && actorUsername && currentUsername === actorUsername);
         const canRestore = Boolean(currentUserCanAccessAdmin && isPdfAsset && hasSnapshot);
+        const canRestoreOffice = Boolean(currentUserCanAccessAdmin && isOfficeAsset && hasSnapshot);
         const canDeleteVersion = Boolean(
           assetIsPdf
             ? (currentUserCanUsePdfAdvancedTools && (currentUserCanAccessAdmin || isOwnVersion))
+            : isOfficeAsset
+              ? (currentUserCanEditOffice && (currentUserCanAccessAdmin || isOwnVersion))
             : currentUserCanAccessAdmin
         );
         const canEditVersion = Boolean(
           assetIsPdf
             ? (currentUserCanUsePdfAdvancedTools && (currentUserCanAccessAdmin || isOwnVersion))
+            : isOfficeAsset
+              ? (currentUserCanEditOffice && (currentUserCanAccessAdmin || isOwnVersion))
             : currentUserCanAccessAdmin
         );
         const changeKindLabel = actionType === 'pdf_save' ? renderPdfChangeKindLabel(v) : '';
@@ -3672,10 +3711,15 @@ function detailMarkup(asset, workflow) {
             <span class="asset-meta">${escapeHtml(t('version_action'))}: ${escapeHtml(t(`action_${actionType}`) || String(v.actionType || 'manual'))} | ${escapeHtml(t('version_actor'))}: ${escapeHtml(v.actorUsername || '-')}</span>
             ${changeKindLabel ? `<br /><span class="asset-meta">${escapeHtml(t('version_change_type'))}: ${escapeHtml(changeKindLabel)}</span>` : ''}
             ${(
-              assetIsPdf ? currentUserCanUsePdfAdvancedTools : currentUserCanAccessAdmin
+              assetIsPdf
+                ? currentUserCanUsePdfAdvancedTools
+                : isOfficeAsset
+                  ? currentUserCanEditOffice
+                  : currentUserCanAccessAdmin
             ) ? `
               <div class="timecode-bar" style="margin-top:8px;">
                 ${isPdfAsset ? `<button type="button" class="restorePdfVersionBtn" data-version-id="${escapeHtml(v.versionId)}" ${canRestore ? '' : 'disabled'}>${escapeHtml(canRestore ? t('restore_pdf_version') : t('restore_pdf_unavailable'))}</button>` : ''}
+                ${isOfficeAsset ? `<button type="button" class="restoreOfficeVersionBtn" data-version-id="${escapeHtml(v.versionId)}" ${canRestoreOffice ? '' : 'disabled'}>${escapeHtml(canRestoreOffice ? t('restore_office_version') : t('restore_pdf_unavailable'))}</button>` : ''}
                 <button type="button" class="editVersionBtn" data-version-id="${escapeHtml(v.versionId)}" ${canEditVersion ? '' : 'disabled'}>${escapeHtml(t('edit_version_name'))}</button>
                 ${canDeleteVersion ? `<button type="button" class="deleteVersionBtn danger" data-version-id="${escapeHtml(v.versionId)}">${escapeHtml(t('delete_version'))}</button>` : ''}
               </div>
@@ -6604,6 +6648,16 @@ async function openAsset(id, workflow, options = {}) {
     await openAsset(id, workflow);
   });
 
+  const restoreOfficeOriginalBtn = document.getElementById('restoreOfficeOriginalBtn');
+  restoreOfficeOriginalBtn?.addEventListener('click', async () => {
+    if (!currentUserCanAccessAdmin) return;
+    const ok = confirm(t('restore_office_original_confirm'));
+    if (!ok) return;
+    await api(`/api/assets/${id}/office-restore-original`, { method: 'POST', body: '{}' });
+    await loadAssets();
+    await openAsset(id, workflow);
+  });
+
   const assetVersionsListEl = document.getElementById('assetVersionsList');
   const handleRestoreVersion = async (restoreBtn) => {
       if (!currentUserCanAccessAdmin || !currentUserCanUsePdfAdvancedTools) return;
@@ -6687,6 +6741,25 @@ async function openAsset(id, workflow, options = {}) {
       event.preventDefault();
       event.stopPropagation();
       await handleRestoreVersion(event.currentTarget);
+    });
+  });
+  assetVersionsListEl?.querySelectorAll('.restoreOfficeVersionBtn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const versionId = String(btn.getAttribute('data-version-id') || '').trim();
+      if (!versionId || !confirm(t('restore_office_confirm'))) return;
+      const res = await fetch(`/api/assets/${encodeURIComponent(asset.id)}/office-restore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ versionId })
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        alert(payload.error || 'Failed to restore Office version');
+        return;
+      }
+      await loadAssets();
+      await openAsset(asset.id);
     });
   });
 

@@ -64,6 +64,12 @@ const PERMISSION_DEFINITIONS = [
     labelKey: 'perm_metadata_edit'
   },
   {
+    key: 'office.edit',
+    legacyField: 'officeEdit',
+    roleNames: ['mam-office-edit'],
+    labelKey: 'perm_office_edit'
+  },
+  {
     key: 'asset.delete',
     legacyField: 'assetDelete',
     roleNames: ['mam-asset-delete'],
@@ -99,6 +105,7 @@ const USE_OAUTH2_PROXY = String(process.env.USE_OAUTH2_PROXY || 'false').trim().
 const ONLYOFFICE_PUBLIC_URL = String(process.env.ONLYOFFICE_PUBLIC_URL || 'http://localhost:8082').trim().replace(/\/+$/, '');
 const ONLYOFFICE_INTERNAL_URL = String(process.env.ONLYOFFICE_INTERNAL_URL || 'http://onlyoffice').trim().replace(/\/+$/, '');
 const APP_INTERNAL_URL = String(process.env.APP_INTERNAL_URL || 'http://app:3000').trim().replace(/\/+$/, '');
+const OFFICE_CALLBACK_SECRET = String(process.env.OFFICE_CALLBACK_SECRET || process.env.OAUTH2_PROXY_COOKIE_SECRET || 'mam-onlyoffice-callback-secret').trim() || 'mam-onlyoffice-callback-secret';
 const OIDC_JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
 const oidcJwksCache = new Map();
 const pdfOcrCache = new Map();
@@ -159,6 +166,113 @@ const turkishWordSet = new Set();
 
 function escapeElasticId(value) {
   return encodeURIComponent(String(value || '').trim());
+}
+
+function encodeBase64Url(input) {
+  return Buffer.from(String(input || ''), 'utf8').toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function decodeBase64Url(input) {
+  const normalized = String(input || '').replace(/-/g, '+').replace(/_/g, '/');
+  const padLength = (4 - (normalized.length % 4 || 4)) % 4;
+  return Buffer.from(normalized + '='.repeat(padLength), 'base64').toString('utf8');
+}
+
+function signOfficeCallbackPayload(encodedPayload) {
+  return crypto.createHmac('sha256', OFFICE_CALLBACK_SECRET).update(String(encodedPayload || '')).digest('hex');
+}
+
+function buildOfficeCallbackState(payload) {
+  const encodedPayload = encodeBase64Url(JSON.stringify(payload || {}));
+  return {
+    state: encodedPayload,
+    sig: signOfficeCallbackPayload(encodedPayload)
+  };
+}
+
+function verifyOfficeCallbackState(state, sig) {
+  const encodedState = String(state || '').trim();
+  const providedSig = String(sig || '').trim().toLowerCase();
+  if (!encodedState || !providedSig) return null;
+  const expectedSig = signOfficeCallbackPayload(encodedState);
+  try {
+    const isValid = crypto.timingSafeEqual(Buffer.from(providedSig, 'hex'), Buffer.from(expectedSig, 'hex'));
+    if (!isValid) return null;
+  } catch (_error) {
+    return null;
+  }
+  try {
+    const payload = JSON.parse(decodeBase64Url(encodedState));
+    if (!payload || typeof payload !== 'object') return null;
+    const issuedAt = Number(payload.ts || 0);
+    if (!Number.isFinite(issuedAt) || issuedAt <= 0) return null;
+    if (Date.now() - issuedAt > 24 * 60 * 60 * 1000) return null;
+    return payload;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function resolveOnlyofficeDownloadUrl(rawUrl) {
+  const input = String(rawUrl || '').trim();
+  if (!input) return '';
+  try {
+    const parsed = new URL(input);
+    const publicBase = new URL(ONLYOFFICE_PUBLIC_URL);
+    const internalBase = new URL(ONLYOFFICE_INTERNAL_URL);
+    if (
+      parsed.protocol === publicBase.protocol &&
+      parsed.host === publicBase.host
+    ) {
+      parsed.protocol = internalBase.protocol;
+      parsed.hostname = internalBase.hostname;
+      parsed.port = internalBase.port;
+      return parsed.toString();
+    }
+    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+      parsed.protocol = internalBase.protocol;
+      parsed.hostname = internalBase.hostname;
+      parsed.port = internalBase.port;
+      return parsed.toString();
+    }
+    return parsed.toString();
+  } catch (_error) {
+    return input;
+  }
+}
+
+async function downloadOnlyofficeEditedBuffer(rawUrl) {
+  const candidates = Array.from(new Set([
+    resolveOnlyofficeDownloadUrl(rawUrl),
+    String(rawUrl || '').trim()
+  ].filter(Boolean)));
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (const candidate of candidates) {
+      try {
+        const response = await fetch(candidate);
+        if (!response.ok) {
+          lastError = new Error(`Download failed with status ${response.status} for ${candidate}`);
+          continue;
+        }
+        const buffer = Buffer.from(await response.arrayBuffer());
+        if (!buffer.length) {
+          lastError = new Error(`Downloaded Office document was empty for ${candidate}`);
+          continue;
+        }
+        return buffer;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (attempt < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+  throw lastError || new Error('Failed to download edited Office document');
 }
 
 async function elasticRequest(method, endpoint, body) {
@@ -3458,133 +3572,6 @@ function normalizeForSearch(value) {
     .trim();
 }
 
-function parseTesseractTsvWords(tsvText) {
-  const lines = String(tsvText || '').split(/\r?\n/);
-  if (lines.length < 2) return [];
-  const words = [];
-  for (let i = 1; i < lines.length; i += 1) {
-    const line = lines[i];
-    if (!line) continue;
-    const cols = line.split('\t');
-    if (cols.length < 12) continue;
-    const text = String(cols[11] || '').trim();
-    if (!text) continue;
-    const conf = Number(cols[10] || 0);
-    if (Number.isFinite(conf) && conf < 25) continue;
-    const left = Number(cols[6] || 0);
-    const top = Number(cols[7] || 0);
-    const width = Number(cols[8] || 0);
-    const height = Number(cols[9] || 0);
-    if (width <= 0 || height <= 0) continue;
-    words.push({ text, left, top, width, height });
-  }
-  return words;
-}
-
-function findOcrPhraseMatches(words, query) {
-  const qNorm = normalizeForSearch(query);
-  if (!qNorm) return [];
-  const qTokens = qNorm.split(' ').filter(Boolean);
-  if (!qTokens.length) return [];
-
-  const tokens = words.map((w) => normalizeForSearch(w.text));
-  const matches = [];
-
-  for (let i = 0; i < tokens.length; i += 1) {
-    if (!tokens[i]) continue;
-
-    if (qTokens.length === 1) {
-      if (!tokens[i].includes(qTokens[0])) continue;
-      matches.push([i, i]);
-      continue;
-    }
-
-    let j = i;
-    let built = tokens[j] || '';
-    while (j + 1 < tokens.length && built.length <= (qNorm.length + 24)) {
-      if (built === qNorm) break;
-      j += 1;
-      built = `${built} ${tokens[j] || ''}`.trim();
-    }
-    if (built === qNorm) {
-      matches.push([i, j]);
-    }
-  }
-  return matches;
-}
-
-function makeOcrSnippet(words, startIdx, endIdx) {
-  const from = Math.max(0, startIdx - 8);
-  const to = Math.min(words.length - 1, endIdx + 8);
-  const text = words.slice(from, to + 1).map((w) => String(w.text || '')).join(' ').trim();
-  if (!text) return '';
-  return `${from > 0 ? '...' : ''}${text}${to < words.length - 1 ? '...' : ''}`;
-}
-
-function matchBoxFromWords(words, startIdx, endIdx) {
-  const slice = words.slice(startIdx, endIdx + 1);
-  const left = Math.min(...slice.map((w) => Number(w.left) || 0));
-  const top = Math.min(...slice.map((w) => Number(w.top) || 0));
-  const right = Math.max(...slice.map((w) => (Number(w.left) || 0) + (Number(w.width) || 0)));
-  const bottom = Math.max(...slice.map((w) => (Number(w.top) || 0) + (Number(w.height) || 0)));
-  return {
-    left,
-    top,
-    width: Math.max(1, right - left),
-    height: Math.max(1, bottom - top)
-  };
-}
-
-async function ocrPdfWordsForPage({ assetId, inputPath, page, width, lang }) {
-  const safePage = Math.max(1, Number(page) || 1);
-  const safeWidth = Math.max(700, Math.min(2200, Math.round(Number(width) || 1400)));
-  const safeLang = String(lang || 'tur+eng').trim() || 'tur+eng';
-  const cacheKey = `${assetId}:${safePage}:${safeWidth}:${safeLang}`;
-  if (pdfOcrCache.has(cacheKey)) return pdfOcrCache.get(cacheKey);
-
-  const baseName = `${Date.now()}-${nanoid()}-ocr-${safePage}`;
-  const outBase = path.join('/tmp', baseName);
-  const outFile = `${outBase}.jpg`;
-  try {
-    const rendered = await runCommandQuiet('pdftoppm', [
-      '-jpeg',
-      '-f',
-      String(safePage),
-      '-singlefile',
-      '-scale-to',
-      String(safeWidth),
-      inputPath,
-      outBase
-    ]);
-    if (!rendered.ok || !fs.existsSync(outFile)) return [];
-
-    const tsv = await runCommandCapture('tesseract', [
-      outFile,
-      'stdout',
-      '-l',
-      safeLang,
-      '--dpi',
-      '300',
-      '--psm',
-      '6',
-      'tsv'
-    ]);
-    if (!tsv.ok) return [];
-
-    const words = parseTesseractTsvWords(tsv.stdout || '');
-    pdfOcrCache.set(cacheKey, words);
-    return words;
-  } catch (_error) {
-    return [];
-  } finally {
-    try {
-      if (fs.existsSync(outFile)) fs.unlinkSync(outFile);
-    } catch (_error) {
-      // ignore
-    }
-  }
-}
-
 function buildPdfSearchSnippet(text, query, radius = 90) {
   const source = String(text || '').replace(/\s+/g, ' ').trim();
   const needle = String(query || '').trim().toLowerCase();
@@ -4549,58 +4536,6 @@ function wordsToSimpleLine(words = []) {
     .filter(Boolean);
 }
 
-async function extractVideoOcrFrameTextTesseract({ workDir, files, intervalSec, ocrLang, tickerMap = {} }) {
-  const frameEntries = [];
-  for (let i = 0; i < files.length; i += 1) {
-    const frameName = String(files[i] || '').trim();
-    if (!frameName) continue;
-    const framePath = path.join(workDir, frameName);
-    if (!fs.existsSync(framePath)) continue;
-    const tsv = await runCommandCapture('tesseract', [
-      framePath,
-      'stdout',
-      '-l',
-      ocrLang,
-      '--psm',
-      '6',
-      'tsv'
-    ]);
-    if (!tsv.ok) continue;
-    const words = parseTesseractTsvWords(tsv.stdout || '');
-    const lines = wordsToSimpleLine(words);
-    const tickerName = String(tickerMap[frameName] || '').trim();
-    let tickerLines = [];
-    if (tickerName) {
-      const tickerPath = path.join(workDir, tickerName);
-      if (fs.existsSync(tickerPath)) {
-        const tickerTsv = await runCommandCapture('tesseract', [
-          tickerPath,
-          'stdout',
-          '-l',
-          ocrLang,
-          '--psm',
-          '6',
-          'tsv'
-        ]);
-        if (tickerTsv.ok) {
-          tickerLines = wordsToSimpleLine(parseTesseractTsvWords(tickerTsv.stdout || ''));
-        }
-      }
-    }
-    const mergedLines = dedupeTextList([...(lines || []), ...(tickerLines || [])]);
-    if (!mergedLines.length) continue;
-    const sec = frameSecFromName(frameName, intervalSec, i);
-    frameEntries.push({
-      sec,
-      text: normalizeOcrText(mergedLines.join(' ')),
-      frame: frameName,
-      frameType: isSceneFrameName(frameName) ? 'scene' : 'periodic',
-      confidence: 0.6
-    });
-  }
-  return { frameEntries, engine: 'tesseract' };
-}
-
 function queueVideoOcrJob(row, options = {}) {
   const jobId = nanoid();
   const intervalSec = Math.max(1, Math.min(30, Number(options.intervalSec) || 4));
@@ -5169,6 +5104,7 @@ async function verifyOidcBearerToken(token, settings) {
 async function maybeRequireApiToken(req, res, next) {
   if (!req.path.startsWith('/api/')) return next();
   if (!USE_OAUTH2_PROXY) return next();
+  if (/^\/api\/assets\/[^/]+\/office-callback$/.test(req.path)) return next();
   try {
     const settings = await getAdminSettings();
     if (!settings.apiTokenEnabled) return next();
@@ -6003,6 +5939,7 @@ async function resolveEffectivePermissions(req) {
     isAdmin: Boolean(effective.adminPageAccess),
     canAccessAdmin: Boolean(effective.adminPageAccess),
     canEditMetadata: Boolean(effective.metadataEdit),
+    canEditOffice: Boolean(effective.officeEdit),
     canDeleteAssets: Boolean(effective.assetDelete),
     canUsePdfAdvancedTools: Boolean(effective.pdfAdvancedTools),
     permissions: effective,
@@ -6028,6 +5965,7 @@ app.get('/api/me', async (req, res) => {
       isAdmin: effective.isAdmin,
       canAccessAdmin: effective.canAccessAdmin,
       canEditMetadata: effective.canEditMetadata,
+      canEditOffice: effective.canEditOffice,
       canDeleteAssets: effective.canDeleteAssets,
       canUsePdfAdvancedTools: effective.canUsePdfAdvancedTools,
       permissionKeys: effective.permissionKeys
@@ -6875,6 +6813,7 @@ app.get('/api/assets/:id', async (req, res) => {
 
 app.get('/api/assets/:id/office-config', async (req, res) => {
   try {
+    const effective = await resolveEffectivePermissions(req).catch(() => buildUserContextFromRequest(req));
     const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
     if (!assetResult.rowCount) {
       return res.status(404).json({ error: 'Asset not found' });
@@ -6891,10 +6830,18 @@ app.get('/api/assets/:id/office-config', async (req, res) => {
       return res.status(400).json({ error: 'Document URL is invalid' });
     }
 
-    const documentUrl = `${APP_INTERNAL_URL}${mediaUrl}`;
-    const callbackUrl = `${APP_INTERNAL_URL}/api/assets/${encodeURIComponent(String(row.id || '').trim())}/office-callback`;
     const officeKeySeed = `${String(row.id || '').trim()}|${String(row.updated_at || row.created_at || '').trim()}|${String(row.media_url || '').trim()}`;
     const officeDocumentKey = crypto.createHash('sha1').update(officeKeySeed).digest('hex');
+    const documentUrl = `${APP_INTERNAL_URL}${mediaUrl}${mediaUrl.includes('?') ? '&' : '?'}v=${encodeURIComponent(officeDocumentKey)}`;
+    const officeCallbackState = buildOfficeCallbackState({
+      assetId: String(row.id || '').trim(),
+      username: String(effective?.username || '').trim(),
+      displayName: String(effective?.displayName || effective?.username || '').trim(),
+      canEditOffice: Boolean(effective?.canEditOffice),
+      ts: Date.now()
+    });
+    const callbackUrl = `${APP_INTERNAL_URL}/api/assets/${encodeURIComponent(String(row.id || '').trim())}/office-callback?state=${encodeURIComponent(officeCallbackState.state)}&sig=${encodeURIComponent(officeCallbackState.sig)}`;
+    const officeEditEnabled = Boolean(effective?.canEditOffice);
     const config = {
       document: {
         fileType,
@@ -6904,15 +6851,19 @@ app.get('/api/assets/:id/office-config', async (req, res) => {
       },
       documentType,
       editorConfig: {
-        mode: 'view',
+        mode: officeEditEnabled ? 'edit' : 'view',
         lang: String(req.query.lang || 'tr').trim().toLowerCase().startsWith('tr') ? 'tr' : 'en',
         callbackUrl,
+        user: {
+          id: String(effective?.username || row.owner || row.id || 'user').trim() || 'user',
+          name: String(effective?.displayName || effective?.username || row.owner || 'User').trim() || 'User'
+        },
         customization: {
-          autosave: false,
+          autosave: officeEditEnabled,
           comments: false,
           compactHeader: true,
           compactToolbar: true,
-          forcesave: false,
+          forcesave: officeEditEnabled,
           help: false,
           hideRightMenu: true,
           hideRulers: false,
@@ -6924,7 +6875,7 @@ app.get('/api/assets/:id/office-config', async (req, res) => {
         comment: false,
         copy: true,
         download: true,
-        edit: false,
+        edit: officeEditEnabled,
         fillForms: false,
         modifyContentControl: false,
         modifyFilter: false,
@@ -6941,8 +6892,108 @@ app.get('/api/assets/:id/office-config', async (req, res) => {
   }
 });
 
-app.post('/api/assets/:id/office-callback', express.json({ limit: '10mb' }), (_req, res) => {
-  return res.json({ error: 0 });
+app.post('/api/assets/:id/office-callback', express.json({ limit: '10mb' }), async (req, res) => {
+  try {
+    const assetId = String(req.params.id || '').trim();
+    const verifiedState = verifyOfficeCallbackState(req.query?.state, req.query?.sig);
+    if (!assetId || !verifiedState || String(verifiedState.assetId || '').trim() !== assetId) {
+      return res.status(403).json({ error: 1, message: 'Invalid callback signature' });
+    }
+    const statusCode = Number(req.body?.status || 0);
+    const officeUrl = String(req.body?.url || '').trim();
+    if (![2, 6].includes(statusCode) || !officeUrl) {
+      return res.json({ error: 0 });
+    }
+    if (!verifiedState.canEditOffice) {
+      return res.status(403).json({ error: 1, message: 'Office edit is not allowed' });
+    }
+
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    const row = assetResult.rows[0];
+    if (!row) return res.status(404).json({ error: 1, message: 'Asset not found' });
+    if (!isOfficeDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+      return res.status(400).json({ error: 1, message: 'Asset is not an Office document' });
+    }
+
+    const editedBuffer = await downloadOnlyofficeEditedBuffer(officeUrl);
+
+    const ext = getFileExtension(row.file_name) || 'docx';
+    const safeBase = sanitizeFileName(path.basename(String(row.file_name || row.title || assetId), path.extname(String(row.file_name || ''))) || `asset-${assetId}`);
+    const storage = getIngestStoragePath({ type: 'document', mimeType: String(row.mime_type || ''), fileName: `${safeBase}.${ext}` });
+    const storedName = `${Date.now()}-${nanoid()}-${safeBase}-edited.${ext}`;
+    const absPath = path.join(storage.absoluteDir, storedName);
+    const relativePath = path.join(storage.relativeDir, storedName);
+    const mediaUrl = `/uploads/${relativePath.replace(/\\/g, '/')}`;
+    fs.writeFileSync(absPath, editedBuffer);
+
+    const nowIso = new Date().toISOString();
+    const countResult = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [assetId]);
+    const nextVersion = Number(countResult.rows?.[0]?.c || 0) + 1;
+    const actor = String(verifiedState.displayName || verifiedState.username || row.owner || 'user').trim() || 'user';
+    const nextFileName = `${safeBase}-edited.${ext}`;
+    const version = {
+      versionId: nanoid(),
+      label: `Office Edit ${nextVersion}`,
+      note: `Saved from ONLYOFFICE by ${actor}`,
+      snapshot: {
+        snapshotMediaUrl: mediaUrl,
+        snapshotSourcePath: absPath,
+        snapshotFileName: nextFileName,
+        snapshotMimeType: String(row.mime_type || '').trim(),
+        snapshotThumbnailUrl: String(row.thumbnail_url || '').trim()
+      },
+      actorUsername: String(verifiedState.username || actor).trim() || actor,
+      actionType: 'office_save',
+      createdAt: nowIso
+    };
+
+    await pool.query('BEGIN');
+    try {
+      await pool.query(
+        `
+          INSERT INTO asset_versions (
+            version_id, asset_id, label, note,
+            snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
+            actor_username, action_type, restored_from_version_id,
+            created_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        `,
+        [
+          version.versionId, assetId, version.label, version.note,
+          version.snapshot.snapshotMediaUrl, version.snapshot.snapshotSourcePath, version.snapshot.snapshotFileName, version.snapshot.snapshotMimeType, version.snapshot.snapshotThumbnailUrl,
+          version.actorUsername, version.actionType, null,
+          version.createdAt
+        ]
+      );
+      await pool.query(
+        `
+          UPDATE assets
+          SET media_url = $2,
+              source_path = $3,
+              file_name = $4,
+              mime_type = $5,
+              updated_at = $6
+          WHERE id = $1
+        `,
+        [assetId, mediaUrl, absPath, nextFileName, String(row.mime_type || '').trim(), nowIso]
+      );
+      await pool.query('COMMIT');
+    } catch (error) {
+      await pool.query('ROLLBACK');
+      throw error;
+    }
+    await indexAssetToElastic(assetId).catch(() => {});
+    return res.json({ error: 0 });
+  } catch (_error) {
+    console.error('ONLYOFFICE save callback failed', {
+      assetId: String(req.params.id || '').trim(),
+      status: req.body?.status,
+      url: String(req.body?.url || '').trim(),
+      message: _error?.message || String(_error),
+      stack: _error?.stack || null
+    });
+    return res.status(500).json({ error: 1, message: 'Failed to save Office edits' });
+  }
 });
 
 app.get('/api/assets/:id/technical', async (req, res) => {
@@ -7726,63 +7777,8 @@ app.get('/api/assets/:id/pdf-search', async (req, res) => {
   }
 });
 
-app.get('/api/assets/:id/pdf-search-ocr', async (req, res) => {
-  try {
-    const query = String(req.query.q || '').trim();
-    if (!query) return res.status(400).json({ error: 'q is required' });
-    const lang = String(req.query.lang || 'tur+eng').trim() || 'tur+eng';
-    const width = Math.max(700, Math.min(2200, Number(req.query.width) || 1400));
-
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-    if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
-    const row = assetResult.rows[0];
-    if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
-      return res.status(400).json({ error: 'Asset is not a PDF' });
-    }
-
-    let inputPath = row.source_path;
-    if (!inputPath || !fs.existsSync(inputPath)) {
-      const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
-      if (mediaPath && fs.existsSync(mediaPath)) inputPath = mediaPath;
-    }
-    if (!inputPath || !fs.existsSync(inputPath)) {
-      return res.status(404).json({ error: 'PDF file not found on server' });
-    }
-
-    const totalPages = await getPdfPageCount(inputPath);
-    const matches = [];
-    for (let p = 1; p <= totalPages; p += 1) {
-      const words = await ocrPdfWordsForPage({
-        assetId: row.id,
-        inputPath,
-        page: p,
-        width,
-        lang
-      });
-      if (!words.length) continue;
-      const ranges = findOcrPhraseMatches(words, query);
-      if (!ranges.length) continue;
-
-      ranges.forEach(([startIdx, endIdx]) => {
-        matches.push({
-          page: p,
-          count: 1,
-          snippet: makeOcrSnippet(words, startIdx, endIdx),
-          box: matchBoxFromWords(words, startIdx, endIdx)
-        });
-      });
-    }
-
-    return res.json({
-      query,
-      lang,
-      totalPages,
-      ocrWidth: width,
-      matches: matches.slice(0, 500)
-    });
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to search PDF with OCR' });
-  }
+app.get('/api/assets/:id/pdf-search-ocr', async (_req, res) => {
+  return res.status(410).json({ error: 'PDF OCR search is disabled.' });
 });
 
 app.get('/api/assets/:id/pdf-meta', async (req, res) => {
@@ -8101,15 +8097,20 @@ app.post('/api/assets/:id/pdf-restore-original', requireAdminAccess, async (req,
   }
 });
 
-app.delete('/api/assets/:id/versions/:versionId', requirePdfAdvancedTools, async (req, res) => {
+app.delete('/api/assets/:id/versions/:versionId', async (req, res) => {
   try {
+    const effective = await resolveEffectivePermissions(req);
+    req.userPermissions = effective;
     const assetId = String(req.params.id || '').trim();
     const versionId = String(req.params.versionId || '').trim();
     if (!assetId || !versionId) return res.status(400).json({ error: 'assetId and versionId are required' });
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    const assetRow = assetResult.rows[0];
+    if (!assetRow) return res.status(404).json({ error: 'Asset not found' });
     const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
     const row = versionResult.rows[0];
     if (!row) return res.status(404).json({ error: 'Version not found' });
-    if (!canManagePdfVersionRow(req.userPermissions, row)) {
+    if (!canManageVersionRow(req.userPermissions, assetRow, row)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     if (String(row.action_type || '').trim().toLowerCase() === 'pdf_original') {
@@ -8122,16 +8123,21 @@ app.delete('/api/assets/:id/versions/:versionId', requirePdfAdvancedTools, async
   }
 });
 
-app.patch('/api/assets/:id/versions/:versionId', requirePdfAdvancedTools, async (req, res) => {
+app.patch('/api/assets/:id/versions/:versionId', async (req, res) => {
   try {
+    const effective = await resolveEffectivePermissions(req);
+    req.userPermissions = effective;
     const assetId = String(req.params.id || '').trim();
     const versionId = String(req.params.versionId || '').trim();
     if (!assetId || !versionId) return res.status(400).json({ error: 'assetId and versionId are required' });
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    const assetRow = assetResult.rows[0];
+    if (!assetRow) return res.status(404).json({ error: 'Asset not found' });
 
     const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
     const row = versionResult.rows[0];
     if (!row) return res.status(404).json({ error: 'Version not found' });
-    if (!canManagePdfVersionRow(req.userPermissions, row)) {
+    if (!canManageVersionRow(req.userPermissions, assetRow, row)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -8266,6 +8272,215 @@ app.post('/api/assets/:id/pdf-restore', requireAdminAccess, async (req, res) => 
   }
 });
 
+app.post('/api/assets/:id/office-restore', requireAdminAccess, async (req, res) => {
+  try {
+    const assetId = String(req.params.id || '').trim();
+    const versionId = String(req.body?.versionId || '').trim();
+    if (!assetId || !versionId) return res.status(400).json({ error: 'assetId and versionId are required' });
+
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    const currentRow = assetResult.rows[0];
+    if (!currentRow) return res.status(404).json({ error: 'Asset not found' });
+    if (!isOfficeDocumentCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
+      return res.status(400).json({ error: 'Office restore is only supported for Office assets' });
+    }
+
+    const versionResult = await pool.query(
+      'SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2',
+      [assetId, versionId]
+    );
+    const target = versionResult.rows[0];
+    if (!target) return res.status(404).json({ error: 'Version not found' });
+
+    const snapshotMediaUrl = String(target.snapshot_media_url || '').trim();
+    const snapshotSourcePath = String(target.snapshot_source_path || '').trim();
+    const snapshotFileName = String(target.snapshot_file_name || '').trim() || String(currentRow.file_name || '').trim();
+    const snapshotMimeType = String(target.snapshot_mime_type || '').trim() || String(currentRow.mime_type || '').trim();
+    const snapshotThumbnailUrl = String(target.snapshot_thumbnail_url || '').trim() || String(currentRow.thumbnail_url || '').trim();
+
+    if (!snapshotMediaUrl.startsWith('/uploads/')) {
+      return res.status(400).json({ error: 'Selected version has no restorable Office snapshot' });
+    }
+    const resolvedSnapshotPath = (() => {
+      if (snapshotSourcePath && fs.existsSync(snapshotSourcePath)) return snapshotSourcePath;
+      const resolved = publicUploadUrlToAbsolutePath(snapshotMediaUrl);
+      return resolved && fs.existsSync(resolved) ? resolved : '';
+    })();
+    if (!resolvedSnapshotPath) {
+      return res.status(400).json({ error: 'Snapshot file for selected version is missing on disk' });
+    }
+
+    const nowIso = new Date().toISOString();
+    const actor = String(req.userPermissions?.displayName || req.userPermissions?.username || currentRow.owner || 'admin').trim() || 'admin';
+    const countResult = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [assetId]);
+    const nextVersion = Number(countResult.rows?.[0]?.c || 0) + 1;
+    const restoreVersion = {
+      versionId: nanoid(),
+      label: `Office Restore ${nextVersion}`,
+      note: `Restored to ${String(target.label || target.version_id)} by ${actor}`,
+      snapshot: {
+        snapshotMediaUrl,
+        snapshotSourcePath: resolvedSnapshotPath,
+        snapshotFileName,
+        snapshotMimeType,
+        snapshotThumbnailUrl
+      },
+      actorUsername: String(req.userPermissions?.username || actor).trim() || actor,
+      actionType: 'office_restore',
+      restoredFromVersionId: target.version_id,
+      createdAt: nowIso
+    };
+
+    await pool.query('BEGIN');
+    try {
+      await pool.query(
+        `
+          UPDATE assets
+          SET media_url = $2,
+              source_path = $3,
+              file_name = $4,
+              mime_type = $5,
+              thumbnail_url = $6,
+              updated_at = $7
+          WHERE id = $1
+        `,
+        [assetId, snapshotMediaUrl, resolvedSnapshotPath, snapshotFileName, snapshotMimeType, snapshotThumbnailUrl, nowIso]
+      );
+      await pool.query(
+        `
+          INSERT INTO asset_versions (
+            version_id, asset_id, label, note,
+            snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
+            actor_username, action_type, restored_from_version_id,
+            created_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        `,
+        [
+          restoreVersion.versionId, assetId, restoreVersion.label, restoreVersion.note,
+          restoreVersion.snapshot.snapshotMediaUrl, restoreVersion.snapshot.snapshotSourcePath, restoreVersion.snapshot.snapshotFileName, restoreVersion.snapshot.snapshotMimeType, restoreVersion.snapshot.snapshotThumbnailUrl,
+          restoreVersion.actorUsername, restoreVersion.actionType, restoreVersion.restoredFromVersionId,
+          restoreVersion.createdAt
+        ]
+      );
+      await pool.query('COMMIT');
+    } catch (error) {
+      await pool.query('ROLLBACK');
+      throw error;
+    }
+
+    await indexAssetToElastic(assetId).catch(() => {});
+    const refreshed = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    return res.json({
+      restored: true,
+      asset: mapAssetRow(refreshed.rows[0]),
+      version: restoreVersion
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to restore Office version' });
+  }
+});
+
+app.post('/api/assets/:id/office-restore-original', requireAdminAccess, async (req, res) => {
+  try {
+    const assetId = String(req.params.id || '').trim();
+    if (!assetId) return res.status(400).json({ error: 'assetId is required' });
+
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    const currentRow = assetResult.rows[0];
+    if (!currentRow) return res.status(404).json({ error: 'Asset not found' });
+    if (!isOfficeDocumentCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
+      return res.status(400).json({ error: 'Office restore is only supported for Office assets' });
+    }
+
+    let targetResult = await pool.query(
+      `SELECT * FROM asset_versions WHERE asset_id = $1 AND action_type = 'office_original' ORDER BY created_at ASC LIMIT 1`,
+      [assetId]
+    );
+    if (!targetResult.rowCount) {
+      targetResult = await pool.query(
+        `SELECT * FROM asset_versions WHERE asset_id = $1 AND action_type = 'ingest' ORDER BY created_at ASC LIMIT 1`,
+        [assetId]
+      );
+    }
+    const target = targetResult.rows[0];
+    if (!target) return res.status(404).json({ error: 'Original Office snapshot not found' });
+
+    const snapshotMediaUrl = String(target.snapshot_media_url || '').trim();
+    const snapshotFileName = String(target.snapshot_file_name || '').trim() || currentRow.file_name;
+    const snapshotMimeType = String(target.snapshot_mime_type || '').trim() || String(currentRow.mime_type || '').trim();
+    const snapshotThumbnailUrl = String(target.snapshot_thumbnail_url || '').trim();
+    let snapshotSourcePath = String(target.snapshot_source_path || '').trim();
+    if (!snapshotMediaUrl.startsWith('/uploads/')) {
+      return res.status(400).json({ error: 'Original snapshot is not restorable' });
+    }
+    if (!snapshotSourcePath || !fs.existsSync(snapshotSourcePath)) {
+      const resolved = publicUploadUrlToAbsolutePath(snapshotMediaUrl);
+      snapshotSourcePath = resolved && fs.existsSync(resolved) ? resolved : '';
+    }
+    if (!snapshotSourcePath || !fs.existsSync(snapshotSourcePath)) {
+      return res.status(400).json({ error: 'Original snapshot file is missing on disk' });
+    }
+
+    const nowIso = new Date().toISOString();
+    const actor = String(req.userPermissions?.displayName || req.userPermissions?.username || 'admin').trim() || 'admin';
+
+    await pool.query(
+      `
+        UPDATE assets
+        SET media_url = $2,
+            source_path = $3,
+            file_name = $4,
+            mime_type = $5,
+            thumbnail_url = $6,
+            updated_at = $7
+        WHERE id = $1
+      `,
+      [assetId, snapshotMediaUrl, snapshotSourcePath, snapshotFileName, snapshotMimeType, snapshotThumbnailUrl, nowIso]
+    );
+
+    const countResult = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [assetId]);
+    const nextVersion = Number(countResult.rows?.[0]?.c || 0) + 1;
+    const restoreVersion = {
+      versionId: nanoid(),
+      label: `Office Original Restore ${nextVersion}`,
+      note: `Restored to original snapshot by ${actor}`,
+      snapshot: {
+        snapshotMediaUrl,
+        snapshotSourcePath,
+        snapshotFileName,
+        snapshotMimeType,
+        snapshotThumbnailUrl
+      },
+      actorUsername: actor,
+      actionType: 'office_restore_original',
+      restoredFromVersionId: target.version_id,
+      createdAt: nowIso
+    };
+    await pool.query(
+      `
+        INSERT INTO asset_versions (
+          version_id, asset_id, label, note,
+          snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
+          actor_username, action_type, restored_from_version_id,
+          created_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      `,
+      [
+        restoreVersion.versionId, assetId, restoreVersion.label, restoreVersion.note,
+        restoreVersion.snapshot.snapshotMediaUrl, restoreVersion.snapshot.snapshotSourcePath, restoreVersion.snapshot.snapshotFileName, restoreVersion.snapshot.snapshotMimeType, restoreVersion.snapshot.snapshotThumbnailUrl,
+        restoreVersion.actorUsername, restoreVersion.actionType, restoreVersion.restoredFromVersionId,
+        restoreVersion.createdAt
+      ]
+    );
+
+    await indexAssetToElastic(assetId).catch(() => {});
+    const updatedResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    return res.json({ restored: true, original: true, asset: mapAssetRow(updatedResult.rows[0]), version: restoreVersion });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to restore original Office document' });
+  }
+});
+
 app.post('/api/assets/:id/ensure-proxy', async (req, res) => {
   try {
     const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
@@ -8344,6 +8559,17 @@ async function requireMetadataEdit(req, res, next) {
   }
 }
 
+async function requireOfficeEdit(req, res, next) {
+  try {
+    const effective = await resolveEffectivePermissions(req);
+    if (!effective.canEditOffice) return res.status(403).json({ error: 'Forbidden' });
+    req.userPermissions = effective;
+    return next();
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to verify office edit permissions' });
+  }
+}
+
 async function requirePdfAdvancedTools(req, res, next) {
   try {
     const effective = await resolveEffectivePermissions(req);
@@ -8361,6 +8587,33 @@ function canManagePdfVersionRow(userPermissions, versionRow) {
   const actorUsername = String(versionRow.actor_username || '').trim().toLowerCase();
   const currentUsername = String(userPermissions?.username || '').trim().toLowerCase();
   return Boolean(actorUsername && currentUsername && actorUsername === currentUsername);
+}
+
+function canManageVersionRow(userPermissions, assetRow, versionRow) {
+  if (!userPermissions || !assetRow || !versionRow) return false;
+  if (userPermissions.canAccessAdmin) return true;
+  const actorUsername = String(versionRow.actor_username || '').trim().toLowerCase();
+  const currentUsername = String(userPermissions.username || '').trim().toLowerCase();
+  const isOwnVersion = Boolean(actorUsername && currentUsername && actorUsername === currentUsername);
+  if (isPdfCandidate({ mimeType: assetRow.mime_type, fileName: assetRow.file_name })) {
+    return Boolean(userPermissions.canUsePdfAdvancedTools && isOwnVersion);
+  }
+  if (isOfficeDocumentCandidate({ mimeType: assetRow.mime_type, fileName: assetRow.file_name })) {
+    return Boolean(userPermissions.canEditOffice && isOwnVersion);
+  }
+  return false;
+}
+
+function canCreateVersionForAsset(userPermissions, assetRow) {
+  if (!userPermissions || !assetRow) return false;
+  if (userPermissions.canAccessAdmin) return true;
+  if (isPdfCandidate({ mimeType: assetRow.mime_type, fileName: assetRow.file_name })) {
+    return Boolean(userPermissions.canUsePdfAdvancedTools);
+  }
+  if (isOfficeDocumentCandidate({ mimeType: assetRow.mime_type, fileName: assetRow.file_name })) {
+    return Boolean(userPermissions.canEditOffice);
+  }
+  return false;
 }
 
 app.use('/api/admin', requireAdminAccess);
@@ -10030,10 +10283,15 @@ app.patch('/api/assets/:id', requireMetadataEdit, async (req, res) => {
 
 app.post('/api/assets/:id/versions', async (req, res) => {
   try {
+    const effective = await resolveEffectivePermissions(req);
+    req.userPermissions = effective;
     const exists = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
     const row = exists.rows[0];
     if (!row) {
       return res.status(404).json({ error: 'Asset not found' });
+    }
+    if (!canCreateVersionForAsset(req.userPermissions, row)) {
+      return res.status(403).json({ error: 'Forbidden' });
     }
 
     const countResult = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [req.params.id]);
@@ -10044,7 +10302,7 @@ app.post('/api/assets/:id/versions', async (req, res) => {
       label: req.body.label?.trim() || `v${count + 1}`,
       note: req.body.note?.trim() || 'Version update',
       snapshot: buildVersionSnapshotFromRow(row),
-      actorUsername: String(req.get('x-forwarded-user') || req.get('x-auth-request-user') || row.owner || 'user').trim() || 'user',
+      actorUsername: String(req.userPermissions?.username || req.userPermissions?.displayName || row.owner || 'user').trim() || 'user',
       actionType: 'manual',
       createdAt: new Date().toISOString()
     };

@@ -6,7 +6,7 @@ Bu mini uygulama sadece video + altyazı + OCR testleri için hazırlanmıştır
 - Video asset listesi (MAM API'den)
 - Video player (proxy/media)
 - Altyazı yükleme / üretme / arama
-- OCR çıkarma (paddle/tesseract, preprocess, Turkish fix)
+- OCR çıkarma (paddle, preprocess, Turkish fix)
 - OCR sonucu indirme, DB'ye kaydetme, OCR metninde arama
 
 ## Çalıştırma
