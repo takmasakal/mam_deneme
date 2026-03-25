@@ -269,3 +269,13 @@ Yeni bir Docker kurulumu için kısa kontrol listesi:
 - Proxy/transcode jobs and QC integrations
 - Audit trail, soft-delete, retention policies
 - Kafka/event bus for newsroom/planning integration
+
+## Safe update
+
+To avoid accidentally building an older Git checkout, use:
+
+```bash
+./scripts/up_latest_codex.sh
+```
+
+This script fetches `origin/codex/next-task`, switches to the latest available checkout of that branch (or detached HEAD if the branch is already open in another worktree), then runs `docker compose up -d --build`.
