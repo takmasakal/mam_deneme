@@ -56,10 +56,41 @@ services:
       KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       USE_OAUTH2_PROXY: "true"
+      ONLYOFFICE_PUBLIC_URL: ${ONLYOFFICE_PUBLIC_URL:-http://localhost:8082}
+      ONLYOFFICE_INTERNAL_URL: http://onlyoffice
+      APP_INTERNAL_URL: http://app:3000
     ports:
       - "3001:3000"
     volumes:
       - ./uploads:/app/uploads
+    restart: unless-stopped
+
+  onlyoffice:
+    image: onlyoffice/documentserver:8.3
+    container_name: mam-onlyoffice
+    environment:
+      JWT_ENABLED: "false"
+    entrypoint:
+      - /bin/bash
+      - -lc
+      - |
+        python3 - <<'PY'
+        import json
+        path = '/etc/onlyoffice/documentserver/default.json'
+        with open(path, 'r', encoding='utf-8') as fh:
+          data = json.load(fh)
+        services = data.setdefault('services', {}).setdefault('CoAuthoring', {})
+        rfa = services.setdefault('request-filtering-agent', {})
+        rfa['allowPrivateIPAddress'] = True
+        rfa['allowMetaIPAddress'] = False
+        ext = data.setdefault('externalRequest', {})
+        ext.setdefault('action', {})['blockPrivateIP'] = False
+        with open(path, 'w', encoding='utf-8') as fh:
+          json.dump(data, fh, indent=2)
+        PY
+        exec /app/ds/run-document-server.sh
+    ports:
+      - "8082:80"
     restart: unless-stopped
 
   keycloak-postgres:

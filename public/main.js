@@ -2170,6 +2170,22 @@ function isDocument(asset) {
   );
 }
 
+function isOfficeDocument(asset) {
+  const mime = String(asset.mimeType || '').toLowerCase();
+  const ext = getFileExtension(asset);
+  if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp'].includes(ext)) return true;
+  return (
+    mime.includes('msword')
+    || mime.includes('officedocument')
+    || mime.includes('ms-excel')
+    || mime.includes('ms-powerpoint')
+    || mime.includes('opendocument')
+    || mime.includes('sheet')
+    || mime.includes('presentation')
+    || mime.includes('wordprocessingml')
+  );
+}
+
 function getFileExtension(asset) {
   const name = String(asset.fileName || '');
   const idx = name.lastIndexOf('.');
@@ -3369,7 +3385,9 @@ function mediaViewer(asset, options = {}) {
   }
 
   if (isDocument(asset)) {
-    const viewerSrc = `/pdf-viewer.html?file=${encodeURIComponent(String(asset.mediaUrl || '').split('#')[0])}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&pdfAdvanced=${currentUserCanUsePdfAdvancedTools ? '1' : '0'}`;
+    const viewerSrc = isOfficeDocument(asset)
+      ? `/office-viewer.html?assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}`
+      : `/pdf-viewer.html?file=${encodeURIComponent(String(asset.mediaUrl || '').split('#')[0])}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&pdfAdvanced=${currentUserCanUsePdfAdvancedTools ? '1' : '0'}`;
     return `
       <div class="viewer-resizable">
         <iframe id="docViewerFrame" class="asset-viewer pdf-viewer-frame" src="${escapeHtml(viewerSrc)}" title="Document Viewer" loading="lazy"></iframe>

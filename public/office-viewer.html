@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ONLYOFFICE Viewer</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #121722;
+      --panel: #1a2231;
+      --line: #334158;
+      --text: #eef3ff;
+      --muted: #a9b4ca;
+      --accent: #3dc48d;
+    }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    body {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      overflow: hidden;
+    }
+    .viewer-status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(25, 34, 49, 0.98) 0%, rgba(19, 26, 38, 0.98) 100%);
+    }
+    .viewer-status strong {
+      color: var(--text);
+      font-size: 14px;
+    }
+    .viewer-status span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    #officeEditor {
+      min-height: 0;
+      height: 100%;
+      width: 100%;
+    }
+    .viewer-error {
+      padding: 18px;
+      margin: 18px;
+      border: 1px solid rgba(214, 90, 90, 0.45);
+      border-radius: 12px;
+      background: rgba(105, 29, 29, 0.22);
+      color: #ffdede;
+      white-space: pre-wrap;
+    }
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="viewer-status">
+    <strong id="statusTitle">ONLYOFFICE</strong>
+    <span id="statusText">Yükleniyor...</span>
+  </div>
+  <div id="officeEditor"></div>
+  <div id="errorBox" class="viewer-error hidden"></div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const assetId = String(params.get('assetId') || '').trim();
+    const lang = String(params.get('lang') || 'tr').trim().toLowerCase();
+    const statusText = document.getElementById('statusText');
+    const errorBox = document.getElementById('errorBox');
+    const officeEditor = document.getElementById('officeEditor');
+
+    function showError(message) {
+      if (statusText) statusText.textContent = 'Hata';
+      if (errorBox) {
+        errorBox.classList.remove('hidden');
+        errorBox.textContent = String(message || 'Viewer failed');
+      }
+    }
+
+    async function boot() {
+      if (!assetId) {
+        showError('assetId eksik.');
+        return;
+      }
+      try {
+        const configRes = await fetch(`/api/assets/${encodeURIComponent(assetId)}/office-config?lang=${encodeURIComponent(lang)}`, {
+          credentials: 'same-origin',
+          cache: 'no-store'
+        });
+        const payload = await configRes.json().catch(() => ({}));
+        if (!configRes.ok) {
+          throw new Error(String(payload.error || 'ONLYOFFICE config could not be loaded.'));
+        }
+        if (statusText) statusText.textContent = 'ONLYOFFICE yükleniyor...';
+        const script = document.createElement('script');
+        script.src = `${String(payload.onlyofficeUrl || '').replace(/\/+$/, '')}/web-apps/apps/api/documents/api.js`;
+        script.onload = () => {
+          if (!window.DocsAPI || !window.DocsAPI.DocEditor) {
+            showError('ONLYOFFICE DocsAPI yüklenemedi.');
+            return;
+          }
+          if (statusText) statusText.textContent = 'Hazır';
+          // ONLYOFFICE viewer'i yalnizca goruntuleme amaciyla aciyoruz.
+          window.docEditor = new window.DocsAPI.DocEditor('officeEditor', payload.config);
+        };
+        script.onerror = () => showError('ONLYOFFICE script yüklenemedi. Document Server çalışıyor mu kontrol edin.');
+        document.head.appendChild(script);
+      } catch (error) {
+        showError(error && error.message ? error.message : 'Viewer failed');
+      }
+    }
+
+    boot();
+  </script>
+</body>
+</html>

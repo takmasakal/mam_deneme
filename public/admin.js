@@ -149,9 +149,9 @@ let i18n = {
     proxy_tool_asset_name: 'Asset Name',
     proxy_tool_asset_name_ph: 'Type asset name',
     proxy_tool_action: 'Action',
-    proxy_tool_action_thumbnail: 'Generate Thumbnail',
-    proxy_tool_action_preview: 'Generate Preview',
-    proxy_tool_action_proxy: 'Generate Proxy',
+    proxy_tool_action_thumbnail: 'Generate Video Thumbnail',
+    proxy_tool_action_preview: 'Generate Document Preview',
+    proxy_tool_action_proxy: 'Generate Video Proxy',
     proxy_tool_action_replace_asset: 'Replace Asset',
     proxy_tool_timecode: 'Thumbnail Timecode',
     proxy_tool_timecode_ph: '00:00:12:10 or 12.4',
@@ -159,7 +159,7 @@ let i18n = {
     proxy_tool_replace_file_required: 'Please select a file.',
     proxy_tool_replace_options_title: 'After replace',
     proxy_tool_replace_gen_thumbnail: 'Generate thumbnail',
-    proxy_tool_replace_gen_preview: 'Generate preview',
+    proxy_tool_replace_gen_preview: 'Generate document preview',
     proxy_tool_replace_type_mismatch: 'New file type must match existing asset type.',
     proxy_tool_replace_options_prompt: 'Select what to generate after replacing the main file.',
     proxy_tool_run: 'Run Action',
@@ -374,9 +374,9 @@ let i18n = {
     proxy_tool_asset_name: 'Varlık Adı',
     proxy_tool_asset_name_ph: 'Varlık adını yazın',
     proxy_tool_action: 'İşlem',
-    proxy_tool_action_thumbnail: 'Thumbnail Üret',
-    proxy_tool_action_preview: 'Önizleme Üret',
-    proxy_tool_action_proxy: 'Proxy Uret',
+    proxy_tool_action_thumbnail: 'Video Thumbnail Üret',
+    proxy_tool_action_preview: 'Doküman Önizlemesi Üret',
+    proxy_tool_action_proxy: 'Video Proxy Üret',
     proxy_tool_action_replace_asset: 'Varlık Değiştir',
     proxy_tool_timecode: 'Thumbnail Timecode',
     proxy_tool_timecode_ph: '00:00:12:10 veya 12.4',
@@ -384,7 +384,7 @@ let i18n = {
     proxy_tool_replace_file_required: 'Lütfen bir dosya seçin.',
     proxy_tool_replace_options_title: 'Değişim sonrası',
     proxy_tool_replace_gen_thumbnail: 'Thumbnail üret',
-    proxy_tool_replace_gen_preview: 'Önizleme üret',
+    proxy_tool_replace_gen_preview: 'Doküman önizlemesi üret',
     proxy_tool_replace_type_mismatch: 'Yeni dosya türü mevcut varlık türü ile aynı olmalı.',
     proxy_tool_replace_options_prompt: 'Ana dosya değiştikten sonra üretilecekleri seçin.',
     proxy_tool_run: 'İşlemi Çalıştır',
@@ -582,6 +582,15 @@ function formatEditorTc(sec = 0) {
   return `${hh}:${mm}:${ss}:${ff}`;
 }
 
+function formatEditorMsTc(sec = 0) {
+  const safe = Math.max(0, Number(sec) || 0);
+  const hh = String(Math.floor(safe / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((safe % 3600) / 60)).padStart(2, '0');
+  const ss = String(Math.floor(safe % 60)).padStart(2, '0');
+  const ms = String(Math.floor((safe % 1) * 1000)).padStart(3, '0');
+  return `${hh}:${mm}:${ss}.${ms}`;
+}
+
 function parseEditorTcToSec(rawTc) {
   const text = String(rawTc || '').trim();
   const match = text.match(/^(\d{2}):(\d{2}):(\d{2})(?:([.,:])(\d{2,3}))?$/);
@@ -604,12 +613,30 @@ function parseEditorTcToSec(rawTc) {
   return (hh * 3600) + (mm * 60) + ss + fracSec;
 }
 
+function remapTimecodesInText(content, formatter) {
+  const mapFn = typeof formatter === 'function' ? formatter : formatEditorTc;
+  return String(content || '').replace(/\b\d{2}:\d{2}:\d{2}(?:[.,:]\d{2,3})?\b/g, (token) => {
+    const sec = parseEditorTcToSec(token);
+    if (!Number.isFinite(sec)) return token;
+    return mapFn(sec);
+  });
+}
+
+function convertContentTimecodesToFrames(content) {
+  return remapTimecodesInText(content, formatEditorTc);
+}
+
+function convertContentTimecodesToMilliseconds(content) {
+  return remapTimecodesInText(content, formatEditorMsTc);
+}
+
 function openTextEditorModal({
   title,
   content,
   mediaUrl = '',
   mediaStartSec = 0,
   previewMode = 'audio',
+  contentTimecodeMode = 'frames',
   onSave = null
 }) {
   return new Promise((resolve) => {
@@ -692,7 +719,11 @@ function openTextEditorModal({
     const audioDuration = backdrop.querySelector('#contentEditorAudioDuration');
     const videoEl = backdrop.querySelector('#contentEditorVideo');
     const videoTc = backdrop.querySelector('#contentEditorVideoTc');
-    if (area) area.value = String(content || '');
+    if (area) {
+      area.value = contentTimecodeMode === 'frames'
+        ? convertContentTimecodesToFrames(content)
+        : String(content || '');
+    }
     let lastFindPos = 0;
     let lastFindQuery = '';
     // Keep folded text length stable so match indexes map to original text positions.
@@ -962,7 +993,12 @@ function openTextEditorModal({
       }
       try {
         if (saveMsg) saveMsg.textContent = `${t('loading')}...`;
-        await onSave(String(area?.value || ''));
+        const nextContent = String(area?.value || '');
+        await onSave(
+          contentTimecodeMode === 'frames'
+            ? convertContentTimecodesToMilliseconds(nextContent)
+            : nextContent
+        );
         if (saveMsg) saveMsg.textContent = t('content_saved');
       } catch (error) {
         if (saveMsg) saveMsg.textContent = String(error.message || 'Request failed');

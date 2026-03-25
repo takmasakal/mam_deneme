@@ -96,6 +96,9 @@ const KEYCLOAK_ADMIN_USERNAME = process.env.KEYCLOAK_ADMIN_USERNAME || process.e
 const KEYCLOAK_ADMIN_PASSWORD = process.env.KEYCLOAK_ADMIN_PASSWORD || '';
 const KEYCLOAK_ADMIN_CLIENT_ID = process.env.KEYCLOAK_ADMIN_CLIENT_ID || 'admin-cli';
 const USE_OAUTH2_PROXY = String(process.env.USE_OAUTH2_PROXY || 'false').trim().toLowerCase() === 'true';
+const ONLYOFFICE_PUBLIC_URL = String(process.env.ONLYOFFICE_PUBLIC_URL || 'http://localhost:8082').trim().replace(/\/+$/, '');
+const ONLYOFFICE_INTERNAL_URL = String(process.env.ONLYOFFICE_INTERNAL_URL || 'http://onlyoffice').trim().replace(/\/+$/, '');
+const APP_INTERNAL_URL = String(process.env.APP_INTERNAL_URL || 'http://app:3000').trim().replace(/\/+$/, '');
 const OIDC_JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
 const oidcJwksCache = new Map();
 const pdfOcrCache = new Map();
@@ -2978,6 +2981,32 @@ function isDocumentCandidate({ mimeType, fileName, declaredType }) {
 
   const ext = getFileExtension(fileName);
   return ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'odt', 'ods', 'odp'].includes(ext) || TEXT_DOC_EXTENSIONS.has(ext);
+}
+
+function isOfficeDocumentCandidate({ mimeType, fileName }) {
+  const mime = String(mimeType || '').toLowerCase();
+  const ext = getFileExtension(fileName);
+  if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp'].includes(ext)) return true;
+  return (
+    mime.includes('msword')
+    || mime.includes('officedocument')
+    || mime.includes('ms-excel')
+    || mime.includes('ms-powerpoint')
+    || mime.includes('opendocument')
+    || mime.includes('sheet')
+    || mime.includes('presentation')
+    || mime.includes('wordprocessingml')
+  );
+}
+
+function getOnlyOfficeDocumentType({ mimeType, fileName }) {
+  const ext = getFileExtension(fileName);
+  if (['xls', 'xlsx', 'ods'].includes(ext)) return 'cell';
+  if (['ppt', 'pptx', 'odp'].includes(ext)) return 'slide';
+  const mime = String(mimeType || '').toLowerCase();
+  if (mime.includes('sheet') || mime.includes('excel')) return 'cell';
+  if (mime.includes('presentation') || mime.includes('powerpoint')) return 'slide';
+  return 'word';
 }
 
 function getAssetFamily({ mimeType, fileName, declaredType }) {
@@ -6842,6 +6871,78 @@ app.get('/api/assets/:id', async (req, res) => {
   } catch (_error) {
     res.status(500).json({ error: 'Failed to load asset' });
   }
+});
+
+app.get('/api/assets/:id/office-config', async (req, res) => {
+  try {
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
+    if (!assetResult.rowCount) {
+      return res.status(404).json({ error: 'Asset not found' });
+    }
+    const row = assetResult.rows[0];
+    if (!isOfficeDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+      return res.status(400).json({ error: 'Asset is not an Office document' });
+    }
+    const fileType = getFileExtension(row.file_name) || 'docx';
+    const documentType = getOnlyOfficeDocumentType({ mimeType: row.mime_type, fileName: row.file_name });
+    const publicTitle = String(row.title || row.file_name || row.id || 'Document').trim() || 'Document';
+    const mediaUrl = String(row.media_url || '').trim();
+    if (!mediaUrl.startsWith('/uploads/')) {
+      return res.status(400).json({ error: 'Document URL is invalid' });
+    }
+
+    const documentUrl = `${APP_INTERNAL_URL}${mediaUrl}`;
+    const callbackUrl = `${APP_INTERNAL_URL}/api/assets/${encodeURIComponent(String(row.id || '').trim())}/office-callback`;
+    const officeKeySeed = `${String(row.id || '').trim()}|${String(row.updated_at || row.created_at || '').trim()}|${String(row.media_url || '').trim()}`;
+    const officeDocumentKey = crypto.createHash('sha1').update(officeKeySeed).digest('hex');
+    const config = {
+      document: {
+        fileType,
+        key: officeDocumentKey,
+        title: publicTitle,
+        url: documentUrl
+      },
+      documentType,
+      editorConfig: {
+        mode: 'view',
+        lang: String(req.query.lang || 'tr').trim().toLowerCase().startsWith('tr') ? 'tr' : 'en',
+        callbackUrl,
+        customization: {
+          autosave: false,
+          comments: false,
+          compactHeader: true,
+          compactToolbar: true,
+          forcesave: false,
+          help: false,
+          hideRightMenu: true,
+          hideRulers: false,
+          integrationMode: 'embed'
+        }
+      },
+      permissions: {
+        chat: false,
+        comment: false,
+        copy: true,
+        download: true,
+        edit: false,
+        fillForms: false,
+        modifyContentControl: false,
+        modifyFilter: false,
+        print: true,
+        review: false
+      }
+    };
+    return res.json({
+      onlyofficeUrl: ONLYOFFICE_PUBLIC_URL,
+      config
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to build ONLYOFFICE config' });
+  }
+});
+
+app.post('/api/assets/:id/office-callback', express.json({ limit: '10mb' }), (_req, res) => {
+  return res.json({ error: 0 });
 });
 
 app.get('/api/assets/:id/technical', async (req, res) => {
