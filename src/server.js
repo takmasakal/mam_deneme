@@ -86,6 +86,50 @@ const OIDC_JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
 const oidcJwksCache = new Map();
 const pdfOcrCache = new Map();
 
+function trimTrailingSlashes(value) {
+  return String(value || '').trim().replace(/\/+$/, '');
+}
+
+function buildRealmIssuerUrl(baseUrl, realm = KEYCLOAK_REALM) {
+  const trimmedBaseUrl = trimTrailingSlashes(baseUrl);
+  const trimmedRealm = String(realm || '').trim();
+  if (!trimmedBaseUrl || !trimmedRealm) return '';
+  return `${trimmedBaseUrl}/realms/${encodeURIComponent(trimmedRealm)}`;
+}
+
+function buildRealmJwksUrl(baseUrl, realm = KEYCLOAK_REALM) {
+  const issuerUrl = buildRealmIssuerUrl(baseUrl, realm);
+  if (!issuerUrl) return '';
+  return `${issuerUrl}/protocol/openid-connect/certs`;
+}
+
+function normalizeIssuerPath(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    return parsed.pathname.replace(/\/+$/, '');
+  } catch (_error) {
+    return raw.replace(/\/+$/, '');
+  }
+}
+
+function getExpectedIssuerPath(settings) {
+  const configuredIssuerPath = normalizeIssuerPath(settings?.oidcIssuerUrl || '');
+  if (configuredIssuerPath) return configuredIssuerPath;
+  const realmPath = normalizeIssuerPath(buildRealmIssuerUrl(KEYCLOAK_INTERNAL_URL));
+  if (realmPath) return realmPath;
+  return `/realms/${encodeURIComponent(KEYCLOAK_REALM)}`;
+}
+
+function getPreferredOidcJwksUrls(settings) {
+  return Array.from(new Set([
+    buildRealmJwksUrl(KEYCLOAK_INTERNAL_URL),
+    buildRealmJwksUrl(KEYCLOAK_PUBLIC_URL),
+    String(settings?.oidcJwksUrl || '').trim()
+  ].filter(Boolean)));
+}
+
 function resolveRequestProtocol(req) {
   const xfProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
   if (xfProto === 'https' || xfProto === 'http') return xfProto;
@@ -5038,8 +5082,9 @@ function validateJwtClaims(payload, settings) {
   if (payload?.exp && now >= Number(payload.exp)) return 'Token expired';
   if (payload?.nbf && now < Number(payload.nbf)) return 'Token not active yet';
 
-  const expectedIssuer = String(settings.oidcIssuerUrl || '').trim();
-  if (expectedIssuer && String(payload?.iss || '') !== expectedIssuer) return 'Invalid token issuer';
+  const expectedIssuerPath = getExpectedIssuerPath(settings);
+  const actualIssuerPath = normalizeIssuerPath(payload?.iss || '');
+  if (expectedIssuerPath && actualIssuerPath !== expectedIssuerPath) return 'Invalid token issuer';
 
   const audienceRaw = String(settings.oidcAudience || '').trim();
   if (audienceRaw) {
@@ -5058,15 +5103,25 @@ async function verifyOidcBearerToken(token, settings) {
   if (String(decoded?.header?.alg || '') !== 'RS256') throw new Error('Unsupported token algorithm');
   const kid = String(decoded?.header?.kid || '').trim();
   if (!kid) throw new Error('Missing token key id');
-  const jwksUrl = String(settings.oidcJwksUrl || '').trim();
-  if (!jwksUrl) throw new Error('OIDC JWKS URL is not configured');
+  const jwksUrls = getPreferredOidcJwksUrls(settings);
+  if (!jwksUrls.length) throw new Error('OIDC JWKS URL is not configured');
 
-  let keys = await getOidcJwks(jwksUrl, false);
-  let jwk = keys.find((k) => String(k?.kid || '') === kid);
-  if (!jwk) {
-    keys = await getOidcJwks(jwksUrl, true);
-    jwk = keys.find((k) => String(k?.kid || '') === kid);
+  let jwk = null;
+  let lastFetchError = null;
+  for (const jwksUrl of jwksUrls) {
+    try {
+      let keys = await getOidcJwks(jwksUrl, false);
+      jwk = keys.find((k) => String(k?.kid || '') === kid);
+      if (!jwk) {
+        keys = await getOidcJwks(jwksUrl, true);
+        jwk = keys.find((k) => String(k?.kid || '') === kid);
+      }
+      if (jwk) break;
+    } catch (error) {
+      lastFetchError = error;
+    }
   }
+  if (!jwk && lastFetchError) throw lastFetchError;
   if (!jwk) throw new Error('Token signing key not found');
 
   const signatureOk = verifyJwtSignatureWithJwk(decoded.signedPart, decoded.signature, jwk);
@@ -7646,6 +7701,42 @@ app.get('/api/assets/:id/pdf-search', async (req, res) => {
 
 app.get('/api/assets/:id/pdf-search-ocr', async (_req, res) => {
   return res.status(410).json({ error: 'PDF OCR search is disabled.' });
+});
+
+app.get('/api/assets/:id/pdf-page-text', async (req, res) => {
+  try {
+    const requestedPage = Math.max(1, Number(req.query.page) || 1);
+
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
+    if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
+    const row = assetResult.rows[0];
+    if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+      return res.status(400).json({ error: 'Asset is not a PDF' });
+    }
+
+    let inputPath = row.source_path;
+    if (!inputPath || !fs.existsSync(inputPath)) {
+      const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
+      if (mediaPath && fs.existsSync(mediaPath)) inputPath = mediaPath;
+    }
+    if (!inputPath || !fs.existsSync(inputPath)) {
+      return res.status(404).json({ error: 'PDF file not found on server' });
+    }
+
+    const pages = await extractPdfPagesText(inputPath);
+    if (!pages.length) {
+      return res.json({ page: requestedPage, totalPages: 0, text: '' });
+    }
+
+    const safePage = Math.min(Math.max(1, requestedPage), pages.length);
+    return res.json({
+      page: safePage,
+      totalPages: pages.length,
+      text: String(pages[safePage - 1] || ''),
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load PDF page text' });
+  }
 });
 
 app.get('/api/assets/:id/pdf-meta', async (req, res) => {
