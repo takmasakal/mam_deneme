@@ -65,10 +65,10 @@ let videoJsLoadPromise = null;
 let dashJsLoadPromise = null;
 let detailVideoPinned = localStorage.getItem(LOCAL_DETAIL_VIDEO_PIN) === '1';
 let selectedAssetId = null;
-let currentUserIsAdmin = false;
 let currentUserCanAccessAdmin = false;
 let currentUserCanEditMetadata = false;
 let currentUserCanEditOffice = false;
+let currentUserCanDeleteAssets = false;
 let currentUserCanUsePdfAdvancedTools = false;
 let currentUsername = '';
 const selectedAssetIds = new Set();
@@ -1301,7 +1301,7 @@ async function loadCurrentUser() {
     currentUserCanAccessAdmin = canAccessAdmin;
     currentUserCanEditMetadata = canEditMetadata;
     currentUserCanEditOffice = canEditOffice;
-    currentUserIsAdmin = canDeleteAssets;
+    currentUserCanDeleteAssets = canDeleteAssets;
     currentUserCanUsePdfAdvancedTools = canUsePdfAdvancedTools;
     currentUsername = username.toLowerCase();
     const value = displayName || username || (email.includes('@') ? email.split('@')[0] : '') || t('unknown_user');
@@ -1315,7 +1315,7 @@ async function loadCurrentUser() {
     currentUserCanAccessAdmin = false;
     currentUserCanEditMetadata = false;
     currentUserCanEditOffice = false;
-    currentUserIsAdmin = false;
+    currentUserCanDeleteAssets = false;
     currentUserCanUsePdfAdvancedTools = false;
     currentUserBtn.dataset.value = '';
     currentUserBtn.textContent = t('unknown_user');
@@ -3019,7 +3019,7 @@ function renderAssets(assets) {
             ${asset.inTrash ? `
               <div class="card-actions">
                 <button type="button" data-card-action="restore" data-id="${asset.id}">${t('restore')}</button>
-                ${currentUserIsAdmin ? `<button type="button" class="danger" data-card-action="delete" data-id="${asset.id}">${t('delete_permanent')}</button>` : ''}
+                ${currentUserCanDeleteAssets ? `<button type="button" class="danger" data-card-action="delete" data-id="${asset.id}">${t('delete_permanent')}</button>` : ''}
               </div>
             ` : ''}
           </div>
@@ -3532,15 +3532,88 @@ function initVideoJsPlayer(mediaEl, _root = document) {
   };
 }
 
+function getVersionSectionAccess(asset) {
+  const assetIsPdf = String(asset?.mimeType || '').toLowerCase().includes('pdf');
+  const assetIsOffice = isOfficeDocument(asset);
+  return {
+    assetIsPdf,
+    assetIsOffice,
+    canViewVersions: Boolean(
+      assetIsPdf
+        ? currentUserCanUsePdfAdvancedTools
+        : assetIsOffice
+          ? currentUserCanEditOffice
+          : currentUserCanAccessAdmin
+    ),
+    canManageVersions: Boolean(
+      assetIsPdf
+        ? currentUserCanUsePdfAdvancedTools
+        : currentUserCanAccessAdmin
+    )
+  };
+}
+
+function getVersionRowState(version, access) {
+  const actionType = String(version?.actionType || 'manual').toLowerCase();
+  const hasSnapshot = String(version?.snapshotMediaUrl || '').startsWith('/uploads/');
+  const actorUsername = String(version?.actorUsername || '').trim().toLowerCase();
+  const isOwnVersion = Boolean(currentUsername && actorUsername && currentUsername === actorUsername);
+  const canEditOrDelete = Boolean(
+    access.assetIsPdf
+      ? (currentUserCanUsePdfAdvancedTools && (currentUserCanAccessAdmin || isOwnVersion))
+      : access.assetIsOffice
+        ? currentUserCanAccessAdmin
+        : currentUserCanAccessAdmin
+  );
+  return {
+    actionType,
+    canRestorePdf: Boolean(currentUserCanAccessAdmin && access.assetIsPdf && hasSnapshot),
+    canRestoreOffice: Boolean(currentUserCanAccessAdmin && access.assetIsOffice && hasSnapshot),
+    canEditVersion: canEditOrDelete,
+    canDeleteVersion: canEditOrDelete
+  };
+}
+
+function renderVersionRow(asset, version, access, interactive) {
+  const rowState = getVersionRowState(version, access);
+  if (rowState.actionType === 'pdf_original') return '';
+  const changeKindLabel = rowState.actionType === 'pdf_save' ? renderPdfChangeKindLabel(version) : '';
+  const cleanNote = cleanVersionNoteText(version.note);
+  const rowClass = rowState.canRestorePdf ? 'version version-restorable' : 'version';
+  const restoreAttr = rowState.canRestorePdf ? ` data-restore-version-id="${escapeHtml(version.versionId)}"` : '';
+  const actionBar = interactive ? `
+    <div class="timecode-bar" style="margin-top:8px;">
+      ${access.assetIsPdf ? `<button type="button" class="restorePdfVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canRestorePdf ? '' : 'disabled'}>${escapeHtml(rowState.canRestorePdf ? t('restore_pdf_version') : t('restore_pdf_unavailable'))}</button>` : ''}
+      ${access.assetIsOffice ? `<button type="button" class="restoreOfficeVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canRestoreOffice ? '' : 'disabled'}>${escapeHtml(rowState.canRestoreOffice ? t('restore_office_version') : t('restore_pdf_unavailable'))}</button>` : ''}
+      <button type="button" class="editVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canEditVersion ? '' : 'disabled'}>${escapeHtml(t('edit_version_name'))}</button>
+      ${rowState.canDeleteVersion ? `<button type="button" class="deleteVersionBtn danger" data-version-id="${escapeHtml(version.versionId)}">${escapeHtml(t('delete_version'))}</button>` : ''}
+    </div>
+  ` : '';
+  return `
+    <div class="${rowClass}" data-version-id="${escapeHtml(version.versionId)}"${restoreAttr}>
+      <strong>${escapeHtml(version.label)}</strong> - ${escapeHtml(cleanNote)}<br />
+      <span class="asset-meta">${new Date(version.createdAt).toLocaleString()}</span><br />
+      <span class="asset-meta">${escapeHtml(t('version_action'))}: ${escapeHtml(t(`action_${rowState.actionType}`) || String(version.actionType || 'manual'))} | ${escapeHtml(t('version_actor'))}: ${escapeHtml(version.actorUsername || '-')}</span>
+      ${changeKindLabel ? `<br /><span class="asset-meta">${escapeHtml(t('version_change_type'))}: ${escapeHtml(changeKindLabel)}</span>` : ''}
+      ${actionBar}
+    </div>
+  `;
+}
+
+async function refreshAssetDetail(assetId, workflow) {
+  await loadAssets();
+  await openAsset(assetId, workflow);
+}
+
 function detailMarkup(asset, workflow) {
   const dc = asset.dcMetadata || {};
   const trashStatus = asset.inTrash ? `<strong>${t('in_trash')}</strong>` : t('active');
   const trashActions = asset.inTrash
     ? `
       <button type="button" id="restoreAssetBtn">${t('restore')}</button>
-      ${currentUserIsAdmin ? `<button type="button" id="deleteAssetBtn">${t('delete_permanent')}</button>` : ''}
+      ${currentUserCanDeleteAssets ? `<button type="button" id="deleteAssetBtn">${t('delete_permanent')}</button>` : ''}
     `
-    : (currentUserIsAdmin
+    : (currentUserCanDeleteAssets
       ? `
         <button type="button" id="trashAssetBtn">${t('move_to_trash')}</button>
       `
@@ -3634,22 +3707,8 @@ function detailMarkup(asset, workflow) {
     </form>
   `;
 
-  const assetIsPdf = String(asset.mimeType || '').toLowerCase().includes('pdf');
-  const assetIsOffice = isOfficeDocument(asset);
-  const canViewVersions = Boolean(
-    assetIsPdf
-      ? currentUserCanUsePdfAdvancedTools
-      : assetIsOffice
-        ? (currentUserCanEditOffice || currentUserCanAccessAdmin)
-        : currentUserCanAccessAdmin
-  );
-  const canManageVersions = Boolean(
-    assetIsPdf
-      ? currentUserCanUsePdfAdvancedTools
-      : assetIsOffice
-        ? currentUserCanEditOffice
-      : currentUserCanAccessAdmin
-  );
+  const versionAccess = getVersionSectionAccess(asset);
+  const { assetIsPdf, assetIsOffice, canViewVersions, canManageVersions } = versionAccess;
   const versionSection = canManageVersions ? `
     <form id="versionForm" class="inline-grid">
       <h4>${t('add_version')}</h4>
@@ -3678,75 +3737,14 @@ function detailMarkup(asset, workflow) {
     ` : ''}
     <div id="assetVersionsList">
     ${asset.versions
-      .map((v) => {
-        const isPdfAsset = assetIsPdf;
-        const isOfficeAsset = assetIsOffice;
-        const actionType = String(v.actionType || 'manual').toLowerCase();
-        if (actionType === 'pdf_original') return '';
-        const hasSnapshot = String(v.snapshotMediaUrl || '').startsWith('/uploads/');
-        const actorUsername = String(v.actorUsername || '').trim().toLowerCase();
-        const isOwnVersion = Boolean(currentUsername && actorUsername && currentUsername === actorUsername);
-        const canRestore = Boolean(currentUserCanAccessAdmin && isPdfAsset && hasSnapshot);
-        const canRestoreOffice = Boolean(currentUserCanAccessAdmin && isOfficeAsset && hasSnapshot);
-        const canDeleteVersion = Boolean(
-          assetIsPdf
-            ? (currentUserCanUsePdfAdvancedTools && (currentUserCanAccessAdmin || isOwnVersion))
-            : isOfficeAsset
-              ? (currentUserCanEditOffice && (currentUserCanAccessAdmin || isOwnVersion))
-            : currentUserCanAccessAdmin
-        );
-        const canEditVersion = Boolean(
-          assetIsPdf
-            ? (currentUserCanUsePdfAdvancedTools && (currentUserCanAccessAdmin || isOwnVersion))
-            : isOfficeAsset
-              ? (currentUserCanEditOffice && (currentUserCanAccessAdmin || isOwnVersion))
-            : currentUserCanAccessAdmin
-        );
-        const changeKindLabel = actionType === 'pdf_save' ? renderPdfChangeKindLabel(v) : '';
-        const cleanNote = cleanVersionNoteText(v.note);
-        return `
-          <div class="version ${canRestore ? 'version-restorable' : ''}" data-version-id="${escapeHtml(v.versionId)}" ${canRestore ? `data-restore-version-id="${escapeHtml(v.versionId)}"` : ''}>
-            <strong>${escapeHtml(v.label)}</strong> - ${escapeHtml(cleanNote)}<br />
-            <span class="asset-meta">${new Date(v.createdAt).toLocaleString()}</span><br />
-            <span class="asset-meta">${escapeHtml(t('version_action'))}: ${escapeHtml(t(`action_${actionType}`) || String(v.actionType || 'manual'))} | ${escapeHtml(t('version_actor'))}: ${escapeHtml(v.actorUsername || '-')}</span>
-            ${changeKindLabel ? `<br /><span class="asset-meta">${escapeHtml(t('version_change_type'))}: ${escapeHtml(changeKindLabel)}</span>` : ''}
-            ${(
-              assetIsPdf
-                ? currentUserCanUsePdfAdvancedTools
-                : isOfficeAsset
-                  ? currentUserCanEditOffice
-                  : currentUserCanAccessAdmin
-            ) ? `
-              <div class="timecode-bar" style="margin-top:8px;">
-                ${isPdfAsset ? `<button type="button" class="restorePdfVersionBtn" data-version-id="${escapeHtml(v.versionId)}" ${canRestore ? '' : 'disabled'}>${escapeHtml(canRestore ? t('restore_pdf_version') : t('restore_pdf_unavailable'))}</button>` : ''}
-                ${isOfficeAsset ? `<button type="button" class="restoreOfficeVersionBtn" data-version-id="${escapeHtml(v.versionId)}" ${canRestoreOffice ? '' : 'disabled'}>${escapeHtml(canRestoreOffice ? t('restore_office_version') : t('restore_pdf_unavailable'))}</button>` : ''}
-                <button type="button" class="editVersionBtn" data-version-id="${escapeHtml(v.versionId)}" ${canEditVersion ? '' : 'disabled'}>${escapeHtml(t('edit_version_name'))}</button>
-                ${canDeleteVersion ? `<button type="button" class="deleteVersionBtn danger" data-version-id="${escapeHtml(v.versionId)}">${escapeHtml(t('delete_version'))}</button>` : ''}
-              </div>
-            ` : ''}
-          </div>
-        `;
-      })
+      .map((v) => renderVersionRow(asset, v, versionAccess, true))
       .join('')}
     </div>
   ` : (canViewVersions ? `
     <h4>${t('versions')}</h4>
     <div id="assetVersionsList">
     ${asset.versions
-      .map((v) => {
-        const actionType = String(v.actionType || 'manual').toLowerCase();
-        if (actionType === 'pdf_original') return '';
-        const changeKindLabel = actionType === 'pdf_save' ? renderPdfChangeKindLabel(v) : '';
-        const cleanNote = cleanVersionNoteText(v.note);
-        return `
-          <div class="version" data-version-id="${escapeHtml(v.versionId)}">
-            <strong>${escapeHtml(v.label)}</strong> - ${escapeHtml(cleanNote)}<br />
-            <span class="asset-meta">${new Date(v.createdAt).toLocaleString()}</span><br />
-            <span class="asset-meta">${escapeHtml(t('version_action'))}: ${escapeHtml(t(`action_${actionType}`) || String(v.actionType || 'manual'))} | ${escapeHtml(t('version_actor'))}: ${escapeHtml(v.actorUsername || '-')}</span>
-            ${changeKindLabel ? `<br /><span class="asset-meta">${escapeHtml(t('version_change_type'))}: ${escapeHtml(changeKindLabel)}</span>` : ''}
-          </div>
-        `;
-      })
+      .map((v) => renderVersionRow(asset, v, versionAccess, false))
       .join('')}
     </div>
   ` : '');
@@ -3780,7 +3778,7 @@ function multiSelectionDetailMarkup(selectedAssets) {
         ${selectedAssets.slice(0, 40).map((asset) => `<span class="chip multi-chip" style="${assetTagChipStyle(asset)}">${escapeHtml(asset.title)}</span>`).join('')}
       </div>
       <div class="timecode-bar">
-        ${currentUserIsAdmin ? `<button type="button" id="bulkDeleteBtn">${escapeHtml(t('bulk_delete_selected'))}</button>` : ''}
+        ${currentUserCanDeleteAssets ? `<button type="button" id="bulkDeleteBtn">${escapeHtml(t('bulk_delete_selected'))}</button>` : ''}
         <button type="button" id="bulkClearBtn">${escapeHtml(t('bulk_clear_selection'))}</button>
       </div>
     </div>
@@ -3811,7 +3809,7 @@ async function openMultiSelectionDetail() {
   const bulkClearBtn = document.getElementById('bulkClearBtn');
 
   bulkDeleteBtn?.addEventListener('click', async () => {
-    if (!currentUserIsAdmin) return;
+    if (!currentUserCanDeleteAssets) return;
     const ids = [...selectedAssetIds];
     if (!ids.length) return;
     const ok = confirm(tf('bulk_delete_confirm', { count: ids.length }));
@@ -4007,7 +4005,7 @@ function initFrameControls(mediaEl, asset, root = document, options = {}) {
               <button type="button" data-cut-action="edit" data-cut-id="${cut.cutId}">${t('edit_clip')}</button>
               <button type="button" data-cut-action="jump" data-cut-id="${cut.cutId}">${t('jump_to_cut')}</button>
               <button type="button" data-cut-action="play-cut" data-cut-id="${cut.cutId}">${t('play_cut')}</button>
-              ${currentUserIsAdmin ? `<button type="button" data-cut-action="delete" data-cut-id="${cut.cutId}">${t('delete_cut')}</button>` : ''}
+              ${currentUserCanDeleteAssets ? `<button type="button" data-cut-action="delete" data-cut-id="${cut.cutId}">${t('delete_cut')}</button>` : ''}
             </div>
           </div>
         `;
@@ -4196,7 +4194,7 @@ function initFrameControls(mediaEl, asset, root = document, options = {}) {
       return;
     }
     if (action === 'delete') {
-      if (!currentUserIsAdmin) return;
+      if (!currentUserCanDeleteAssets) return;
       await deleteApi(`/api/assets/${asset.id}/cuts/${cutId}`);
       const idx = cuts.findIndex((c) => c.cutId === cutId);
       if (idx >= 0) cuts.splice(idx, 1);
@@ -5551,7 +5549,7 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
           <span class="subtitle-item-label">${escapeHtml(item.subtitleLabel || item.subtitleLang || 'subtitle')}</span>
           <span class="subtitle-item-lang">${escapeHtml(item.subtitleLang || '')}</span>
           <a class="subtitle-item-download-btn" href="${escapeHtml(item.subtitleUrl)}" download target="_blank" rel="noreferrer">${t('subtitle_download')}</a>
-          ${currentUserIsAdmin ? `<button type="button" class="subtitle-item-remove-btn">${t('subtitle_remove')}</button>` : ''}
+          ${currentUserCanDeleteAssets ? `<button type="button" class="subtitle-item-remove-btn">${t('subtitle_remove')}</button>` : ''}
           <button type="button" class="subtitle-item-use-btn">${active ? t('subtitle_active') : t('subtitle_use')}</button>
         </div>
       `;
@@ -6644,8 +6642,7 @@ async function openAsset(id, workflow, options = {}) {
     const ok = confirm(t('restore_pdf_original_confirm'));
     if (!ok) return;
     await api(`/api/assets/${id}/pdf-restore-original`, { method: 'POST', body: '{}' });
-    await loadAssets();
-    await openAsset(id, workflow);
+    await refreshAssetDetail(id, workflow);
   });
 
   const restoreOfficeOriginalBtn = document.getElementById('restoreOfficeOriginalBtn');
@@ -6654,8 +6651,7 @@ async function openAsset(id, workflow, options = {}) {
     const ok = confirm(t('restore_office_original_confirm'));
     if (!ok) return;
     await api(`/api/assets/${id}/office-restore-original`, { method: 'POST', body: '{}' });
-    await loadAssets();
-    await openAsset(id, workflow);
+    await refreshAssetDetail(id, workflow);
   });
 
   const assetVersionsListEl = document.getElementById('assetVersionsList');
@@ -6669,8 +6665,7 @@ async function openAsset(id, workflow, options = {}) {
         method: 'POST',
         body: JSON.stringify({ versionId })
       });
-      await loadAssets();
-      await openAsset(id, workflow);
+      await refreshAssetDetail(id, workflow);
   };
 
   const handleDeleteVersion = async (deleteBtnEl) => {
@@ -6758,8 +6753,7 @@ async function openAsset(id, workflow, options = {}) {
         alert(payload.error || 'Failed to restore Office version');
         return;
       }
-      await loadAssets();
-      await openAsset(asset.id);
+      await refreshAssetDetail(asset.id, workflow);
     });
   });
 
@@ -6797,8 +6791,7 @@ async function openAsset(id, workflow, options = {}) {
       method: 'POST',
       body: JSON.stringify({ versionId })
     });
-    await loadAssets();
-    await openAsset(id, workflow);
+    await refreshAssetDetail(id, workflow);
   }, true);
 
   const trashBtn = document.getElementById('trashAssetBtn');
@@ -6831,7 +6824,7 @@ async function openAsset(id, workflow, options = {}) {
   });
 
   deleteBtn?.addEventListener('click', async () => {
-    if (!currentUserIsAdmin) return;
+    if (!currentUserCanDeleteAssets) return;
     const ok = confirm(t('trash_confirm'));
     if (!ok) return;
     await deleteApi(`/api/assets/${id}`);
@@ -6922,7 +6915,7 @@ assetGrid.addEventListener('click', async (event) => {
       return;
     }
     if (action === 'delete') {
-      if (!currentUserIsAdmin) return;
+      if (!currentUserCanDeleteAssets) return;
       const ok = confirm(t('trash_confirm'));
       if (!ok) return;
       await deleteApi(`/api/assets/${id}`);

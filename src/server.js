@@ -5,6 +5,17 @@ const { spawn } = require('child_process');
 const express = require('express');
 const { nanoid } = require('nanoid');
 const { pool, initDb } = require('./db');
+const {
+  PERMISSION_DEFINITIONS,
+  PERMISSION_KEYS,
+  normalizePrincipalNames,
+  getPermissionDefinitionsPayload,
+  resolvePermissionKeysFromPrincipals,
+  permissionKeysToLegacyFlags,
+  normalizePermissionEntry,
+  isAdminName,
+  isAdminByGroupsOrRoles
+} = require('./permissions');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -50,41 +61,6 @@ function normalizePlayerUiMode(value) {
   return 'native';
 }
 const DEFAULT_USER_PERMISSIONS = {};
-const PERMISSION_DEFINITIONS = [
-  {
-    key: 'admin.access',
-    legacyField: 'adminPageAccess',
-    roleNames: ['mam-admin', 'mam-admin-access'],
-    labelKey: 'perm_admin_access'
-  },
-  {
-    key: 'metadata.edit',
-    legacyField: 'metadataEdit',
-    roleNames: ['mam-metadata-edit'],
-    labelKey: 'perm_metadata_edit'
-  },
-  {
-    key: 'office.edit',
-    legacyField: 'officeEdit',
-    roleNames: ['mam-office-edit'],
-    labelKey: 'perm_office_edit'
-  },
-  {
-    key: 'asset.delete',
-    legacyField: 'assetDelete',
-    roleNames: ['mam-asset-delete'],
-    labelKey: 'perm_asset_delete'
-  },
-  {
-    key: 'pdf.advanced',
-    legacyField: 'pdfAdvancedTools',
-    roleNames: ['mam-pdf-advanced'],
-    labelKey: 'perm_pdf_advanced'
-  }
-];
-const PERMISSION_KEYS = PERMISSION_DEFINITIONS.map((item) => item.key);
-const SUPER_ADMIN_ROLE_NAMES = ['admin', 'realm-admin', 'mam-super-admin'];
-const SUPER_ADMIN_USERNAMES = ['admin', 'mamadmin'];
 const ELASTIC_URL = process.env.ELASTIC_URL || 'http://localhost:9200';
 const ELASTIC_INDEX = process.env.ELASTIC_INDEX || 'mam_assets';
 const WHISPER_MODEL = process.env.WHISPER_MODEL || 'small';
@@ -5638,58 +5614,6 @@ function decodeJwtPayload(token) {
   }
 }
 
-function normalizePrincipalNames(values) {
-  return (Array.isArray(values) ? values : [])
-    .flatMap((value) => String(value || '').split(/[,\s]+/))
-    .map((value) => String(value || '').trim().toLowerCase())
-    .filter(Boolean);
-}
-
-function getPermissionDefinitionsPayload() {
-  return PERMISSION_DEFINITIONS.map((item) => ({
-    key: item.key,
-    legacyField: item.legacyField,
-    labelKey: item.labelKey,
-    roleNames: [...item.roleNames]
-  }));
-}
-
-function resolvePermissionKeysFromPrincipals({ username = '', groups = [], roles = [] } = {}) {
-  const normalizedUsername = String(username || '').trim().toLowerCase();
-  const principalNames = new Set([
-    ...normalizePrincipalNames(groups),
-    ...normalizePrincipalNames(roles)
-  ]);
-  const permissionKeys = new Set();
-  const isSuperAdmin =
-    SUPER_ADMIN_USERNAMES.includes(normalizedUsername)
-    || [...principalNames].some((name) => SUPER_ADMIN_ROLE_NAMES.includes(name));
-
-  if (isSuperAdmin) {
-    PERMISSION_KEYS.forEach((key) => permissionKeys.add(key));
-  }
-
-  PERMISSION_DEFINITIONS.forEach((definition) => {
-    if (definition.roleNames.some((roleName) => principalNames.has(roleName))) {
-      permissionKeys.add(definition.key);
-    }
-  });
-
-  return {
-    permissionKeys: Array.from(permissionKeys),
-    isSuperAdmin
-  };
-}
-
-function permissionKeysToLegacyFlags(keys) {
-  const activeKeys = new Set(Array.isArray(keys) ? keys : []);
-  const result = {};
-  PERMISSION_DEFINITIONS.forEach((definition) => {
-    result[definition.legacyField] = activeKeys.has(definition.key);
-  });
-  return result;
-}
-
 function buildUserContextFromRequest(req) {
   const usernameRaw =
     getHeaderString(req, 'x-forwarded-user') ||
@@ -5736,74 +5660,6 @@ function buildUserContextFromRequest(req) {
     basePermissionKeys: resolved.permissionKeys,
     baseIsSuperAdmin: resolved.isSuperAdmin
   };
-}
-
-function normalizePermissionEntry(input, fallbackPermissions) {
-  const raw = input && typeof input === 'object' ? input : {};
-  const toBool = (value, fallback) => {
-    if (value == null) return Boolean(fallback);
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'number') return value !== 0;
-    const text = String(value).trim().toLowerCase();
-    if (!text) return Boolean(fallback);
-    if (['true', '1', 'yes', 'y', 'on'].includes(text)) return true;
-    if (['false', '0', 'no', 'n', 'off', 'null', 'undefined'].includes(text)) return false;
-    return Boolean(fallback);
-  };
-  const fallbackSet = new Set(
-    Array.isArray(fallbackPermissions)
-      ? fallbackPermissions
-      : (fallbackPermissions ? PERMISSION_KEYS : [])
-  );
-  const explicitKeys = new Set();
-
-  if (Array.isArray(raw.permissionKeys)) {
-    raw.permissionKeys.forEach((key) => {
-      const normalized = String(key || '').trim();
-      if (PERMISSION_KEYS.includes(normalized)) explicitKeys.add(normalized);
-    });
-  }
-
-  if (raw.permissions && typeof raw.permissions === 'object') {
-    Object.entries(raw.permissions).forEach(([key, value]) => {
-      const normalized = String(key || '').trim();
-      if (!PERMISSION_KEYS.includes(normalized)) return;
-      if (toBool(value, fallbackSet.has(normalized))) explicitKeys.add(normalized);
-      else explicitKeys.delete(normalized);
-    });
-  }
-
-  PERMISSION_DEFINITIONS.forEach((definition) => {
-    if (!Object.prototype.hasOwnProperty.call(raw, definition.legacyField)) return;
-    if (toBool(raw[definition.legacyField], fallbackSet.has(definition.key))) explicitKeys.add(definition.key);
-    else explicitKeys.delete(definition.key);
-  });
-
-  const mergedKeys = new Set(fallbackSet);
-  if (
-    Array.isArray(raw.permissionKeys)
-    || (raw.permissions && typeof raw.permissions === 'object')
-    || PERMISSION_DEFINITIONS.some((definition) => Object.prototype.hasOwnProperty.call(raw, definition.legacyField))
-  ) {
-    mergedKeys.clear();
-    explicitKeys.forEach((key) => mergedKeys.add(key));
-  }
-
-  const permissionKeys = PERMISSION_KEYS.filter((key) => mergedKeys.has(key));
-  return {
-    permissionKeys,
-    ...permissionKeysToLegacyFlags(permissionKeys)
-  };
-}
-
-function isAdminName(value) {
-  const normalized = String(value || '').trim().toLowerCase();
-  return SUPER_ADMIN_USERNAMES.includes(normalized);
-}
-
-function isAdminByGroupsOrRoles(groupsOrRoles) {
-  return normalizePrincipalNames(groupsOrRoles)
-    .some((name) => SUPER_ADMIN_ROLE_NAMES.includes(name) || name === 'mam-admin' || name === 'mam-admin-access');
 }
 
 function getKeycloakCandidateRealms() {
@@ -5934,12 +5790,14 @@ async function resolveEffectivePermissions(req) {
   const settings = await getUserPermissionsSettings();
   const override = usernameKey ? settings[usernameKey] : null;
   const effective = normalizePermissionEntry(override, user.basePermissionKeys || []);
+  const canAccessAdmin = Boolean(effective.adminPageAccess);
+  const canEditOffice = Boolean(effective.officeEdit);
   return {
     ...user,
-    isAdmin: Boolean(effective.adminPageAccess),
-    canAccessAdmin: Boolean(effective.adminPageAccess),
+    isAdmin: canAccessAdmin,
+    canAccessAdmin,
     canEditMetadata: Boolean(effective.metadataEdit),
-    canEditOffice: Boolean(effective.officeEdit),
+    canEditOffice,
     canDeleteAssets: Boolean(effective.assetDelete),
     canUsePdfAdvancedTools: Boolean(effective.pdfAdvancedTools),
     permissions: effective,
@@ -6859,11 +6717,20 @@ app.get('/api/assets/:id/office-config', async (req, res) => {
           name: String(effective?.displayName || effective?.username || row.owner || 'User').trim() || 'User'
         },
         customization: {
+          about: false,
           autosave: officeEditEnabled,
           comments: false,
           compactHeader: true,
           compactToolbar: true,
+          customer: {
+            name: 'MAM',
+            info: '',
+            mail: '',
+            www: ''
+          },
+          feedback: false,
           forcesave: officeEditEnabled,
+          goback: false,
           help: false,
           hideRightMenu: true,
           hideRulers: false,
@@ -8599,7 +8466,7 @@ function canManageVersionRow(userPermissions, assetRow, versionRow) {
     return Boolean(userPermissions.canUsePdfAdvancedTools && isOwnVersion);
   }
   if (isOfficeDocumentCandidate({ mimeType: assetRow.mime_type, fileName: assetRow.file_name })) {
-    return Boolean(userPermissions.canEditOffice && isOwnVersion);
+    return false;
   }
   return false;
 }
@@ -8611,7 +8478,7 @@ function canCreateVersionForAsset(userPermissions, assetRow) {
     return Boolean(userPermissions.canUsePdfAdvancedTools);
   }
   if (isOfficeDocumentCandidate({ mimeType: assetRow.mime_type, fileName: assetRow.file_name })) {
-    return Boolean(userPermissions.canEditOffice);
+    return false;
   }
   return false;
 }

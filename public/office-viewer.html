@@ -22,30 +22,10 @@
       font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     body {
-      display: grid;
-      grid-template-rows: auto 1fr;
       overflow: hidden;
     }
-    .viewer-status {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 10px 14px;
-      border-bottom: 1px solid var(--line);
-      background: linear-gradient(180deg, rgba(25, 34, 49, 0.98) 0%, rgba(19, 26, 38, 0.98) 100%);
-    }
-    .viewer-status strong {
-      color: var(--text);
-      font-size: 14px;
-    }
-    .viewer-status span {
-      color: var(--muted);
-      font-size: 12px;
-    }
     #officeEditor {
-      min-height: 0;
-      height: 100%;
+      height: 100vh;
       width: 100%;
     }
     .viewer-error {
@@ -63,10 +43,6 @@
   </style>
 </head>
 <body>
-  <div class="viewer-status">
-    <strong id="statusTitle">ONLYOFFICE</strong>
-    <span id="statusText">Yükleniyor...</span>
-  </div>
   <div id="officeEditor"></div>
   <div id="errorBox" class="viewer-error hidden"></div>
 
@@ -74,12 +50,10 @@
     const params = new URLSearchParams(window.location.search);
     const assetId = String(params.get('assetId') || '').trim();
     const lang = String(params.get('lang') || 'tr').trim().toLowerCase();
-    const statusText = document.getElementById('statusText');
     const errorBox = document.getElementById('errorBox');
     const officeEditor = document.getElementById('officeEditor');
 
     function showError(message) {
-      if (statusText) statusText.textContent = 'Hata';
       if (errorBox) {
         errorBox.classList.remove('hidden');
         errorBox.textContent = String(message || 'Viewer failed');
@@ -99,13 +73,11 @@
     }
 
     async function mountEditor(payload) {
-      if (statusText) statusText.textContent = 'ONLYOFFICE yükleniyor...';
       const initEditor = () => {
         if (!window.DocsAPI || !window.DocsAPI.DocEditor) {
           showError('ONLYOFFICE DocsAPI yüklenemedi.');
           return;
         }
-        if (statusText) statusText.textContent = 'Hazır';
         window.docEditor = new window.DocsAPI.DocEditor('officeEditor', payload.config);
       };
       if (window.DocsAPI && window.DocsAPI.DocEditor) {

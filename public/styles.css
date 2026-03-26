@@ -2117,12 +2117,19 @@ button:hover {
 .pdf-viewer-frame {
   display: block;
   border: 0;
-  background: #0b0e14;
+  background: transparent;
 }
 
-.pdf-viewer-resizable {
+.viewer-resizable.pdf-viewer-resizable {
+  height: 420px;
+  min-height: 220px;
   padding: 4px;
   overflow: hidden;
+  background: #171a22;
+}
+
+.viewer-resizable.pdf-viewer-resizable .asset-viewer {
+  min-height: 0;
 }
 
 .viewer-resizable {

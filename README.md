@@ -51,10 +51,15 @@ A lightweight Media Asset Management starter app.
 ## Run With Docker Compose
 1. Start everything:
    ```bash
-   ./scripts/up-fast.sh
+   ./scripts/up_latest_main.sh
    ```
 2. Open:
    `http://localhost:3000`
+
+`up_latest_main.sh` behavior:
+- Fetches the latest `main` branch before building.
+- Prevents rebuilding an older checked-out revision by mistake.
+- Then runs `docker compose up -d --build`.
 
 `up-fast.sh` behavior:
 - Uses Docker layer cache in a multi-stage Dockerfile.
@@ -105,7 +110,7 @@ Image build context excludes local media/metadata paths via `.dockerignore` (`up
 ### EN
 1. Start full stack:
    ```bash
-   ./scripts/up-fast.sh
+   ./scripts/up_latest_main.sh
    ```
 2. Open MAM login: `http://localhost:3000`
 3. Open Keycloak admin: `http://localhost:8081`
@@ -114,14 +119,17 @@ Image build context excludes local media/metadata paths via `.dockerignore` (`up
    - Users -> Add user
    - Credentials -> Set password (`Temporary = OFF`)
 6. (Optional) Assign roles:
-   - `admin-access`
-   - `asset-delete`
+   - `mam-admin-access`
+   - `mam-asset-delete`
+   - `mam-office-edit`
+   - `mam-metadata-edit`
+   - `mam-pdf-advanced`
 7. Login to MAM with that user.
 
 ### TR
 1. Tüm servisi başlat:
    ```bash
-   ./scripts/up-fast.sh
+   ./scripts/up_latest_main.sh
    ```
 2. MAM giriş sayfasını aç: `http://localhost:3000`
 3. Keycloak admin panelini aç: `http://localhost:8081`
@@ -130,8 +138,11 @@ Image build context excludes local media/metadata paths via `.dockerignore` (`up
    - Users -> Add user
    - Credentials -> Şifre belirle (`Temporary = OFF`)
 6. (Opsiyonel) Rol ata:
-   - `admin-access`
-   - `asset-delete`
+   - `mam-admin-access`
+   - `mam-asset-delete`
+   - `mam-office-edit`
+   - `mam-metadata-edit`
+   - `mam-pdf-advanced`
 7. Bu kullanıcı ile MAM'e giriş yap.
 
 ## One-Command VM Setup (Turnkey)
@@ -154,7 +165,7 @@ Use this when you want a ready stack (app + postgres + elasticsearch + keycloak 
    - Keycloak admin: `http://<detected-host>:8081`
 
 Generated default users in realm `mam`:
-- `mamadmin / mamadmin` (roles: `admin-access`, `asset-delete`)
+- `mamadmin / mamadmin` (roles: `mam-admin-access`, `mam-asset-delete`)
 - `mamuser / mamuser`
 
 Note:
@@ -206,14 +217,17 @@ Use this checklist when preparing a fresh Docker deployment:
    - Redirect URI: `http://localhost:3000/oauth2/callback`
    - Web origin: `http://localhost:3000`
 4. Create roles (recommended):
-   - `admin-access` (admin page access)
-   - `asset-delete` (delete permission)
+   - `mam-admin-access` (admin page access)
+   - `mam-asset-delete` (delete permission)
+   - `mam-office-edit` (Office editing)
+   - `mam-metadata-edit` (metadata editing)
+   - `mam-pdf-advanced` (advanced PDF tools)
 5. Create user:
    - Users -> Add user
    - Set username/email and save
    - Credentials -> Set password (turn Temporary OFF)
 6. Assign roles to user:
-   - Role mapping -> add needed roles (`admin-access`, `asset-delete`, or basic user only)
+   - Role mapping -> add needed roles (`mam-admin-access`, `mam-asset-delete`, `mam-office-edit`, `mam-metadata-edit`, `mam-pdf-advanced`, or basic user only)
 7. (Optional) Configure LDAP:
    - User federation -> LDAP
    - Set LDAP URL, bind DN/password, users DN, and sync settings
@@ -232,14 +246,17 @@ Yeni bir Docker kurulumu için kısa kontrol listesi:
    - Redirect URI: `http://localhost:3000/oauth2/callback`
    - Web origin: `http://localhost:3000`
 4. Rolleri oluştur (önerilir):
-   - `admin-access` (yönetim sayfası erişimi)
-   - `asset-delete` (silme yetkisi)
+   - `mam-admin-access` (yönetim sayfası erişimi)
+   - `mam-asset-delete` (silme yetkisi)
+   - `mam-office-edit` (Office düzenleme)
+   - `mam-metadata-edit` (metadata düzenleme)
+   - `mam-pdf-advanced` (gelişmiş PDF araçları)
 5. Kullanıcı oluştur:
    - Users -> Add user
    - Kullanıcı adı/e-posta gir ve kaydet
    - Credentials -> Şifre belirle (Temporary kapalı)
 6. Kullanıcıya rol ata:
-   - Role mapping -> gerekli rolleri ekle (`admin-access`, `asset-delete` veya sadece normal kullanıcı)
+   - Role mapping -> gerekli rolleri ekle (`mam-admin-access`, `mam-asset-delete`, `mam-office-edit`, `mam-metadata-edit`, `mam-pdf-advanced` veya sadece normal kullanıcı)
 7. (Opsiyonel) LDAP bağla:
    - User federation -> LDAP
    - LDAP URL, bind DN/şifre, users DN ve senkron ayarlarını gir
@@ -275,7 +292,7 @@ Yeni bir Docker kurulumu için kısa kontrol listesi:
 To avoid accidentally building an older Git checkout, use:
 
 ```bash
-./scripts/up_latest_codex.sh
+./scripts/up_latest_main.sh
 ```
 
-This script fetches `origin/codex/next-task`, switches to the latest available checkout of that branch (or detached HEAD if the branch is already open in another worktree), then runs `docker compose up -d --build`.
+This script fetches `origin/main`, fast-forwards the local `main` checkout, then runs `docker compose up -d --build`.
