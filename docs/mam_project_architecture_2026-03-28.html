@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<title>MAM Projesi Mimari ve Kod Rehberi</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; color: #1f2937; margin: 40px; line-height: 1.55; }
+h1 { font-size: 30px; margin: 0 0 20px; }
+h2 { font-size: 22px; margin-top: 28px; border-bottom: 1px solid #d1d5db; padding-bottom: 6px; }
+h3 { font-size: 18px; margin-top: 22px; }
+p { margin: 10px 0; }
+li { margin: 6px 0 6px 20px; }
+pre.code { background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; overflow-x: auto; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>MAM Projesi Mimari ve Kod Rehberi</h1>
+
+<p>Tarih: 2026-03-28</p>
+<p>Proje yolu: `/Users/erinc/OyunAlanım/mam_deneme`</p>
+<p>Amaç: Bu doküman, mevcut MAM uygulamasının son durumunu mimari, klasör yapısı, kod bileşenleri ve operasyon komutları açısından açıklamak için hazırlanmıştır.</p>
+
+<h2>1. Genel Bakış</h2>
+
+<p>Bu proje, medya varlıklarını yüklemek, metadata ile yönetmek, aramak, izlemek ve gerektiğinde türev dosyalar üretmek için geliştirilmiş bir Media Asset Management (MAM) uygulamasıdır.</p>
+
+<p>Sistemin ana parçaları şunlardır:</p>
+
+<p>1. Keycloak</p>
+<li>Kimlik doğrulama ve kullanıcı yönetimi</li>
+<li>Realm, kullanıcı ve rol yönetimi</li>
+
+<p>2. oauth2-proxy</p>
+<li>Uygulamanın önünde oturan erişim katmanı</li>
+<li>Kullanıcıyı Keycloak&#x27;a yönlendirir</li>
+<li>Doğrulanmış kullanıcı bilgisini MAM uygulamasına header olarak iletir</li>
+
+<p>3. Node.js / Express uygulaması</p>
+<li>Asıl backend</li>
+<li>API&#x27;ler, ingest, metadata, workflow, OCR, altyazı, proxy, version ve admin işlemleri burada yürür</li>
+
+<p>4. PostgreSQL</p>
+<li>Ana uygulama veritabanı</li>
+<li>Asset kayıtları, version&#x27;lar, OCR segmentleri, altyazı cue&#x27;ları, admin ayarları ve job kayıtları burada tutulur</li>
+
+<p>5. Elasticsearch</p>
+<li>Hızlı arama ve suggestion tarafı</li>
+<li>Özellikle asset, klip, OCR, altyazı ve metadata aramalarında kullanılır</li>
+
+<p>6. ONLYOFFICE Document Server</p>
+<li>Word / Excel / PowerPoint benzeri dosyaların web üzerinde görüntülenmesi ve düzenlenmesi için kullanılır</li>
+
+<p>7. Depolama alanı (`uploads/`)</p>
+<li>Orijinal medya dosyaları</li>
+<li>Proxy videolar</li>
+<li>Thumbnail&#x27;ler</li>
+<li>OCR çıktı dosyaları</li>
+<li>Altyazı dosyaları</li>
+
+<p>8. Frontend (Vanilla HTML/CSS/JS)</p>
+<li>Ana uygulama sayfası</li>
+<li>Yönetim sayfası</li>
+<li>PDF viewer sayfası</li>
+<li>ONLYOFFICE viewer sayfası</li>
+
+<h2>2. Yüksek Seviyeli İstek Akışı</h2>
+
+<h3>2.1 Giriş akışı</h3>
+
+<p>1. Kullanıcı `http://localhost:3000` adresine gelir.</p>
+<p>2. İstek önce `oauth2-proxy` servisine düşer.</p>
+<p>3. `oauth2-proxy`, kullanıcı giriş yapmamışsa Keycloak&#x27;a yönlendirir.</p>
+<p>4. Kullanıcı Keycloak&#x27;ta doğrulanır.</p>
+<p>5. `oauth2-proxy`, doğrulanmış kullanıcı bilgilerini header olarak `app` servisine geçirir.</p>
+<p>6. Backend, bu header&#x27;lardan kullanıcıyı ve izinleri çözer.</p>
+
+<h3>2.2 Varlık görüntüleme akışı</h3>
+
+<p>1. Frontend `/api/assets` ve `/api/assets/:id` gibi endpoint&#x27;leri çağırır.</p>
+<p>2. Backend PostgreSQL&#x27;den kayıtları çeker.</p>
+<p>3. Gerekiyorsa Elasticsearch destekli arama sonuçlarıyla birleştirir.</p>
+<p>4. Frontend ikinci kolonda asset listesini, üçüncü kolonda detail görünümünü oluşturur.</p>
+
+<h3>2.3 Video ingest akışı</h3>
+
+<p>1. Kullanıcı dosyayı birinci kolondan yükler.</p>
+<p>2. Frontend dosyayı base64 olarak backend&#x27;e gönderir.</p>
+<p>3. Backend dosyayı geçici/orijinal ingest alanına yazar.</p>
+<p>4. Eğer video ise proxy ve thumbnail üretmeyi dener.</p>
+<p>5. Ses akışı bozuksa kullanıcıdan karar alınır:</p>
+<li>Sessiz proxy ile devam</li>
+<li>Proxy olmadan yalnız metadata oluştur</li>
+<li>İptal</li>
+<p>6. Sonuçta asset kaydı PostgreSQL&#x27;e yazılır.</p>
+<p>7. Arama indeksleme ve görüntüleme akışı güncellenir.</p>
+
+<h2>3. Teknoloji Katmanları</h2>
+
+<h2>3.1 Kimlik ve yetki katmanı</h2>
+
+<h3>Keycloak</h3>
+<li>Realm tabanlı kullanıcı ve rol yönetimi</li>
+<li>Login ekranı burada yönetilir</li>
+<li>Tema özelleştirmesi `keycloak-theme/` altındadır</li>
+
+<h3>oauth2-proxy</h3>
+<li>Reverse proxy olarak çalışır</li>
+<li>Keycloak ile OIDC konuşur</li>
+<li>Uygulama doğrudan anonim erişime açılmaz</li>
+
+<h3>Uygulama içi izin çözümü</h3>
+<li>Keycloak rolü + yerel override mantığı birlikte kullanılır</li>
+<li>Örnek izinler:</li>
+<p>  - `admin.access`</p>
+<p>  - `metadata.edit`</p>
+<p>  - `office.edit`</p>
+<p>  - `asset.delete`</p>
+<p>  - `pdf.advanced`</p>
+
+<h2>3.2 Backend katmanı</h2>
+
+<p>Backend Node.js + Express ile yazılmıştır.</p>
+
+<p>Ana görevleri:</p>
+<li>Asset CRUD</li>
+<li>Metadata güncelleme</li>
+<li>Workflow geçişleri</li>
+<li>Soft delete / restore / permanent delete</li>
+<li>Video proxy oluşturma</li>
+<li>Thumbnail üretme</li>
+<li>Subtitle üretme</li>
+<li>OCR çalıştırma</li>
+<li>PDF / Office entegrasyonları</li>
+<li>Admin araçları</li>
+
+<h2>3.3 Frontend katmanı</h2>
+
+<p>Frontend framework&#x27;süz, Vanilla HTML/CSS/JS ile yazılmıştır.</p>
+
+<p>Ana özellikleri:</p>
+<li>3 kolonlu düzen</li>
+<li>Arama ve ingest paneli</li>
+<li>Asset listesi</li>
+<li>Detail viewer</li>
+<li>Video kontrol arayüzü</li>
+<li>Metadata formu</li>
+<li>OCR / altyazı görüntüleme</li>
+<li>Admin paneli</li>
+
+<h2>3.4 Medya işleme katmanı</h2>
+
+<p>Video, OCR ve altyazı işlerinde şu araçlar kullanılır:</p>
+
+<li>`ffmpeg`</li>
+<li>`ffprobe`</li>
+<li>`faster-whisper`</li>
+<li>`whisperx`</li>
+<li>`PaddleOCR`</li>
+<li>yardımcı Python scriptleri</li>
+
+<p>Bu projede Tesseract kullanılmamaktadır.</p>
+
+<h2>4. Docker Mimarisi</h2>
+
+<p>Ana compose servisleri:</p>
+
+<p>1. `postgres`</p>
+<li>Ana uygulama veritabanı</li>
+
+<p>2. `elasticsearch`</p>
+<li>Arama altyapısı</li>
+
+<p>3. `app`</p>
+<li>Node.js / Express backend</li>
+<li>Frontend statik dosyalarını da servis eder</li>
+
+<p>4. `onlyoffice`</p>
+<li>Office viewer/editor</li>
+
+<p>5. `keycloak-postgres`</p>
+<li>Keycloak için ayrı veritabanı</li>
+
+<p>6. `keycloak`</p>
+<li>Login, realm ve roller</li>
+
+<p>7. `oauth2-proxy`</p>
+<li>Uygulamanın giriş kapısı</li>
+
+<h2>5. Klasör Yapısı ve Sorumluluklar</h2>
+
+<h2>5.1 `src/`</h2>
+
+<h3>`src/server.js`</h3>
+<p>Projenin ana backend dosyasıdır.</p>
+
+<p>Sorumlulukları:</p>
+<li>Express uygulamasını ayağa kaldırmak</li>
+<li>API route&#x27;larını tanımlamak</li>
+<li>ingest işlemleri</li>
+<li>proxy / thumbnail / OCR / subtitle iş akışları</li>
+<li>admin araçları</li>
+<li>version akışları</li>
+<li>ONLYOFFICE ve PDF route&#x27;ları</li>
+<li>Elasticsearch indeksleme</li>
+
+<p>Not:</p>
+<p>Bu dosya büyük bir merkez dosyadır. Uygulamanın ana iş mantığı burada toplanmıştır.</p>
+
+<h3>`src/db.js`</h3>
+<p>PostgreSQL bağlantısını ve tablo oluşturma işlemlerini yönetir.</p>
+
+<p>Önemli tablolar:</p>
+<li>`assets`</li>
+<li>`asset_versions`</li>
+<li>`asset_cuts`</li>
+<li>`asset_subtitle_cues`</li>
+<li>`asset_ocr_segments`</li>
+<li>`media_processing_jobs`</li>
+<li>`admin_settings`</li>
+<li>`learned_turkish_corrections`</li>
+
+<h3>`src/permissions.js`</h3>
+<p>İzin tanımları ve rol -&gt; permission çözümleme mantığı burada bulunur.</p>
+
+<p>Sorumlulukları:</p>
+<li>permission listesi</li>
+<li>legacy alan eşlemeleri</li>
+<li>super-admin çözümleme</li>
+<li>permission normalizasyonu</li>
+
+<h3>`src/transcribe_whisper.py`</h3>
+<p>`faster-whisper` ile altyazı üretir.</p>
+
+<p>Sorumlulukları:</p>
+<li>medya dosyasını transcribe etmek</li>
+<li>VTT formatında çıktı üretmek</li>
+<li>cue bölme mantığını uygulamak</li>
+
+<h3>`src/transcribe_whisperx.py`</h3>
+<p>WhisperX tabanlı hizalama/transkripsiyon akışı için kullanılır.</p>
+
+<h3>`src/video_ocr_frame_prep.py`</h3>
+<p>OCR öncesinde frame hazırlama ve ön işleme tarafında kullanılır.</p>
+
+<h3>`src/video_ocr_paddle.py`</h3>
+<p>PaddleOCR ile video OCR işlemlerini yürütür.</p>
+
+<h2>5.2 `public/`</h2>
+
+<h3>`public/index.html`</h3>
+<p>Ana MAM uygulama sayfasıdır.</p>
+
+<p>Kolonlar:</p>
+<p>1. Arama + ingest</p>
+<p>2. Asset listesi</p>
+<p>3. Asset detail</p>
+
+<h3>`public/main.js`</h3>
+<p>Ana uygulamanın neredeyse tüm frontend iş mantığı burada bulunur.</p>
+
+<p>Sorumlulukları:</p>
+<li>dil değişimi</li>
+<li>kullanıcı bilgisi yükleme</li>
+<li>arama ve suggestion akışı</li>
+<li>asset listesi render</li>
+<li>detail panel render</li>
+<li>metadata formu</li>
+<li>video player entegrasyonu</li>
+<li>subtitle / OCR görünümü</li>
+<li>version işlemleri</li>
+<li>upload akışı</li>
+
+<h3>`public/styles.css`</h3>
+<p>Ana uygulama stilleri.</p>
+
+<p>Sorumlulukları:</p>
+<li>panel yerleşimi</li>
+<li>responsive davranış</li>
+<li>asset kartları</li>
+<li>detail panel</li>
+<li>video araçları</li>
+<li>modal pencereler</li>
+
+<h3>`public/admin.html`</h3>
+<p>Yönetim ekranının ana sayfası.</p>
+
+<p>Ana bölümler:</p>
+<li>API yardım dokümanı</li>
+<li>Sistem sağlığı</li>
+<li>Genel ayarlar</li>
+<li>Workflow takibi</li>
+<li>Proxy araçları</li>
+<li>OCR kayıtları</li>
+<li>Subtitle kayıtları</li>
+<li>Kullanıcı izinleri</li>
+
+<h3>`public/admin.js`</h3>
+<p>Yönetim ekranının frontend iş mantığı.</p>
+
+<p>Sorumlulukları:</p>
+<li>admin tab geçişleri</li>
+<li>proxy job izleme</li>
+<li>asset generation tool</li>
+<li>OCR ve subtitle yönetimi</li>
+<li>kullanıcı yetki yönetimi</li>
+<li>sistem sağlığı görünümü</li>
+
+<h3>`public/admin.css`</h3>
+<p>Yönetim ekranının stilleri.</p>
+
+<h3>`public/pdf-viewer.html`</h3>
+<p>PDF dosyalarının web içinde görüntülenmesi için ayrı sayfa.</p>
+
+<p>Sorumlulukları:</p>
+<li>PDF preview</li>
+<li>arama</li>
+<li>zoom</li>
+<li>sayfa dolaşımı</li>
+<li>PDF düzenleme/işaretleme entegrasyonu</li>
+
+<h3>`public/office-viewer.html`</h3>
+<p>ONLYOFFICE viewer/editör gömme sayfası.</p>
+
+<p>Sorumlulukları:</p>
+<li>`/api/assets/:id/office-config` ile config almak</li>
+<li>ONLYOFFICE scriptini yüklemek</li>
+<li>viewer/editor&#x27;ü sayfaya mount etmek</li>
+
+<h3>`public/i18n.json`</h3>
+<p>İngilizce/Türkçe arayüz metinleri.</p>
+
+<h2>5.3 `keycloak-theme/`</h2>
+<p>Keycloak giriş ekranının tema özelleştirmeleri burada tutulur.</p>
+
+<p>Özellikle:</p>
+<li>login başlığı</li>
+<li>tema metinleri</li>
+<li>Türkçe / İngilizce mesajlar</li>
+
+<h2>5.4 `scripts/`</h2>
+<p>Operasyonel yardımcı scriptler burada tutulur.</p>
+
+<p>Örnekler:</p>
+<li>`up_latest_main.sh`</li>
+<li>`up-fast.sh`</li>
+<li>`migrate_ocr_labels.js`</li>
+<li>Docker image publish/doğrulama scriptleri</li>
+
+<h2>5.5 `deploy/`</h2>
+<p>Daha kolay kurulum ve turnkey deploy tarafı burada bulunur.</p>
+
+<h2>5.6 `docs/`</h2>
+<p>Dokümantasyon dosyaları burada tutulur.</p>
+
+<h2>5.7 `uploads/`</h2>
+<p>Medya ve türev dosyaların saklandığı çalışma alanı.</p>
+
+<p>Alt klasörler:</p>
+<li>`uploads/proxies`</li>
+<li>`uploads/thumbnails`</li>
+<li>`uploads/subtitles`</li>
+<li>`uploads/ocr`</li>
+<li>tarih bazlı orijinal ingest klasörleri</li>
+
+<h2>5.8 `training/`</h2>
+<p>Eğitim ve deneysel OCR / ASR hazırlıkları için kullanılan klasörler.</p>
+
+<h2>5.9 `ocrtest_lab/`</h2>
+<p>Ana uygulamadan bağımsız test/deney alanı.</p>
+
+<h2>6. Ana Kod Bileşenleri</h2>
+
+<h2>6.1 Asset modeli</h2>
+<p>Bir asset şu bilgileri taşır:</p>
+<li>başlık</li>
+<li>açıklama</li>
+<li>tür</li>
+<li>tag&#x27;ler</li>
+<li>sahibi</li>
+<li>süre</li>
+<li>kaynak dosya yolu</li>
+<li>medya URL&#x27;i</li>
+<li>proxy URL&#x27;i</li>
+<li>thumbnail URL&#x27;i</li>
+<li>mime type</li>
+<li>Dublin Core metadata</li>
+<li>workflow durumu</li>
+<li>trash durumu</li>
+
+<h2>6.2 Version sistemi</h2>
+<p>Version mantığı şu durumlarda çalışır:</p>
+<li>manuel version ekleme</li>
+<li>PDF save</li>
+<li>PDF restore</li>
+<li>Office save</li>
+<li>Office restore</li>
+<li>admin file replace</li>
+
+<p>Asset&#x27;in eski snapshot&#x27;ları `asset_versions` tablosunda tutulur.</p>
+
+<h2>6.3 OCR sistemi</h2>
+<p>OCR tarafında ana yaklaşım:</p>
+<p>1. videodan kare üretme</p>
+<p>2. ön işleme</p>
+<p>3. PaddleOCR</p>
+<p>4. satır ve segment normalizasyonu</p>
+<p>5. segmentleri DB&#x27;ye yazma</p>
+<p>6. aramada kullanılabilir hale getirme</p>
+
+<h2>6.4 Subtitle sistemi</h2>
+<p>Subtitle tarafında:</p>
+<p>1. ses kaynağı seçilir</p>
+<p>2. whisper / whisperx akışı çalışır</p>
+<p>3. cue listesi üretilir</p>
+<p>4. VTT / altyazı kayıtları saklanır</p>
+<p>5. arama ve player üstü gösterim için indekslenir</p>
+
+<h2>6.5 Office sistemi</h2>
+<p>Office tarafında:</p>
+<li>ONLYOFFICE config endpoint&#x27;i backend&#x27;den gelir</li>
+<li>viewer/editor frontend&#x27;de gömülür</li>
+<li>kaydetme callback&#x27;i backend tarafından işlenir</li>
+<li>version akışı Office save/restore ile entegredir</li>
+
+<h2>6.6 PDF sistemi</h2>
+<p>PDF tarafında:</p>
+<li>ayrı viewer sayfası vardır</li>
+<li>sayfa bazlı görüntüleme yapılır</li>
+<li>arama yapılabilir</li>
+<li>ileri seviye araçlar permission ile korunur</li>
+
+<h2>7. Yetki Modeli</h2>
+
+<p>Ana izinler:</p>
+
+<p>1. `admin.access`</p>
+<li>admin sayfasına erişim</li>
+<li>bazı kritik yönetim işlemleri</li>
+
+<p>2. `metadata.edit`</p>
+<li>asset metadata alanlarını düzenleme</li>
+
+<p>3. `office.edit`</p>
+<li>Office belge düzenleme</li>
+<li>Office version listesini görebilme</li>
+
+<p>4. `asset.delete`</p>
+<li>varlığı çöpe taşıma</li>
+<li>çöpten geri yükleme</li>
+<li>kalıcı silme</li>
+<li>bazı silme aksiyonları</li>
+
+<p>5. `pdf.advanced`</p>
+<li>gelişmiş PDF araçları</li>
+
+<h2>8. Sayfa Bazlı Sorumluluk Özeti</h2>
+
+<h3>Ana sayfa (`/`)</h3>
+<p>Kullanım amacı:</p>
+<li>asset arama</li>
+<li>asset yükleme</li>
+<li>asset görüntüleme</li>
+<li>metadata düzenleme</li>
+<li>video izleme</li>
+<li>OCR ve altyazı görünümü</li>
+
+<h3>Admin sayfası (`/admin.html`)</h3>
+<p>Kullanım amacı:</p>
+<li>sistem sağlığı</li>
+<li>proxy araçları</li>
+<li>OCR kayıt yönetimi</li>
+<li>subtitle kayıt yönetimi</li>
+<li>kullanıcı izinleri</li>
+<li>ayarlar</li>
+
+<h3>PDF viewer (`/pdf-viewer.html`)</h3>
+<p>Kullanım amacı:</p>
+<li>PDF görüntüleme ve arama</li>
+
+<h3>Office viewer (`/office-viewer.html`)</h3>
+<p>Kullanım amacı:</p>
+<li>Word/Excel/PowerPoint görünümü ve düzenleme</li>
+
+<h2>9. Docker Dışından Operasyonel Komutlar</h2>
+
+<p>Aşağıdaki komutlar host makineden çalıştırılır. Yani terminalde Docker container içine manuel girmeden kullanılabilir.</p>
+
+<h2>9.1 Servislerin durumunu görme</h2>
+
+<pre class="code">
+docker compose ps
+</pre>
+
+<p>Belirli container logları:</p>
+
+<pre class="code">
+docker compose logs -f app
+docker compose logs -f postgres
+docker compose logs -f elasticsearch
+docker compose logs -f keycloak
+docker compose logs -f oauth2-proxy
+docker compose logs -f onlyoffice
+</pre>
+
+<h2>9.2 PostgreSQL sorguları</h2>
+
+<h3>Host üzerinden doğrudan PostgreSQL&#x27;e bağlanma</h3>
+
+<pre class="code">
+PGPASSWORD=postgres psql -h localhost -p 5432 -U postgres -d mam_mvp
+</pre>
+
+<h3>Tek satırlık örnek sorgular</h3>
+
+<p>Son 20 asset:</p>
+
+<pre class="code">
+PGPASSWORD=postgres psql -h localhost -p 5432 -U postgres -d mam_mvp -c &quot;SELECT id, title, type, file_name, proxy_status, updated_at FROM assets ORDER BY updated_at DESC LIMIT 20;&quot;
+</pre>
+
+<p>Proxy&#x27;siz video asset&#x27;ler:</p>
+
+<pre class="code">
+PGPASSWORD=postgres psql -h localhost -p 5432 -U postgres -d mam_mvp -c &quot;SELECT id, title, media_url, proxy_url, proxy_status FROM assets WHERE lower(type) = &#x27;video&#x27; AND coalesce(proxy_url, &#x27;&#x27;) = &#x27;&#x27;;&quot;
+</pre>
+
+<p>Metadata-only kayıtlar:</p>
+
+<pre class="code">
+PGPASSWORD=postgres psql -h localhost -p 5432 -U postgres -d mam_mvp -c &quot;SELECT id, title, media_url, source_path, proxy_url, proxy_status FROM assets WHERE coalesce(media_url, &#x27;&#x27;) = &#x27;&#x27; AND lower(type) = &#x27;video&#x27;;&quot;
+</pre>
+
+<p>Version kayıtları:</p>
+
+<pre class="code">
+PGPASSWORD=postgres psql -h localhost -p 5432 -U postgres -d mam_mvp -c &quot;SELECT asset_id, label, action_type, actor_username, created_at FROM asset_versions ORDER BY created_at DESC LIMIT 30;&quot;
+</pre>
+
+<p>Subtitle cue sayıları:</p>
+
+<pre class="code">
+PGPASSWORD=postgres psql -h localhost -p 5432 -U postgres -d mam_mvp -c &quot;SELECT asset_id, count(*) AS cue_count FROM asset_subtitle_cues GROUP BY asset_id ORDER BY cue_count DESC LIMIT 20;&quot;
+</pre>
+
+<p>OCR segment sayıları:</p>
+
+<pre class="code">
+PGPASSWORD=postgres psql -h localhost -p 5432 -U postgres -d mam_mvp -c &quot;SELECT asset_id, count(*) AS segment_count FROM asset_ocr_segments GROUP BY asset_id ORDER BY segment_count DESC LIMIT 20;&quot;
+</pre>
+
+<h2>9.3 Elasticsearch kontrolü</h2>
+
+<p>Cluster sağlık durumu:</p>
+
+<pre class="code">
+curl -s http://localhost:9200/_cluster/health | jq
+</pre>
+
+<p>Index listesi:</p>
+
+<pre class="code">
+curl -s http://localhost:9200/_cat/indices?v
+</pre>
+
+<p>Asset arama örneği:</p>
+
+<pre class="code">
+curl -s http://localhost:9200/mam_assets/_search -H &#x27;Content-Type: application/json&#x27; -d &#x27;{
+  &quot;size&quot;: 5,
+  &quot;query&quot;: {
+    &quot;match&quot;: {
+      &quot;title&quot;: &quot;haber&quot;
+    }
+  }
+}&#x27; | jq
+</pre>
+
+<h2>9.4 FFmpeg / FFprobe kontrolü</h2>
+
+<h3>Container içindeki ffmpeg sürümünü host terminalinden kontrol etme</h3>
+
+<pre class="code">
+docker compose exec app ffmpeg -version
+</pre>
+
+<pre class="code">
+docker compose exec app ffprobe -version
+</pre>
+
+<h3>Belirli bir dosyanın medya bilgisini alma</h3>
+
+<pre class="code">
+docker compose exec app ffprobe -hide_banner -show_streams -show_format /app/uploads/proxies/ornek-proxy.mp4
+</pre>
+
+<h3>Belirli bir asset için dosya yolunu önce DB&#x27;den bulup sonra kontrol etme</h3>
+
+<pre class="code">
+PGPASSWORD=postgres psql -h localhost -p 5432 -U postgres -d mam_mvp -At -c &quot;SELECT source_path FROM assets WHERE id = &#x27;ASSET_ID&#x27;;&quot;
+</pre>
+
+<p>Çıkan yol için ffprobe:</p>
+
+<pre class="code">
+docker compose exec app ffprobe -hide_banner &quot;DOSYA_YOLU&quot;
+</pre>
+
+<h3>Video proxy üretiminde ffmpeg hatası test etme</h3>
+
+<pre class="code">
+docker compose exec app ffmpeg -hide_banner -y -i &quot;DOSYA_YOLU&quot; -map 0:v:0 -c:v libx264 -preset veryfast -crf 31 -pix_fmt yuv420p -profile:v main -level 4.0 -vf scale=640:-2:force_original_aspect_ratio=decrease -map 0:a:0 -c:a aac -b:a 128k -movflags +faststart /tmp/test-proxy.mp4
+</pre>
+
+<h3>Sadece ses akışını test etme</h3>
+
+<pre class="code">
+docker compose exec app ffmpeg -hide_banner -v error -i &quot;DOSYA_YOLU&quot; -map 0:a:0 -f null -
+</pre>
+
+<h3>Sadece video akışını test etme</h3>
+
+<pre class="code">
+docker compose exec app ffmpeg -hide_banner -v error -i &quot;DOSYA_YOLU&quot; -map 0:v:0 -f null -
+</pre>
+
+<h2>9.5 Uygulama API&#x27;sini host üzerinden kontrol etme</h2>
+
+<p>Sağlık amacıyla ana sayfa:</p>
+
+<pre class="code">
+curl -I http://localhost:3000
+</pre>
+
+<p>App container doğrudan:</p>
+
+<pre class="code">
+curl -I http://localhost:3001
+</pre>
+
+<p>Keycloak realm config:</p>
+
+<pre class="code">
+curl -s http://localhost:8081/realms/mam/.well-known/openid-configuration | jq
+</pre>
+
+<h2>10. Bakım Notları</h2>
+
+<p>1. `src/server.js` büyük ve merkezi bir dosya</p>
+<li>Yeni projede modüllere ayrılması en doğru adım olacaktır.</li>
+
+<p>2. Frontend Vanilla JS ile büyümüş durumda</p>
+<li>Özellikle workflow orchestrator ve HSM entegrasyonu düşünülüyorsa ileri aşamada modüler bir frontend yaklaşımı düşünülebilir.</li>
+
+<p>3. `uploads/` canlı veri alanıdır</p>
+<li>Temizlik veya silme işlemlerinde dikkatli olunmalıdır.</li>
+
+<p>4. Metadata-only video kayıtları özel bir akıştır</p>
+<li>Bu kayıtlar, kullanıcı proxy üretmeden metadata&#x27;yı sisteme girebilsin diye tutulur.</li>
+<li>Gerekirse admin aracıyla sonradan kaynak video bağlanabilir.</li>
+
+<h2>11. Sonuç</h2>
+
+<p>Bu proje, tek uygulama içinde hem medya yönetimi hem görüntüleme hem işleme hem de yönetim araçlarını bir araya getiren güçlü bir MAM uygulamasıdır.</p>
+
+<p>Mevcut mimari şu işlerde yeterince güçlüdür:</p>
+<li>medya ingest</li>
+<li>metadata yönetimi</li>
+<li>video izleme</li>
+<li>OCR ve altyazı işleme</li>
+<li>Office/PDF görüntüleme</li>
+<li>admin operasyonları</li>
+<li>permission yönetimi</li>
+
+<p>Ancak yapı büyüdükçe özellikle şu alanlar ayrı modül/servis olarak düşünülmelidir:</p>
+<li>workflow orchestrator</li>
+<li>HSM / tape library entegrasyonu</li>
+<li>bağımsız media worker servisleri</li>
+<li>daha modüler frontend mimarisi</li>
+
+<p>Bu doküman, projenin son stabil halini anlamak ve devralmak isteyen geliştirici için başlangıç referansı olarak kullanılabilir.</p>
+</body>
+</html>
