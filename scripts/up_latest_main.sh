@@ -6,6 +6,7 @@ cd "$REPO_DIR"
 
 TARGET_REMOTE_REF="origin/main"
 TARGET_BRANCH="main"
+POSTGRES_VOLUME_NAME="codex_deneme_pg_data"
 
 print_step() {
   printf '\n[%s] %s\n' "mam" "$1"
@@ -28,6 +29,9 @@ else
     git checkout -b "$TARGET_BRANCH" --track "$TARGET_REMOTE_REF"
   fi
 fi
+
+print_step "Ensuring external postgres volume exists"
+docker volume create "$POSTGRES_VOLUME_NAME" >/dev/null
 
 print_step "Building and starting containers"
 docker compose up -d --build "$@"

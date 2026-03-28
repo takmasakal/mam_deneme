@@ -59,7 +59,14 @@ A lightweight Media Asset Management starter app.
 `up_latest_main.sh` behavior:
 - Fetches the latest `main` branch before building.
 - Prevents rebuilding an older checked-out revision by mistake.
+- Ensures the external PostgreSQL volume `codex_deneme_pg_data` exists.
 - Then runs `docker compose up -d --build`.
+
+First-time manual alternative:
+```bash
+docker volume create codex_deneme_pg_data || true
+docker compose up -d --build
+```
 
 `up-fast.sh` behavior:
 - Uses Docker layer cache in a multi-stage Dockerfile.

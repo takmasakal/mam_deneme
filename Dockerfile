@@ -12,10 +12,14 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ffmpeg unzip poppler-utils antiword python3 python3-pip \
   && pip3 install --no-cache-dir --break-system-packages --retries 5 --default-timeout=300 requests faster-whisper==1.1.1 opencv-python-headless==4.10.0.84 numpy==1.26.4 \
   && pip3 install --no-cache-dir --break-system-packages --retries 5 --default-timeout=300 torch==2.5.1 torchaudio==2.5.1 whisperx==3.3.1 \
-  && if [ "$TARGETARCH" = "amd64" ] || [ "$TARGETARCH" = "arm64" ]; then \
+  && arch="${TARGETARCH}" \
+  && if [ -z "$arch" ]; then arch="$(dpkg --print-architecture 2>/dev/null || true)"; fi \
+  && if [ -z "$arch" ]; then arch="$(uname -m)"; fi \
+  && echo "Detected arch: $arch" \
+  && if [ "$arch" = "amd64" ] || [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then \
       pip3 install --no-cache-dir --break-system-packages --retries 5 --default-timeout=300 paddleocr==3.4.0 paddlepaddle==3.2.2; \
     else \
-      echo "Skipping PaddleOCR install on unsupported arch: $TARGETARCH"; \
+      echo "Skipping PaddleOCR install on unsupported arch: $arch"; \
     fi \
   && rm -rf /var/lib/apt/lists/*
 
