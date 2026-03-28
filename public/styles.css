@@ -604,6 +604,10 @@ p {
   margin: 0;
 }
 
+.stack > * {
+  min-width: 0;
+}
+
 .ingest-panel-card {
   margin-top: 12px;
   padding: 12px;
@@ -716,6 +720,14 @@ p {
   padding: 0 2px;
 }
 
+.proxy-warning-box {
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid #46506a;
+  border-radius: 10px;
+  background: rgba(18, 25, 39, 0.55);
+}
+
 
 .search-date-row label {
   font-size: 12px;
@@ -741,11 +753,13 @@ p {
 .file-picker {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 8px;
   background: #20242e;
+  min-width: 0;
 }
 
 .file-picker input[type="file"] {
@@ -754,17 +768,20 @@ p {
 
 .file-picker-btn {
   width: auto;
-  min-width: 110px;
+  min-width: 96px;
   padding: 7px 10px;
+  flex: 0 1 auto;
 }
 
 .file-picker-name {
   font-size: 12px;
   color: #cfd6e4;
+  min-width: 0;
+  flex: 1 1 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 280px;
+  max-width: 100%;
 }
 
 .upload-progress {
@@ -1398,6 +1415,69 @@ button:hover {
 .clip-modal-actions button {
   width: auto;
   padding: 6px 10px;
+}
+
+.upload-decision-modal {
+  width: min(520px, calc(100vw - 24px));
+}
+
+.upload-decision-copy {
+  display: grid;
+  gap: 6px;
+  color: #dfe8f8;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.upload-decision-copy p {
+  margin: 0;
+}
+
+.upload-decision-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  width: 100%;
+}
+
+.upload-decision-actions button {
+  width: 100%;
+  min-height: 42px;
+  justify-content: center;
+  text-align: center;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 700;
+}
+
+.upload-decision-actions .upload-decision-primary {
+  background: linear-gradient(180deg, rgba(71, 209, 144, 0.94), rgba(47, 167, 114, 0.94));
+  color: #07140e;
+  border: 1px solid rgba(102, 224, 163, 0.9);
+}
+
+.upload-decision-actions .upload-decision-primary:hover {
+  background: linear-gradient(180deg, rgba(83, 220, 156, 0.98), rgba(52, 181, 123, 0.98));
+}
+
+.upload-decision-actions .upload-decision-secondary {
+  background: rgba(72, 112, 198, 0.28);
+  color: #eff5ff;
+  border: 1px solid rgba(127, 162, 235, 0.6);
+}
+
+.upload-decision-actions .upload-decision-secondary:hover {
+  background: rgba(84, 128, 221, 0.34);
+}
+
+.upload-decision-actions .upload-decision-cancel {
+  background: rgba(116, 129, 152, 0.18);
+  color: #d9e1ef;
+  border: 1px solid rgba(149, 162, 188, 0.35);
+}
+
+.upload-decision-actions .upload-decision-cancel:hover {
+  background: rgba(132, 146, 173, 0.24);
 }
 
 .video-tools-modal {

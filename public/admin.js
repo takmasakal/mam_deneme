@@ -152,20 +152,22 @@ let i18n = {
     proxy_tool_action_thumbnail: 'Generate Video Thumbnail',
     proxy_tool_action_preview: 'Generate Document Preview',
     proxy_tool_action_proxy: 'Generate Video Proxy',
-    proxy_tool_action_replace_asset: 'Replace Asset',
+    proxy_tool_action_replace_asset: 'Replace Asset File (Keep Metadata)',
+    proxy_tool_action_delete_asset: 'Delete Asset',
     proxy_tool_timecode: 'Thumbnail Timecode',
     proxy_tool_timecode_ph: '00:00:12:10 or 12.4',
     proxy_tool_replace_file: 'New Asset File',
     proxy_tool_replace_file_required: 'Please select a file.',
-    proxy_tool_replace_options_title: 'After replace',
+    proxy_tool_replace_options_title: 'After file replace',
     proxy_tool_replace_gen_thumbnail: 'Generate thumbnail',
     proxy_tool_replace_gen_preview: 'Generate document preview',
     proxy_tool_replace_type_mismatch: 'New file type must match existing asset type.',
-    proxy_tool_replace_options_prompt: 'Select what to generate after replacing the main file.',
+    proxy_tool_replace_options_prompt: 'Only the main file will change. Asset metadata stays as-is. Select what to generate after replacing the file.',
     proxy_tool_run: 'Run Action',
     proxy_tool_name_required: 'Asset name is required.',
     proxy_tool_done: 'Action completed',
     proxy_tool_multi_match: 'Multiple assets matched, latest one used',
+    proxy_tool_delete_confirm: 'Permanently delete this asset and its related versions/indices?',
     processed: 'Processed',
     generated: 'Generated',
     skipped: 'Skipped',
@@ -378,20 +380,22 @@ let i18n = {
     proxy_tool_action_thumbnail: 'Video Thumbnail Üret',
     proxy_tool_action_preview: 'Doküman Önizlemesi Üret',
     proxy_tool_action_proxy: 'Video Proxy Üret',
-    proxy_tool_action_replace_asset: 'Varlık Değiştir',
+    proxy_tool_action_replace_asset: 'Yalnız Dosyayı Değiştir (Metadata Kalsın)',
+    proxy_tool_action_delete_asset: 'Asset Sil',
     proxy_tool_timecode: 'Thumbnail Timecode',
     proxy_tool_timecode_ph: '00:00:12:10 veya 12.4',
     proxy_tool_replace_file: 'Yeni Varlık Dosyası',
     proxy_tool_replace_file_required: 'Lütfen bir dosya seçin.',
-    proxy_tool_replace_options_title: 'Değişim sonrası',
+    proxy_tool_replace_options_title: 'Dosya değişimi sonrası',
     proxy_tool_replace_gen_thumbnail: 'Thumbnail üret',
     proxy_tool_replace_gen_preview: 'Doküman önizlemesi üret',
     proxy_tool_replace_type_mismatch: 'Yeni dosya türü mevcut varlık türü ile aynı olmalı.',
-    proxy_tool_replace_options_prompt: 'Ana dosya değiştikten sonra üretilecekleri seçin.',
+    proxy_tool_replace_options_prompt: 'Yalnızca ana dosya değişir. Varlık metadata bilgileri korunur. Dosya değiştikten sonra üretilecekleri seçin.',
     proxy_tool_run: 'İşlemi Çalıştır',
     proxy_tool_name_required: 'Varlık adı gerekli.',
     proxy_tool_done: 'İşlem tamamlandı',
     proxy_tool_multi_match: 'Birden fazla varlık bulundu, en güncel olan kullanıldı',
+    proxy_tool_delete_confirm: 'Bu asset ve ilişkili versiyon/index kayıtları kalıcı olarak silinsin mi?',
     processed: 'İşlenen',
     generated: 'Üretilen',
     skipped: 'Atlanan',
@@ -1226,7 +1230,7 @@ async function loadSettingsSubtabData(tabName) {
 function updateProxyToolUi() {
   const mode = String(proxyToolAction?.value || 'thumbnail').trim().toLowerCase();
   const showTimecode = mode === 'thumbnail';
-  const showReplaceFile = mode === 'replace_asset' || mode === 'replace_pdf';
+  const showReplaceFile = mode === 'replace_asset' || mode === 'replace_pdf' || mode === 'proxy';
   if (proxyToolTimecodeWrap) proxyToolTimecodeWrap.classList.toggle('hidden', !showTimecode);
   if (proxyToolReplaceFileWrap) proxyToolReplaceFileWrap.classList.toggle('hidden', !showReplaceFile);
 }
@@ -1869,6 +1873,13 @@ runProxyToolBtn?.addEventListener('click', async () => {
   const mode = String(proxyToolAction?.value || 'thumbnail').trim().toLowerCase();
   const payload = { assetName, mode };
   if (mode === 'thumbnail') payload.timecode = String(proxyToolTimecode?.value || '').trim();
+  if (mode === 'delete_asset') {
+    const ok = confirm(t('proxy_tool_delete_confirm'));
+    if (!ok) {
+      if (proxyToolMsg) proxyToolMsg.textContent = '';
+      return;
+    }
+  }
   if (mode === 'replace_asset' || mode === 'replace_pdf') {
     const file = proxyToolReplaceFile?.files?.[0] || null;
     if (!file) {
@@ -1885,6 +1896,14 @@ runProxyToolBtn?.addEventListener('click', async () => {
     payload.fileBase64 = await fileToBase64(file);
     payload.generateThumbnail = Boolean(options.generateThumbnail);
     payload.generatePreview = Boolean(options.generatePreview);
+  }
+  if (mode === 'proxy') {
+    const file = proxyToolReplaceFile?.files?.[0] || null;
+    if (file) {
+      payload.fileName = String(file.name || '').trim() || 'source.bin';
+      payload.mimeType = String(file.type || '').trim();
+      payload.fileBase64 = await fileToBase64(file);
+    }
   }
 
   if (proxyToolMsg) proxyToolMsg.textContent = `${t('loading')}...`;

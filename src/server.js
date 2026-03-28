@@ -3806,7 +3806,7 @@ async function createAssetRecord(input) {
       ...buildDefaultDcMetadata(input),
       ...sanitizeDcMetadata(input.dcMetadata)
     },
-    status: 'Ingested',
+    status: input.status?.trim() || 'Ingested',
     deletedAt: null,
     createdAt: now,
     updatedAt: now
@@ -3888,100 +3888,149 @@ async function createAssetRecord(input) {
   }
 }
 
-async function generateVideoProxy(inputPath, outputPath) {
+async function generateVideoProxy(inputPath, outputPath, options = {}) {
   const audioStreams = await getMediaAudioStreams(inputPath);
-  await new Promise((resolve, reject) => {
-    const args = [
-      '-y',
-      '-i',
-      inputPath,
-      '-map',
-      '0:v:0',
-      '-c:v',
-      'libx264',
-      '-preset',
-      'veryfast',
-      '-crf',
-      '31',
-      '-pix_fmt',
-      'yuv420p',
-      '-profile:v',
-      'main',
-      '-level',
-      '4.0',
-      '-vf',
-      'scale=640:-2:force_original_aspect_ratio=decrease'
-    ];
-
-    if (audioStreams.length === 1) {
-      const channels = Math.max(1, Number(audioStreams[0].channels) || 2);
-      if (channels > 2) {
-        // Multichannel in AAC/7.1 can attenuate LFE-designated channel content.
-        // Use Opus for >2 channels to keep channels full-range and faithful.
-        args.push(
-          '-map',
-          '0:a:0',
-          '-c:a',
-          'libopus',
-          '-ac',
-          String(channels),
-          '-b:a',
-          channels >= 8 ? '512k' : '320k'
-        );
-      } else {
-        args.push(
-          '-map',
-          '0:a:0',
-          '-c:a',
-          'aac',
-          '-b:a',
-          '128k'
-        );
-      }
-    } else if (audioStreams.length > 1) {
-      const inputs = audioStreams.map((_s, idx) => `[0:a:${idx}]`).join('');
-      const mergedChannels = audioStreams.reduce((acc, s) => acc + Math.max(1, Number(s.channels) || 1), 0);
-      const mergedOutChannels = Math.max(2, mergedChannels);
-      args.push(
-        '-filter_complex',
-        `${inputs}amerge=inputs=${audioStreams.length}[aout]`,
+  const allowAudioFallback = Boolean(options.allowAudioFallback);
+  const runProxy = async (includeAudio) => {
+    await new Promise((resolve, reject) => {
+      const args = [
+        '-hide_banner',
+        '-y',
+        '-i',
+        inputPath,
         '-map',
-        '[aout]'
-      );
-      if (mergedOutChannels > 2) {
-        args.push(
-          '-c:a',
-          'libopus',
-          '-ac',
-          String(mergedOutChannels),
-          '-b:a',
-          mergedOutChannels >= 8 ? '512k' : '320k'
-        );
+        '0:v:0',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '31',
+        '-pix_fmt',
+        'yuv420p',
+        '-profile:v',
+        'main',
+        '-level',
+        '4.0',
+        '-vf',
+        'scale=640:-2:force_original_aspect_ratio=decrease'
+      ];
+
+      if (!includeAudio || audioStreams.length === 0) {
+        args.push('-an');
+      } else if (audioStreams.length === 1) {
+        const channels = Math.max(1, Number(audioStreams[0].channels) || 2);
+        if (channels > 2) {
+          // Multichannel in AAC/7.1 can attenuate LFE-designated channel content.
+          // Use Opus for >2 channels to keep channels full-range and faithful.
+          args.push(
+            '-map',
+            '0:a:0',
+            '-c:a',
+            'libopus',
+            '-ac',
+            String(channels),
+            '-b:a',
+            channels >= 8 ? '512k' : '320k'
+          );
+        } else {
+          args.push(
+            '-map',
+            '0:a:0',
+            '-c:a',
+            'aac',
+            '-b:a',
+            '128k'
+          );
+        }
       } else {
+        const inputs = audioStreams.map((_s, idx) => `[0:a:${idx}]`).join('');
+        const mergedChannels = audioStreams.reduce((acc, s) => acc + Math.max(1, Number(s.channels) || 1), 0);
+        const mergedOutChannels = Math.max(2, mergedChannels);
         args.push(
-          '-c:a',
-          'aac',
-          '-ac',
-          String(mergedOutChannels),
-          '-b:a',
-          '128k'
+          '-filter_complex',
+          `${inputs}amerge=inputs=${audioStreams.length}[aout]`,
+          '-map',
+          '[aout]'
         );
+        if (mergedOutChannels > 2) {
+          args.push(
+            '-c:a',
+            'libopus',
+            '-ac',
+            String(mergedOutChannels),
+            '-b:a',
+            mergedOutChannels >= 8 ? '512k' : '320k'
+          );
+        } else {
+          args.push(
+            '-c:a',
+            'aac',
+            '-ac',
+            String(mergedOutChannels),
+            '-b:a',
+            '128k'
+          );
+        }
       }
+
+      args.push(
+        '-movflags',
+        '+faststart',
+        outputPath
+      );
+
+      const ffmpeg = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+      let stderr = '';
+
+      ffmpeg.stderr.on('data', (chunk) => {
+        stderr += chunk.toString();
+      });
+
+      ffmpeg.on('error', reject);
+      ffmpeg.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(stderr || `ffmpeg exited with code ${code}`));
+      });
+    });
+  };
+
+  try {
+    await runProxy(true);
+    return { audioFallbackUsed: false };
+  } catch (error) {
+    const message = String(error?.message || '');
+    const audioDecodeFailure =
+      /Error while decoding stream #0:1/i.test(message) ||
+      /Error while processing the decoded data for stream #0:1/i.test(message) ||
+      /\[aac @/i.test(message) ||
+      /auto_aresample/i.test(message);
+    if (!audioDecodeFailure) throw error;
+    if (!allowAudioFallback) {
+      throw createProxyConfirmationError(
+        'Source audio stream could not be decoded reliably. Proxy can be created without audio if you approve it.',
+        {
+          warning: 'The uploaded video has audio stream issues. Approve silent proxy creation or continue without a proxy.',
+          retryHint: 'If you do not approve, the asset can still be created and the file can be replaced later while keeping metadata.'
+        }
+      );
     }
+    await runProxy(false);
+    return {
+      audioFallbackUsed: true,
+      warning: 'Source audio stream could not be decoded reliably. Proxy was created without audio.'
+    };
+  }
+}
 
-    args.push(
-      '-movflags',
-      '+faststart',
-      outputPath
-    );
-
-    const ffmpeg = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+async function runFfmpeg(args) {
+  await new Promise((resolve, reject) => {
+    const ffmpegArgs = args[0] === '-hide_banner' ? args : ['-hide_banner', ...args];
+    const ffmpeg = spawn('ffmpeg', ffmpegArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
-
     ffmpeg.stderr.on('data', (chunk) => {
       stderr += chunk.toString();
     });
-
     ffmpeg.on('error', reject);
     ffmpeg.on('close', (code) => {
       if (code === 0) resolve();
@@ -3990,19 +4039,26 @@ async function generateVideoProxy(inputPath, outputPath) {
   });
 }
 
-async function runFfmpeg(args) {
-  await new Promise((resolve, reject) => {
-    const ffmpeg = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
-    let stderr = '';
-    ffmpeg.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
-    });
-    ffmpeg.on('error', reject);
-    ffmpeg.on('close', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(stderr || `ffmpeg exited with code ${code}`));
-    });
-  });
+function summarizeFfmpegError(error) {
+  const raw = String(error?.message || error || '').trim();
+  if (!raw) return 'ffmpeg failed';
+  const lines = raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^ffmpeg version\b/i.test(line))
+    .filter((line) => !/^built with\b/i.test(line))
+    .filter((line) => !/^configuration:\b/i.test(line))
+    .filter((line) => !/^libav[a-z]+/i.test(line));
+  if (!lines.length) return raw.slice(0, 240);
+  return lines.slice(-4).join(' | ').slice(0, 240);
+}
+
+function createProxyConfirmationError(message, details = {}) {
+  const error = new Error(String(message || 'Proxy generation requires confirmation.'));
+  error.code = 'PROXY_AUDIO_FALLBACK_CONFIRMATION_REQUIRED';
+  Object.assign(error, details);
+  return error;
 }
 
 function runCommandCapture(cmd, args, options = {}) {
@@ -6569,6 +6625,9 @@ app.post('/api/assets', async (req, res) => {
 
 app.post('/api/assets/upload', async (req, res) => {
   const { fileName, mimeType, fileData, ...metadata } = req.body || {};
+  const allowSilentProxyFallback = Boolean(req.body?.allowSilentProxyFallback);
+  const skipProxyGeneration = Boolean(req.body?.skipProxyGeneration);
+  const isVideoUpload = isVideoCandidate({ mimeType, fileName, declaredType: metadata.type });
   if (!fileData) {
     return res.status(400).json({ error: 'fileData (base64) is required' });
   }
@@ -6590,28 +6649,78 @@ app.post('/api/assets/upload', async (req, res) => {
   let proxyStatus = 'not_applicable';
   let thumbnailUrl = '';
   let detectedAudioChannels = 0;
+  const ingestWarnings = [];
+  let persistOriginalMedia = true;
 
-  if (isVideoCandidate({ mimeType, fileName: safeName, declaredType: metadata.type })) {
-    proxyStatus = 'pending';
-    const proxyStoredName = `${Date.now()}-${nanoid()}-proxy.mp4`;
-    const proxyOut = buildArtifactPath('proxies', proxyStoredName, new Date());
+  if (isVideoUpload) {
+    if (skipProxyGeneration) {
+      proxyStatus = 'failed';
+      persistOriginalMedia = false;
+      ingestWarnings.push({
+        code: 'proxy_generation_skipped',
+        message: 'Proxy generation was skipped and the original asset file was not stored for this upload.',
+        retryHint: 'You can generate the proxy later from admin tools or replace only the main file while keeping metadata.'
+      });
+    } else {
+      proxyStatus = 'pending';
+      const proxyStoredName = `${Date.now()}-${nanoid()}-proxy.mp4`;
+      const proxyOut = buildArtifactPath('proxies', proxyStoredName, new Date());
 
-    try {
-      await generateVideoProxy(absolutePath, proxyOut.absolutePath);
-      proxyUrl = proxyOut.publicUrl;
-      proxyStatus = 'ready';
-      detectedAudioChannels = await getMediaAudioChannelCount(proxyOut.absolutePath);
-    } catch (error) {
-      return res.status(500).json({ error: `Proxy generation failed for uploaded video: ${String(error.message || '').slice(0, 240)}` });
+      try {
+        const proxyResult = await generateVideoProxy(absolutePath, proxyOut.absolutePath, {
+          allowAudioFallback: allowSilentProxyFallback
+        });
+        proxyUrl = proxyOut.publicUrl;
+        proxyStatus = 'ready';
+        detectedAudioChannels = await getMediaAudioChannelCount(proxyOut.absolutePath);
+        if (proxyResult?.audioFallbackUsed) {
+          ingestWarnings.push({
+            code: 'proxy_audio_fallback',
+            message: String(proxyResult.warning || 'Proxy was created without audio because the source audio stream could not be decoded reliably.'),
+            retryHint: 'You can replace the main file later while keeping metadata, or keep using the silent proxy if video-only review is enough.'
+          });
+        }
+      } catch (error) {
+        if (error?.code === 'PROXY_AUDIO_FALLBACK_CONFIRMATION_REQUIRED') {
+          try { if (fs.existsSync(absolutePath)) fs.unlinkSync(absolutePath); } catch (_cleanupError) {}
+          try { if (fs.existsSync(proxyOut.absolutePath)) fs.unlinkSync(proxyOut.absolutePath); } catch (_cleanupError) {}
+          return res.status(409).json({
+            error: String(error.message || 'Proxy generation requires confirmation.'),
+            code: 'proxy_audio_confirmation_required',
+            confirmationPrompt: String(error.warning || ''),
+            retryHint: String(error.retryHint || '')
+          });
+        }
+        const message = summarizeFfmpegError(error);
+        console.error('Uploaded video proxy generation failed', {
+          inputPath: absolutePath,
+          fileName: safeName,
+          mimeType,
+          error: String(error?.message || error || '')
+        });
+        proxyStatus = 'failed';
+        ingestWarnings.push({
+          code: 'proxy_generation_failed',
+          message: `Proxy generation failed for uploaded video: ${message}`,
+          retryHint: 'You can regenerate the proxy later or replace only the asset file while keeping metadata.'
+        });
+      }
     }
 
-    const thumbStoredName = `${Date.now()}-${nanoid()}-thumb.jpg`;
-    const thumbOut = buildArtifactPath('thumbnails', thumbStoredName, new Date());
-    try {
-      await generateVideoThumbnail(absolutePath, thumbOut.absolutePath);
-      thumbnailUrl = thumbOut.publicUrl;
-    } catch (_error) {
-      thumbnailUrl = '';
+    if (persistOriginalMedia) {
+      const thumbStoredName = `${Date.now()}-${nanoid()}-thumb.jpg`;
+      const thumbOut = buildArtifactPath('thumbnails', thumbStoredName, new Date());
+      try {
+        await generateVideoThumbnail(absolutePath, thumbOut.absolutePath);
+        thumbnailUrl = thumbOut.publicUrl;
+      } catch (error) {
+        thumbnailUrl = '';
+        ingestWarnings.push({
+          code: 'thumbnail_generation_failed',
+          message: `Thumbnail generation failed: ${summarizeFfmpegError(error)}`,
+          retryHint: 'You can regenerate the thumbnail later from the admin tools.'
+        });
+      }
     }
   } else if (isPdfCandidate({ mimeType, fileName: safeName })) {
     const pdfThumbName = `${Date.now()}-${nanoid()}-pdf-thumb.jpg`;
@@ -6650,8 +6759,17 @@ app.post('/api/assets/upload', async (req, res) => {
     thumbnailUrl = mediaUrl;
   }
 
-  if (!detectedAudioChannels && String(mimeType || '').toLowerCase().startsWith('audio/')) {
+  if (persistOriginalMedia && !detectedAudioChannels && String(mimeType || '').toLowerCase().startsWith('audio/')) {
     detectedAudioChannels = await getMediaAudioChannelCount(absolutePath);
+  }
+
+  if (!persistOriginalMedia) {
+    try {
+      if (fs.existsSync(absolutePath)) fs.unlinkSync(absolutePath);
+    } catch (_error) {
+      // Ignore cleanup failure and continue with metadata-only record creation.
+    }
+    thumbnailUrl = '';
   }
 
   const effective = await resolveEffectivePermissions(req).catch(() => null);
@@ -6662,7 +6780,7 @@ app.post('/api/assets/upload', async (req, res) => {
     owner,
     fileName: safeName,
     mimeType: String(mimeType || ''),
-    mediaUrl,
+    mediaUrl: persistOriginalMedia ? mediaUrl : '',
     proxyUrl,
     proxyStatus,
     thumbnailUrl,
@@ -6670,9 +6788,9 @@ app.post('/api/assets/upload', async (req, res) => {
       ...(metadata?.dcMetadata && typeof metadata.dcMetadata === 'object' ? metadata.dcMetadata : {}),
       ...(detectedAudioChannels > 0 ? { audioChannels: detectedAudioChannels } : {})
     },
-    sourcePath: absolutePath
+    sourcePath: persistOriginalMedia ? absolutePath : ''
   };
-  if ((isVideoCandidate({ mimeType, fileName: safeName, declaredType: metadata.type }) || String(mimeType || '').toLowerCase().startsWith('audio/'))
+  if (persistOriginalMedia && (isVideoUpload || String(mimeType || '').toLowerCase().startsWith('audio/'))
     && (!Number(payload.durationSeconds) || Number(payload.durationSeconds) <= 0)) {
     const detected = await getVideoDurationSeconds(absolutePath);
     if (detected > 0) payload.durationSeconds = Math.round(detected);
@@ -6680,7 +6798,11 @@ app.post('/api/assets/upload', async (req, res) => {
 
   try {
     const created = await createAssetRecord(payload);
-    return res.status(201).json(created);
+    return res.status(201).json({
+      ...created,
+      ingestWarnings,
+      ingestSucceededWithWarnings: ingestWarnings.length > 0
+    });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to create uploaded asset record' });
   }
@@ -9794,8 +9916,8 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
     const assetName = String(req.body?.assetName || '').trim();
     const mode = String(req.body?.mode || '').trim().toLowerCase();
     if (!assetName) return res.status(400).json({ error: 'assetName is required' });
-    if (!['thumbnail', 'preview', 'proxy', 'replace_asset', 'replace_pdf'].includes(mode)) {
-      return res.status(400).json({ error: 'mode must be one of: thumbnail, preview, proxy, replace_asset, replace_pdf' });
+    if (!['thumbnail', 'preview', 'proxy', 'replace_asset', 'replace_pdf', 'delete_asset'].includes(mode)) {
+      return res.status(400).json({ error: 'mode must be one of: thumbnail, preview, proxy, replace_asset, replace_pdf, delete_asset' });
     }
 
     const like = `%${assetName}%`;
@@ -9820,9 +9942,108 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
     let row = match.rows[0];
     let info = {};
 
-    if (mode === 'proxy') {
+    if (mode === 'delete_asset') {
+      const actor = String(req.userPermissions?.displayName || req.userPermissions?.username || 'admin').trim() || 'admin';
+      await pool.query('DELETE FROM asset_versions WHERE asset_id = $1', [row.id]);
+      await pool.query('DELETE FROM asset_subtitle_cues WHERE asset_id = $1', [row.id]);
+      await pool.query('DELETE FROM asset_ocr_segments WHERE asset_id = $1', [row.id]);
+      await pool.query('DELETE FROM assets WHERE id = $1', [row.id]);
+      await deleteAssetFromElastic(row.id).catch(() => {});
+      info = {
+        deleted: true,
+        actor
+      };
+    } else if (mode === 'proxy') {
       if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
         return res.status(400).json({ error: 'Proxy generation is supported only for video assets' });
+      }
+      const rawBase64 = String(req.body?.fileBase64 || '').trim();
+      if (rawBase64) {
+        const sanitizedBase64 = rawBase64.replace(/^data:[^;]+;base64,/i, '');
+        let fileBuffer = null;
+        try {
+          fileBuffer = Buffer.from(sanitizedBase64, 'base64');
+        } catch (_error) {
+          return res.status(400).json({ error: 'Invalid fileBase64 payload' });
+        }
+        if (!fileBuffer || fileBuffer.length < 16) {
+          return res.status(400).json({ error: 'Decoded file content is empty' });
+        }
+
+        const inputFileName = String(req.body?.fileName || row.file_name || `${row.id}.bin`).trim();
+        const safeFileName = sanitizeFileName(inputFileName || row.file_name || `${row.id}.bin`);
+        const nextMimeType = String(req.body?.mimeType || '').trim().toLowerCase() || inferMimeTypeFromFileName(safeFileName) || 'application/octet-stream';
+        if (!isVideoCandidate({ mimeType: nextMimeType, fileName: safeFileName, declaredType: row.type })) {
+          return res.status(400).json({ error: 'Selected source file must be a video file' });
+        }
+
+        const safeBase = sanitizeFileName(path.basename(safeFileName, path.extname(safeFileName)) || `asset-${row.id}`);
+        const extWithDot = path.extname(safeFileName) || '';
+        const extSafe = extWithDot ? sanitizeFileName(extWithDot.replace(/^\./, '')) : '';
+        const storedName = `${Date.now()}-${nanoid()}-${safeBase}${extSafe ? `.${extSafe}` : ''}`;
+        const storage = getIngestStoragePath({ type: inferAssetType(row.type, nextMimeType), mimeType: nextMimeType, fileName: safeFileName });
+        const absPath = path.join(storage.absoluteDir, storedName);
+        const relativePath = path.join(storage.relativeDir, storedName);
+        const mediaUrl = `/uploads/${relativePath.replace(/\\/g, '/')}`;
+        fs.writeFileSync(absPath, fileBuffer);
+
+        const nowIso = new Date().toISOString();
+        const actor = String(req.userPermissions?.displayName || req.userPermissions?.username || 'admin').trim() || 'admin';
+        const hadExistingSource = Boolean(String(row.media_url || '').trim() || String(row.source_path || '').trim());
+        if (hadExistingSource) {
+          const versionCount = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [row.id]);
+          const nextVersion = Number(versionCount.rows?.[0]?.c || 0) + 1;
+          await pool.query(
+            `
+              INSERT INTO asset_versions (
+                version_id, asset_id, label, note,
+                snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
+                actor_username, action_type, restored_from_version_id,
+                created_at
+              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+            `,
+            [
+              nanoid(),
+              row.id,
+              `Asset Replace ${nextVersion}`,
+              `File attached during proxy generation by ${actor}`,
+              String(row.media_url || ''),
+              String(row.source_path || ''),
+              String(row.file_name || ''),
+              String(row.mime_type || ''),
+              String(row.thumbnail_url || ''),
+              actor,
+              'file_replace',
+              null,
+              nowIso
+            ]
+          );
+        }
+
+        const updated = await pool.query(
+          `
+            UPDATE assets
+            SET media_url = $2,
+                source_path = $3,
+                file_name = $4,
+                mime_type = $5,
+                type = $6,
+                proxy_url = '',
+                proxy_status = 'not_applicable',
+                thumbnail_url = '',
+                updated_at = $7
+            WHERE id = $1
+            RETURNING *
+          `,
+          [row.id, mediaUrl, absPath, safeFileName, nextMimeType, inferAssetType(row.type, nextMimeType), nowIso]
+        );
+        row = updated.rows?.[0] || row;
+      }
+      const inputPath = resolveAssetInputPath(row);
+      if (!inputPath || !fs.existsSync(inputPath)) {
+        return res.status(400).json({
+          error: 'Source media not found. Choose a source video file in New Asset File, then run proxy generation again.'
+        });
       }
       row = await ensureVideoProxyAndThumbnail(row, { forceProxy: true });
       info = {

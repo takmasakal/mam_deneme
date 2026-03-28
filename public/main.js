@@ -671,7 +671,9 @@ let i18n = {
     in_trash: 'In Trash',
     active: 'Active',
     restore: 'Restore',
+    delete_asset: 'Delete',
     delete_permanent: 'Delete Permanently',
+    move_to_trash_confirm: 'Move this asset to trash?',
     move_to_trash: 'Move To Trash',
     asset_viewer: 'Asset Viewer',
     edit_metadata: 'Edit Metadata',
@@ -763,6 +765,7 @@ let i18n = {
     pdf_preview_unavailable: 'PDF preview engine is unavailable.',
     generate_proxy: 'Generate Proxy',
     download_asset: 'Download',
+    download_proxy: 'Download Proxy',
     video_native_audio: 'Native video audio mode is active.',
     subtitles: 'Subtitles',
     subtitle_lang: 'Lang',
@@ -980,7 +983,9 @@ let i18n = {
     in_trash: 'Çöpte',
     active: 'Aktif',
     restore: 'Geri Yükle',
+    delete_asset: 'Sil',
     delete_permanent: 'Kalıcı Sil',
+    move_to_trash_confirm: 'Bu varlık çöpe taşınsın mı?',
     move_to_trash: 'Çöpe Taşı',
     asset_viewer: 'Varlık Görüntüleyici',
     edit_metadata: 'Metadata Düzenle',
@@ -1072,6 +1077,7 @@ let i18n = {
     pdf_preview_unavailable: 'PDF onizleme motoru kullanilamiyor.',
     generate_proxy: 'Proxy Oluştur',
     download_asset: 'İndir',
+    download_proxy: "Proxy'yi İndir",
     video_native_audio: 'Yerel video ses modu aktif.',
     subtitles: 'Altyazı',
     subtitle_lang: 'Dil',
@@ -1669,11 +1675,90 @@ function uploadAssetWithProgress(payload, onProgress) {
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(parsed);
       } else {
-        reject(new Error(parsed.error || 'Upload failed'));
+        const error = new Error(parsed.error || 'Upload failed');
+        if (parsed && typeof parsed === 'object') {
+          Object.assign(error, parsed);
+        }
+        reject(error);
       }
     };
 
     xhr.send(JSON.stringify(payload));
+  });
+}
+
+function formatIngestWarningMessage(created) {
+  const warnings = Array.isArray(created?.ingestWarnings) ? created.ingestWarnings : [];
+  if (!warnings.length) return '';
+  const lines = [t('upload_saved_with_warnings')];
+  const hintSet = new Set();
+  warnings.forEach((warning) => {
+    const message = localizeUploadWarning(warning);
+    if (message) lines.push(`- ${message}`);
+    const hint = localizeUploadRetryHint(String(warning?.code || '').trim(), warning?.retryHint);
+    if (hint) hintSet.add(hint);
+  });
+  if (hintSet.size) {
+    lines.push('');
+    hintSet.forEach((hint) => lines.push(hint));
+  } else {
+    lines.push(t('upload_warning_retry_hint'));
+  }
+  return lines.join('\n');
+}
+
+function localizeUploadWarning(warning) {
+  const code = String(warning?.code || '').trim();
+  if (code === 'proxy_generation_failed') return t('upload_warning_proxy_generation_failed');
+  if (code === 'proxy_generation_skipped') return t('upload_warning_proxy_generation_skipped');
+  if (code === 'proxy_audio_fallback') return t('upload_warning_proxy_audio_fallback');
+  if (code === 'thumbnail_generation_failed') return t('upload_warning_thumbnail_generation_failed');
+  const message = String(warning?.message || '').trim();
+  return message;
+}
+
+function localizeUploadRetryHint(code, fallback = '') {
+  if (code === 'proxy_generation_failed' || code === 'proxy_generation_skipped' || code === 'proxy_audio_fallback') {
+    return t('upload_warning_proxy_retry_hint');
+  }
+  if (code === 'thumbnail_generation_failed') {
+    return t('upload_warning_thumbnail_retry_hint');
+  }
+  return String(fallback || '').trim();
+}
+
+function showUploadProxyDecisionModal(error) {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement('div');
+    const detail = t('upload_proxy_confirm_detail');
+    backdrop.className = 'clip-modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="clip-modal upload-decision-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('upload_proxy_confirm_title'))}">
+        <h4>${escapeHtml(t('upload_proxy_confirm_title'))}</h4>
+        <div class="upload-decision-copy">
+          <p>${escapeHtml(detail)}</p>
+          <p>${escapeHtml(t('upload_proxy_confirm_message'))}</p>
+        </div>
+        <div class="clip-modal-actions upload-decision-actions">
+          <button type="button" class="upload-decision-primary" data-choice="silent">${escapeHtml(t('upload_proxy_confirm_silent'))}</button>
+          <button type="button" class="upload-decision-secondary" data-choice="metadata">${escapeHtml(t('upload_proxy_confirm_metadata_only'))}</button>
+          <button type="button" class="upload-decision-cancel" data-choice="cancel">${escapeHtml(t('upload_proxy_confirm_cancel'))}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(backdrop);
+
+    const close = (choice) => {
+      backdrop.remove();
+      resolve(choice);
+    };
+
+    backdrop.addEventListener('click', (event) => {
+      if (event.target === backdrop) close('cancel');
+    });
+    backdrop.querySelectorAll('[data-choice]').forEach((button) => {
+      button.addEventListener('click', () => close(String(button.dataset.choice || 'cancel')));
+    });
   });
 }
 
@@ -3120,7 +3205,6 @@ function mediaViewer(asset, options = {}) {
     if (!asset.proxyUrl) {
       return `
         <div class="empty">${escapeHtml(t('proxy_required'))}</div>
-        <button type="button" id="ensureProxyBtn">${t('generate_proxy')}</button>
       `;
     }
     const audioToolsMarkup = `
@@ -3607,17 +3691,8 @@ async function refreshAssetDetail(assetId, workflow) {
 
 function detailMarkup(asset, workflow) {
   const dc = asset.dcMetadata || {};
+  const hasPlayableVideoProxy = isVideo(asset) && Boolean(String(asset.proxyUrl || '').trim());
   const trashStatus = asset.inTrash ? `<strong>${t('in_trash')}</strong>` : t('active');
-  const trashActions = asset.inTrash
-    ? `
-      <button type="button" id="restoreAssetBtn">${t('restore')}</button>
-      ${currentUserCanDeleteAssets ? `<button type="button" id="deleteAssetBtn">${t('delete_permanent')}</button>` : ''}
-    `
-    : (currentUserCanDeleteAssets
-      ? `
-        <button type="button" id="trashAssetBtn">${t('move_to_trash')}</button>
-      `
-      : '');
 
   const viewerSection = isVideo(asset)
     ? `
@@ -3653,7 +3728,9 @@ function detailMarkup(asset, workflow) {
     ${tagsMarkup}
     <div class="timecode-bar">
       ${asset.mediaUrl ? `<button type="button" id="downloadAssetBtn">${t('download_asset')}</button>` : ''}
-      ${trashActions}
+      ${currentUserCanAccessAdmin && isVideo(asset) && asset.proxyUrl ? `<button type="button" id="downloadProxyBtn">${t('download_proxy')}</button>` : ''}
+      ${currentUserCanDeleteAssets && !asset.inTrash ? `<button type="button" id="moveToTrashBtn" class="danger">${t('delete_asset')}</button>` : ''}
+      ${currentUserCanDeleteAssets && asset.inTrash ? `<button type="button" id="restoreAssetBtn">${t('restore')}</button><button type="button" id="deleteAssetBtn" class="danger">${t('delete_permanent')}</button>` : ''}
     </div>
     ${isVideo(asset) ? `
       <div class="tech-info-box">
@@ -3751,11 +3828,11 @@ function detailMarkup(asset, workflow) {
 
   const metadataSection = `
     ${isVideo(asset) ? metadataTopSection : viewerSection}
-    ${isVideo(asset) ? '' : metadataTopSection}
+    ${isVideo(asset) ? (!hasPlayableVideoProxy ? `<div class="asset-meta proxy-warning-box">${viewerSection}</div>` : '') : metadataTopSection}
     ${versionSection}
   `;
 
-  if (isVideo(asset)) {
+  if (hasPlayableVideoProxy) {
     return `
       <div class="detail-video-layout">
         <div class="detail-video-fixed">${viewerSection}</div>
@@ -6493,16 +6570,7 @@ async function openAsset(id, workflow, options = {}) {
   }
   setPanelVisible('panelDetail', true);
 
-  let asset = await api(`/api/assets/${id}`);
-  if (isVideo(asset) && !asset.proxyUrl) {
-    try {
-      await api(`/api/assets/${id}/ensure-proxy`, { method: 'POST', body: '{}' });
-      asset = await api(`/api/assets/${id}`);
-      await loadAssets();
-    } catch (error) {
-      asset.proxyStatus = String(error.message || 'error');
-    }
-  }
+  const asset = await api(`/api/assets/${id}`);
 
   selectedAssetId = id;
   selectedAssetIds.add(id);
@@ -6540,17 +6608,18 @@ async function openAsset(id, workflow, options = {}) {
   }
 
   assetDetail.innerHTML = detailMarkup(asset, workflow);
-  assetDetail.classList.toggle('video-detail-mode', isVideo(asset));
-  panelDetail?.classList.toggle('panel-video-detail', isVideo(asset));
+  const hasPlayableVideoProxy = isVideo(asset) && Boolean(String(asset.proxyUrl || '').trim());
+  assetDetail.classList.toggle('video-detail-mode', hasPlayableVideoProxy);
+  panelDetail?.classList.toggle('panel-video-detail', hasPlayableVideoProxy);
   assetDetail.classList.remove('video-tools-page-detail');
-  if (isVideo(asset)) syncDetailHeaderTimecode(assetDetail);
-  if (isVideo(asset)) {
+  if (hasPlayableVideoProxy) syncDetailHeaderTimecode(assetDetail);
+  if (hasPlayableVideoProxy) {
     activeDetailPinCleanup = initDetailVideoPin(assetDetail);
   } else {
     assetDetail.classList.remove('detail-video-pinned');
     resetDetailPanelDynamicMinWidth();
   }
-  setPanelVideoToolsButtonState(isVideo(asset) && !isVideoToolsPageMode, () => {
+  setPanelVideoToolsButtonState(hasPlayableVideoProxy && !isVideoToolsPageMode, () => {
     const panelMedia = assetDetail.querySelector('#assetMediaEl');
     if (panelMedia && typeof panelMedia.pause === 'function') {
       try { panelMedia.pause(); } catch (_error) {}
@@ -6794,15 +6863,17 @@ async function openAsset(id, workflow, options = {}) {
     await refreshAssetDetail(id, workflow);
   }, true);
 
-  const trashBtn = document.getElementById('trashAssetBtn');
-  const restoreBtn = document.getElementById('restoreAssetBtn');
-  const deleteBtn = document.getElementById('deleteAssetBtn');
   const downloadBtn = document.getElementById('downloadAssetBtn');
+  const downloadProxyBtn = document.getElementById('downloadProxyBtn');
+  const moveToTrashBtn = document.getElementById('moveToTrashBtn');
+  const restoreAssetBtn = document.getElementById('restoreAssetBtn');
+  const deleteAssetBtn = document.getElementById('deleteAssetBtn');
 
   downloadBtn?.addEventListener('click', () => {
-    if (!asset.mediaUrl) return;
+    const downloadUrl = String(asset.mediaUrl || '').trim();
+    if (!downloadUrl) return;
     const link = document.createElement('a');
-    link.href = asset.mediaUrl;
+    link.href = downloadUrl;
     // Empty download attribute lets browser suggest a filename.
     link.setAttribute('download', '');
     link.rel = 'noreferrer';
@@ -6811,35 +6882,45 @@ async function openAsset(id, workflow, options = {}) {
     link.remove();
   });
 
-  trashBtn?.addEventListener('click', async () => {
-    await api(`/api/assets/${id}/trash`, { method: 'POST', body: '{}' });
-    await loadAssets();
-    await openAsset(id, workflow);
+  downloadProxyBtn?.addEventListener('click', () => {
+    const downloadUrl = String(asset.proxyUrl || '').trim();
+    if (!downloadUrl) return;
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.setAttribute('download', '');
+    link.rel = 'noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   });
 
-  restoreBtn?.addEventListener('click', async () => {
-    await api(`/api/assets/${id}/restore`, { method: 'POST', body: '{}' });
-    await loadAssets();
-    await openAsset(id, workflow);
+  moveToTrashBtn?.addEventListener('click', async () => {
+    const ok = confirm(t('move_to_trash_confirm'));
+    if (!ok) return;
+    await api(`/api/assets/${encodeURIComponent(asset.id)}/trash`, { method: 'POST', body: '{}' });
+    await refreshAssetDetail(asset.id, workflow);
   });
 
-  deleteBtn?.addEventListener('click', async () => {
-    if (!currentUserCanDeleteAssets) return;
+  restoreAssetBtn?.addEventListener('click', async () => {
+    await api(`/api/assets/${encodeURIComponent(asset.id)}/restore`, { method: 'POST', body: '{}' });
+    await refreshAssetDetail(asset.id, workflow);
+  });
+
+  deleteAssetBtn?.addEventListener('click', async () => {
     const ok = confirm(t('trash_confirm'));
     if (!ok) return;
-    await deleteApi(`/api/assets/${id}`);
-    selectedAssetIds.delete(id);
-    selectedAssetId = null;
-    if (activeDetailPinCleanup) {
-      activeDetailPinCleanup();
-      activeDetailPinCleanup = null;
-    }
-    assetDetail.innerHTML = escapeHtml(t('select_asset'));
-    assetDetail.classList.remove('video-detail-mode');
-    assetDetail.classList.remove('detail-video-pinned');
-    setPanelVideoToolsButtonState(false);
+    await api(`/api/assets/${encodeURIComponent(asset.id)}`, { method: 'DELETE' });
+    selectedAssetIds.delete(asset.id);
     await loadAssets();
+    if (selectedAssetId === asset.id) {
+      selectedAssetId = null;
+      detailPanel.innerHTML = `<div class="empty">${escapeHtml(t('choose_asset'))}</div>`;
+      assetDetail.classList.remove('video-detail-mode');
+      assetDetail.classList.remove('detail-video-pinned');
+      setPanelVideoToolsButtonState(false);
+    }
   });
+
 }
 
 async function applyTagChipFilterToggle(clickedTag) {
@@ -7088,16 +7169,35 @@ ingestForm.addEventListener('submit', async (event) => {
   if (submitBtn) submitBtn.disabled = true;
   try {
     setUploadProgress(1, t('uploading'));
-    const created = await uploadAssetWithProgress(payload, (pct) => {
+    let created = null;
+    const sendUpload = async (extraPayload = {}) => uploadAssetWithProgress({ ...payload, ...extraPayload }, (pct) => {
       const mapped = Math.min(95, Math.round((Number(pct) || 0) * 0.95));
       setUploadProgress(mapped, t('uploading'));
     });
+    try {
+      created = await sendUpload();
+    } catch (error) {
+      if (String(error?.code || '') !== 'proxy_audio_confirmation_required') throw error;
+      const decision = await showUploadProxyDecisionModal(error);
+      if (decision === 'cancel') {
+        hideUploadProgress();
+        return;
+      }
+      setUploadProgress(30, t('processing'));
+      created = await sendUpload(decision === 'silent'
+        ? { allowSilentProxyFallback: true }
+        : { skipProxyGeneration: true });
+    }
     setUploadProgress(96, t('processing'));
     ingestForm.reset();
     ingestForm.querySelector('[name="type"]').value = 'Video';
     if (mediaFileName) mediaFileName.textContent = '';
     await waitUntilAssetVisible(created?.id || null);
     setUploadProgress(100, t('processing'));
+    const warningMessage = formatIngestWarningMessage(created);
+    if (warningMessage) {
+      alert(warningMessage);
+    }
   } catch (error) {
     alert(String(error?.message || 'Upload failed'));
   } finally {
