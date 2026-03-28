@@ -54,7 +54,7 @@ A lightweight Media Asset Management starter app.
    ./scripts/up_latest_main.sh
    ```
 2. Open:
-   `http://localhost:3000`
+   `http://localhost:3001`
 
 `up_latest_main.sh` behavior:
 - Fetches the latest `main` branch before building.
@@ -65,6 +65,7 @@ A lightweight Media Asset Management starter app.
 First-time manual alternative:
 ```bash
 docker volume create codex_deneme_pg_data || true
+export PUBLIC_HOST=$(hostname -I | awk '{print $1}')
 docker compose up -d --build
 ```
 
@@ -77,7 +78,7 @@ Compose starts:
 - `postgres` on `localhost:5432` (persistent `pg_data` volume)
 - `elasticsearch` on `localhost:9200` (persistent `es_data` volume)
 - `keycloak` admin on `localhost:8081`
-- `oauth2-proxy` on `localhost:3000` (protects `app` with Keycloak login)
+- `oauth2-proxy` on `localhost:3001` (protects `app` with Keycloak login)
 - `app` is internal (project `./uploads` mounted to `/app/uploads`)
 
 Useful commands:
@@ -120,6 +121,7 @@ Image build context excludes local media/metadata paths via `.dockerignore` (`up
    ./scripts/up_latest_main.sh
    ```
 2. Open MAM login: `http://localhost:3000`
+   or on a LAN host: `http://<raspberry-pi-ip>:3001`
 3. Open Keycloak admin: `http://localhost:8081`
 4. Login to Keycloak admin (default): `admin / admin`
 5. In Keycloak, create/select realm `mam`, then create user and set password:
@@ -139,6 +141,7 @@ Image build context excludes local media/metadata paths via `.dockerignore` (`up
    ./scripts/up_latest_main.sh
    ```
 2. MAM giriş sayfasını aç: `http://localhost:3000`
+   veya ağ üzerinden: `http://<raspberry-pi-ip>:3001`
 3. Keycloak admin panelini aç: `http://localhost:8081`
 4. Varsayılan admin ile giriş yap: `admin / admin`
 5. Keycloak'ta `mam` realm'ini seç/oluştur, kullanıcı oluştur ve şifre ver:
@@ -168,7 +171,7 @@ Use this when you want a ready stack (app + postgres + elasticsearch + keycloak 
    docker compose --env-file deploy/.env.easy -f docker-compose.easy.yml up -d
    ```
 3. Open:
-   - MAM login: `http://<detected-host>:3000`
+   - MAM login: `http://<detected-host>:3001`
    - Keycloak admin: `http://<detected-host>:8081`
 
 Generated default users in realm `mam`:
@@ -213,7 +216,7 @@ This Compose setup uses:
    docker compose up -d oauth2-proxy
    ```
 
-After this, open `http://localhost:3000`. You will be redirected to Keycloak login (which authenticates against LDAP once federation is configured).
+After this, open `http://localhost:3001`. You will be redirected to Keycloak login (which authenticates against LDAP once federation is configured).
 
 ### Keycloak admin quick summary (EN)
 Use this checklist when preparing a fresh Docker deployment:
