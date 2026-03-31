@@ -33,16 +33,6 @@ fi
 print_step "Ensuring external postgres volume exists"
 docker volume create "$POSTGRES_VOLUME_NAME" >/dev/null
 
-PUBLIC_HOST="${PUBLIC_HOST:-$(hostname -I | awk '{print $1}')}"
-export PUBLIC_HOST
-export ONLYOFFICE_PUBLIC_URL="${ONLYOFFICE_PUBLIC_URL:-http://${PUBLIC_HOST}:8082}"
-export OAUTH2_PROXY_OIDC_ISSUER_URL="${OAUTH2_PROXY_OIDC_ISSUER_URL:-http://${PUBLIC_HOST}:8081/realms/mam}"
-export OAUTH2_PROXY_LOGIN_URL="${OAUTH2_PROXY_LOGIN_URL:-http://${PUBLIC_HOST}:8081/realms/mam/protocol/openid-connect/auth}"
-export OAUTH2_PROXY_REDIRECT_URL="${OAUTH2_PROXY_REDIRECT_URL:-http://${PUBLIC_HOST}:3001/oauth2/callback}"
-export OAUTH2_PROXY_BACKEND_LOGOUT_URL="${OAUTH2_PROXY_BACKEND_LOGOUT_URL:-http://keycloak:8080/realms/mam/protocol/openid-connect/logout?id_token_hint={id_token}&post_logout_redirect_uri=http%3A%2F%2F${PUBLIC_HOST}%3A3001%2Foauth2%2Fstart%3Frd%3D%252F}"
-export OAUTH2_PROXY_WHITELIST_DOMAINS="${OAUTH2_PROXY_WHITELIST_DOMAINS:-${PUBLIC_HOST},${PUBLIC_HOST}:*}"
-print_step "Using PUBLIC_HOST=$PUBLIC_HOST"
-
 print_step "Building and starting containers"
 docker compose up -d --build "$@"
 
