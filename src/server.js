@@ -3389,6 +3389,86 @@ function hasStoredFile(value, defaultSubdir) {
   }
 }
 
+function isPathInsideRoot(filePath, rootDir) {
+  const safePath = String(filePath || '').trim();
+  const safeRoot = String(rootDir || '').trim();
+  if (!safePath || !safeRoot) return false;
+  const resolvedPath = path.resolve(safePath);
+  const resolvedRoot = path.resolve(safeRoot);
+  return resolvedPath === resolvedRoot || resolvedPath.startsWith(`${resolvedRoot}${path.sep}`);
+}
+
+function isSafeAssetCleanupPath(filePath) {
+  return [
+    UPLOADS_DIR,
+    PROXIES_DIR,
+    THUMBNAILS_DIR,
+    SUBTITLES_DIR,
+    OCR_DIR
+  ].some((rootDir) => isPathInsideRoot(filePath, rootDir));
+}
+
+function addPublicUploadPath(targetSet, publicUrl, defaultSubdir = '') {
+  const resolved = defaultSubdir ? resolveStoredUrl(publicUrl, defaultSubdir) : String(publicUrl || '').trim();
+  const absolute = publicUploadUrlToAbsolutePath(resolved);
+  if (!absolute || !isSafeAssetCleanupPath(absolute)) return;
+  targetSet.add(path.resolve(absolute));
+}
+
+function addAbsoluteCleanupPath(targetSet, filePath) {
+  const safePath = String(filePath || '').trim();
+  if (!safePath || !path.isAbsolute(safePath) || !isSafeAssetCleanupPath(safePath)) return;
+  targetSet.add(path.resolve(safePath));
+}
+
+function collectAssetCleanupPaths(row, versionRows = []) {
+  const paths = new Set();
+  if (!row || typeof row !== 'object') return [];
+
+  addPublicUploadPath(paths, row.media_url);
+  addAbsoluteCleanupPath(paths, row.source_path);
+  addPublicUploadPath(paths, row.proxy_url, 'proxies');
+  addPublicUploadPath(paths, row.thumbnail_url, 'thumbnails');
+
+  const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+  getSubtitleItemsFromDc(dc).forEach((item) => {
+    addPublicUploadPath(paths, item.subtitleUrl);
+  });
+  getOcrItemsFromDc(dc, row.updated_at || row.created_at || '').forEach((item) => {
+    addPublicUploadPath(paths, item.ocrUrl);
+  });
+
+  versionRows.forEach((versionRow) => {
+    addPublicUploadPath(paths, versionRow.snapshot_media_url);
+    addAbsoluteCleanupPath(paths, versionRow.snapshot_source_path);
+    addPublicUploadPath(paths, versionRow.snapshot_thumbnail_url, 'thumbnails');
+  });
+
+  return Array.from(paths);
+}
+
+function cleanupAssetFiles(paths = []) {
+  const removed = [];
+  const failed = [];
+  paths.forEach((filePath) => {
+    const safePath = String(filePath || '').trim();
+    if (!safePath || !isSafeAssetCleanupPath(safePath)) return;
+    try {
+      if (!fs.existsSync(safePath)) return;
+      const stat = fs.statSync(safePath);
+      if (!stat.isFile()) return;
+      fs.unlinkSync(safePath);
+      removed.push(safePath);
+    } catch (error) {
+      failed.push({
+        path: safePath,
+        message: error?.message || 'unlink failed'
+      });
+    }
+  });
+  return { removed, failed };
+}
+
 function decodeXmlEntities(value) {
   return String(value || '')
     .replace(/&lt;/g, '<')
@@ -6650,6 +6730,8 @@ app.post('/api/assets/upload', async (req, res) => {
   let thumbnailUrl = '';
   let detectedAudioChannels = 0;
   const ingestWarnings = [];
+  // Kullanıcı "Proxy olmadan oluştur" seçerse dosyanın kendisini saklamıyoruz;
+  // bu durumda kayıt yalnızca metadata taşıyan bir varlık olarak kalıyor.
   let persistOriginalMedia = true;
 
   if (isVideoUpload) {
@@ -6682,6 +6764,8 @@ app.post('/api/assets/upload', async (req, res) => {
         }
       } catch (error) {
         if (error?.code === 'PROXY_AUDIO_FALLBACK_CONFIRMATION_REQUIRED') {
+          // Kullanıcıdan karar almadan problemli kaynağı sistemde bırakmıyoruz.
+          // Onay gelirse ikinci istekle tekrar yükleniyor.
           try { if (fs.existsSync(absolutePath)) fs.unlinkSync(absolutePath); } catch (_cleanupError) {}
           try { if (fs.existsSync(proxyOut.absolutePath)) fs.unlinkSync(proxyOut.absolutePath); } catch (_cleanupError) {}
           return res.status(409).json({
@@ -6767,7 +6851,7 @@ app.post('/api/assets/upload', async (req, res) => {
     try {
       if (fs.existsSync(absolutePath)) fs.unlinkSync(absolutePath);
     } catch (_error) {
-      // Ignore cleanup failure and continue with metadata-only record creation.
+      // Temizlik başarısız olsa bile kullanıcıyı metadata-only kayıt akışından düşürmüyoruz.
     }
     thumbnailUrl = '';
   }
@@ -9944,14 +10028,19 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
 
     if (mode === 'delete_asset') {
       const actor = String(req.userPermissions?.displayName || req.userPermissions?.username || 'admin').trim() || 'admin';
+      const versionRows = (await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1', [row.id])).rows;
+      const cleanupTargets = collectAssetCleanupPaths(row, versionRows);
       await pool.query('DELETE FROM asset_versions WHERE asset_id = $1', [row.id]);
       await pool.query('DELETE FROM asset_subtitle_cues WHERE asset_id = $1', [row.id]);
       await pool.query('DELETE FROM asset_ocr_segments WHERE asset_id = $1', [row.id]);
       await pool.query('DELETE FROM assets WHERE id = $1', [row.id]);
+      const cleanup = cleanupAssetFiles(cleanupTargets);
       await deleteAssetFromElastic(row.id).catch(() => {});
       info = {
         deleted: true,
-        actor
+        actor,
+        removedFiles: cleanup.removed.length,
+        cleanupErrors: cleanup.failed
       };
     } else if (mode === 'proxy') {
       if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
@@ -9959,6 +10048,8 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
       }
       const rawBase64 = String(req.body?.fileBase64 || '').trim();
       if (rawBase64) {
+        // Yönetim ekranında "Proxy üret" seçiliyken yeni dosya seçilmişse,
+        // aynı işlem içinde önce ana videoyu bağlayıp sonra proxy üretiyoruz.
         const sanitizedBase64 = rawBase64.replace(/^data:[^;]+;base64,/i, '');
         let fileBuffer = null;
         try {
@@ -9991,6 +10082,7 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
         const actor = String(req.userPermissions?.displayName || req.userPermissions?.username || 'admin').trim() || 'admin';
         const hadExistingSource = Boolean(String(row.media_url || '').trim() || String(row.source_path || '').trim());
         if (hadExistingSource) {
+          // Var olan kaynak eziliyorsa geri dönüş için önce sürüm kaydı alıyoruz.
           const versionCount = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [row.id]);
           const nextVersion = Number(versionCount.rows?.[0]?.c || 0) + 1;
           await pool.query(
@@ -10369,10 +10461,14 @@ app.post('/api/assets/:id/restore', async (req, res) => {
 
 app.delete('/api/assets/:id', requireAssetDelete, async (req, res) => {
   try {
-    const result = await pool.query('DELETE FROM assets WHERE id = $1 RETURNING id', [req.params.id]);
-    if (!result.rowCount) {
+    const existing = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
+    if (!existing.rowCount) {
       return res.status(404).json({ error: 'Asset not found' });
     }
+    const versionRows = (await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1', [req.params.id])).rows;
+    const cleanupTargets = collectAssetCleanupPaths(existing.rows[0], versionRows);
+    await pool.query('DELETE FROM assets WHERE id = $1 RETURNING id', [req.params.id]);
+    cleanupAssetFiles(cleanupTargets);
     await removeAssetFromElastic(req.params.id).catch(() => {});
     return res.status(204).send();
   } catch (_error) {
