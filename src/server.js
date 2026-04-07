@@ -364,34 +364,95 @@ async function removeAssetFromElastic(assetId) {
   await elasticRequest('DELETE', `/${ELASTIC_INDEX}/_doc/${escapeElasticId(assetId)}`);
 }
 
+function escapeElasticQueryTerm(value) {
+  return String(value || '').replace(/[\\*?]/g, '\\$&');
+}
+
+function parseTextSearchQuery(value, normalizeFn = (input) => String(input || '').trim()) {
+  const raw = String(value || '').trim();
+  const mustInclude = [];
+  const mustExclude = [];
+  const optional = [];
+  let hasOperators = false;
+
+  const matcher = /"([^"]+)"|(\S+)/g;
+  let match = null;
+  while ((match = matcher.exec(raw)) !== null) {
+    const tokenRaw = String(match[1] ?? match[2] ?? '').trim();
+    if (!tokenRaw) continue;
+
+    const prefix = tokenRaw.charAt(0);
+    const normalizedToken = normalizeFn(prefix === '+' || prefix === '-' ? tokenRaw.slice(1) : tokenRaw);
+    if (!normalizedToken) continue;
+
+    if (prefix === '+') {
+      hasOperators = true;
+      if (!mustInclude.includes(normalizedToken)) mustInclude.push(normalizedToken);
+      continue;
+    }
+    if (prefix === '-') {
+      hasOperators = true;
+      if (!mustExclude.includes(normalizedToken)) mustExclude.push(normalizedToken);
+      continue;
+    }
+    if (!optional.includes(normalizedToken)) optional.push(normalizedToken);
+  }
+
+  return {
+    raw: normalizeFn(raw),
+    hasOperators,
+    mustInclude,
+    mustExclude,
+    optional
+  };
+}
+
 async function searchAssetIdsElastic(queryText, limit = 500) {
   const q = String(queryText || '').trim();
   if (!q) return [];
   await ensureElasticIndex();
+  const parsedQuery = parseTextSearchQuery(q, normalizeForSearch);
+  const fields = ['title^4', 'description^2', 'owner^2', 'tags^2', 'dc', 'clips^3', 'type', 'status'];
+  const buildElasticShouldClauses = (term) => ([
+    {
+      multi_match: {
+        query: term,
+        type: 'bool_prefix',
+        fields,
+        boost: 3
+      }
+    },
+    { match_phrase_prefix: { title: { query: term, boost: 6 } } },
+    { match_phrase_prefix: { clips: { query: term, boost: 5 } } },
+    { match_phrase_prefix: { dc: { query: term, boost: 2 } } }
+  ]);
+  const buildElasticWildcardClauses = (term) => fields.map((fieldName) => ({
+    wildcard: {
+      [fieldName.replace(/\^.*$/, '')]: {
+        value: `*${escapeElasticQueryTerm(term)}*`,
+        case_insensitive: true
+      }
+    }
+  }));
   const result = await elasticRequest('POST', `/${ELASTIC_INDEX}/_search`, {
     size: limit,
     query: {
-      bool: {
+      bool: parsedQuery.hasOperators ? {
+        must: parsedQuery.mustInclude.flatMap((term) => buildElasticWildcardClauses(term)),
+        must_not: parsedQuery.mustExclude.flatMap((term) => buildElasticWildcardClauses(term)),
+        should: parsedQuery.optional.flatMap((term) => buildElasticShouldClauses(term)),
+        minimum_should_match: parsedQuery.optional.length > 0 ? 1 : 0
+      } : {
         should: [
           {
             query_string: {
               query: q,
               default_operator: 'AND',
-              fields: ['title^4', 'description^2', 'owner^2', 'tags^2', 'dc', 'clips^3', 'type', 'status'],
+              fields,
               boost: 5
             }
           },
-          {
-            multi_match: {
-              query: q,
-              type: 'bool_prefix',
-              fields: ['title^4', 'description^2', 'owner^2', 'tags^2', 'dc', 'clips^3'],
-              boost: 3
-            }
-          },
-          { match_phrase_prefix: { title: { query: q, boost: 6 } } },
-          { match_phrase_prefix: { clips: { query: q, boost: 5 } } },
-          { match_phrase_prefix: { dc: { query: q, boost: 2 } } }
+          ...buildElasticShouldClauses(q)
         ],
         minimum_should_match: 1
       }
@@ -408,10 +469,30 @@ async function suggestAssetIdsElastic(queryText, limit = 10) {
   const q = String(queryText || '').trim();
   if (!q) return [];
   await ensureElasticIndex();
+  const parsedQuery = parseTextSearchQuery(q, normalizeForSearch);
+  const simpleFields = ['title', 'owner', 'tags'];
+  const buildWildcardClauses = (term) => simpleFields.map((fieldName) => ({
+    wildcard: {
+      [fieldName]: {
+        value: `*${escapeElasticQueryTerm(term)}*`,
+        case_insensitive: true
+      }
+    }
+  }));
   const result = await elasticRequest('POST', `/${ELASTIC_INDEX}/_search`, {
     size: Math.max(1, Math.min(20, Number(limit) || 10)),
     query: {
-      bool: {
+      bool: parsedQuery.hasOperators ? {
+        must: parsedQuery.mustInclude.flatMap((term) => buildWildcardClauses(term)),
+        must_not: parsedQuery.mustExclude.flatMap((term) => buildWildcardClauses(term)),
+        should: parsedQuery.optional.flatMap((term) => ([
+          { match_phrase_prefix: { title: { query: term, boost: 8 } } },
+          { match: { title: { query: term, fuzziness: 'AUTO', boost: 5 } } },
+          { match_phrase_prefix: { owner: { query: term, boost: 2 } } },
+          { match_phrase_prefix: { tags: { query: term, boost: 2 } } }
+        ])),
+        minimum_should_match: parsedQuery.optional.length > 0 ? 1 : 0
+      } : {
         should: [
           { match_phrase_prefix: { title: { query: q, boost: 8 } } },
           { match: { title: { query: q, fuzziness: 'AUTO', boost: 5 } } },
@@ -661,6 +742,34 @@ function extractOcrMatchLines(content, queryNorm, limit = 8) {
   return out;
 }
 
+function ocrLineMatchesParsedQuery(line, parsedQuery) {
+  const comparable = normalizeComparableOcr(line);
+  if (!comparable || !parsedQuery?.raw) return false;
+  if (!parsedQuery.hasOperators) {
+    return comparable.includes(parsedQuery.raw);
+  }
+  const includesAllRequired = parsedQuery.mustInclude.every((term) => comparable.includes(term));
+  if (!includesAllRequired) return false;
+  const excludesForbidden = parsedQuery.mustExclude.every((term) => !comparable.includes(term));
+  if (!excludesForbidden) return false;
+  if (parsedQuery.optional.length === 0) return true;
+  return parsedQuery.optional.some((term) => comparable.includes(term));
+}
+
+function extractOcrMatchLinesByParsedQuery(content, parsedQuery, limit = 8) {
+  const out = [];
+  const lines = String(content || '').replace(/\r\n?/g, '\n').split('\n');
+  const cap = Math.max(1, Math.min(50, Number(limit) || 8));
+  for (const raw of lines) {
+    const line = String(raw || '').trim();
+    if (!line) continue;
+    if (!ocrLineMatchesParsedQuery(line, parsedQuery)) continue;
+    out.push(line);
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
 function parseTimecodePrefixToSec(line) {
   const raw = String(line || '');
   const match = raw.match(/\[(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})\]/);
@@ -683,8 +792,8 @@ function parseTimecodePrefixToSec(line) {
 }
 
 function findOcrMatchInRow(row, queryRaw) {
-  const qNorm = normalizeComparableOcr(queryRaw);
-  if (!qNorm) return null;
+  const parsedQuery = parseTextSearchQuery(queryRaw, normalizeSubtitleSearchText);
+  if (!parsedQuery.raw) return null;
   const candidates = getCandidateOcrFilePathsForRow(row);
   for (const filePath of candidates) {
     let raw = '';
@@ -693,7 +802,7 @@ function findOcrMatchInRow(row, queryRaw) {
     } catch (_error) {
       continue;
     }
-    const line = extractOcrMatchLine(raw, qNorm);
+    const line = extractOcrMatchLinesByParsedQuery(raw, parsedQuery, 1)[0] || '';
     if (!line) continue;
     const tc = parseTimecodePrefixToSec(line);
     const relative = path.relative(UPLOADS_DIR, filePath).replace(/\\/g, '/');
@@ -709,8 +818,8 @@ function findOcrMatchInRow(row, queryRaw) {
 }
 
 function findOcrMatchesInRow(row, queryRaw, limit = 8) {
-  const qNorm = normalizeComparableOcr(queryRaw);
-  if (!qNorm) return [];
+  const parsedQuery = parseTextSearchQuery(queryRaw, normalizeSubtitleSearchText);
+  if (!parsedQuery.raw) return [];
   const cap = Math.max(1, Math.min(50, Number(limit) || 8));
   const out = [];
   const seen = new Set();
@@ -722,7 +831,7 @@ function findOcrMatchesInRow(row, queryRaw, limit = 8) {
     } catch (_error) {
       continue;
     }
-    const lines = extractOcrMatchLines(raw, qNorm, cap);
+    const lines = extractOcrMatchLinesByParsedQuery(raw, parsedQuery, cap);
     if (!lines.length) continue;
     const relative = path.relative(UPLOADS_DIR, filePath).replace(/\\/g, '/');
     const ocrUrl = relative ? `/uploads/${relative}` : '';
@@ -749,25 +858,33 @@ async function findOcrMatchForAssetRow(row, queryRaw) {
 }
 
 async function findOcrMatchesForAssetRow(row, queryRaw, limit = 8) {
-  const qNorm = normalizeSubtitleSearchText(queryRaw);
+  const parsedQuery = parseTextSearchQuery(queryRaw, normalizeSubtitleSearchText);
   const assetId = String(row?.id || '').trim();
   const cap = Math.max(1, Math.min(50, Number(limit) || 8));
-  if (!assetId || !qNorm) return [];
+  if (!assetId || !parsedQuery.raw) return [];
   const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
   const activeOcrUrl = String(pickLatestVideoOcrUrlFromDc(dc) || '').trim();
   if (activeOcrUrl) {
-    const fetchDbMatch = async () => pool.query(
-      `
-        SELECT start_sec, end_sec, segment_text
-        FROM asset_ocr_segments
-        WHERE asset_id = $1
-          AND ocr_url = $2
-          AND norm_text LIKE $3
-        ORDER BY start_sec ASC
-        LIMIT $4
-      `,
-      [assetId, activeOcrUrl, `%${qNorm}%`, cap]
-    );
+    const buildOcrWhere = () => buildSubtitleCueSearchWhereSql({
+      normColumn: 'norm_text',
+      startIndex: 3,
+      parsedQuery
+    });
+    const fetchDbMatch = async () => {
+      const ocrWhere = buildOcrWhere();
+      return pool.query(
+        `
+          SELECT start_sec, end_sec, segment_text
+          FROM asset_ocr_segments
+          WHERE asset_id = $1
+            AND ocr_url = $2
+            ${ocrWhere.clauses.length ? `AND ${ocrWhere.clauses.join(' AND ')}` : ''}
+          ORDER BY start_sec ASC
+          LIMIT $${ocrWhere.nextIndex}
+        `,
+        [assetId, activeOcrUrl, ...ocrWhere.params, cap]
+      );
+    };
     let dbHit = await fetchDbMatch();
     if (!dbHit.rowCount) {
       const exists = await pool.query(
@@ -2256,6 +2373,108 @@ function normalizeSubtitleSearchText(value) {
   return normalizeComparableOcr(value)
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function parseSubtitleTextSearchQuery(value) {
+  const raw = String(value || '').trim();
+  const mustInclude = [];
+  const mustExclude = [];
+  const optional = [];
+  let hasOperators = false;
+
+  const matcher = /"([^"]+)"|(\S+)/g;
+  let match = null;
+  while ((match = matcher.exec(raw)) !== null) {
+    const tokenRaw = String(match[1] ?? match[2] ?? '').trim();
+    if (!tokenRaw) continue;
+
+    const prefix = tokenRaw.charAt(0);
+    const normalizedToken = normalizeSubtitleSearchText(prefix === '+' || prefix === '-' ? tokenRaw.slice(1) : tokenRaw);
+    if (!normalizedToken) continue;
+
+    if (prefix === '+') {
+      hasOperators = true;
+      if (!mustInclude.includes(normalizedToken)) mustInclude.push(normalizedToken);
+      continue;
+    }
+    if (prefix === '-') {
+      hasOperators = true;
+      if (!mustExclude.includes(normalizedToken)) mustExclude.push(normalizedToken);
+      continue;
+    }
+    if (!optional.includes(normalizedToken)) optional.push(normalizedToken);
+  }
+
+  return {
+    raw: normalizeSubtitleSearchText(raw),
+    hasOperators,
+    mustInclude,
+    mustExclude,
+    optional
+  };
+}
+
+function buildSubtitleCueSearchWhereSql({ normColumn = 'norm_text', startIndex = 3, parsedQuery }) {
+  const clauses = [];
+  const params = [];
+  let idx = startIndex;
+
+  if (!parsedQuery || !parsedQuery.raw) {
+    return { clauses, params, nextIndex: idx };
+  }
+
+  if (!parsedQuery.hasOperators) {
+    params.push(`%${parsedQuery.raw}%`);
+    clauses.push(`${normColumn} LIKE $${idx}`);
+    idx += 1;
+    return { clauses, params, nextIndex: idx };
+  }
+
+  parsedQuery.mustInclude.forEach((term) => {
+    params.push(`%${term}%`);
+    clauses.push(`${normColumn} LIKE $${idx}`);
+    idx += 1;
+  });
+
+  parsedQuery.mustExclude.forEach((term) => {
+    params.push(`%${term}%`);
+    clauses.push(`${normColumn} NOT LIKE $${idx}`);
+    idx += 1;
+  });
+
+  if (parsedQuery.optional.length > 0) {
+    const optionalClauses = [];
+    parsedQuery.optional.forEach((term) => {
+      params.push(`%${term}%`);
+      optionalClauses.push(`${normColumn} LIKE $${idx}`);
+      idx += 1;
+    });
+    clauses.push(`(${optionalClauses.join(' OR ')})`);
+  }
+
+  return { clauses, params, nextIndex: idx };
+}
+
+function subtitleCueMatchesParsedQuery(cueText, parsedQuery) {
+  const normalizedText = normalizeSubtitleSearchText(cueText);
+  if (!normalizedText || !parsedQuery?.raw) return false;
+  if (!parsedQuery.hasOperators) {
+    return normalizedText.includes(parsedQuery.raw);
+  }
+  const includesAllRequired = parsedQuery.mustInclude.every((term) => normalizedText.includes(term));
+  if (!includesAllRequired) return false;
+  const excludesForbidden = parsedQuery.mustExclude.every((term) => !normalizedText.includes(term));
+  if (!excludesForbidden) return false;
+  if (parsedQuery.optional.length === 0) return true;
+  return parsedQuery.optional.some((term) => normalizedText.includes(term));
+}
+
+function findSubtitleMatchesInText(text, query, limit = 1) {
+  const parsedQuery = parseSubtitleTextSearchQuery(query);
+  if (!parsedQuery.raw) return [];
+  return parseSubtitleCues(text)
+    .filter((cue) => subtitleCueMatchesParsedQuery(cue.cueText, parsedQuery))
+    .slice(0, Math.max(1, Number(limit) || 1));
 }
 
 async function syncSubtitleCueIndexForAssetRow(row) {
@@ -6156,6 +6375,7 @@ async function queryAssetSuggestions(options = {}) {
     ? options.types.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean)
     : normalizeTypesInput(options.types);
   const qFold = normalizeForSearch(q);
+  const parsedQuery = parseTextSearchQuery(q, normalizeForSearch);
 
   const owner = String(options.owner || '').trim();
 
@@ -6226,8 +6446,37 @@ async function queryAssetSuggestions(options = {}) {
 
   if (!rows.length) {
     const fallbackValues = [...baseValues];
-    fallbackValues.push(`%${qFold}%`);
-    const likeIdx = fallbackValues.length;
+    const qSearchClauses = [];
+    const appendAssetTextGroup = (term, operator = 'LIKE') => {
+      fallbackValues.push(`%${term}%`);
+      const idx = fallbackValues.length;
+      qSearchClauses.push(`(
+        ${sqlTextFold('title')} ${operator} $${idx}
+        OR ${sqlTextFold('file_name')} ${operator} $${idx}
+        OR ${sqlTextFold('owner')} ${operator} $${idx}
+      )`);
+    };
+    if (parsedQuery.hasOperators) {
+      parsedQuery.mustInclude.forEach((term) => appendAssetTextGroup(term, 'LIKE'));
+      parsedQuery.mustExclude.forEach((term) => appendAssetTextGroup(term, 'NOT LIKE'));
+      if (parsedQuery.optional.length > 0) {
+        const optionalGroups = [];
+        parsedQuery.optional.forEach((term) => {
+          fallbackValues.push(`%${term}%`);
+          const idx = fallbackValues.length;
+          optionalGroups.push(`(
+            ${sqlTextFold('title')} LIKE $${idx}
+            OR ${sqlTextFold('file_name')} LIKE $${idx}
+            OR ${sqlTextFold('owner')} LIKE $${idx}
+          )`);
+        });
+        qSearchClauses.push(`(${optionalGroups.join(' OR ')})`);
+      }
+    } else {
+      fallbackValues.push(`%${qFold}%`);
+      const likeIdx = fallbackValues.length;
+      qSearchClauses.push(`(${sqlTextFold('title')} LIKE $${likeIdx} OR ${sqlTextFold('file_name')} LIKE $${likeIdx} OR ${sqlTextFold('owner')} LIKE $${likeIdx})`);
+    }
     fallbackValues.push(qFold);
     const eqIdx = fallbackValues.length;
     fallbackValues.push(`${qFold}%`);
@@ -6237,7 +6486,7 @@ async function queryAssetSuggestions(options = {}) {
 
     const fallbackWhere = [
       ...baseWhere,
-      `(${sqlTextFold('title')} LIKE $${likeIdx} OR ${sqlTextFold('file_name')} LIKE $${likeIdx} OR ${sqlTextFold('owner')} LIKE $${likeIdx})`
+      ...qSearchClauses
     ];
     const fallback = await pool.query(
       `
@@ -6266,6 +6515,7 @@ async function queryAssetSuggestions(options = {}) {
 app.get('/api/assets', async (req, res) => {
   try {
     const q = (req.query.q || '').toString().trim();
+    const parsedAssetQuery = parseTextSearchQuery(q, normalizeForSearch);
     const ocrQ = (req.query.ocrQ || '').toString().trim();
     const subtitleQ = (req.query.subtitleQ || '').toString().trim();
     const tag = (req.query.tag || '').toString().trim();
@@ -6296,18 +6546,46 @@ app.get('/api/assets', async (req, res) => {
     if (q) {
       rankedIds = await searchAssetIdsElastic(q);
       if (rankedIds === null) {
-        values.push(`%${normalizeForSearch(q)}%`);
-        where.push(`(
-          ${sqlTextFold('title')} LIKE $${values.length}
-          OR ${sqlTextFold('description')} LIKE $${values.length}
-          OR ${sqlTextFold('owner')} LIKE $${values.length}
-          OR ${sqlTextFold("dc_metadata::text")} LIKE $${values.length}
-          OR EXISTS (
-            SELECT 1
-            FROM asset_cuts c
-            WHERE c.asset_id = assets.id AND ${sqlTextFold('c.label')} LIKE $${values.length}
-          )
-        )`);
+        const pushAssetQueryGroup = (term, operator = 'LIKE') => {
+          values.push(`%${term}%`);
+          const idx = values.length;
+          where.push(`(
+            ${sqlTextFold('title')} ${operator} $${idx}
+            OR ${sqlTextFold('description')} ${operator} $${idx}
+            OR ${sqlTextFold('owner')} ${operator} $${idx}
+            OR ${sqlTextFold("dc_metadata::text")} ${operator} $${idx}
+            OR EXISTS (
+              SELECT 1
+              FROM asset_cuts c
+              WHERE c.asset_id = assets.id AND ${sqlTextFold('c.label')} ${operator} $${idx}
+            )
+          )`);
+        };
+        if (parsedAssetQuery.hasOperators) {
+          parsedAssetQuery.mustInclude.forEach((term) => pushAssetQueryGroup(term, 'LIKE'));
+          parsedAssetQuery.mustExclude.forEach((term) => pushAssetQueryGroup(term, 'NOT LIKE'));
+          if (parsedAssetQuery.optional.length > 0) {
+            const optionalGroups = [];
+            parsedAssetQuery.optional.forEach((term) => {
+              values.push(`%${term}%`);
+              const idx = values.length;
+              optionalGroups.push(`(
+                ${sqlTextFold('title')} LIKE $${idx}
+                OR ${sqlTextFold('description')} LIKE $${idx}
+                OR ${sqlTextFold('owner')} LIKE $${idx}
+                OR ${sqlTextFold("dc_metadata::text")} LIKE $${idx}
+                OR EXISTS (
+                  SELECT 1
+                  FROM asset_cuts c
+                  WHERE c.asset_id = assets.id AND ${sqlTextFold('c.label')} LIKE $${idx}
+                )
+              )`);
+            });
+            where.push(`(${optionalGroups.join(' OR ')})`);
+          }
+        } else {
+          pushAssetQueryGroup(normalizeForSearch(q), 'LIKE');
+        }
       } else if (!rankedIds.length) {
         return res.json([]);
       } else {
@@ -6421,8 +6699,8 @@ app.get('/api/assets', async (req, res) => {
     }
     // subtitleQ geldiyse sadece aktif altyazi cue index'i uzerinden filtre uygula.
     if (subtitleQ) {
-      const subtitleNorm = normalizeSubtitleSearchText(subtitleQ);
-      if (!subtitleNorm) {
+      const parsedSubtitleQuery = parseSubtitleTextSearchQuery(subtitleQ);
+      if (!parsedSubtitleQuery.raw) {
         rows = [];
       } else {
         const filtered = [];
@@ -6430,17 +6708,22 @@ app.get('/api/assets', async (req, res) => {
           const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
           const activeSubtitleUrl = String(dc.subtitleUrl || '').trim();
           if (!activeSubtitleUrl) continue;
+          const subtitleWhere = buildSubtitleCueSearchWhereSql({
+            normColumn: 'norm_text',
+            startIndex: 3,
+            parsedQuery: parsedSubtitleQuery
+          });
           const subtitleRes = await pool.query(
             `
               SELECT start_sec, end_sec, cue_text
               FROM asset_subtitle_cues
               WHERE asset_id = $1
                 AND subtitle_url = $2
-                AND norm_text LIKE $3
+                ${subtitleWhere.clauses.length ? `AND ${subtitleWhere.clauses.join(' AND ')}` : ''}
               ORDER BY start_sec ASC
               LIMIT 8
             `,
-            [String(row.id || '').trim(), activeSubtitleUrl, `%${subtitleNorm}%`]
+            [String(row.id || '').trim(), activeSubtitleUrl, ...subtitleWhere.params]
           );
           if (!subtitleRes.rowCount) continue;
           const hits = subtitleRes.rows.map((match) => ({
@@ -6501,6 +6784,8 @@ app.get('/api/assets/ocr-suggest', async (req, res) => {
   try {
     const q = String(req.query.q || '').trim();
     if (q.length < 2) return res.json([]);
+    const parsedOcrQuery = parseTextSearchQuery(q, normalizeSubtitleSearchText);
+    if (!parsedOcrQuery.raw) return res.json([]);
     const limit = Math.max(1, Math.min(12, Number(req.query.limit) || 8));
     const tag = String(req.query.tag || '').trim();
     const type = String(req.query.type || '').trim().toLowerCase();
@@ -6596,8 +6881,8 @@ app.get('/api/assets/subtitle-suggest', async (req, res) => {
   try {
     const q = String(req.query.q || '').trim();
     if (q.length < 2) return res.json([]);
-    const folded = normalizeSubtitleSearchText(q);
-    if (!folded) return res.json([]);
+    const parsedQuery = parseSubtitleTextSearchQuery(q);
+    if (!parsedQuery.raw) return res.json([]);
     const limit = Math.max(1, Math.min(12, Number(req.query.limit) || 8));
     const tag = String(req.query.tag || '').trim();
     const type = String(req.query.type || '').trim().toLowerCase();
@@ -6654,17 +6939,22 @@ app.get('/api/assets/subtitle-suggest', async (req, res) => {
       const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
       const activeSubtitleUrl = String(dc.subtitleUrl || '').trim();
       if (!activeSubtitleUrl) continue;
+      const subtitleWhere = buildSubtitleCueSearchWhereSql({
+        normColumn: 'norm_text',
+        startIndex: 3,
+        parsedQuery
+      });
       const hitRes = await pool.query(
         `
           SELECT start_sec, cue_text
           FROM asset_subtitle_cues
           WHERE asset_id = $1
             AND subtitle_url = $2
-            AND norm_text LIKE $3
+            ${subtitleWhere.clauses.length ? `AND ${subtitleWhere.clauses.join(' AND ')}` : ''}
           ORDER BY start_sec ASC
           LIMIT 1
         `,
-        [String(row.id || '').trim(), activeSubtitleUrl, `%${folded}%`]
+        [String(row.id || '').trim(), activeSubtitleUrl, ...subtitleWhere.params]
       );
       if (!hitRes.rowCount) continue;
       const hit = hitRes.rows[0];
@@ -7747,8 +8037,13 @@ app.get('/api/assets/:id/subtitles/search', async (req, res) => {
     if (!subtitleUrl) return res.status(400).json({ error: 'No active subtitle for this asset' });
 
     await ensureSubtitleCueIndexForAssetRow(row);
-    const folded = normalizeSubtitleSearchText(query);
-    if (!folded) return res.json({ query, total: 0, matches: [] });
+    const parsedQuery = parseSubtitleTextSearchQuery(query);
+    if (!parsedQuery.raw) return res.json({ query, total: 0, matches: [] });
+    const subtitleWhere = buildSubtitleCueSearchWhereSql({
+      normColumn: 'norm_text',
+      startIndex: 3,
+      parsedQuery
+    });
 
     const result = await pool.query(
       `
@@ -7756,11 +8051,11 @@ app.get('/api/assets/:id/subtitles/search', async (req, res) => {
         FROM asset_subtitle_cues
         WHERE asset_id = $1
           AND subtitle_url = $2
-          AND norm_text LIKE $3
+          ${subtitleWhere.clauses.length ? `AND ${subtitleWhere.clauses.join(' AND ')}` : ''}
         ORDER BY start_sec ASC
-        LIMIT $4
+        LIMIT $${subtitleWhere.nextIndex}
       `,
-      [assetId, subtitleUrl, `%${folded}%`, limit]
+      [assetId, subtitleUrl, ...subtitleWhere.params, limit]
     );
     const matches = result.rows.map((item) => ({
       seq: Number(item.seq || 0),
@@ -7797,19 +8092,24 @@ app.get('/api/assets/:id/subtitles/suggest', async (req, res) => {
     if (!subtitleUrl) return res.json([]);
 
     await ensureSubtitleCueIndexForAssetRow(row);
-    const folded = normalizeSubtitleSearchText(query);
-    if (!folded) return res.json([]);
+    const parsedQuery = parseSubtitleTextSearchQuery(query);
+    if (!parsedQuery.raw) return res.json([]);
+    const subtitleWhere = buildSubtitleCueSearchWhereSql({
+      normColumn: 'norm_text',
+      startIndex: 3,
+      parsedQuery
+    });
     const result = await pool.query(
       `
         SELECT seq, start_sec, end_sec, cue_text
         FROM asset_subtitle_cues
         WHERE asset_id = $1
           AND subtitle_url = $2
-          AND norm_text LIKE $3
+          ${subtitleWhere.clauses.length ? `AND ${subtitleWhere.clauses.join(' AND ')}` : ''}
         ORDER BY start_sec ASC
-        LIMIT $4
+        LIMIT $${subtitleWhere.nextIndex}
       `,
-      [assetId, subtitleUrl, `%${folded}%`, limit]
+      [assetId, subtitleUrl, ...subtitleWhere.params, limit]
     );
     return res.json(result.rows.map((item) => ({
       seq: Number(item.seq || 0),
@@ -9204,15 +9504,7 @@ function getSubtitleItemsFromDc(dcMetadata = {}) {
 }
 
 function findSubtitleMatchInText(text, queryNorm) {
-  const cues = parseSubtitleCues(text);
-  for (const cue of cues) {
-    const norm = normalizeSubtitleSearchText(cue.cueText);
-    if (!norm) continue;
-    if (norm.includes(queryNorm)) {
-      return cue;
-    }
-  }
-  return null;
+  return findSubtitleMatchesInText(text, queryNorm, 1)[0] || null;
 }
 
 app.get('/api/admin/subtitle-records', async (req, res) => {
@@ -9414,7 +9706,6 @@ app.get('/api/admin/text-search', async (req, res) => {
   try {
     const q = String(req.query.q || '').trim();
     if (!q) return res.json({ results: [] });
-    const qNormSub = normalizeSubtitleSearchText(q);
     const limit = Math.max(10, Math.min(500, Number(req.query.limit) || 200));
     const assetRes = await pool.query(
       `
@@ -9435,18 +9726,19 @@ app.get('/api/admin/text-search', async (req, res) => {
         if (!subtitlePath || !fs.existsSync(subtitlePath)) continue;
         let raw = '';
         try { raw = fs.readFileSync(subtitlePath, 'utf8'); } catch (_error) { continue; }
-        const cue = findSubtitleMatchInText(raw, qNormSub);
-        if (!cue) continue;
-        out.push({
-          source: 'subtitle',
-          assetId: row.id,
-          assetTitle,
-          label: String(item.subtitleLabel || item.subtitleLang || 'subtitle'),
-          timecode: formatTimecode(Number(cue.startSec || 0)),
-          startSec: Number(cue.startSec || 0),
-          text: String(cue.cueText || '')
-        });
-        if (out.length >= limit) return res.json({ results: out });
+        const subtitleMatches = findSubtitleMatchesInText(raw, q, Math.max(1, limit - out.length));
+        for (const cue of subtitleMatches) {
+          out.push({
+            source: 'subtitle',
+            assetId: row.id,
+            assetTitle,
+            label: String(item.subtitleLabel || item.subtitleLang || 'subtitle'),
+            timecode: formatTimecode(Number(cue.startSec || 0)),
+            startSec: Number(cue.startSec || 0),
+            text: String(cue.cueText || '')
+          });
+          if (out.length >= limit) return res.json({ results: out });
+        }
       }
 
       const ocrHit = await findOcrMatchForAssetRow(row, q);
