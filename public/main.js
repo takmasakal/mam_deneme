@@ -76,6 +76,12 @@ let lastSelectedAssetId = null;
 let currentSearchQuery = '';
 let currentOcrQuery = '';
 let currentSubtitleQuery = '';
+let currentSearchHighlightQuery = '';
+let currentSearchDidYouMean = '';
+let currentSearchFuzzyUsed = false;
+let currentOcrHighlightQuery = '';
+let currentOcrDidYouMean = '';
+let currentOcrFuzzyUsed = false;
 const cutMarksByAsset = new Map();
 const subtitleOverlayEnabledByAsset = new Map();
 let panelSizes = Object.fromEntries(PANELS.map((p) => [p.id, p.defaultSize]));
@@ -2540,6 +2546,7 @@ function extractDcMetadataFromPayload(payload) {
 
 function foldSearchText(value) {
   return String(value || '')
+    .replace(/[İIı]/g, 'i')
     .toLocaleLowerCase('tr-TR')
     .normalize('NFD')
     .replace(/\p{M}+/gu, '');
@@ -2550,6 +2557,12 @@ function textIncludesSearchTerm(text, term) {
   const needle = foldSearchText(term);
   if (!haystack || !needle) return false;
   return haystack.includes(needle);
+}
+
+function effectiveSearchHighlightClass(query, highlightQuery, fuzzyUsed = false) {
+  return foldSearchText(highlightQuery || '') !== foldSearchText(query || '') || fuzzyUsed
+    ? 'search-hit-fuzzy'
+    : 'search-hit';
 }
 
 function highlightMatch(value, query, markClass = 'search-hit') {
@@ -2623,12 +2636,12 @@ function highlightMatch(value, query, markClass = 'search-hit') {
   return out;
 }
 
-function dcHighlightSnippet(asset, query) {
+function dcHighlightSnippet(asset, query, markClass = 'search-hit') {
   const terms = extractHighlightTerms(query);
   if (!terms.length || !asset || !asset.dcMetadata || typeof asset.dcMetadata !== 'object') return '';
   const ignoredKeys = new Set([
-    'subtitleurl', 'subtitlelang', 'subtitlelabel', 'subtitleitems',
-    'videoocrurl', 'videoocrlabel', 'videoocrengine', 'videoocrlinecount', 'videoocrsegmentcount', 'videoocritems'
+    'subtitleurl', 'subtitleitems',
+    'videoocrurl', 'videoocrlinecount', 'videoocrsegmentcount', 'videoocritems'
   ]);
   const entries = Object.entries(asset.dcMetadata)
     .filter(([key, value]) => {
@@ -2677,12 +2690,12 @@ function dcHighlightSnippet(asset, query) {
         coverage: 'dc_coverage',
         rights: 'dc_rights'
       })[normalizedKey] || normalizedKey;
-      return `<button type="button" class="dc-hit field-hit-jump" data-field-jump="1" data-id="${escapeHtml(String(asset.id || ''))}" data-field-name="${escapeHtml(inputName)}"><strong>${escapeHtml(t(labelKey))}:</strong> ${highlightMatch(value, query)}</button>`;
+      return `<button type="button" class="dc-hit field-hit-jump" data-field-jump="1" data-id="${escapeHtml(String(asset.id || ''))}" data-field-name="${escapeHtml(inputName)}"><strong>${escapeHtml(t(labelKey))}:</strong> ${highlightMatch(value, query, markClass)}</button>`;
     })
     .join(' ');
 }
 
-function metadataHighlightSnippet(asset, query) {
+function metadataHighlightSnippet(asset, query, markClass = 'search-hit') {
   const terms = extractHighlightTerms(query);
   if (!terms.length || !asset) return '';
   const hits = [];
@@ -2696,14 +2709,14 @@ function metadataHighlightSnippet(asset, query) {
           data-field-jump="1"
           data-id="${escapeHtml(String(asset.id || ''))}"
           data-field-name="description"
-        ><strong>${escapeHtml(t('description'))}:</strong> ${highlightMatch(description, query)}</button>
+        ><strong>${escapeHtml(t('description'))}:</strong> ${highlightMatch(description, query, markClass)}</button>
       `.trim());
     }
   }
   return hits.slice(0, 2).join(' ');
 }
 
-function tagHighlightSnippet(asset, query) {
+function tagHighlightSnippet(asset, query, markClass = 'search-hit') {
   const terms = extractHighlightTerms(query);
   const tags = Array.isArray(asset?.tags) ? asset.tags : [];
   if (!terms.length || !tags.length) return '';
@@ -2716,11 +2729,11 @@ function tagHighlightSnippet(asset, query) {
     .slice(0, 3);
   if (!hits.length) return '';
   return hits
-    .map((tag) => `<button type="button" class="dc-hit field-hit-jump" data-field-jump="1" data-id="${escapeHtml(String(asset.id || ''))}" data-field-name="tags" data-focus-tag="${escapeHtml(tag)}"><strong>${escapeHtml(t('tags'))}:</strong> ${highlightMatch(tag, query)}</button>`)
+    .map((tag) => `<button type="button" class="dc-hit field-hit-jump" data-field-jump="1" data-id="${escapeHtml(String(asset.id || ''))}" data-field-name="tags" data-focus-tag="${escapeHtml(tag)}"><strong>${escapeHtml(t('tags'))}:</strong> ${highlightMatch(tag, query, markClass)}</button>`)
     .join(' ');
 }
 
-function clipHighlightSnippet(asset, query) {
+function clipHighlightSnippet(asset, query, markClass = 'search-hit') {
   const terms = extractHighlightTerms(query);
   if (!terms.length || !asset || !Array.isArray(asset.cuts)) return '';
   const clips = asset.cuts
@@ -2737,15 +2750,15 @@ function clipHighlightSnippet(asset, query) {
   return clips
     .map((cut) => {
       const startTc = secondsToTimecode(cut.inPointSeconds, PLAYER_FPS);
-      return `<button type="button" class="dc-hit clip-hit-jump" data-clip-jump="1" data-id="${escapeHtml(String(asset.id || ''))}" data-cut-id="${escapeHtml(String(cut.cutId || ''))}" data-start-sec="${escapeHtml(String(cut.inPointSeconds))}"><strong>${escapeHtml(t('clip_name'))}:</strong> ${highlightMatch(cut.label, query)} <span class="dc-hit-tc">TC ${escapeHtml(startTc)}</span></button>`;
+      return `<button type="button" class="dc-hit clip-hit-jump" data-clip-jump="1" data-id="${escapeHtml(String(asset.id || ''))}" data-cut-id="${escapeHtml(String(cut.cutId || ''))}" data-start-sec="${escapeHtml(String(cut.inPointSeconds))}"><strong>${escapeHtml(t('clip_name'))}:</strong> ${highlightMatch(cut.label, query, markClass)} <span class="dc-hit-tc">TC ${escapeHtml(startTc)}</span></button>`;
     })
     .join(' ');
 }
 
-function buildInlineFieldMatch(value, query) {
+function buildInlineFieldMatch(value, query, markClass = 'search-hit') {
   const text = String(value || '').trim();
   if (!text || !query) return '';
-  const highlighted = highlightMatch(text, query);
+  const highlighted = highlightMatch(text, query, markClass);
   if (highlighted === escapeHtml(text)) return '';
   return `<span class="field-inline-match">${highlighted}</span>`;
 }
@@ -3041,38 +3054,74 @@ function assetTypeIcon(asset) {
   return '📦';
 }
 
+function buildAssetSearchNoticeHtml() {
+  const notices = [];
+  const pushNotice = (type, suggestion, query, fuzzyUsed = false) => {
+    const safeSuggestion = String(suggestion || '').trim();
+    const safeQuery = String(query || '').trim();
+    const showSuggestion = safeSuggestion && foldSearchText(safeSuggestion) !== foldSearchText(safeQuery);
+    if (!showSuggestion && !fuzzyUsed) return;
+    if (showSuggestion) {
+      notices.push(`
+        <div class="subtitle-item-empty">
+          ${escapeHtml(t('subtitle_did_you_mean'))}:
+          <button type="button" class="subtitle-item-use-btn" data-search-did-you-mean="${escapeHtml(type)}">${escapeHtml(safeSuggestion)}</button>
+        </div>
+      `);
+      return;
+    }
+    notices.push(`<div class="subtitle-item-empty"><span class="search-hit-fuzzy">${escapeHtml(safeQuery)}</span></div>`);
+  };
+
+  pushNotice('q', currentSearchDidYouMean, currentSearchQuery, currentSearchFuzzyUsed);
+  pushNotice('ocr', currentOcrDidYouMean, currentOcrQuery, currentOcrFuzzyUsed);
+  return notices.join('');
+}
+
 function renderAssets(assets) {
   applyAssetViewModeUI();
+  const searchNoticeHtml = buildAssetSearchNoticeHtml();
   if (!assets.length) {
-    assetGrid.innerHTML = `<div class="empty">${escapeHtml(t('no_assets'))}</div>`;
+    assetGrid.innerHTML = `${searchNoticeHtml}<div class="empty">${escapeHtml(t('no_assets'))}</div>`;
+    assetGrid.querySelectorAll('[data-search-did-you-mean]').forEach((btn) => {
+      btn.addEventListener('click', async (event) => {
+        const type = String(event.currentTarget?.dataset?.searchDidYouMean || '').trim();
+        const suggestion = String(event.currentTarget?.textContent || '').trim();
+        if (!suggestion) return;
+        if (type === 'ocr' && ocrQueryInput) ocrQueryInput.value = suggestion;
+        else if (type === 'q' && searchQueryInput) searchQueryInput.value = suggestion;
+        await loadAssets();
+      });
+    });
     return;
   }
 
-  assetGrid.innerHTML = assets
+  const searchHighlightClass = effectiveSearchHighlightClass(currentSearchQuery, currentSearchHighlightQuery, currentSearchFuzzyUsed);
+  assetGrid.innerHTML = `${searchNoticeHtml}${assets
     .map((asset) => {
       const selected = selectedAssetIds.has(asset.id) ? 'selected' : '';
       const trashClass = asset.inTrash ? 'in-trash' : '';
       const styleClass = 'card-art-glass';
-      const metadataHits = metadataHighlightSnippet(asset, currentSearchQuery);
-      const dcHits = dcHighlightSnippet(asset, currentSearchQuery);
-      const tagHits = tagHighlightSnippet(asset, currentSearchQuery);
-      const clipHits = clipHighlightSnippet(asset, currentSearchQuery);
-      const ocrHitQuery = String(asset?.ocrSearchHit?.query || currentOcrQuery || '').trim();
+      const metadataHits = metadataHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass);
+      const dcHits = dcHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass);
+      const tagHits = tagHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass);
+      const clipHits = clipHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass);
+      const ocrHitQuery = String(asset?.ocrSearchHit?.query || currentOcrHighlightQuery || currentOcrQuery || '').trim();
       const ocrHitsRaw = Array.isArray(asset?.ocrSearchHits) && asset.ocrSearchHits.length
         ? asset.ocrSearchHits
         : (asset?.ocrSearchHit ? [asset.ocrSearchHit] : []);
+      const ocrHitClass = effectiveSearchHighlightClass(currentOcrQuery, ocrHitQuery, currentOcrFuzzyUsed);
       const ocrHit = ocrHitsRaw.length
-        ? ocrHitsRaw
-          .slice(0, 6)
+        ? `<div class="asset-hit-list asset-hit-list-ocr">${ocrHitsRaw
           .map((hit) => {
             const hitText = String(hit?.text || '').trim();
             if (!hitText) return '';
             const hitSec = Number(hit?.startSec || 0);
             const hitTc = secondsToTimecode(hitSec, PLAYER_FPS);
-            return `<button type="button" class="asset-meta dc-hit-row ocr-hit-jump" data-ocr-jump="1" data-id="${asset.id}" data-start-sec="${escapeHtml(String(hitSec))}"><strong>${escapeHtml(t('ocr_hit'))} TC ${escapeHtml(hitTc)}:</strong> ${highlightMatch(hitText, ocrHitQuery)}</button>`;
+            return `<button type="button" class="asset-meta dc-hit-row ocr-hit-jump" data-ocr-jump="1" data-id="${asset.id}" data-start-sec="${escapeHtml(String(hitSec))}"><strong>${escapeHtml(t('ocr_hit'))} TC ${escapeHtml(hitTc)}:</strong> ${highlightMatch(hitText, ocrHitQuery, ocrHitClass)}</button>`;
           })
           .filter(Boolean)
-          .join('')
+          .join('')}</div>`
         : '';
       const subtitleHitQuery = String(asset?.subtitleSearchHit?.query || currentSubtitleQuery || '').trim();
       const subtitleHitClass = foldSearchText(subtitleHitQuery) !== foldSearchText(currentSubtitleQuery || '')
@@ -3082,8 +3131,7 @@ function renderAssets(assets) {
         ? asset.subtitleSearchHits
         : (asset?.subtitleSearchHit ? [asset.subtitleSearchHit] : []);
       const subtitleHit = subtitleHitsRaw.length
-        ? subtitleHitsRaw
-          .slice(0, 6)
+        ? `<div class="asset-hit-list asset-hit-list-subtitle">${subtitleHitsRaw
           .map((hit) => {
             const hitText = String(hit?.text || '').trim();
             if (!hitText) return '';
@@ -3092,14 +3140,14 @@ function renderAssets(assets) {
             return `<button type="button" class="asset-meta dc-hit-row ocr-hit-jump" data-ocr-jump="1" data-id="${asset.id}" data-start-sec="${escapeHtml(String(hitSec))}"><strong>${escapeHtml(t('subtitles'))} TC ${escapeHtml(hitTc)}:</strong> ${highlightMatch(hitText, subtitleHitQuery, subtitleHitClass)}</button>`;
           })
           .filter(Boolean)
-          .join('')
+          .join('')}</div>`
         : '';
       return `
         <article class="asset-card ${selected} ${trashClass} ${styleClass}" data-id="${asset.id}">
           ${thumbnailMarkup(asset)}
           <div class="asset-card-body">
-            <h3><span class="type-icon" aria-hidden="true">${assetTypeIcon(asset)}</span> ${highlightMatch(asset.title, currentSearchQuery)}</h3>
-            <div class="asset-meta">${highlightMatch(asset.type, currentSearchQuery)} | ${highlightMatch(asset.owner, currentSearchQuery)}</div>
+            <h3><span class="type-icon" aria-hidden="true">${assetTypeIcon(asset)}</span> ${highlightMatch(asset.title, currentSearchHighlightQuery, searchHighlightClass)}</h3>
+            <div class="asset-meta">${highlightMatch(asset.type, currentSearchHighlightQuery, searchHighlightClass)} | ${highlightMatch(asset.owner, currentSearchHighlightQuery, searchHighlightClass)}</div>
             <div class="asset-meta">${escapeHtml(workflowLabel(asset.status))}${(isVideo(asset) || isAudio(asset)) ? ` | ${escapeHtml(formatDuration(asset.durationSeconds))}` : ''}</div>
             ${metadataHits ? `<div class="asset-meta dc-hit-row">${metadataHits}</div>` : ''}
             ${tagHits ? `<div class="asset-meta dc-hit-row">${tagHits}</div>` : ''}
@@ -3109,7 +3157,7 @@ function renderAssets(assets) {
             ${ocrHit}
             <div class="asset-meta">${escapeHtml(formatDate(asset.updatedAt))}</div>
             <div class="chips">
-              ${(asset.tags || []).slice(0, 4).map((tag) => `<button type="button" class="chip chip-tag-filter" data-chip-tag="${escapeHtml(tag)}" style="${tagColorStyle(tag)}">${highlightMatch(tag, currentSearchQuery)}</button>`).join('')}
+              ${(asset.tags || []).slice(0, 4).map((tag) => `<button type="button" class="chip chip-tag-filter" data-chip-tag="${escapeHtml(tag)}" style="${tagColorStyle(tag)}">${highlightMatch(tag, currentSearchHighlightQuery, searchHighlightClass)}</button>`).join('')}
             </div>
             ${asset.inTrash ? `
               <div class="card-actions">
@@ -3121,7 +3169,17 @@ function renderAssets(assets) {
         </article>
       `;
     })
-    .join('');
+    .join('')}`;
+  assetGrid.querySelectorAll('[data-search-did-you-mean]').forEach((btn) => {
+    btn.addEventListener('click', async (event) => {
+      const type = String(event.currentTarget?.dataset?.searchDidYouMean || '').trim();
+      const suggestion = String(event.currentTarget?.textContent || '').trim();
+      if (!suggestion) return;
+      if (type === 'ocr' && ocrQueryInput) ocrQueryInput.value = suggestion;
+      else if (type === 'q' && searchQueryInput) searchQueryInput.value = suggestion;
+      await loadAssets();
+    });
+  });
 }
 
 function setSingleSelection(assetId) {
@@ -3719,6 +3777,7 @@ function detailMarkup(asset, workflow) {
   const dc = asset.dcMetadata || {};
   const hasPlayableVideoProxy = isVideo(asset) && Boolean(String(asset.proxyUrl || '').trim());
   const trashStatus = asset.inTrash ? `<strong>${t('in_trash')}</strong>` : t('active');
+  const searchHighlightClass = effectiveSearchHighlightClass(currentSearchQuery, currentSearchHighlightQuery, currentSearchFuzzyUsed);
 
   const viewerSection = isVideo(asset)
     ? `
@@ -3733,7 +3792,7 @@ function detailMarkup(asset, workflow) {
       <div class="meta-label-row">
         <span class="meta-label-title">${escapeHtml(t('tags'))}</span>
         <div class="chips">
-          ${asset.tags.map((tag) => `<button type="button" class="chip chip-tag-filter" data-chip-tag="${escapeHtml(tag)}" style="${tagColorStyle(tag)}">${highlightMatch(tag, currentSearchQuery)}</button>`).join('')}
+          ${asset.tags.map((tag) => `<button type="button" class="chip chip-tag-filter" data-chip-tag="${escapeHtml(tag)}" style="${tagColorStyle(tag)}">${highlightMatch(tag, currentSearchHighlightQuery, searchHighlightClass)}</button>`).join('')}
         </div>
       </div>
     `
@@ -3746,12 +3805,12 @@ function detailMarkup(asset, workflow) {
 
   // İndirme aksiyonlarında orijinal dosya ile proxy bilinçli olarak ayrılıyor.
   const metadataTopSection = `
-    <h3>${highlightMatch(asset.title, currentSearchQuery)}</h3>
-    <p>${highlightMatch(asset.description || t('no_description'), currentSearchQuery)}</p>
-    <div class="asset-meta">${t('owner')}: ${highlightMatch(asset.owner, currentSearchQuery)} | ${t('type')}: ${highlightMatch(asset.type, currentSearchQuery)} | ${t('duration')}: ${escapeHtml(asset.durationSeconds)}s</div>
+    <h3>${highlightMatch(asset.title, currentSearchHighlightQuery, searchHighlightClass)}</h3>
+    <p>${highlightMatch(asset.description || t('no_description'), currentSearchHighlightQuery, searchHighlightClass)}</p>
+    <div class="asset-meta">${t('owner')}: ${highlightMatch(asset.owner, currentSearchHighlightQuery, searchHighlightClass)} | ${t('type')}: ${highlightMatch(asset.type, currentSearchHighlightQuery, searchHighlightClass)} | ${t('duration')}: ${escapeHtml(asset.durationSeconds)}s</div>
     <div class="asset-meta">${t('status')}: <strong>${escapeHtml(workflowLabel(asset.status))}</strong></div>
     <div class="asset-meta">${t('trash')}: ${trashStatus}</div>
-    ${dcHighlightSnippet(asset, currentSearchQuery) ? `<div class="asset-meta dc-hit-row">${dcHighlightSnippet(asset, currentSearchQuery)}</div>` : ''}
+    ${dcHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass) ? `<div class="asset-meta dc-hit-row">${dcHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass)}</div>` : ''}
     ${tagsMarkup}
     <div class="timecode-bar">
       ${asset.mediaUrl ? `<button type="button" id="downloadAssetBtn">${t('download_asset')}</button>` : ''}
@@ -3770,28 +3829,28 @@ function detailMarkup(asset, workflow) {
       <h4>${t('edit_metadata')}</h4>
       ${metadataLockNotice}
       ${metadataFieldsetOpen}
-        <label>${t('title')}<input name="title" value="${escapeHtml(asset.title)}" required />${buildInlineFieldMatch(asset.title, currentSearchQuery)}</label>
-        <label>${t('owner')}<input name="owner" value="${escapeHtml(asset.owner)}" required />${buildInlineFieldMatch(asset.owner, currentSearchQuery)}</label>
-        <label>${t('tags')}<input name="tags" value="${escapeHtml(asset.tags.join(', '))}" placeholder="${escapeHtml(t('ph_inline_tags'))}" />${buildInlineFieldMatch(asset.tags.join(', '), currentSearchQuery)}</label>
-        <label>${t('description')}<textarea name="description">${escapeHtml(asset.description || '')}</textarea>${buildInlineFieldMatch(asset.description || '', currentSearchQuery)}</label>
-        <label>${t('duration')}<input name="durationSeconds" type="number" min="0" value="${escapeHtml(asset.durationSeconds)}" />${buildInlineFieldMatch(asset.durationSeconds ? `${asset.durationSeconds}s` : '', currentSearchQuery)}</label>
+        <label>${t('title')}<input name="title" value="${escapeHtml(asset.title)}" required />${buildInlineFieldMatch(asset.title, currentSearchHighlightQuery, searchHighlightClass)}</label>
+        <label>${t('owner')}<input name="owner" value="${escapeHtml(asset.owner)}" required />${buildInlineFieldMatch(asset.owner, currentSearchHighlightQuery, searchHighlightClass)}</label>
+        <label>${t('tags')}<input name="tags" value="${escapeHtml(asset.tags.join(', '))}" placeholder="${escapeHtml(t('ph_inline_tags'))}" />${buildInlineFieldMatch(asset.tags.join(', '), currentSearchHighlightQuery, searchHighlightClass)}</label>
+        <label>${t('description')}<textarea name="description">${escapeHtml(asset.description || '')}</textarea>${buildInlineFieldMatch(asset.description || '', currentSearchHighlightQuery, searchHighlightClass)}</label>
+        <label>${t('duration')}<input name="durationSeconds" type="number" min="0" value="${escapeHtml(asset.durationSeconds)}" />${buildInlineFieldMatch(asset.durationSeconds ? `${asset.durationSeconds}s` : '', currentSearchHighlightQuery, searchHighlightClass)}</label>
         <h4>${t('dublin_core')}</h4>
         <div class="dc-grid">
-          <label>${t('dc_title')}<input name="dcTitle" value="${escapeHtml(dc.title || '')}" />${buildInlineFieldMatch(dc.title || '', currentSearchQuery)}</label>
-          <label>${t('dc_creator')}<input name="dcCreator" value="${escapeHtml(dc.creator || '')}" />${buildInlineFieldMatch(dc.creator || '', currentSearchQuery)}</label>
-          <label>${t('dc_subject')}<input name="dcSubject" value="${escapeHtml(dc.subject || '')}" />${buildInlineFieldMatch(dc.subject || '', currentSearchQuery)}</label>
-          <label>${t('dc_description')}<textarea name="dcDescription">${escapeHtml(dc.description || '')}</textarea>${buildInlineFieldMatch(dc.description || '', currentSearchQuery)}</label>
-          <label>${t('dc_publisher')}<input name="dcPublisher" value="${escapeHtml(dc.publisher || '')}" />${buildInlineFieldMatch(dc.publisher || '', currentSearchQuery)}</label>
-          <label>${t('dc_contributor')}<input name="dcContributor" value="${escapeHtml(dc.contributor || '')}" />${buildInlineFieldMatch(dc.contributor || '', currentSearchQuery)}</label>
-          <label>${t('dc_date')}<input name="dcDate" value="${escapeHtml(dc.date || '')}" />${buildInlineFieldMatch(dc.date || '', currentSearchQuery)}</label>
-          <label>${t('dc_type')}<input name="dcType" value="${escapeHtml(dc.type || '')}" />${buildInlineFieldMatch(dc.type || '', currentSearchQuery)}</label>
-          <label>${t('dc_format')}<input name="dcFormat" value="${escapeHtml(dc.format || '')}" />${buildInlineFieldMatch(dc.format || '', currentSearchQuery)}</label>
-          <label>${t('dc_identifier')}<input name="dcIdentifier" value="${escapeHtml(dc.identifier || '')}" />${buildInlineFieldMatch(dc.identifier || '', currentSearchQuery)}</label>
-          <label>${t('dc_source')}<input name="dcSource" value="${escapeHtml(dc.source || '')}" />${buildInlineFieldMatch(dc.source || '', currentSearchQuery)}</label>
-          <label>${t('dc_language')}<input name="dcLanguage" value="${escapeHtml(dc.language || '')}" />${buildInlineFieldMatch(dc.language || '', currentSearchQuery)}</label>
-          <label>${t('dc_relation')}<input name="dcRelation" value="${escapeHtml(dc.relation || '')}" />${buildInlineFieldMatch(dc.relation || '', currentSearchQuery)}</label>
-          <label>${t('dc_coverage')}<input name="dcCoverage" value="${escapeHtml(dc.coverage || '')}" />${buildInlineFieldMatch(dc.coverage || '', currentSearchQuery)}</label>
-          <label>${t('dc_rights')}<input name="dcRights" value="${escapeHtml(dc.rights || '')}" />${buildInlineFieldMatch(dc.rights || '', currentSearchQuery)}</label>
+          <label>${t('dc_title')}<input name="dcTitle" value="${escapeHtml(dc.title || '')}" />${buildInlineFieldMatch(dc.title || '', currentSearchHighlightQuery, searchHighlightClass)}</label>
+          <label>${t('dc_creator')}<input name="dcCreator" value="${escapeHtml(dc.creator || '')}" />${buildInlineFieldMatch(dc.creator || '', currentSearchHighlightQuery, searchHighlightClass)}</label>
+          <label>${t('dc_subject')}<input name="dcSubject" value="${escapeHtml(dc.subject || '')}" />${buildInlineFieldMatch(dc.subject || '', currentSearchHighlightQuery, searchHighlightClass)}</label>
+          <label>${t('dc_description')}<textarea name="dcDescription">${escapeHtml(dc.description || '')}</textarea>${buildInlineFieldMatch(dc.description || '', currentSearchHighlightQuery, searchHighlightClass)}</label>
+          <label>${t('dc_publisher')}<input name="dcPublisher" value="${escapeHtml(dc.publisher || '')}" />${buildInlineFieldMatch(dc.publisher || '', currentSearchHighlightQuery, searchHighlightClass)}</label>
+          <label>${t('dc_contributor')}<input name="dcContributor" value="${escapeHtml(dc.contributor || '')}" />${buildInlineFieldMatch(dc.contributor || '', currentSearchHighlightQuery, searchHighlightClass)}</label>
+          <label>${t('dc_date')}<input name="dcDate" value="${escapeHtml(dc.date || '')}" />${buildInlineFieldMatch(dc.date || '', currentSearchHighlightQuery, searchHighlightClass)}</label>
+          <label>${t('dc_type')}<input name="dcType" value="${escapeHtml(dc.type || '')}" />${buildInlineFieldMatch(dc.type || '', currentSearchHighlightQuery, searchHighlightClass)}</label>
+          <label>${t('dc_format')}<input name="dcFormat" value="${escapeHtml(dc.format || '')}" />${buildInlineFieldMatch(dc.format || '', currentSearchHighlightQuery, searchHighlightClass)}</label>
+          <label>${t('dc_identifier')}<input name="dcIdentifier" value="${escapeHtml(dc.identifier || '')}" />${buildInlineFieldMatch(dc.identifier || '', currentSearchHighlightQuery, searchHighlightClass)}</label>
+          <label>${t('dc_source')}<input name="dcSource" value="${escapeHtml(dc.source || '')}" />${buildInlineFieldMatch(dc.source || '', currentSearchHighlightQuery, searchHighlightClass)}</label>
+          <label>${t('dc_language')}<input name="dcLanguage" value="${escapeHtml(dc.language || '')}" />${buildInlineFieldMatch(dc.language || '', currentSearchHighlightQuery, searchHighlightClass)}</label>
+          <label>${t('dc_relation')}<input name="dcRelation" value="${escapeHtml(dc.relation || '')}" />${buildInlineFieldMatch(dc.relation || '', currentSearchHighlightQuery, searchHighlightClass)}</label>
+          <label>${t('dc_coverage')}<input name="dcCoverage" value="${escapeHtml(dc.coverage || '')}" />${buildInlineFieldMatch(dc.coverage || '', currentSearchHighlightQuery, searchHighlightClass)}</label>
+          <label>${t('dc_rights')}<input name="dcRights" value="${escapeHtml(dc.rights || '')}" />${buildInlineFieldMatch(dc.rights || '', currentSearchHighlightQuery, searchHighlightClass)}</label>
         </div>
         <button type="submit">${t('save_metadata')}</button>
       </fieldset>
@@ -4098,7 +4157,7 @@ function initFrameControls(mediaEl, asset, root = document, options = {}) {
         return `
           <div class="cut-item ${activeCutId === cut.cutId ? 'active' : ''}" data-cut-id="${cut.cutId}">
             <div class="cut-item-meta">
-              <strong>${highlightMatch(cut.label || 'Cut', currentSearchQuery)}</strong>
+              <strong>${highlightMatch(cut.label || 'Cut', currentSearchHighlightQuery, effectiveSearchHighlightClass(currentSearchQuery, currentSearchHighlightQuery, currentSearchFuzzyUsed))}</strong>
               <div class="cut-item-tc-row">
                 <button type="button" class="inline-tc-btn tc-in-label" data-tc-editable="1" data-tc-value="${secondsToTimecode(cut.inPointSeconds, getFps())}">${t('in_label')}: ${secondsToTimecode(cut.inPointSeconds, getFps())}</button>
                 <button type="button" class="inline-tc-btn tc-out-label" data-tc-editable="1" data-tc-value="${secondsToTimecode(cut.outPointSeconds, getFps())}">${t('out_label')}: ${secondsToTimecode(cut.outPointSeconds, getFps())}</button>
@@ -6499,6 +6558,12 @@ async function loadAssets() {
   currentSearchQuery = String(filters.q || '').trim();
   currentOcrQuery = String(filters.ocrQ || '').trim();
   currentSubtitleQuery = String(filters.subtitleQ || '').trim();
+  currentSearchHighlightQuery = currentSearchQuery;
+  currentSearchDidYouMean = '';
+  currentSearchFuzzyUsed = false;
+  currentOcrHighlightQuery = currentOcrQuery;
+  currentOcrDidYouMean = '';
+  currentOcrFuzzyUsed = false;
 
   if (selectedTypes.length === 0) {
     if (!currentOcrQuery && !currentSubtitleQuery) {
@@ -6524,7 +6589,17 @@ async function loadAssets() {
     params.set('types', selectedTypes.join(','));
   }
 
-  currentAssets = await api(`/api/assets?${params.toString()}`);
+  const result = await api(`/api/assets?${params.toString()}`);
+  const payload = Array.isArray(result) ? { assets: result, searchMeta: {} } : (result || {});
+  currentAssets = Array.isArray(payload.assets) ? payload.assets : [];
+  const qMeta = payload.searchMeta?.q && typeof payload.searchMeta.q === 'object' ? payload.searchMeta.q : null;
+  const ocrMeta = payload.searchMeta?.ocrQ && typeof payload.searchMeta.ocrQ === 'object' ? payload.searchMeta.ocrQ : null;
+  currentSearchHighlightQuery = String(qMeta?.highlightQuery || currentSearchQuery).trim() || currentSearchQuery;
+  currentSearchDidYouMean = String(qMeta?.didYouMean || '').trim();
+  currentSearchFuzzyUsed = Boolean(qMeta?.fuzzyUsed);
+  currentOcrHighlightQuery = String(ocrMeta?.highlightQuery || currentOcrQuery).trim() || currentOcrQuery;
+  currentOcrDidYouMean = String(ocrMeta?.didYouMean || '').trim();
+  currentOcrFuzzyUsed = Boolean(ocrMeta?.fuzzyUsed);
   const visibleIds = new Set(currentAssets.map((asset) => asset.id));
   [...selectedAssetIds].forEach((id) => {
     if (!visibleIds.has(id)) selectedAssetIds.delete(id);

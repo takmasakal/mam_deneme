@@ -1351,6 +1351,29 @@ button:hover {
   gap: 4px 8px;
 }
 
+.asset-hit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 16.5rem;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.asset-hit-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.asset-hit-list::-webkit-scrollbar-thumb {
+  background: #56627f;
+  border-radius: 999px;
+}
+
+.asset-hit-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+}
+
 .ocr-hit-jump {
   width: 100%;
   border: 1px solid #45506a;

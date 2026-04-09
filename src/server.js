@@ -433,6 +433,79 @@ function parseTextSearchQuery(value, normalizeFn = (input) => String(input || ''
   return parseSearchTokens(value, normalizeFn);
 }
 
+function tokenizeSearchTokens(value, normalizeFn = (input) => String(input || '').trim()) {
+  return normalizeFn(value)
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token && /[\p{L}\p{N}]/u.test(token));
+}
+
+function fuzzySearchTokenMatch(queryToken, candidateToken) {
+  const query = String(queryToken || '').trim();
+  const candidate = String(candidateToken || '').trim();
+  if (!query || !candidate) return false;
+  if (query === candidate) return true;
+  if (query.charAt(0) !== candidate.charAt(0)) return false;
+  const lenDiff = Math.abs(query.length - candidate.length);
+  if (lenDiff > 2) return false;
+  const maxAllowed = query.length >= 7 ? 2 : 1;
+  return levenshteinDistance(query, candidate) <= maxAllowed;
+}
+
+function fuzzySearchTextMatch(queryText, candidateText, normalizeFn = (input) => String(input || '').trim()) {
+  const queryTokens = tokenizeSearchTokens(queryText, normalizeFn);
+  const candidateTokens = tokenizeSearchTokens(candidateText, normalizeFn);
+  if (!queryTokens.length || !candidateTokens.length) return false;
+  return queryTokens.every((queryToken) => (
+    candidateTokens.some((candidateToken) => fuzzySearchTokenMatch(queryToken, candidateToken))
+  ));
+}
+
+function suggestDidYouMeanFromTexts(texts, query, options = {}) {
+  const {
+    parseFn = parseTextSearchQuery,
+    normalizeFn = (input) => String(input || '').trim()
+  } = options;
+  const parsedQuery = parseFn(query, normalizeFn);
+  if (!parsedQuery.raw || parsedQuery.hasOperators) return '';
+  const sourceTokens = tokenizeSearchTokens(parsedQuery.raw, normalizeFn);
+  if (!sourceTokens.length) return '';
+
+  const vocab = new Set();
+  (Array.isArray(texts) ? texts : []).forEach((text) => {
+    tokenizeSearchTokens(text, normalizeFn).forEach((token) => vocab.add(token));
+  });
+  if (!vocab.size) return '';
+
+  let replaced = false;
+  const suggestedTokens = sourceTokens.map((token) => {
+    let best = token;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const candidate of vocab) {
+      const lenDiff = Math.abs(candidate.length - token.length);
+      if (lenDiff > 2) continue;
+      if (candidate.charAt(0) !== token.charAt(0)) continue;
+      const dist = levenshteinDistance(token, candidate);
+      if (dist < bestDistance) {
+        bestDistance = dist;
+        best = candidate;
+      }
+      if (bestDistance === 1) break;
+    }
+    const maxAllowed = token.length >= 7 ? 2 : 1;
+    if (best !== token && bestDistance <= maxAllowed) {
+      replaced = true;
+      return best;
+    }
+    return token;
+  });
+
+  if (!replaced) return '';
+  const suggestion = suggestedTokens.join(' ').trim();
+  if (!suggestion || suggestion === parsedQuery.raw) return '';
+  return suggestion;
+}
+
 function escapePostgresRegex(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -1001,6 +1074,123 @@ async function findOcrMatchesForAssetRow(row, queryRaw, limit = 8) {
   return findOcrMatchesInRow(row, queryRaw, cap);
 }
 
+async function loadActiveOcrSegmentsForAssetRow(row) {
+  const assetId = String(row?.id || '').trim();
+  const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+  const activeOcrUrl = String(pickLatestVideoOcrUrlFromDc(dc) || '').trim();
+  if (!assetId || !activeOcrUrl) return { ocrUrl: activeOcrUrl, segments: [] };
+
+  const existing = await pool.query(
+    `
+      SELECT start_sec, end_sec, segment_text
+      FROM asset_ocr_segments
+      WHERE asset_id = $1
+        AND ocr_url = $2
+      ORDER BY start_sec ASC
+    `,
+    [assetId, activeOcrUrl]
+  );
+  if (existing.rowCount) {
+    return {
+      ocrUrl: activeOcrUrl,
+      segments: existing.rows.map((segment) => ({
+        startSec: Number(segment.start_sec || 0),
+        endSec: Number(segment.end_sec || 0),
+        segmentText: String(segment.segment_text || '')
+      }))
+    };
+  }
+
+  await syncOcrSegmentIndexForAsset(assetId, activeOcrUrl, {
+    sourceEngine: String(dc.videoOcrEngine || 'paddle').trim(),
+    lang: ''
+  });
+
+  const refreshed = await pool.query(
+    `
+      SELECT start_sec, end_sec, segment_text
+      FROM asset_ocr_segments
+      WHERE asset_id = $1
+        AND ocr_url = $2
+      ORDER BY start_sec ASC
+    `,
+    [assetId, activeOcrUrl]
+  );
+  return {
+    ocrUrl: activeOcrUrl,
+    segments: refreshed.rows.map((segment) => ({
+      startSec: Number(segment.start_sec || 0),
+      endSec: Number(segment.end_sec || 0),
+      segmentText: String(segment.segment_text || '')
+    }))
+  };
+}
+
+function mapOcrSegmentRow(segment, query, ocrUrl = '') {
+  return {
+    ocrUrl,
+    line: String(segment?.segmentText || segment?.line || '').trim(),
+    startSec: Number(segment?.startSec || 0),
+    endSec: Number(segment?.endSec || 0),
+    query: String(query || '').trim()
+  };
+}
+
+async function searchOcrMatchesForAssetRow(row, queryRaw, limit = 8) {
+  const parsedQuery = parseTextSearchQuery(queryRaw, normalizeSubtitleSearchText);
+  const cap = Math.max(1, Math.min(50, Number(limit) || 8));
+  if (!parsedQuery.raw) {
+    return { ocrUrl: '', matches: [], didYouMean: '', fuzzyUsed: false, highlightQuery: String(queryRaw || '').trim() };
+  }
+
+  const exactMatches = await findOcrMatchesForAssetRow(row, queryRaw, cap);
+  if (exactMatches.length || parsedQuery.hasOperators) {
+    const ocrUrl = String(exactMatches[0]?.ocrUrl || pickLatestVideoOcrUrlFromDc(row?.dc_metadata || {}) || '').trim();
+    return {
+      ocrUrl,
+      matches: exactMatches.map((item) => mapOcrSegmentRow(item, queryRaw, item.ocrUrl || ocrUrl)),
+      didYouMean: '',
+      fuzzyUsed: false,
+      highlightQuery: String(queryRaw || '').trim()
+    };
+  }
+
+  const { ocrUrl, segments } = await loadActiveOcrSegmentsForAssetRow(row);
+  if (!segments.length) {
+    return { ocrUrl, matches: [], didYouMean: '', fuzzyUsed: false, highlightQuery: String(queryRaw || '').trim() };
+  }
+
+  const fuzzyMatches = segments
+    .filter((segment) => fuzzySearchTextMatch(parsedQuery.raw, segment.segmentText, normalizeSubtitleSearchText))
+    .slice(0, cap)
+    .map((segment) => mapOcrSegmentRow(segment, queryRaw, ocrUrl));
+  const didYouMean = suggestDidYouMeanFromTexts(
+    segments.map((segment) => segment.segmentText),
+    queryRaw,
+    { parseFn: parseTextSearchQuery, normalizeFn: normalizeSubtitleSearchText }
+  );
+
+  let matches = fuzzyMatches;
+  let fuzzyUsed = fuzzyMatches.length > 0;
+  let highlightQuery = String(queryRaw || '').trim();
+  if (didYouMean) {
+    highlightQuery = didYouMean;
+    const suggestedQuery = parseTextSearchQuery(didYouMean, normalizeSubtitleSearchText);
+    const suggestedMatches = segments
+      .filter((segment) => ocrLineMatchesParsedQuery(segment.segmentText, suggestedQuery))
+      .slice(0, cap)
+      .map((segment) => mapOcrSegmentRow(segment, didYouMean, ocrUrl));
+    if (suggestedMatches.length) {
+      matches = suggestedMatches;
+      fuzzyUsed = true;
+    } else if (matches.length) {
+      matches = matches.map((item) => ({ ...item, query: didYouMean }));
+    }
+  }
+
+  return { ocrUrl, matches, didYouMean, fuzzyUsed, highlightQuery };
+}
+
 function normalizeSubtitleTime(value) {
   const raw = String(value || '').trim();
   const match = raw.match(/^(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})$/);
@@ -1220,6 +1410,7 @@ function escapeRegExp(value) {
 
 function normalizeComparableOcr(text) {
   return String(text || '')
+    .replace(/[İIı]/g, 'i')
     .toLocaleLowerCase('tr')
     .replace(/[’'`]/g, '')
     .replace(/[^a-z0-9çğıöşü\s]/gi, ' ')
@@ -2461,6 +2652,93 @@ function normalizeSubtitleSearchText(value) {
 
 function parseSubtitleTextSearchQuery(value) {
   return parseSearchTokens(value, normalizeSubtitleSearchText);
+}
+
+function collectAssetSearchTexts(row) {
+  const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+  const dcValues = Object.values(dc)
+    .filter((value) => value !== null && value !== undefined)
+    .flatMap((value) => {
+      if (Array.isArray(value)) {
+        return value.map((item) => {
+          if (item && typeof item === 'object') return Object.values(item).join(' ');
+          return String(item || '');
+        });
+      }
+      if (value && typeof value === 'object') return [Object.values(value).join(' ')];
+      return [String(value || '')];
+    });
+  const cuts = Array.isArray(row?.cuts) ? row.cuts : [];
+  const tags = Array.isArray(row?.tags) ? row.tags : [];
+  return [
+    String(row?.title || ''),
+    String(row?.description || ''),
+    String(row?.owner || ''),
+    String(row?.type || ''),
+    String(row?.status || ''),
+    ...tags.map((tag) => String(tag || '')),
+    ...dcValues,
+    ...cuts.map((cut) => String(cut?.label || ''))
+  ].filter(Boolean);
+}
+
+function buildAssetSearchText(row) {
+  return collectAssetSearchTexts(row).join(' ');
+}
+
+function assetTextMatchesParsedQuery(text, parsedQuery) {
+  const normalizedText = normalizeForSearch(text);
+  if (!normalizedText || !parsedQuery?.raw) return false;
+  if (!parsedQuery.hasOperators) {
+    return normalizedText.includes(parsedQuery.raw);
+  }
+  const includesAllRequired = parsedQuery.mustInclude.every((term) => normalizedText.includes(term));
+  if (!includesAllRequired) return false;
+  const includesAllExact = parsedQuery.mustIncludeExact.every((term) => normalizedTextHasExactTerm(normalizedText, term));
+  if (!includesAllExact) return false;
+  const excludesForbidden = parsedQuery.mustExclude.every((term) => !normalizedText.includes(term));
+  if (!excludesForbidden) return false;
+  const excludesForbiddenExact = parsedQuery.mustExcludeExact.every((term) => !normalizedTextHasExactTerm(normalizedText, term));
+  if (!excludesForbiddenExact) return false;
+  const optionalTerms = parsedQuery.optional.filter((term) => normalizedText.includes(term));
+  const optionalExactTerms = parsedQuery.optionalExact.filter((term) => normalizedTextHasExactTerm(normalizedText, term));
+  if (parsedQuery.optional.length === 0 && parsedQuery.optionalExact.length === 0) return true;
+  return optionalTerms.length > 0 || optionalExactTerms.length > 0;
+}
+
+function searchAssetsByFuzzyQuery(rows, query, limit = 500) {
+  const parsedQuery = parseTextSearchQuery(query, normalizeForSearch);
+  const safeLimit = Math.max(1, Math.min(500, Number(limit) || 500));
+  if (!parsedQuery.raw || parsedQuery.hasOperators) {
+    return { rows: [], didYouMean: '', fuzzyUsed: false, highlightQuery: String(query || '').trim() };
+  }
+
+  const candidateRows = Array.isArray(rows) ? rows : [];
+  const fuzzyRows = candidateRows
+    .filter((row) => fuzzySearchTextMatch(parsedQuery.raw, buildAssetSearchText(row), normalizeForSearch))
+    .slice(0, safeLimit);
+  const didYouMean = suggestDidYouMeanFromTexts(
+    candidateRows.map((row) => buildAssetSearchText(row)),
+    query,
+    { parseFn: parseTextSearchQuery, normalizeFn: normalizeForSearch }
+  );
+
+  let matches = fuzzyRows;
+  let fuzzyUsed = fuzzyRows.length > 0;
+  let highlightQuery = String(query || '').trim();
+  if (didYouMean) {
+    highlightQuery = didYouMean;
+    const suggestedQuery = parseTextSearchQuery(didYouMean, normalizeForSearch);
+    const suggestedRows = candidateRows
+      .filter((row) => assetTextMatchesParsedQuery(buildAssetSearchText(row), suggestedQuery))
+      .slice(0, safeLimit);
+    if (suggestedRows.length) {
+      matches = suggestedRows;
+      fuzzyUsed = true;
+    }
+  }
+
+  return { rows: matches, didYouMean, fuzzyUsed, highlightQuery };
 }
 
 function buildSubtitleCueSearchWhereSql({ normColumn = 'norm_text', startIndex = 3, parsedQuery }) {
@@ -6820,207 +7098,246 @@ app.get('/api/assets', async (req, res) => {
     const status = (req.query.status || '').toString().trim();
     const trash = (req.query.trash || 'active').toString().trim().toLowerCase();
     const dateRange = normalizeUploadDateRange(uploadDateFrom, uploadDateTo);
-
-    const where = [];
-    const values = [];
-    let rankedIds = null;
     const normalizedSortBy = normalizeSortBy(sortBy);
+    const baseWhere = [];
+    const baseValues = [];
+    let rankedIds = null;
+    const searchMeta = {
+      q: { didYouMean: '', fuzzyUsed: false, highlightQuery: q },
+      ocrQ: { didYouMean: '', fuzzyUsed: false, highlightQuery: ocrQ },
+      subtitleQ: { didYouMean: '', fuzzyUsed: false, highlightQuery: subtitleQ }
+    };
 
     if (trash === 'trash') {
-      where.push('deleted_at IS NOT NULL');
+      baseWhere.push('deleted_at IS NOT NULL');
     } else if (trash !== 'all') {
-      where.push('deleted_at IS NULL');
-    }
-
-    if (q) {
-      rankedIds = await searchAssetIdsElastic(q);
-      if (rankedIds === null) {
-        const pushAssetQueryGroup = (term, options = {}) => {
-          const exact = Boolean(options.exact);
-          const negate = Boolean(options.negate);
-          const joiner = negate ? 'AND' : 'OR';
-          if (exact) {
-            values.push(exactNormalizedTextRegex(term));
-            const idx = values.length;
-            where.push(`(
-              ${sqlTextFold('title')} ${negate ? '!~' : '~'} $${idx}
-              ${joiner} ${sqlTextFold('description')} ${negate ? '!~' : '~'} $${idx}
-              ${joiner} ${sqlTextFold('owner')} ${negate ? '!~' : '~'} $${idx}
-              ${joiner} ${sqlTextFold("dc_metadata::text")} ${negate ? '!~' : '~'} $${idx}
-              ${joiner} ${negate ? 'NOT ' : ''}EXISTS (
-                SELECT 1
-                FROM asset_cuts c
-                WHERE c.asset_id = assets.id AND ${sqlTextFold('c.label')} ~ $${idx}
-              )
-            )`);
-            return;
-          }
-          values.push(`%${term}%`);
-          const idx = values.length;
-          where.push(`(
-            ${sqlTextFold('title')} ${negate ? 'NOT LIKE' : 'LIKE'} $${idx}
-            ${joiner} ${sqlTextFold('description')} ${negate ? 'NOT LIKE' : 'LIKE'} $${idx}
-            ${joiner} ${sqlTextFold('owner')} ${negate ? 'NOT LIKE' : 'LIKE'} $${idx}
-            ${joiner} ${sqlTextFold("dc_metadata::text")} ${negate ? 'NOT LIKE' : 'LIKE'} $${idx}
-            ${joiner} ${negate ? 'NOT ' : ''}EXISTS (
-              SELECT 1
-              FROM asset_cuts c
-              WHERE c.asset_id = assets.id AND ${sqlTextFold('c.label')} LIKE $${idx}
-            )
-          )`);
-        };
-        if (parsedAssetQuery.hasOperators) {
-          parsedAssetQuery.mustInclude.forEach((term) => pushAssetQueryGroup(term));
-          parsedAssetQuery.mustIncludeExact.forEach((term) => pushAssetQueryGroup(term, { exact: true }));
-          parsedAssetQuery.mustExclude.forEach((term) => pushAssetQueryGroup(term, { negate: true }));
-          parsedAssetQuery.mustExcludeExact.forEach((term) => pushAssetQueryGroup(term, { exact: true, negate: true }));
-          if (parsedAssetQuery.optional.length > 0 || parsedAssetQuery.optionalExact.length > 0) {
-            const optionalGroups = [];
-            parsedAssetQuery.optional.forEach((term) => {
-              values.push(`%${term}%`);
-              const idx = values.length;
-              optionalGroups.push(`(
-                ${sqlTextFold('title')} LIKE $${idx}
-                OR ${sqlTextFold('description')} LIKE $${idx}
-                OR ${sqlTextFold('owner')} LIKE $${idx}
-                OR ${sqlTextFold("dc_metadata::text")} LIKE $${idx}
-                OR EXISTS (
-                  SELECT 1
-                  FROM asset_cuts c
-                  WHERE c.asset_id = assets.id AND ${sqlTextFold('c.label')} LIKE $${idx}
-                )
-              )`);
-            });
-            parsedAssetQuery.optionalExact.forEach((term) => {
-              values.push(exactNormalizedTextRegex(term));
-              const idx = values.length;
-              optionalGroups.push(`(
-                ${sqlTextFold('title')} ~ $${idx}
-                OR ${sqlTextFold('description')} ~ $${idx}
-                OR ${sqlTextFold('owner')} ~ $${idx}
-                OR ${sqlTextFold("dc_metadata::text")} ~ $${idx}
-                OR EXISTS (
-                  SELECT 1
-                  FROM asset_cuts c
-                  WHERE c.asset_id = assets.id AND ${sqlTextFold('c.label')} ~ $${idx}
-                )
-              )`);
-            });
-            where.push(`(${optionalGroups.join(' OR ')})`);
-          }
-        } else {
-          pushAssetQueryGroup(normalizeForSearch(q), 'LIKE');
-        }
-      } else if (!rankedIds.length) {
-        return res.json([]);
-      } else {
-      }
+      baseWhere.push('deleted_at IS NULL');
     }
     if (tag) {
-      values.push(tag);
-      const tagParam = `$${values.length}`;
-      where.push(`EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE ${sqlTagFold('t')} = ${sqlTagFold(tagParam)})`);
+      baseValues.push(tag);
+      const tagParam = `$${baseValues.length}`;
+      baseWhere.push(`EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE ${sqlTagFold('t')} = ${sqlTagFold(tagParam)})`);
     }
     if (owner) {
-      values.push(`%${owner.toLowerCase()}%`);
-      where.push(`LOWER(owner) LIKE $${values.length}`);
+      baseValues.push(`%${owner.toLowerCase()}%`);
+      baseWhere.push(`LOWER(owner) LIKE $${baseValues.length}`);
     }
     if (type) {
-      values.push(type.toLowerCase());
-      where.push(`LOWER(type) = $${values.length}`);
+      baseValues.push(type.toLowerCase());
+      baseWhere.push(`LOWER(type) = $${baseValues.length}`);
     }
     if (dateRange.from) {
-      values.push(dateRange.from);
-      where.push(`created_at >= $${values.length}`);
+      baseValues.push(dateRange.from);
+      baseWhere.push(`created_at >= $${baseValues.length}`);
     }
     if (dateRange.to) {
-      values.push(dateRange.to);
-      where.push(`created_at <= $${values.length}`);
+      baseValues.push(dateRange.to);
+      baseWhere.push(`created_at <= $${baseValues.length}`);
     }
     if (types.length) {
-      values.push(types);
-      where.push(`
+      baseValues.push(types);
+      baseWhere.push(`
         (
           CASE
             WHEN LOWER(type) = 'image' THEN 'photo'
             WHEN LOWER(type) = 'file' THEN 'other'
             ELSE LOWER(type)
           END
-        ) = ANY($${values.length}::text[])
+        ) = ANY($${baseValues.length}::text[])
       `);
     }
     if (status) {
-      values.push(status.toLowerCase());
-      where.push(`LOWER(status) = $${values.length}`);
+      baseValues.push(status.toLowerCase());
+      baseWhere.push(`LOWER(status) = $${baseValues.length}`);
     }
 
-    const useRelevanceOrder = Boolean(rankedIds && rankedIds.length && normalizedSortBy === 'default');
-    let orderClause = buildAssetOrderClause({
-      hasRelevance: useRelevanceOrder,
-      sortBy: normalizedSortBy,
-      rankedParamAlias: values.length + 1
-    });
-    if (rankedIds && rankedIds.length) {
-      values.push(rankedIds);
-      where.push(`id = ANY($${values.length}::text[])`);
-      if (useRelevanceOrder) {
-        orderClause = buildAssetOrderClause({
-          hasRelevance: true,
-          sortBy: normalizedSortBy,
-          rankedParamAlias: values.length
-        });
-      }
-    }
-
-    const sql = `
-      SELECT
-        assets.*,
-        (
-          SELECT COALESCE(
-            json_agg(
-              json_build_object(
-                'cutId', c.cut_id,
-                'label', c.label,
-                'inPointSeconds', c.in_point_seconds,
-                'outPointSeconds', c.out_point_seconds
-              )
-              ORDER BY c.created_at DESC
-            ),
-            '[]'::json
+    const buildAssetTextWhere = (parsedQuery) => {
+      const clauses = [];
+      const params = [];
+      const pushAssetQueryGroup = (term, options = {}) => {
+        const exact = Boolean(options.exact);
+        const negate = Boolean(options.negate);
+        const joiner = negate ? 'AND' : 'OR';
+        if (exact) {
+          params.push(exactNormalizedTextRegex(term));
+          const idx = baseValues.length + params.length;
+          clauses.push(`(
+            ${sqlTextFold('title')} ${negate ? '!~' : '~'} $${idx}
+            ${joiner} ${sqlTextFold('description')} ${negate ? '!~' : '~'} $${idx}
+            ${joiner} ${sqlTextFold('owner')} ${negate ? '!~' : '~'} $${idx}
+            ${joiner} ${sqlTextFold("dc_metadata::text")} ${negate ? '!~' : '~'} $${idx}
+            ${joiner} ${negate ? 'NOT ' : ''}EXISTS (
+              SELECT 1
+              FROM asset_cuts c
+              WHERE c.asset_id = assets.id AND ${sqlTextFold('c.label')} ~ $${idx}
+            )
+          )`);
+          return;
+        }
+        params.push(`%${term}%`);
+        const idx = baseValues.length + params.length;
+        clauses.push(`(
+          ${sqlTextFold('title')} ${negate ? 'NOT LIKE' : 'LIKE'} $${idx}
+          ${joiner} ${sqlTextFold('description')} ${negate ? 'NOT LIKE' : 'LIKE'} $${idx}
+          ${joiner} ${sqlTextFold('owner')} ${negate ? 'NOT LIKE' : 'LIKE'} $${idx}
+          ${joiner} ${sqlTextFold("dc_metadata::text")} ${negate ? 'NOT LIKE' : 'LIKE'} $${idx}
+          ${joiner} ${negate ? 'NOT ' : ''}EXISTS (
+            SELECT 1
+            FROM asset_cuts c
+            WHERE c.asset_id = assets.id AND ${sqlTextFold('c.label')} LIKE $${idx}
           )
-          FROM asset_cuts c
-          WHERE c.asset_id = assets.id
-        ) AS cuts
-      FROM assets
-      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-      ORDER BY ${orderClause}
-    `;
+        )`);
+      };
 
-    const result = await pool.query(sql, values);
-    let rows = result.rows;
+      if (parsedQuery.hasOperators) {
+        parsedQuery.mustInclude.forEach((term) => pushAssetQueryGroup(term));
+        parsedQuery.mustIncludeExact.forEach((term) => pushAssetQueryGroup(term, { exact: true }));
+        parsedQuery.mustExclude.forEach((term) => pushAssetQueryGroup(term, { negate: true }));
+        parsedQuery.mustExcludeExact.forEach((term) => pushAssetQueryGroup(term, { exact: true, negate: true }));
+        if (parsedQuery.optional.length > 0 || parsedQuery.optionalExact.length > 0) {
+          const optionalGroups = [];
+          parsedQuery.optional.forEach((term) => {
+            params.push(`%${term}%`);
+            const idx = baseValues.length + params.length;
+            optionalGroups.push(`(
+              ${sqlTextFold('title')} LIKE $${idx}
+              OR ${sqlTextFold('description')} LIKE $${idx}
+              OR ${sqlTextFold('owner')} LIKE $${idx}
+              OR ${sqlTextFold("dc_metadata::text")} LIKE $${idx}
+              OR EXISTS (
+                SELECT 1
+                FROM asset_cuts c
+                WHERE c.asset_id = assets.id AND ${sqlTextFold('c.label')} LIKE $${idx}
+              )
+            )`);
+          });
+          parsedQuery.optionalExact.forEach((term) => {
+            params.push(exactNormalizedTextRegex(term));
+            const idx = baseValues.length + params.length;
+            optionalGroups.push(`(
+              ${sqlTextFold('title')} ~ $${idx}
+              OR ${sqlTextFold('description')} ~ $${idx}
+              OR ${sqlTextFold('owner')} ~ $${idx}
+              OR ${sqlTextFold("dc_metadata::text")} ~ $${idx}
+              OR EXISTS (
+                SELECT 1
+                FROM asset_cuts c
+                WHERE c.asset_id = assets.id AND ${sqlTextFold('c.label')} ~ $${idx}
+              )
+            )`);
+          });
+          clauses.push(`(${optionalGroups.join(' OR ')})`);
+        }
+      } else {
+        pushAssetQueryGroup(parsedQuery.raw);
+      }
+
+      return { clauses, params };
+    };
+
+    const fetchAssetRows = async (extraWhere = [], extraParams = [], options = {}) => {
+      const queryValues = [...baseValues, ...extraParams];
+      const where = [...baseWhere, ...extraWhere];
+      let orderClause = buildAssetOrderClause({
+        hasRelevance: false,
+        sortBy: normalizedSortBy,
+        rankedParamAlias: queryValues.length + 1
+      });
+      if (Array.isArray(options.rankedIds) && options.rankedIds.length) {
+        queryValues.push(options.rankedIds);
+        const rankedIdx = queryValues.length;
+        where.push(`id = ANY($${rankedIdx}::text[])`);
+        if (normalizedSortBy === 'default') {
+          orderClause = buildAssetOrderClause({
+            hasRelevance: true,
+            sortBy: normalizedSortBy,
+            rankedParamAlias: rankedIdx
+          });
+        }
+      }
+      const sql = `
+        SELECT
+          assets.*,
+          (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'cutId', c.cut_id,
+                  'label', c.label,
+                  'inPointSeconds', c.in_point_seconds,
+                  'outPointSeconds', c.out_point_seconds
+                )
+                ORDER BY c.created_at DESC
+              ),
+              '[]'::json
+            )
+            FROM asset_cuts c
+            WHERE c.asset_id = assets.id
+          ) AS cuts
+        FROM assets
+        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY ${orderClause}
+      `;
+      const result = await pool.query(sql, queryValues);
+      return result.rows;
+    };
+
+    let rows = [];
+    if (q) {
+      rankedIds = await searchAssetIdsElastic(q);
+      if (rankedIds === null) {
+        const textWhere = buildAssetTextWhere(parsedAssetQuery);
+        rows = await fetchAssetRows(textWhere.clauses, textWhere.params);
+      } else if (rankedIds.length) {
+        rows = await fetchAssetRows([], [], { rankedIds });
+      }
+      if (!rows.length && !parsedAssetQuery.hasOperators) {
+        const candidateRows = await fetchAssetRows();
+        const fuzzyAssetResult = searchAssetsByFuzzyQuery(candidateRows, q);
+        rows = fuzzyAssetResult.rows;
+        searchMeta.q = {
+          didYouMean: String(fuzzyAssetResult.didYouMean || '').trim(),
+          fuzzyUsed: Boolean(fuzzyAssetResult.fuzzyUsed),
+          highlightQuery: String(fuzzyAssetResult.highlightQuery || q).trim() || q
+        };
+      }
+    } else {
+      rows = await fetchAssetRows();
+    }
+
     if (ocrQ) {
+      const parsedOcrQuery = parseTextSearchQuery(ocrQ, normalizeSubtitleSearchText);
       const filtered = [];
       for (const row of rows) {
-        const hits = await findOcrMatchesForAssetRow(row, ocrQ, 8);
+        const ocrSearch = await searchOcrMatchesForAssetRow(row, ocrQ, 8);
+        const hits = Array.isArray(ocrSearch.matches) ? ocrSearch.matches : [];
         if (!hits.length) continue;
+        const hitQuery = String(ocrSearch.highlightQuery || ocrQ).trim() || ocrQ;
         const hit = hits[0];
         row._ocr_search_hit = {
-          query: ocrQ,
+          query: hitQuery,
           text: String(hit.line || ''),
           startSec: Number(hit.startSec || 0),
           endSec: Number(hit.endSec || 0),
           startTc: formatTimecode(Number(hit.startSec || 0))
         };
         row._ocr_search_hits = hits.map((item) => ({
-          query: ocrQ,
+          query: String(item.query || hitQuery).trim() || hitQuery,
           text: String(item.line || ''),
           startSec: Number(item.startSec || 0),
           endSec: Number(item.endSec || 0),
           startTc: formatTimecode(Number(item.startSec || 0))
         }));
+        if (!searchMeta.ocrQ.fuzzyUsed && (ocrSearch.fuzzyUsed || String(ocrSearch.didYouMean || '').trim())) {
+          searchMeta.ocrQ = {
+            didYouMean: String(ocrSearch.didYouMean || '').trim(),
+            fuzzyUsed: Boolean(ocrSearch.fuzzyUsed),
+            highlightQuery: hitQuery
+          };
+        }
         filtered.push(row);
       }
-      rows = filtered;
+      rows = parsedOcrQuery.raw ? filtered : [];
     }
     // subtitleQ geldiyse sadece aktif altyazi cue index'i uzerinden filtre uygula.
     if (subtitleQ) {
@@ -7049,6 +7366,13 @@ app.get('/api/assets', async (req, res) => {
             endSec: Number(item.endSec || 0),
             startTc: String(item.startTc || formatTimecode(Number(item.startSec || 0)))
           }));
+          if (!searchMeta.subtitleQ.fuzzyUsed && (subtitleSearch.fuzzyUsed || String(subtitleSearch.didYouMean || '').trim())) {
+            searchMeta.subtitleQ = {
+              didYouMean: String(subtitleSearch.didYouMean || '').trim(),
+              fuzzyUsed: Boolean(subtitleSearch.fuzzyUsed),
+              highlightQuery: hitQuery
+            };
+          }
           filtered.push(row);
         }
         rows = filtered;
@@ -7061,7 +7385,10 @@ app.get('/api/assets', async (req, res) => {
       // Backfill missing document thumbnails lazily so existing uploads also get previews.
       hydratedRows.push(await ensureDocumentThumbnailForRow(withPdfThumb));
     }
-    res.json(hydratedRows.map(mapAssetRow));
+    res.json({
+      assets: hydratedRows.map(mapAssetRow),
+      searchMeta
+    });
   } catch (error) {
     res.status(500).json({ error: 'Failed to load assets' });
   }
