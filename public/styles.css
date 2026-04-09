@@ -1337,6 +1337,14 @@ button:hover {
   padding: 0 2px;
 }
 
+.search-hit-fuzzy {
+  background: #ff1f1f !important;
+  color: #ffffff !important;
+  border: 1px solid #b30000;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
 .dc-hit-row {
   display: flex;
   flex-wrap: wrap;

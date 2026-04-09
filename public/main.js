@@ -799,6 +799,7 @@ let i18n = {
     subtitle_search_ph: 'Search in subtitle text',
     subtitle_search_btn: 'Search Subtitle',
     subtitle_search_empty: 'No subtitle match.',
+    subtitle_did_you_mean: 'Did you mean',
     subtitle_search_results: 'Subtitle Matches',
     subtitle_jump: 'Jump',
     ocr_hit: 'OCR',
@@ -1111,6 +1112,7 @@ let i18n = {
     subtitle_search_ph: 'Altyazıda ara',
     subtitle_search_btn: 'Altyazıda Ara',
     subtitle_search_empty: 'Altyazıda eşleşme yok.',
+    subtitle_did_you_mean: 'Bunu mu demek istediniz',
     subtitle_search_results: 'Altyazı Eşleşmeleri',
     subtitle_jump: 'Git',
     ocr_hit: 'OCR',
@@ -1731,6 +1733,7 @@ function showUploadProxyDecisionModal(error) {
   return new Promise((resolve) => {
     const backdrop = document.createElement('div');
     const detail = t('upload_proxy_confirm_detail');
+    // Basit confirm yerine üç farklı sonucu net ayıran özel modal kullanıyoruz.
     backdrop.className = 'clip-modal-backdrop';
     backdrop.innerHTML = `
       <div class="clip-modal upload-decision-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('upload_proxy_confirm_title'))}">
@@ -2549,7 +2552,7 @@ function textIncludesSearchTerm(text, term) {
   return haystack.includes(needle);
 }
 
-function highlightMatch(value, query) {
+function highlightMatch(value, query, markClass = 'search-hit') {
   const raw = String(value ?? '');
   const terms = extractHighlightTerms(query);
   if (!terms.length) return escapeHtml(raw);
@@ -2607,9 +2610,13 @@ function highlightMatch(value, query) {
 
   let out = '';
   let cursor = 0;
+  const fuzzyStyle = 'background:#ff1f1f;color:#fff;border:1px solid #b30000;border-radius:3px;padding:0 2px;';
+  const markAttr = markClass === 'search-hit-fuzzy'
+    ? `class="${escapeHtml(markClass)}" style="${fuzzyStyle}"`
+    : `class="${escapeHtml(markClass)}"`;
   for (const [start, end] of ranges) {
     if (start > cursor) out += escapeHtml(raw.slice(cursor, start));
-    out += `<mark class="search-hit">${escapeHtml(raw.slice(start, end))}</mark>`;
+    out += `<mark ${markAttr}>${escapeHtml(raw.slice(start, end))}</mark>`;
     cursor = Math.max(cursor, end);
   }
   if (cursor < raw.length) out += escapeHtml(raw.slice(cursor));
@@ -3068,6 +3075,9 @@ function renderAssets(assets) {
           .join('')
         : '';
       const subtitleHitQuery = String(asset?.subtitleSearchHit?.query || currentSubtitleQuery || '').trim();
+      const subtitleHitClass = foldSearchText(subtitleHitQuery) !== foldSearchText(currentSubtitleQuery || '')
+        ? 'search-hit-fuzzy'
+        : 'search-hit';
       const subtitleHitsRaw = Array.isArray(asset?.subtitleSearchHits) && asset.subtitleSearchHits.length
         ? asset.subtitleSearchHits
         : (asset?.subtitleSearchHit ? [asset.subtitleSearchHit] : []);
@@ -3079,7 +3089,7 @@ function renderAssets(assets) {
             if (!hitText) return '';
             const hitSec = Number(hit?.startSec || 0);
             const hitTc = secondsToTimecode(hitSec, PLAYER_FPS);
-            return `<button type="button" class="asset-meta dc-hit-row ocr-hit-jump" data-ocr-jump="1" data-id="${asset.id}" data-start-sec="${escapeHtml(String(hitSec))}"><strong>${escapeHtml(t('subtitles'))} TC ${escapeHtml(hitTc)}:</strong> ${highlightMatch(hitText, subtitleHitQuery)}</button>`;
+            return `<button type="button" class="asset-meta dc-hit-row ocr-hit-jump" data-ocr-jump="1" data-id="${asset.id}" data-start-sec="${escapeHtml(String(hitSec))}"><strong>${escapeHtml(t('subtitles'))} TC ${escapeHtml(hitTc)}:</strong> ${highlightMatch(hitText, subtitleHitQuery, subtitleHitClass)}</button>`;
           })
           .filter(Boolean)
           .join('')
@@ -3172,6 +3182,22 @@ function toggleMultiSelection(assetId) {
   const fallbackId = [...selectedAssetIds][selectedAssetIds.size - 1] || null;
   selectedAssetId = fallbackId;
   lastSelectedAssetId = fallbackId;
+}
+
+function resetSelectedAssetDetailPanel() {
+  if (activeDetailPinCleanup) {
+    activeDetailPinCleanup();
+    activeDetailPinCleanup = null;
+  }
+  if (activePlayerCleanup) {
+    activePlayerCleanup();
+    activePlayerCleanup = null;
+  }
+  assetDetail.innerHTML = `<div class="empty">${escapeHtml(t('select_asset'))}</div>`;
+  assetDetail.classList.remove('video-detail-mode');
+  assetDetail.classList.remove('detail-video-pinned');
+  panelDetail?.classList.remove('panel-video-detail');
+  setPanelVideoToolsButtonState(false);
 }
 
 function mediaViewer(asset, options = {}) {
@@ -3718,6 +3744,7 @@ function detailMarkup(asset, workflow) {
     : `<div class="asset-meta metadata-lock-note">${escapeHtml(t('metadata_edit_locked'))}</div>`;
   const metadataFieldsetOpen = canEditMetadata ? '<fieldset class="metadata-fieldset">' : '<fieldset class="metadata-fieldset" disabled>';
 
+  // İndirme aksiyonlarında orijinal dosya ile proxy bilinçli olarak ayrılıyor.
   const metadataTopSection = `
     <h3>${highlightMatch(asset.title, currentSearchQuery)}</h3>
     <p>${highlightMatch(asset.description || t('no_description'), currentSearchQuery)}</p>
@@ -5542,18 +5569,44 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     asset.subtitleItems = Array.isArray(mappedAsset.subtitleItems) ? mappedAsset.subtitleItems : (asset.subtitleItems || []);
     asset.audioStreamOptions = Array.isArray(mappedAsset.audioStreamOptions) ? mappedAsset.audioStreamOptions : (asset.audioStreamOptions || []);
   };
-  const renderSearchResults = (matches = []) => {
+  const renderSearchResults = (matches = [], didYouMean = '', query = '', fuzzyUsed = false) => {
+    const suggestion = String(didYouMean || '').trim();
+    const normalizedSuggestion = suggestion.toLocaleLowerCase('tr-TR');
+    const normalizedQuery = String(query || '').trim().toLocaleLowerCase('tr-TR');
+    const showSuggestion = Boolean(suggestion) && normalizedSuggestion !== normalizedQuery;
+    const highlightQuery = showSuggestion ? suggestion : query;
+    const highlightClass = (showSuggestion || fuzzyUsed) ? 'search-hit-fuzzy' : 'search-hit';
+    const suggestionHtml = showSuggestion
+      ? `
+        <div class="subtitle-item-empty">
+          ${escapeHtml(t('subtitle_did_you_mean'))}:
+          <button type="button" class="subtitle-item-use-btn" data-subtitle-did-you-mean="1">${escapeHtml(suggestion)}</button>
+        </div>
+      `
+      : '';
+
     if (!Array.isArray(matches) || !matches.length) {
-      searchResultsEl.innerHTML = `<div class="subtitle-item-empty">${escapeHtml(t('subtitle_search_empty'))}</div>`;
+      searchResultsEl.innerHTML = `${suggestionHtml}<div class="subtitle-item-empty">${escapeHtml(t('subtitle_search_empty'))}</div>`;
+      const didYouMeanBtn = searchResultsEl.querySelector('[data-subtitle-did-you-mean="1"]');
+      didYouMeanBtn?.addEventListener('click', () => {
+        searchInput.value = suggestion;
+        onSubtitleSearch();
+      });
       return;
     }
-    searchResultsEl.innerHTML = matches.map((item) => `
+    searchResultsEl.innerHTML = `${suggestionHtml}${matches.map((item) => `
       <div class="subtitle-item-row">
-        <span class="subtitle-item-label">[${escapeHtml(String(item.startTc || '').slice(0, 12))}] ${escapeHtml(item.text || '')}</span>
+        <span class="subtitle-item-label">[${escapeHtml(String(item.startTc || '').slice(0, 12))}] ${highlightMatch(item.text || '', highlightQuery, highlightClass)}</span>
         <button type="button" class="subtitle-item-use-btn" data-jump-sec="${escapeHtml(String(item.startSec || 0))}">${t('subtitle_jump')}</button>
       </div>
-    `).join('');
+    `).join('')}`;
+    const didYouMeanBtn = searchResultsEl.querySelector('[data-subtitle-did-you-mean="1"]');
+    didYouMeanBtn?.addEventListener('click', () => {
+      searchInput.value = suggestion;
+      onSubtitleSearch();
+    });
     searchResultsEl.querySelectorAll('.subtitle-item-use-btn').forEach((btn) => {
+      if (btn.hasAttribute('data-subtitle-did-you-mean')) return;
       btn.addEventListener('click', (event) => {
         const sec = Number(event.currentTarget?.dataset?.jumpSec || 0);
         const video = mediaEl || root.querySelector('#assetVideo') || document.querySelector('#assetVideo');
@@ -5800,7 +5853,7 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
   };
   const onSubtitleSearch = async () => {
     const q = String(searchInput.value || '').trim();
-    if (q.length < 2) {
+    if (q.length < 1) {
       renderSearchResults([]);
       return;
     }
@@ -5808,7 +5861,12 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     hideSubtitleSuggest();
     try {
       const result = await api(`/api/assets/${asset.id}/subtitles/search?q=${encodeURIComponent(q)}&limit=30`);
-      renderSearchResults(Array.isArray(result.matches) ? result.matches : []);
+      renderSearchResults(
+        Array.isArray(result.matches) ? result.matches : [],
+        String(result.didYouMean || '').trim(),
+        q,
+        Boolean(result.fuzzyUsed)
+      );
     } catch (error) {
       alert(String(error?.message || 'Subtitle search failed'));
     } finally {
@@ -6870,6 +6928,7 @@ async function openAsset(id, workflow, options = {}) {
   const deleteAssetBtn = document.getElementById('deleteAssetBtn');
 
   downloadBtn?.addEventListener('click', () => {
+    // Varlık indir her zaman asıl kaynağı indirir; proxy bunun yerine geçmez.
     const downloadUrl = String(asset.mediaUrl || '').trim();
     if (!downloadUrl) return;
     const link = document.createElement('a');
@@ -6883,6 +6942,7 @@ async function openAsset(id, workflow, options = {}) {
   });
 
   downloadProxyBtn?.addEventListener('click', () => {
+    // Proxy indirme yalnızca admin için ek bir kolaylık olarak sunuluyor.
     const downloadUrl = String(asset.proxyUrl || '').trim();
     if (!downloadUrl) return;
     const link = document.createElement('a');
@@ -6909,15 +6969,13 @@ async function openAsset(id, workflow, options = {}) {
   deleteAssetBtn?.addEventListener('click', async () => {
     const ok = confirm(t('trash_confirm'));
     if (!ok) return;
+    const wasSelected = selectedAssetId === asset.id;
     await api(`/api/assets/${encodeURIComponent(asset.id)}`, { method: 'DELETE' });
     selectedAssetIds.delete(asset.id);
     await loadAssets();
-    if (selectedAssetId === asset.id) {
+    if (wasSelected) {
       selectedAssetId = null;
-      detailPanel.innerHTML = `<div class="empty">${escapeHtml(t('choose_asset'))}</div>`;
-      assetDetail.classList.remove('video-detail-mode');
-      assetDetail.classList.remove('detail-video-pinned');
-      setPanelVideoToolsButtonState(false);
+      resetSelectedAssetDetailPanel();
     }
   });
 
@@ -7003,14 +7061,7 @@ assetGrid.addEventListener('click', async (event) => {
       selectedAssetIds.delete(id);
       if (selectedAssetId === id) {
         selectedAssetId = null;
-        if (activeDetailPinCleanup) {
-          activeDetailPinCleanup();
-          activeDetailPinCleanup = null;
-        }
-        assetDetail.textContent = t('select_asset');
-        assetDetail.classList.remove('video-detail-mode');
-        assetDetail.classList.remove('detail-video-pinned');
-        setPanelVideoToolsButtonState(false);
+        resetSelectedAssetDetailPanel();
       }
       await loadAssets();
       return;
