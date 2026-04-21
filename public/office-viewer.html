@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ONLYOFFICE Viewer</title>
+  <title>MAM Document Viewer</title>
   <style>
     :root {
       color-scheme: dark;
@@ -60,45 +60,31 @@
       }
     }
 
-    async function fetchOfficeConfig() {
-      const configRes = await fetch(`/api/assets/${encodeURIComponent(assetId)}/office-config?lang=${encodeURIComponent(lang)}`, {
-          credentials: 'same-origin',
-          cache: 'no-store'
-        });
-      const payload = await configRes.json().catch(() => ({}));
-      if (!configRes.ok) {
-        throw new Error(String(payload.error || 'ONLYOFFICE config could not be loaded.'));
-      }
-      return payload;
-    }
-
-    async function mountEditor(payload) {
-      const initEditor = () => {
-        if (!window.DocsAPI || !window.DocsAPI.DocEditor) {
-          showError('ONLYOFFICE DocsAPI yüklenemedi.');
-          return;
-        }
-        window.docEditor = new window.DocsAPI.DocEditor('officeEditor', payload.config);
-      };
-      if (window.DocsAPI && window.DocsAPI.DocEditor) {
-        initEditor();
-        return;
-      }
-      const script = document.createElement('script');
-      script.src = `${String(payload.onlyofficeUrl || '').replace(/\/+$/, '')}/web-apps/apps/api/documents/api.js`;
-      script.onload = initEditor;
-      script.onerror = () => showError('ONLYOFFICE script yüklenemedi. Document Server çalışıyor mu kontrol edin.');
-      document.head.appendChild(script);
-    }
-
     async function boot() {
       if (!assetId) {
         showError('assetId eksik.');
         return;
       }
       try {
-        const payload = await fetchOfficeConfig();
-        await mountEditor(payload);
+        const configRes = await fetch(`/api/assets/${encodeURIComponent(assetId)}/office-config?lang=${encodeURIComponent(lang)}`, {
+          credentials: 'same-origin',
+          cache: 'no-store'
+        });
+        const payload = await configRes.json().catch(() => ({}));
+        if (!configRes.ok) {
+          throw new Error(String(payload.error || 'ONLYOFFICE config could not be loaded.'));
+        }
+        const script = document.createElement('script');
+        script.src = `${String(payload.onlyofficeUrl || '').replace(/\/+$/, '')}/web-apps/apps/api/documents/api.js`;
+        script.onload = () => {
+          if (!window.DocsAPI || !window.DocsAPI.DocEditor) {
+            showError('ONLYOFFICE DocsAPI yüklenemedi.');
+            return;
+          }
+          window.docEditor = new window.DocsAPI.DocEditor('officeEditor', payload.config);
+        };
+        script.onerror = () => showError('ONLYOFFICE script yüklenemedi. Document Server çalışıyor mu kontrol edin.');
+        document.head.appendChild(script);
       } catch (error) {
         showError(error && error.message ? error.message : 'Viewer failed');
       }

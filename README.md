@@ -80,6 +80,19 @@ Compose starts:
 - `oauth2-proxy` on `localhost:3000` (protects `app` with Keycloak login)
 - `app` is internal (project `./uploads` mounted to `/app/uploads`)
 
+Office editor mode:
+- Default is ONLYOFFICE mode: `OFFICE_EDITOR_PROVIDER=onlyoffice`.
+- DOCX/XLSX/PPTX files are opened through ONLYOFFICE; document viewing does not fall back to extracted text or thumbnail previews.
+- Start normally with:
+  ```bash
+  docker compose up -d --build
+  ```
+- To return to lightweight mode:
+  ```bash
+  OFFICE_EDITOR_PROVIDER=none docker compose up -d --build
+  docker compose stop onlyoffice
+  ```
+
 Useful commands:
 ```bash
 docker compose down

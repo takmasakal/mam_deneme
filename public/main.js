@@ -70,6 +70,7 @@ let currentUserCanEditMetadata = false;
 let currentUserCanEditOffice = false;
 let currentUserCanDeleteAssets = false;
 let currentUserCanUsePdfAdvancedTools = false;
+let currentOfficeEditorProvider = 'none';
 let currentUsername = '';
 const selectedAssetIds = new Set();
 let lastSelectedAssetId = null;
@@ -714,6 +715,8 @@ let i18n = {
     restore_office_version: 'Restore Office',
     restore_pdf_original: 'Restore Original PDF',
     restore_office_original: 'Restore Original Office',
+    download_pdf_original: 'Download Original PDF',
+    download_office_original: 'Download Original Office',
     restore_pdf_confirm: 'Restore this PDF version? Current PDF state will be saved as a new restore version.',
     restore_pdf_original_confirm: 'Restore the original PDF snapshot?',
     restore_office_original_confirm: 'Restore the original Office snapshot?',
@@ -1027,6 +1030,8 @@ let i18n = {
     restore_office_version: 'Office Geri Yükle',
     restore_pdf_original: "Orijinal PDF'ye Dön",
     restore_office_original: "Orijinal Office'e Dön",
+    download_pdf_original: "Orijinal PDF'yi İndir",
+    download_office_original: "Orijinal Office'i İndir",
     restore_pdf_confirm: 'Bu PDF sürümüne geri dönülsün mü? Mevcut PDF durumu yeni bir restore sürümü olarak kaydedilir.',
     restore_pdf_original_confirm: 'Orijinal PDF snapshotına geri dönülsün mü?',
     restore_office_original_confirm: 'Orijinal Office snapshotına geri dönülsün mü?',
@@ -1317,6 +1322,9 @@ async function loadCurrentUser() {
     currentUserCanEditOffice = canEditOffice;
     currentUserCanDeleteAssets = canDeleteAssets;
     currentUserCanUsePdfAdvancedTools = canUsePdfAdvancedTools;
+    currentOfficeEditorProvider = ['onlyoffice'].includes(String(me.officeEditorProvider || '').trim().toLowerCase())
+      ? String(me.officeEditorProvider || '').trim().toLowerCase()
+      : 'none';
     currentUsername = username.toLowerCase();
     const value = displayName || username || (email.includes('@') ? email.split('@')[0] : '') || t('unknown_user');
     currentUserBtn.dataset.value = value;
@@ -1331,6 +1339,7 @@ async function loadCurrentUser() {
     currentUserCanEditOffice = false;
     currentUserCanDeleteAssets = false;
     currentUserCanUsePdfAdvancedTools = false;
+    currentOfficeEditorProvider = 'none';
     currentUserBtn.dataset.value = '';
     currentUserBtn.textContent = t('unknown_user');
     currentUserBtn.title = t('unknown_user');
@@ -3571,8 +3580,18 @@ function mediaViewer(asset, options = {}) {
   }
 
   if (isDocument(asset)) {
+    if (isOfficeDocument(asset) && currentOfficeEditorProvider !== 'onlyoffice') {
+      return `
+        <div class="doc-native-shell">
+          <strong>${escapeHtml(asset.fileName || asset.title || 'Office document')}</strong>
+          <p>${escapeHtml(currentLang === 'tr'
+            ? 'Office web editörü kapalı. Dosya native formatta tutuluyor; indirme ve versiyon işlemleri detay aksiyonlarından yapılır.'
+            : 'Office web editor is disabled. The file is kept in its native format; use detail actions for download and versioning.')}</p>
+        </div>
+      `;
+    }
     const viewerSrc = isOfficeDocument(asset)
-      ? `/office-viewer.html?assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}`
+      ? `/office-viewer.html?assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&v=oo-save-v9`
       : `/pdf-viewer.html?file=${encodeURIComponent(String(asset.mediaUrl || '').split('#')[0])}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&pdfAdvanced=${currentUserCanUsePdfAdvancedTools ? '1' : '0'}`;
     return `
       <div class="viewer-resizable">
@@ -3952,7 +3971,9 @@ function getVersionSectionAccess(asset) {
     canManageVersions: Boolean(
       assetIsPdf
         ? currentUserCanUsePdfAdvancedTools
-        : currentUserCanAccessAdmin
+        : assetIsOffice
+          ? currentUserCanEditOffice
+          : currentUserCanAccessAdmin
     )
   };
 }
@@ -3966,13 +3987,13 @@ function getVersionRowState(version, access) {
     access.assetIsPdf
       ? (currentUserCanUsePdfAdvancedTools && (currentUserCanAccessAdmin || isOwnVersion))
       : access.assetIsOffice
-        ? currentUserCanAccessAdmin
+        ? currentUserCanEditOffice
         : currentUserCanAccessAdmin
   );
   return {
     actionType,
     canRestorePdf: Boolean(currentUserCanAccessAdmin && access.assetIsPdf && hasSnapshot),
-    canRestoreOffice: Boolean(currentUserCanAccessAdmin && access.assetIsOffice && hasSnapshot),
+    canRestoreOffice: Boolean(currentUserCanEditOffice && access.assetIsOffice && hasSnapshot),
     canEditVersion: canEditOrDelete,
     canDeleteVersion: canEditOrDelete
   };
@@ -4124,14 +4145,16 @@ function detailMarkup(asset, workflow) {
     ) ? `
       <div class="timecode-bar" style="margin: 0 0 8px 0;">
         <button type="button" id="restorePdfOriginalBtn">${escapeHtml(t('restore_pdf_original'))}</button>
+        <button type="button" id="downloadPdfOriginalBtn">${escapeHtml(t('download_pdf_original'))}</button>
       </div>
     ` : ''}
     ${(
-      currentUserCanAccessAdmin
+      currentUserCanEditOffice
       && assetIsOffice
     ) ? `
       <div class="timecode-bar" style="margin: 0 0 8px 0;">
         <button type="button" id="restoreOfficeOriginalBtn">${escapeHtml(t('restore_office_original'))}</button>
+        <button type="button" id="downloadOfficeOriginalBtn">${escapeHtml(t('download_office_original'))}</button>
       </div>
     ` : ''}
     <div id="assetVersionsList">
@@ -6792,9 +6815,8 @@ function initAssetPlayer(asset, root = document, options = {}) {
     }
   }
 
-  if (isDocument(asset)) {
-    cleanups.push(initDocumentPreview(asset));
-  }
+  // Document viewing must not fall back to extracted text/thumbnail previews.
+  // Office documents use ONLYOFFICE when enabled; PDFs use the PDF viewer.
 
   return () => {
     cleanups.forEach((cleanup) => cleanup());
@@ -7111,13 +7133,37 @@ async function openAsset(id, workflow, options = {}) {
     await refreshAssetDetail(id, workflow);
   });
 
+  const downloadPdfOriginalBtn = document.getElementById('downloadPdfOriginalBtn');
+  downloadPdfOriginalBtn?.addEventListener('click', () => {
+    if (!currentUserCanAccessAdmin || !currentUserCanUsePdfAdvancedTools) return;
+    const link = document.createElement('a');
+    link.href = `/api/assets/${encodeURIComponent(id)}/pdf-original/download`;
+    link.setAttribute('download', '');
+    link.rel = 'noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  });
+
   const restoreOfficeOriginalBtn = document.getElementById('restoreOfficeOriginalBtn');
   restoreOfficeOriginalBtn?.addEventListener('click', async () => {
-    if (!currentUserCanAccessAdmin) return;
+    if (!currentUserCanEditOffice) return;
     const ok = confirm(t('restore_office_original_confirm'));
     if (!ok) return;
     await api(`/api/assets/${id}/office-restore-original`, { method: 'POST', body: '{}' });
     await refreshAssetDetail(id, workflow);
+  });
+
+  const downloadOfficeOriginalBtn = document.getElementById('downloadOfficeOriginalBtn');
+  downloadOfficeOriginalBtn?.addEventListener('click', () => {
+    if (!currentUserCanEditOffice) return;
+    const link = document.createElement('a');
+    link.href = `/api/assets/${encodeURIComponent(id)}/office-original/download`;
+    link.setAttribute('download', '');
+    link.rel = 'noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   });
 
   const assetVersionsListEl = document.getElementById('assetVersionsList');

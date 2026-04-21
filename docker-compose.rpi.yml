@@ -56,6 +56,7 @@ services:
       KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       USE_OAUTH2_PROXY: "true"
+      OFFICE_EDITOR_PROVIDER: ${OFFICE_EDITOR_PROVIDER:-onlyoffice}
       ONLYOFFICE_PUBLIC_URL: http://${PUBLIC_HOST}:8082
       ONLYOFFICE_INTERNAL_URL: http://onlyoffice
       APP_INTERNAL_URL: http://app:3000
@@ -86,6 +87,11 @@ services:
         with open(path, 'w', encoding='utf-8') as fh:
           json.dump(data, fh, indent=2)
         PY
+        for conf in /etc/onlyoffice/documentserver/nginx/includes/ds-common.conf /etc/nginx/includes/ds-common.conf; do
+          if [ -f "$$conf" ] && ! grep -q 'large_client_header_buffers 8 64k' "$$conf"; then
+            printf '\n# MAM: browser auth cookies can be large on the same localhost/IP origin.\nclient_header_buffer_size 32k;\nlarge_client_header_buffers 8 64k;\n' >> "$$conf"
+          fi
+        done
         exec /app/ds/run-document-server.sh
     ports:
       - "8082:80"

@@ -78,10 +78,13 @@ const KEYCLOAK_ADMIN_USERNAME = process.env.KEYCLOAK_ADMIN_USERNAME || process.e
 const KEYCLOAK_ADMIN_PASSWORD = process.env.KEYCLOAK_ADMIN_PASSWORD || '';
 const KEYCLOAK_ADMIN_CLIENT_ID = process.env.KEYCLOAK_ADMIN_CLIENT_ID || 'admin-cli';
 const USE_OAUTH2_PROXY = String(process.env.USE_OAUTH2_PROXY || 'false').trim().toLowerCase() === 'true';
+const OFFICE_EDITOR_PROVIDER = ['onlyoffice'].includes(String(process.env.OFFICE_EDITOR_PROVIDER || '').trim().toLowerCase())
+  ? String(process.env.OFFICE_EDITOR_PROVIDER || '').trim().toLowerCase()
+  : 'none';
+const ONLYOFFICE_CONFIG_VERSION = 'oo-save-v9';
 const ONLYOFFICE_PUBLIC_URL = String(process.env.ONLYOFFICE_PUBLIC_URL || 'http://localhost:8082').trim().replace(/\/+$/, '');
 const ONLYOFFICE_INTERNAL_URL = String(process.env.ONLYOFFICE_INTERNAL_URL || 'http://onlyoffice').trim().replace(/\/+$/, '');
 const APP_INTERNAL_URL = String(process.env.APP_INTERNAL_URL || 'http://app:3000').trim().replace(/\/+$/, '');
-const OFFICE_CALLBACK_SECRET = String(process.env.OFFICE_CALLBACK_SECRET || process.env.OAUTH2_PROXY_COOKIE_SECRET || 'mam-onlyoffice-callback-secret').trim() || 'mam-onlyoffice-callback-secret';
 const AUTH_DEBUG = String(process.env.AUTH_DEBUG || 'false').trim().toLowerCase() === 'true';
 const OIDC_JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
 const oidcJwksCache = new Map();
@@ -211,112 +214,6 @@ function escapeElasticId(value) {
   return encodeURIComponent(String(value || '').trim());
 }
 
-function encodeBase64Url(input) {
-  return Buffer.from(String(input || ''), 'utf8').toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '');
-}
-
-function decodeBase64Url(input) {
-  const normalized = String(input || '').replace(/-/g, '+').replace(/_/g, '/');
-  const padLength = (4 - (normalized.length % 4 || 4)) % 4;
-  return Buffer.from(normalized + '='.repeat(padLength), 'base64').toString('utf8');
-}
-
-function signOfficeCallbackPayload(encodedPayload) {
-  return crypto.createHmac('sha256', OFFICE_CALLBACK_SECRET).update(String(encodedPayload || '')).digest('hex');
-}
-
-function buildOfficeCallbackState(payload) {
-  const encodedPayload = encodeBase64Url(JSON.stringify(payload || {}));
-  return {
-    state: encodedPayload,
-    sig: signOfficeCallbackPayload(encodedPayload)
-  };
-}
-
-function verifyOfficeCallbackState(state, sig) {
-  const encodedState = String(state || '').trim();
-  const providedSig = String(sig || '').trim().toLowerCase();
-  if (!encodedState || !providedSig) return null;
-  const expectedSig = signOfficeCallbackPayload(encodedState);
-  try {
-    const isValid = crypto.timingSafeEqual(Buffer.from(providedSig, 'hex'), Buffer.from(expectedSig, 'hex'));
-    if (!isValid) return null;
-  } catch (_error) {
-    return null;
-  }
-  try {
-    const payload = JSON.parse(decodeBase64Url(encodedState));
-    if (!payload || typeof payload !== 'object') return null;
-    const issuedAt = Number(payload.ts || 0);
-    if (!Number.isFinite(issuedAt) || issuedAt <= 0) return null;
-    if (Date.now() - issuedAt > 24 * 60 * 60 * 1000) return null;
-    return payload;
-  } catch (_error) {
-    return null;
-  }
-}
-
-function resolveOnlyofficeDownloadUrl(rawUrl) {
-  const input = String(rawUrl || '').trim();
-  if (!input) return '';
-  try {
-    const parsed = new URL(input);
-    const publicBase = new URL(ONLYOFFICE_PUBLIC_URL);
-    const internalBase = new URL(ONLYOFFICE_INTERNAL_URL);
-    if (
-      parsed.protocol === publicBase.protocol &&
-      parsed.host === publicBase.host
-    ) {
-      parsed.protocol = internalBase.protocol;
-      parsed.hostname = internalBase.hostname;
-      parsed.port = internalBase.port;
-      return parsed.toString();
-    }
-    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
-      parsed.protocol = internalBase.protocol;
-      parsed.hostname = internalBase.hostname;
-      parsed.port = internalBase.port;
-      return parsed.toString();
-    }
-    return parsed.toString();
-  } catch (_error) {
-    return input;
-  }
-}
-
-async function downloadOnlyofficeEditedBuffer(rawUrl) {
-  const candidates = Array.from(new Set([
-    resolveOnlyofficeDownloadUrl(rawUrl),
-    String(rawUrl || '').trim()
-  ].filter(Boolean)));
-  let lastError = null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    for (const candidate of candidates) {
-      try {
-        const response = await fetch(candidate);
-        if (!response.ok) {
-          lastError = new Error(`Download failed with status ${response.status} for ${candidate}`);
-          continue;
-        }
-        const buffer = Buffer.from(await response.arrayBuffer());
-        if (!buffer.length) {
-          lastError = new Error(`Downloaded Office document was empty for ${candidate}`);
-          continue;
-        }
-        return buffer;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    if (attempt < 2) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-  }
-  throw lastError || new Error('Failed to download edited Office document');
-}
 
 async function elasticRequest(method, endpoint, body) {
   try {
@@ -3928,6 +3825,254 @@ function getOnlyOfficeDocumentType({ mimeType, fileName }) {
   return 'word';
 }
 
+async function normalizeDocxForOnlyOfficeEdit(filePath) {
+  if (!filePath || getFileExtension(filePath) !== 'docx' || !fs.existsSync(filePath)) {
+    return { changed: false, reason: 'not-docx' };
+  }
+
+  const settings = await runCommandCapture('unzip', ['-p', filePath, 'word/settings.xml']);
+  const settingsXml = String(settings.stdout || '');
+  if (!settings.ok || !settingsXml.includes('documentProtection')) {
+    return { changed: false, reason: 'no-protection' };
+  }
+
+  const protectionTags = settingsXml.match(/<w:documentProtection\b[^>]*(?:\/>|>[\s\S]*?<\/w:documentProtection>)/g) || [];
+  if (!protectionTags.length) return { changed: false, reason: 'no-protection-tag' };
+
+  const hasEnforcedProtection = protectionTags.some((tag) => /\bw:enforcement\s*=\s*["'](?:1|true)["']/i.test(tag));
+  if (hasEnforcedProtection) {
+    return { changed: false, reason: 'enforced-protection' };
+  }
+
+  const script = [
+    'import os, re, shutil, sys, tempfile, zipfile',
+    'path = sys.argv[1]',
+    'original_stat = os.stat(path)',
+    'with zipfile.ZipFile(path, "r") as zin:',
+    '    xml = zin.read("word/settings.xml").decode("utf-8")',
+    '    new_xml = re.sub(r"<w:documentProtection\\b[^>]*(?:/>|>[\\s\\S]*?</w:documentProtection>)", "", xml)',
+    '    if new_xml == xml:',
+    '        sys.exit(2)',
+    '    fd, tmp = tempfile.mkstemp(prefix=".office-unlocked-", suffix=".docx", dir=os.path.dirname(path) or ".")',
+    '    os.close(fd)',
+    '    try:',
+    '        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:',
+    '            for info in zin.infolist():',
+    '                data = zin.read(info.filename)',
+    '                if info.filename == "word/settings.xml":',
+    '                    data = new_xml.encode("utf-8")',
+    '                zout.writestr(info, data)',
+    '        backup = path + ".office-protection.bak"',
+    '        if not os.path.exists(backup):',
+    '            shutil.copy2(path, backup)',
+    '        os.chmod(tmp, original_stat.st_mode)',
+    '        os.replace(tmp, path)',
+    '    finally:',
+    '        if os.path.exists(tmp):',
+    '            os.unlink(tmp)'
+  ].join('\n');
+
+  const result = await runCommandCapture('python3', ['-c', script, filePath]);
+  if (!result.ok) {
+    return { changed: false, reason: 'normalize-failed', error: String(result.stderr || result.stdout || '').slice(0, 500) };
+  }
+  return { changed: true, reason: 'removed-unenforced-document-protection' };
+}
+
+function resolveOnlyofficeDownloadUrl(rawUrl) {
+  const input = String(rawUrl || '').trim();
+  if (!input) return '';
+  try {
+    const parsed = new URL(input);
+    const publicBase = new URL(ONLYOFFICE_PUBLIC_URL);
+    const internalBase = new URL(ONLYOFFICE_INTERNAL_URL);
+    if (parsed.host === publicBase.host) {
+      parsed.protocol = internalBase.protocol;
+      parsed.hostname = internalBase.hostname;
+      parsed.port = internalBase.port;
+      return parsed.toString();
+    }
+    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+      parsed.protocol = internalBase.protocol;
+      parsed.hostname = internalBase.hostname;
+      parsed.port = internalBase.port;
+      return parsed.toString();
+    }
+    return parsed.toString();
+  } catch (_error) {
+    return input;
+  }
+}
+
+async function downloadOnlyofficeEditedBuffer(rawUrl) {
+  const candidates = Array.from(new Set([
+    resolveOnlyofficeDownloadUrl(rawUrl),
+    String(rawUrl || '').trim()
+  ].filter(Boolean)));
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (const candidate of candidates) {
+      try {
+        const response = await fetch(candidate);
+        if (!response.ok) {
+          lastError = new Error(`ONLYOFFICE download failed with ${response.status} for ${candidate}`);
+          continue;
+        }
+        const buffer = Buffer.from(await response.arrayBuffer());
+        if (!buffer.length) {
+          lastError = new Error(`ONLYOFFICE download returned an empty file for ${candidate}`);
+          continue;
+        }
+        return buffer;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw lastError || new Error('Failed to download edited Office document');
+}
+
+function getOnlyofficeCallbackActor(body, fallback = 'onlyoffice') {
+  const actionUser = Array.isArray(body?.actions)
+    ? String(body.actions.find((item) => item && item.userid)?.userid || '').trim()
+    : '';
+  const user = Array.isArray(body?.users) ? String(body.users[0] || '').trim() : '';
+  return actionUser || user || String(fallback || 'onlyoffice').trim() || 'onlyoffice';
+}
+
+async function saveOnlyofficeCallbackVersion(assetId, body) {
+  const callbackStatus = Number(body?.status || 0);
+  if (![2, 6].includes(callbackStatus)) {
+    return { saved: false, ignored: true, status: callbackStatus };
+  }
+  const downloadUrl = String(body?.url || '').trim();
+  if (!downloadUrl) {
+    return { saved: false, error: 'missing-url', status: callbackStatus };
+  }
+
+  const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+  const row = assetResult.rows[0];
+  if (!row) return { saved: false, error: 'asset-not-found', status: callbackStatus };
+  if (!isOfficeDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+    return { saved: false, error: 'not-office', status: callbackStatus };
+  }
+
+  const editedBuffer = await downloadOnlyofficeEditedBuffer(downloadUrl);
+  const editedHash = computeBufferSha256(editedBuffer);
+  const currentHash = await getAssetStoredFileHash(row, { persist: true });
+  if (editedHash && currentHash && editedHash === currentHash) {
+    return { saved: false, unchanged: true, status: callbackStatus };
+  }
+
+  const ext = getFileExtension(row.file_name) || 'docx';
+  const safeBase = sanitizeFileName(
+    path.basename(String(row.file_name || row.id || 'office-document'), path.extname(String(row.file_name || '')))
+  ).slice(0, 80) || `asset-${assetId}`;
+  const nextFileName = `${safeBase}-edited.${ext}`;
+  const nextMimeType = String(row.mime_type || '').trim() || inferMimeTypeFromFileName(nextFileName);
+  const storage = getIngestStoragePath({ type: 'document', mimeType: nextMimeType, fileName: nextFileName });
+  const storedName = `${Date.now()}-${nanoid()}-${nextFileName}`;
+  const absPath = path.join(storage.absoluteDir, storedName);
+  const relativePath = path.join(storage.relativeDir, storedName);
+  const mediaUrl = `/uploads/${relativePath.replace(/\\/g, '/')}`;
+  fs.writeFileSync(absPath, editedBuffer);
+
+  const nowIso = new Date().toISOString();
+  const actor = getOnlyofficeCallbackActor(body, row.owner || 'onlyoffice');
+  const countResult = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [assetId]);
+  const nextVersion = Number(countResult.rows?.[0]?.c || 0) + 1;
+  const version = {
+    versionId: nanoid(),
+    label: `Office Edit ${nextVersion}`,
+    note: `Saved from ONLYOFFICE by ${actor}`,
+    snapshot: {
+      snapshotMediaUrl: mediaUrl,
+      snapshotSourcePath: absPath,
+      snapshotFileName: nextFileName,
+      snapshotMimeType: nextMimeType,
+      snapshotThumbnailUrl: ''
+    },
+    actorUsername: actor,
+    actionType: 'office_save',
+    createdAt: nowIso
+  };
+
+  await pool.query('BEGIN');
+  try {
+    const originalExists = await pool.query(
+      `SELECT 1 FROM asset_versions WHERE asset_id = $1 AND action_type = 'office_original' LIMIT 1`,
+      [assetId]
+    );
+    if (!originalExists.rowCount) {
+      await pool.query(
+        `
+          INSERT INTO asset_versions (
+            version_id, asset_id, label, note,
+            snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
+            actor_username, action_type, restored_from_version_id,
+            created_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        `,
+        [
+          nanoid(),
+          assetId,
+          'Office Original',
+          'Hidden original snapshot before first Office edit',
+          String(row.media_url || '').trim(),
+          String(row.source_path || '').trim() || publicUploadUrlToAbsolutePath(row.media_url),
+          String(row.file_name || '').trim(),
+          String(row.mime_type || '').trim() || inferMimeTypeFromFileName(row.file_name),
+          String(row.thumbnail_url || '').trim(),
+          actor,
+          'office_original',
+          null,
+          nowIso
+        ]
+      );
+    }
+
+    await pool.query(
+      `
+        INSERT INTO asset_versions (
+          version_id, asset_id, label, note,
+          snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
+          actor_username, action_type, restored_from_version_id,
+          created_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      `,
+      [
+        version.versionId, assetId, version.label, version.note,
+        version.snapshot.snapshotMediaUrl, version.snapshot.snapshotSourcePath, version.snapshot.snapshotFileName, version.snapshot.snapshotMimeType, version.snapshot.snapshotThumbnailUrl,
+        version.actorUsername, version.actionType, null,
+        version.createdAt
+      ]
+    );
+    await pool.query(
+      `
+        UPDATE assets
+        SET media_url = $2,
+            source_path = $3,
+            file_name = $4,
+            mime_type = $5,
+            thumbnail_url = '',
+            file_hash = $6,
+            updated_at = $7
+        WHERE id = $1
+      `,
+      [assetId, mediaUrl, absPath, nextFileName, nextMimeType, editedHash, nowIso]
+    );
+    await pool.query('COMMIT');
+  } catch (error) {
+    await pool.query('ROLLBACK');
+    try { if (fs.existsSync(absPath)) fs.unlinkSync(absPath); } catch (_cleanupError) {}
+    throw error;
+  }
+
+  await indexAssetToElastic(assetId).catch(() => {});
+  return { saved: true, status: callbackStatus, versionId: version.versionId, mediaUrl };
+}
+
 function getAssetFamily({ mimeType, fileName, declaredType }) {
   if (isVideoCandidate({ mimeType, fileName, declaredType })) return 'video';
   if (String(mimeType || '').toLowerCase().startsWith('audio/')) return 'audio';
@@ -6145,6 +6290,7 @@ async function verifyOidcBearerToken(token, settings) {
 async function maybeRequireApiToken(req, res, next) {
   if (!req.path.startsWith('/api/')) return next();
   if (!USE_OAUTH2_PROXY) return next();
+  if (/^\/api\/assets\/[^/]+\/office-config$/.test(req.path)) return next();
   if (/^\/api\/assets\/[^/]+\/office-callback$/.test(req.path)) return next();
   try {
     const settings = await getAdminSettings();
@@ -6694,6 +6840,66 @@ function decodeJwtPayload(token) {
   }
 }
 
+function normalizeIdentityKey(value) {
+  return String(value || '')
+    .trim()
+    .replace(/İ/g, 'i')
+    .replace(/I/g, 'i')
+    .replace(/ı/g, 'i')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ç/g, 'c')
+    .replace(/ğ/g, 'g')
+    .replace(/ö/g, 'o')
+    .replace(/ş/g, 's')
+    .replace(/ü/g, 'u');
+}
+
+function getPermissionOverrideForUser(settings, user) {
+  const entries = settings && typeof settings === 'object' ? settings : {};
+  const candidates = [
+    user?.username,
+    user?.email,
+    String(user?.email || '').includes('@') ? String(user.email).split('@')[0] : '',
+    user?.displayName
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+
+  for (const candidate of candidates) {
+    const exactKey = candidate.toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(entries, exactKey)) return entries[exactKey];
+  }
+
+  const normalizedEntries = new Map();
+  Object.entries(entries).forEach(([key, value]) => {
+    const normalized = normalizeIdentityKey(key);
+    if (normalized && !normalizedEntries.has(normalized)) normalizedEntries.set(normalized, value);
+  });
+
+  for (const candidate of candidates) {
+    const normalized = normalizeIdentityKey(candidate);
+    if (normalizedEntries.has(normalized)) return normalizedEntries.get(normalized);
+  }
+  return null;
+}
+
+function sanitizeOnlyOfficeUserId(value) {
+  const normalized = normalizeIdentityKey(value)
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || 'mam-user';
+}
+
+function sanitizeOnlyOfficeUserName(value) {
+  const normalized = normalizeIdentityKey(value)
+    .replace(/[^a-z0-9._ -]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return normalized || 'mam user';
+}
+
 function buildUserContextFromRequest(req) {
   const usernameRaw =
     getHeaderString(req, 'x-forwarded-user') ||
@@ -6866,12 +7072,11 @@ async function fetchKeycloakUserPermissionDefaults(users, realmByUsername) {
 
 async function resolveEffectivePermissions(req) {
   const user = buildUserContextFromRequest(req);
-  const usernameKey = String(user.username || '').trim().toLowerCase();
   const settings = await getUserPermissionsSettings();
-  const override = usernameKey ? settings[usernameKey] : null;
+  const override = getPermissionOverrideForUser(settings, user);
   const effective = normalizePermissionEntry(override, user.basePermissionKeys || []);
   const canAccessAdmin = Boolean(effective.adminPageAccess);
-  const canEditOffice = Boolean(effective.officeEdit);
+  const canEditOffice = Boolean(effective.officeEdit || canAccessAdmin);
   return {
     ...user,
     isAdmin: canAccessAdmin,
@@ -6906,6 +7111,7 @@ app.get('/api/me', async (req, res) => {
       canEditOffice: effective.canEditOffice,
       canDeleteAssets: effective.canDeleteAssets,
       canUsePdfAdvancedTools: effective.canUsePdfAdvancedTools,
+      officeEditorProvider: OFFICE_EDITOR_PROVIDER,
       permissionKeys: effective.permissionKeys
     });
   } catch (_error) {
@@ -7752,7 +7958,8 @@ app.post('/api/assets', async (req, res) => {
   try {
     const effective = await resolveEffectivePermissions(req).catch(() => null);
     const context = effective || buildUserContextFromRequest(req);
-    const owner = String(context?.displayName || context?.username || context?.email || '').trim() || 'Unknown';
+    const requestedOwner = String(req.body?.owner || req.body?.uploadedBy || '').trim();
+    const owner = String(context?.displayName || context?.username || context?.email || '').trim() || requestedOwner || 'Unknown';
     const payload = {
       ...(req.body && typeof req.body === 'object' ? req.body : {}),
       owner
@@ -7940,7 +8147,8 @@ app.post('/api/assets/upload', async (req, res) => {
 
   const effective = await resolveEffectivePermissions(req).catch(() => null);
   const context = effective || buildUserContextFromRequest(req);
-  const owner = String(context?.displayName || context?.username || context?.email || '').trim() || 'Unknown';
+  const requestedOwner = String(metadata.owner || metadata.uploadedBy || '').trim();
+  const owner = String(context?.displayName || context?.username || context?.email || '').trim() || requestedOwner || 'Unknown';
   const payload = {
     ...metadata,
     owner,
@@ -8015,7 +8223,6 @@ app.get('/api/assets/:id', async (req, res) => {
 
 app.get('/api/assets/:id/office-config', async (req, res) => {
   try {
-    const effective = await resolveEffectivePermissions(req).catch(() => buildUserContextFromRequest(req));
     const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
     if (!assetResult.rowCount) {
       return res.status(404).json({ error: 'Asset not found' });
@@ -8032,68 +8239,88 @@ app.get('/api/assets/:id/office-config', async (req, res) => {
       return res.status(400).json({ error: 'Document URL is invalid' });
     }
 
-    const officeKeySeed = `${String(row.id || '').trim()}|${String(row.updated_at || row.created_at || '').trim()}|${String(row.media_url || '').trim()}`;
+    const effective = await resolveEffectivePermissions(req).catch(() => null);
+    const canEditOffice = Boolean(effective?.canEditOffice);
+    let officeFileRevision = '';
+    if (canEditOffice && fileType === 'docx') {
+      const mediaPath = publicUploadUrlToAbsolutePath(mediaUrl);
+      const normalized = await normalizeDocxForOnlyOfficeEdit(mediaPath);
+      if (normalized.changed || normalized.reason === 'enforced-protection') {
+        console.log(JSON.stringify({
+          event: 'onlyoffice-docx-normalize',
+          assetId: String(row.id || '').trim(),
+          changed: Boolean(normalized.changed),
+          reason: normalized.reason
+        }));
+      }
+      try {
+        const stat = fs.statSync(mediaPath);
+        officeFileRevision = String(Math.round(stat.mtimeMs || 0));
+      } catch (_error) {
+        officeFileRevision = '';
+      }
+    }
+
+    const documentUrl = `${APP_INTERNAL_URL}${mediaUrl}`;
+    const callbackUrl = `${APP_INTERNAL_URL}/api/assets/${encodeURIComponent(String(row.id || '').trim())}/office-callback`;
+    const officeKeySeed = [
+      String(row.id || '').trim(),
+      String(row.updated_at || row.created_at || '').trim(),
+      String(row.media_url || '').trim(),
+      officeFileRevision,
+      canEditOffice ? 'edit' : 'view',
+      ONLYOFFICE_CONFIG_VERSION
+    ].join('|');
     const officeDocumentKey = crypto.createHash('sha1').update(officeKeySeed).digest('hex');
-    const documentUrl = `${APP_INTERNAL_URL}${mediaUrl}${mediaUrl.includes('?') ? '&' : '?'}v=${encodeURIComponent(officeDocumentKey)}`;
-    const officeCallbackState = buildOfficeCallbackState({
+    const editorUserId = sanitizeOnlyOfficeUserId(effective?.username || effective?.email || row.owner || 'mam-user');
+    const editorUserName = String(effective?.displayName || effective?.username || row.owner || 'MAM User').trim() || 'MAM User';
+    console.log(JSON.stringify({
+      event: 'onlyoffice-config',
       assetId: String(row.id || '').trim(),
       username: String(effective?.username || '').trim(),
-      displayName: String(effective?.displayName || effective?.username || '').trim(),
-      canEditOffice: Boolean(effective?.canEditOffice),
-      ts: Date.now()
-    });
-    const callbackUrl = `${APP_INTERNAL_URL}/api/assets/${encodeURIComponent(String(row.id || '').trim())}/office-callback?state=${encodeURIComponent(officeCallbackState.state)}&sig=${encodeURIComponent(officeCallbackState.sig)}`;
-    const officeEditEnabled = Boolean(effective?.canEditOffice);
+      email: String(effective?.email || '').trim(),
+      canEditOffice,
+      mode: canEditOffice ? 'edit' : 'view',
+      userId: editorUserId
+    }));
+    const documentPermissions = {
+      copy: true,
+      download: true,
+      edit: canEditOffice,
+      print: true
+    };
     const config = {
       document: {
         fileType,
         key: officeDocumentKey,
         title: publicTitle,
-        url: documentUrl
+        url: documentUrl,
+        permissions: documentPermissions
       },
       documentType,
       editorConfig: {
-        mode: officeEditEnabled ? 'edit' : 'view',
+        mode: canEditOffice ? 'edit' : 'view',
         lang: String(req.query.lang || 'tr').trim().toLowerCase().startsWith('tr') ? 'tr' : 'en',
         callbackUrl,
-        user: {
-          id: String(effective?.username || row.owner || row.id || 'user').trim() || 'user',
-          name: String(effective?.displayName || effective?.username || row.owner || 'User').trim() || 'User'
-        },
         customization: {
-          about: false,
-          autosave: officeEditEnabled,
-          comments: false,
-          compactHeader: true,
-          compactToolbar: true,
-          customer: {
-            name: 'MAM',
-            info: '',
-            mail: '',
-            www: ''
-          },
-          feedback: false,
-          forcesave: officeEditEnabled,
-          goback: false,
-          help: false,
-          hideRightMenu: true,
-          hideRulers: false,
-          integrationMode: 'embed'
+          forcesave: canEditOffice
+        },
+        user: {
+          id: editorUserId,
+          name: editorUserName
         }
-      },
-      permissions: {
-        chat: false,
-        comment: false,
-        copy: true,
-        download: true,
-        edit: officeEditEnabled,
-        fillForms: false,
-        modifyContentControl: false,
-        modifyFilter: false,
-        print: true,
-        review: false
       }
     };
+    if (!canEditOffice) {
+      config.editorConfig.customization = {
+        ...config.editorConfig.customization,
+        compactHeader: true,
+        compactToolbar: true,
+        help: false,
+        hideRightMenu: true,
+        hideRulers: true
+      };
+    }
     return res.json({
       onlyofficeUrl: ONLYOFFICE_PUBLIC_URL,
       config
@@ -8106,110 +8333,26 @@ app.get('/api/assets/:id/office-config', async (req, res) => {
 app.post('/api/assets/:id/office-callback', express.json({ limit: '10mb' }), async (req, res) => {
   try {
     const assetId = String(req.params.id || '').trim();
-    const verifiedState = verifyOfficeCallbackState(req.query?.state, req.query?.sig);
-    if (!assetId || !verifiedState || String(verifiedState.assetId || '').trim() !== assetId) {
-      return res.status(403).json({ error: 1, message: 'Invalid callback signature' });
-    }
-    const statusCode = Number(req.body?.status || 0);
-    const officeUrl = String(req.body?.url || '').trim();
-    if (![2, 6].includes(statusCode) || !officeUrl) {
-      return res.json({ error: 0 });
-    }
-    if (!verifiedState.canEditOffice) {
-      return res.status(403).json({ error: 1, message: 'Office edit is not allowed' });
-    }
-
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-    const row = assetResult.rows[0];
-    if (!row) return res.status(404).json({ error: 1, message: 'Asset not found' });
-    if (!isOfficeDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
-      return res.status(400).json({ error: 1, message: 'Asset is not an Office document' });
-    }
-
-    const editedBuffer = await downloadOnlyofficeEditedBuffer(officeUrl);
-    const editedHash = computeBufferSha256(editedBuffer);
-    const currentHash = await getAssetStoredFileHash(row, { persist: true });
-    if (editedHash && currentHash && editedHash === currentHash) {
-      return res.json({ error: 0, unchanged: true });
-    }
-
-    const ext = getFileExtension(row.file_name) || 'docx';
-    const safeBase = sanitizeFileName(path.basename(String(row.file_name || row.title || assetId), path.extname(String(row.file_name || ''))) || `asset-${assetId}`);
-    const storage = getIngestStoragePath({ type: 'document', mimeType: String(row.mime_type || ''), fileName: `${safeBase}.${ext}` });
-    const storedName = `${Date.now()}-${nanoid()}-${safeBase}-edited.${ext}`;
-    const absPath = path.join(storage.absoluteDir, storedName);
-    const relativePath = path.join(storage.relativeDir, storedName);
-    const mediaUrl = `/uploads/${relativePath.replace(/\\/g, '/')}`;
-    fs.writeFileSync(absPath, editedBuffer);
-
-    const nowIso = new Date().toISOString();
-    const countResult = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [assetId]);
-    const nextVersion = Number(countResult.rows?.[0]?.c || 0) + 1;
-    const actor = String(verifiedState.displayName || verifiedState.username || row.owner || 'user').trim() || 'user';
-    const nextFileName = `${safeBase}-edited.${ext}`;
-    const version = {
-      versionId: nanoid(),
-      label: `Office Edit ${nextVersion}`,
-      note: `Saved from ONLYOFFICE by ${actor}`,
-      snapshot: {
-        snapshotMediaUrl: mediaUrl,
-        snapshotSourcePath: absPath,
-        snapshotFileName: nextFileName,
-        snapshotMimeType: String(row.mime_type || '').trim(),
-        snapshotThumbnailUrl: String(row.thumbnail_url || '').trim()
-      },
-      actorUsername: String(verifiedState.username || actor).trim() || actor,
-      actionType: 'office_save',
-      createdAt: nowIso
-    };
-
-    await pool.query('BEGIN');
-    try {
-      await pool.query(
-        `
-          INSERT INTO asset_versions (
-            version_id, asset_id, label, note,
-            snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
-            actor_username, action_type, restored_from_version_id,
-            created_at
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-        `,
-        [
-          version.versionId, assetId, version.label, version.note,
-          version.snapshot.snapshotMediaUrl, version.snapshot.snapshotSourcePath, version.snapshot.snapshotFileName, version.snapshot.snapshotMimeType, version.snapshot.snapshotThumbnailUrl,
-          version.actorUsername, version.actionType, null,
-          version.createdAt
-        ]
-      );
-      await pool.query(
-        `
-          UPDATE assets
-          SET media_url = $2,
-              source_path = $3,
-              file_name = $4,
-              mime_type = $5,
-              file_hash = $6,
-              updated_at = $7
-          WHERE id = $1
-        `,
-        [assetId, mediaUrl, absPath, nextFileName, String(row.mime_type || '').trim(), editedHash, nowIso]
-      );
-      await pool.query('COMMIT');
-    } catch (error) {
-      await pool.query('ROLLBACK');
-      throw error;
-    }
-    await indexAssetToElastic(assetId).catch(() => {});
+    if (!assetId) return res.json({ error: 0 });
+    const result = await saveOnlyofficeCallbackVersion(assetId, req.body || {});
+    console.log(JSON.stringify({
+      event: 'onlyoffice-callback',
+      assetId,
+      status: Number(req.body?.status || 0),
+      saved: Boolean(result.saved),
+      unchanged: Boolean(result.unchanged),
+      ignored: Boolean(result.ignored),
+      versionId: String(result.versionId || ''),
+      error: String(result.error || '')
+    }));
     return res.json({ error: 0 });
-  } catch (_error) {
-    console.error('ONLYOFFICE save callback failed', {
+  } catch (error) {
+    console.error('ONLYOFFICE callback save failed', {
       assetId: String(req.params.id || '').trim(),
-      status: req.body?.status,
-      url: String(req.body?.url || '').trim(),
-      message: _error?.message || String(_error),
-      stack: _error?.stack || null
+      status: Number(req.body?.status || 0),
+      error: String(error?.message || error)
     });
-    return res.status(500).json({ error: 1, message: 'Failed to save Office edits' });
+    return res.json({ error: 1 });
   }
 });
 
@@ -9349,6 +9492,29 @@ app.post('/api/assets/:id/pdf-restore-original', requireAdminAccess, async (req,
   }
 });
 
+app.get('/api/assets/:id/pdf-original/download', requireAdminAccess, async (req, res) => {
+  try {
+    if (!req.userPermissions?.canUsePdfAdvancedTools) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const assetId = String(req.params.id || '').trim();
+    if (!assetId) return res.status(400).json({ error: 'assetId is required' });
+
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    const currentRow = assetResult.rows[0];
+    if (!currentRow) return res.status(404).json({ error: 'Asset not found' });
+    if (!isPdfCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
+      return res.status(400).json({ error: 'PDF download is only supported for PDF assets' });
+    }
+
+    const snapshot = await findOriginalVersionSnapshot(assetId, 'pdf_original');
+    if (!snapshot) return res.status(404).json({ error: 'Original PDF snapshot not found' });
+    return sendSnapshotDownload(res, snapshot, currentRow.file_name || `${assetId}.pdf`);
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to download original PDF' });
+  }
+});
+
 app.delete('/api/assets/:id/versions/:versionId', async (req, res) => {
   try {
     const effective = await resolveEffectivePermissions(req);
@@ -9525,7 +9691,7 @@ app.post('/api/assets/:id/pdf-restore', requireAdminAccess, async (req, res) => 
   }
 });
 
-app.post('/api/assets/:id/office-restore', requireAdminAccess, async (req, res) => {
+app.post('/api/assets/:id/office-restore', requireOfficeEdit, async (req, res) => {
   try {
     const assetId = String(req.params.id || '').trim();
     const versionId = String(req.body?.versionId || '').trim();
@@ -9634,7 +9800,7 @@ app.post('/api/assets/:id/office-restore', requireAdminAccess, async (req, res) 
   }
 });
 
-app.post('/api/assets/:id/office-restore-original', requireAdminAccess, async (req, res) => {
+app.post('/api/assets/:id/office-restore-original', requireOfficeEdit, async (req, res) => {
   try {
     const assetId = String(req.params.id || '').trim();
     if (!assetId) return res.status(400).json({ error: 'assetId is required' });
@@ -9781,6 +9947,26 @@ app.post('/api/assets/backfill-proxies', async (_req, res) => {
   }
 });
 
+app.get('/api/assets/:id/office-original/download', requireOfficeEdit, async (req, res) => {
+  try {
+    const assetId = String(req.params.id || '').trim();
+    if (!assetId) return res.status(400).json({ error: 'assetId is required' });
+
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    const currentRow = assetResult.rows[0];
+    if (!currentRow) return res.status(404).json({ error: 'Asset not found' });
+    if (!isOfficeDocumentCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
+      return res.status(400).json({ error: 'Office download is only supported for Office assets' });
+    }
+
+    const snapshot = await findOriginalVersionSnapshot(assetId, 'office_original');
+    if (!snapshot) return res.status(404).json({ error: 'Original Office snapshot not found' });
+    return sendSnapshotDownload(res, snapshot, currentRow.file_name || `${assetId}.${getFileExtension(currentRow.file_name) || 'docx'}`);
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to download original Office document' });
+  }
+});
+
 async function requireAdminAccess(req, res, next) {
   try {
     const effective = await resolveEffectivePermissions(req);
@@ -9854,7 +10040,7 @@ function canManageVersionRow(userPermissions, assetRow, versionRow) {
     return Boolean(userPermissions.canUsePdfAdvancedTools && isOwnVersion);
   }
   if (isOfficeDocumentCandidate({ mimeType: assetRow.mime_type, fileName: assetRow.file_name })) {
-    return false;
+    return Boolean(userPermissions.canEditOffice);
   }
   return false;
 }
@@ -9866,9 +10052,59 @@ function canCreateVersionForAsset(userPermissions, assetRow) {
     return Boolean(userPermissions.canUsePdfAdvancedTools);
   }
   if (isOfficeDocumentCandidate({ mimeType: assetRow.mime_type, fileName: assetRow.file_name })) {
-    return false;
+    return Boolean(userPermissions.canEditOffice);
   }
   return false;
+}
+
+async function findOriginalVersionSnapshot(assetId, actionType) {
+  const safeAssetId = String(assetId || '').trim();
+  const safeActionType = String(actionType || '').trim();
+  if (!safeAssetId || !safeActionType) return null;
+
+  let targetResult = await pool.query(
+    `SELECT * FROM asset_versions WHERE asset_id = $1 AND action_type = $2 ORDER BY created_at ASC LIMIT 1`,
+    [safeAssetId, safeActionType]
+  );
+  if (!targetResult.rowCount) {
+    targetResult = await pool.query(
+      `SELECT * FROM asset_versions WHERE asset_id = $1 AND action_type = 'ingest' ORDER BY created_at ASC LIMIT 1`,
+      [safeAssetId]
+    );
+  }
+  const target = targetResult.rows[0];
+  if (!target) return null;
+
+  const snapshotMediaUrl = String(target.snapshot_media_url || '').trim();
+  if (!snapshotMediaUrl.startsWith('/uploads/')) return null;
+  let snapshotSourcePath = String(target.snapshot_source_path || '').trim();
+  if (!snapshotSourcePath || !fs.existsSync(snapshotSourcePath)) {
+    const resolved = publicUploadUrlToAbsolutePath(snapshotMediaUrl);
+    snapshotSourcePath = resolved && fs.existsSync(resolved) ? resolved : '';
+  }
+  if (!snapshotSourcePath || !fs.existsSync(snapshotSourcePath)) return null;
+
+  return {
+    row: target,
+    snapshotMediaUrl,
+    snapshotSourcePath,
+    snapshotFileName: String(target.snapshot_file_name || '').trim(),
+    snapshotMimeType: String(target.snapshot_mime_type || '').trim(),
+    snapshotThumbnailUrl: String(target.snapshot_thumbnail_url || '').trim()
+  };
+}
+
+function sendSnapshotDownload(res, snapshot, fallbackFileName) {
+  const filePath = String(snapshot?.snapshotSourcePath || '').trim();
+  const fileName = sanitizeFileName(String(snapshot?.snapshotFileName || fallbackFileName || path.basename(filePath) || 'original.bin'));
+  if (!filePath || !fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Original snapshot file is missing on disk' });
+  }
+  return res.download(filePath, fileName, (error) => {
+    if (error && !res.headersSent) {
+      res.status(500).json({ error: 'Failed to download original snapshot' });
+    }
+  });
 }
 
 app.use('/api/admin', requireAdminAccess);
