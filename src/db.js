@@ -22,6 +22,7 @@ async function initDb() {
       file_name TEXT NOT NULL DEFAULT '',
       mime_type TEXT NOT NULL DEFAULT '',
       dc_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      file_hash TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL,
       deleted_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL,
@@ -36,6 +37,9 @@ async function initDb() {
 
     ALTER TABLE assets
     ADD COLUMN IF NOT EXISTS dc_metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+    ALTER TABLE assets
+    ADD COLUMN IF NOT EXISTS file_hash TEXT NOT NULL DEFAULT '';
 
     CREATE TABLE IF NOT EXISTS asset_versions (
       version_id TEXT PRIMARY KEY,
@@ -166,6 +170,7 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_assets_status ON assets(status);
     CREATE INDEX IF NOT EXISTS idx_assets_type ON assets(type);
     CREATE INDEX IF NOT EXISTS idx_assets_tags_gin ON assets USING GIN(tags);
+    CREATE INDEX IF NOT EXISTS idx_assets_file_hash ON assets(file_hash);
     CREATE INDEX IF NOT EXISTS idx_asset_cuts_asset_id ON asset_cuts(asset_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_asset_versions_asset_created ON asset_versions(asset_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_asset_versions_action ON asset_versions(action_type);

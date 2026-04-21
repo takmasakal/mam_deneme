@@ -1230,6 +1230,7 @@ async function loadSettingsSubtabData(tabName) {
 function updateProxyToolUi() {
   const mode = String(proxyToolAction?.value || 'thumbnail').trim().toLowerCase();
   const showTimecode = mode === 'thumbnail';
+  // Proxy üretiminde de yeni kaynak video seçilebilsin diye dosya alanını açık tutuyoruz.
   const showReplaceFile = mode === 'replace_asset' || mode === 'replace_pdf' || mode === 'proxy';
   if (proxyToolTimecodeWrap) proxyToolTimecodeWrap.classList.toggle('hidden', !showTimecode);
   if (proxyToolReplaceFileWrap) proxyToolReplaceFileWrap.classList.toggle('hidden', !showReplaceFile);
@@ -1900,6 +1901,7 @@ runProxyToolBtn?.addEventListener('click', async () => {
   if (mode === 'proxy') {
     const file = proxyToolReplaceFile?.files?.[0] || null;
     if (file) {
+      // Dosya seçilmişse backend bunu aynı istek içinde ana kaynak olarak bağlayacak.
       payload.fileName = String(file.name || '').trim() || 'source.bin';
       payload.mimeType = String(file.type || '').trim();
       payload.fileBase64 = await fileToBase64(file);

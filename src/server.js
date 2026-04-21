@@ -82,6 +82,7 @@ const ONLYOFFICE_PUBLIC_URL = String(process.env.ONLYOFFICE_PUBLIC_URL || 'http:
 const ONLYOFFICE_INTERNAL_URL = String(process.env.ONLYOFFICE_INTERNAL_URL || 'http://onlyoffice').trim().replace(/\/+$/, '');
 const APP_INTERNAL_URL = String(process.env.APP_INTERNAL_URL || 'http://app:3000').trim().replace(/\/+$/, '');
 const OFFICE_CALLBACK_SECRET = String(process.env.OFFICE_CALLBACK_SECRET || process.env.OAUTH2_PROXY_COOKIE_SECRET || 'mam-onlyoffice-callback-secret').trim() || 'mam-onlyoffice-callback-secret';
+const AUTH_DEBUG = String(process.env.AUTH_DEBUG || 'false').trim().toLowerCase() === 'true';
 const OIDC_JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
 const oidcJwksCache = new Map();
 const pdfOcrCache = new Map();
@@ -140,6 +141,28 @@ function resolveRequestHost(req) {
   const xfHost = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
   if (xfHost) return xfHost;
   return String(req.get('host') || 'localhost').trim() || 'localhost';
+}
+
+function hostWithoutPort(host) {
+  const raw = String(host || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('[')) {
+    const closingBracket = raw.indexOf(']');
+    return closingBracket >= 0 ? raw.slice(0, closingBracket + 1) : raw;
+  }
+  return raw.split(':')[0];
+}
+
+function getRequestDerivedOidcSettings(settings, req) {
+  const host = hostWithoutPort(resolveRequestHost(req));
+  if (!host) return settings;
+  const keycloakPublicPort = String(process.env.KEYCLOAK_PUBLIC_PORT || '8081').trim() || '8081';
+  const publicKeycloakBaseUrl = `${resolveRequestProtocol(req)}://${host}:${keycloakPublicPort}`;
+  return {
+    ...settings,
+    oidcIssuerUrl: buildRealmIssuerUrl(publicKeycloakBaseUrl),
+    oidcJwksUrl: buildRealmJwksUrl(publicKeycloakBaseUrl)
+  };
 }
 
 function buildLogoutUrl(req) {
@@ -4106,6 +4129,93 @@ function resolveAssetInputPath(row) {
   return '';
 }
 
+function computeBufferSha256(buffer) {
+  if (!Buffer.isBuffer(buffer) || !buffer.length) return '';
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+function computeFileSha256(filePath) {
+  const safePath = String(filePath || '').trim();
+  if (!safePath || !fs.existsSync(safePath)) return '';
+  const hash = crypto.createHash('sha256');
+  hash.update(fs.readFileSync(safePath));
+  return hash.digest('hex');
+}
+
+async function persistAssetFileHash(assetId, fileHash) {
+  const safeId = String(assetId || '').trim();
+  const safeHash = String(fileHash || '').trim().toLowerCase();
+  if (!safeId || !safeHash) return;
+  try {
+    await pool.query('UPDATE assets SET file_hash = $2 WHERE id = $1', [safeId, safeHash]);
+  } catch (_error) {
+    // Hash backfill is opportunistic; request flow should not fail because of it.
+  }
+}
+
+async function getAssetStoredFileHash(row, { persist = true } = {}) {
+  if (!row || typeof row !== 'object') return '';
+  const existingHash = String(row.file_hash || '').trim().toLowerCase();
+  if (existingHash) return existingHash;
+  const inputPath = resolveAssetInputPath(row);
+  if (!inputPath) return '';
+  const computedHash = computeFileSha256(inputPath);
+  if (computedHash && persist) {
+    await persistAssetFileHash(row.id, computedHash);
+  }
+  return computedHash;
+}
+
+function buildDuplicateAssetPayload(row) {
+  if (!row || typeof row !== 'object') return null;
+  return {
+    id: String(row.id || '').trim(),
+    title: String(row.title || '').trim(),
+    fileName: String(row.file_name || '').trim(),
+    type: String(row.type || '').trim(),
+    updatedAt: row.updated_at || row.created_at || null,
+    deletedAt: row.deleted_at || null
+  };
+}
+
+async function findDuplicateAssetByHash(fileHash, { excludeAssetId = '', includeDeleted = false } = {}) {
+  const safeHash = String(fileHash || '').trim().toLowerCase();
+  const safeExcludeId = String(excludeAssetId || '').trim();
+  if (!safeHash) return null;
+
+  const exact = await pool.query(
+    `
+      SELECT *
+      FROM assets
+      WHERE file_hash = $1
+        AND ($2 = '' OR id <> $2)
+        AND ($3::boolean = true OR deleted_at IS NULL)
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `,
+    [safeHash, safeExcludeId, includeDeleted]
+  );
+  if (exact.rowCount) return exact.rows[0];
+
+  const legacy = await pool.query(
+    `
+      SELECT *
+      FROM assets
+      WHERE COALESCE(file_hash, '') = ''
+        AND ($1 = '' OR id <> $1)
+        AND ($2::boolean = true OR deleted_at IS NULL)
+      ORDER BY updated_at DESC
+    `,
+    [safeExcludeId, includeDeleted]
+  );
+
+  for (const row of legacy.rows) {
+    const candidateHash = await getAssetStoredFileHash(row, { persist: true });
+    if (candidateHash === safeHash) return row;
+  }
+  return null;
+}
+
 function resolveStoredUrl(value, defaultSubdir) {
   const raw = String(value || '').trim();
   if (!raw) return '';
@@ -4644,6 +4754,7 @@ async function createAssetRecord(input) {
     thumbnailUrl: input.thumbnailUrl?.trim() || '',
     fileName: input.fileName?.trim() || '',
     mimeType: input.mimeType?.trim() || '',
+    fileHash: input.fileHash?.trim().toLowerCase() || '',
     dcMetadata: {
       ...buildDefaultDcMetadata(input),
       ...sanitizeDcMetadata(input.dcMetadata)
@@ -4676,11 +4787,11 @@ async function createAssetRecord(input) {
       `
         INSERT INTO assets (
           id, title, description, type, tags, owner, duration_seconds, source_path,
-          media_url, proxy_url, proxy_status, thumbnail_url, file_name, mime_type, dc_metadata, status, created_at, updated_at
+          media_url, proxy_url, proxy_status, thumbnail_url, file_name, mime_type, dc_metadata, file_hash, status, created_at, updated_at
           , deleted_at
         ) VALUES (
           $1,$2,$3,$4,$5,$6,$7,$8,
-          $9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19
+          $9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
         )
       `,
       [
@@ -4699,6 +4810,7 @@ async function createAssetRecord(input) {
         asset.fileName,
         asset.mimeType,
         JSON.stringify(asset.dcMetadata),
+        asset.fileHash,
         asset.status,
         asset.createdAt,
         asset.updatedAt,
@@ -6042,9 +6154,16 @@ async function maybeRequireApiToken(req, res, next) {
     const bearer = String(getBearerFromRequest(req) || '');
     if (settings.oidcBearerEnabled && bearer && bearer.includes('.')) {
       try {
-        await verifyOidcBearerToken(bearer, settings);
+        await verifyOidcBearerToken(bearer, getRequestDerivedOidcSettings(settings, req));
         return next();
       } catch (error) {
+        if (AUTH_DEBUG) {
+          console.warn('[auth] OIDC bearer rejected', {
+            path: req.path,
+            host: resolveRequestHost(req),
+            message: String(error.message || 'Invalid bearer token')
+          });
+        }
         return res.status(401).json({ error: String(error.message || 'Invalid bearer token') });
       }
     }
@@ -6055,6 +6174,14 @@ async function maybeRequireApiToken(req, res, next) {
     const given = apiKey || fallback;
 
     if (!expected || !given) {
+      if (AUTH_DEBUG) {
+        console.warn('[auth] API token missing', {
+          path: req.path,
+          host: resolveRequestHost(req),
+          oidcBearerEnabled: Boolean(settings.oidcBearerEnabled),
+          hasBearer: Boolean(bearer)
+        });
+      }
       return res.status(401).json({ error: 'Missing API token' });
     }
     const expectedBuf = Buffer.from(expected);
@@ -7082,6 +7209,9 @@ async function queryAssetSuggestions(options = {}) {
 app.get('/api/assets', async (req, res) => {
   try {
     const q = (req.query.q || '').toString().trim();
+    const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
+    const pageLimit = hasLimit ? Math.max(1, Math.min(100, Number(req.query.limit) || 10)) : 0;
+    const pageOffset = hasLimit ? Math.max(0, Number(req.query.offset) || 0) : 0;
     const parsedAssetQuery = parseTextSearchQuery(q, normalizeForSearch);
     const ocrQ = (req.query.ocrQ || '').toString().trim();
     const subtitleQ = (req.query.subtitleQ || '').toString().trim();
@@ -7379,15 +7509,22 @@ app.get('/api/assets', async (req, res) => {
       }
     }
 
+    const total = rows.length;
+    const pagedRows = pageLimit ? rows.slice(pageOffset, pageOffset + pageLimit) : rows;
     const hydratedRows = [];
-    for (const row of rows) {
+    for (const row of pagedRows) {
       const withPdfThumb = await ensurePdfThumbnailForRow(row);
       // Backfill missing document thumbnails lazily so existing uploads also get previews.
       hydratedRows.push(await ensureDocumentThumbnailForRow(withPdfThumb));
     }
     res.json({
       assets: hydratedRows.map(mapAssetRow),
-      searchMeta
+      searchMeta,
+      pagination: {
+        total,
+        limit: pageLimit || total,
+        offset: pageLimit ? pageOffset : 0
+      }
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to load assets' });
@@ -7637,13 +7774,34 @@ app.post('/api/assets/upload', async (req, res) => {
   }
 
   const safeName = sanitizeFileName(fileName);
+  let buffer = null;
+  let fileHash = '';
+
+  try {
+    buffer = Buffer.from(String(fileData), 'base64');
+    fileHash = computeBufferSha256(buffer);
+  } catch (_error) {
+    return res.status(400).json({ error: 'Could not decode or save file' });
+  }
+  if (!buffer || !buffer.length) {
+    return res.status(400).json({ error: 'Decoded upload content is empty' });
+  }
+
+  const duplicateAsset = await findDuplicateAssetByHash(fileHash);
+  if (duplicateAsset) {
+    return res.status(409).json({
+      error: 'An identical asset file already exists',
+      code: 'duplicate_asset_content',
+      existingAsset: buildDuplicateAssetPayload(duplicateAsset)
+    });
+  }
+
   const storedName = `${Date.now()}-${nanoid()}-${safeName}`;
   const ingestPath = getIngestStoragePath({ type: metadata.type, mimeType, fileName: safeName });
   const absolutePath = path.join(ingestPath.absoluteDir, storedName);
   const mediaUrl = `/uploads/${ingestPath.relativeDir.replace(/\\/g, '/')}/${storedName}`;
 
   try {
-    const buffer = Buffer.from(String(fileData), 'base64');
     fs.writeFileSync(absolutePath, buffer);
   } catch (_error) {
     return res.status(400).json({ error: 'Could not decode or save file' });
@@ -7796,6 +7954,7 @@ app.post('/api/assets/upload', async (req, res) => {
       ...(metadata?.dcMetadata && typeof metadata.dcMetadata === 'object' ? metadata.dcMetadata : {}),
       ...(detectedAudioChannels > 0 ? { audioChannels: detectedAudioChannels } : {})
     },
+    fileHash,
     sourcePath: persistOriginalMedia ? absolutePath : ''
   };
   if (persistOriginalMedia && (isVideoUpload || String(mimeType || '').toLowerCase().startsWith('audio/'))
@@ -7968,6 +8127,11 @@ app.post('/api/assets/:id/office-callback', express.json({ limit: '10mb' }), asy
     }
 
     const editedBuffer = await downloadOnlyofficeEditedBuffer(officeUrl);
+    const editedHash = computeBufferSha256(editedBuffer);
+    const currentHash = await getAssetStoredFileHash(row, { persist: true });
+    if (editedHash && currentHash && editedHash === currentHash) {
+      return res.json({ error: 0, unchanged: true });
+    }
 
     const ext = getFileExtension(row.file_name) || 'docx';
     const safeBase = sanitizeFileName(path.basename(String(row.file_name || row.title || assetId), path.extname(String(row.file_name || ''))) || `asset-${assetId}`);
@@ -8024,10 +8188,11 @@ app.post('/api/assets/:id/office-callback', express.json({ limit: '10mb' }), asy
               source_path = $3,
               file_name = $4,
               mime_type = $5,
-              updated_at = $6
+              file_hash = $6,
+              updated_at = $7
           WHERE id = $1
         `,
-        [assetId, mediaUrl, absPath, nextFileName, String(row.mime_type || '').trim(), nowIso]
+        [assetId, mediaUrl, absPath, nextFileName, String(row.mime_type || '').trim(), editedHash, nowIso]
       );
       await pool.query('COMMIT');
     } catch (error) {
@@ -8940,6 +9105,19 @@ app.post('/api/assets/:id/pdf/save', requirePdfAdvancedTools, async (req, res) =
     if (!isPdfHeader) {
       return res.status(400).json({ error: 'Decoded content is not a valid PDF' });
     }
+    const pdfHash = computeBufferSha256(pdfBuffer);
+    const currentHash = await getAssetStoredFileHash(row, { persist: true });
+    if (pdfHash && currentHash && pdfHash === currentHash) {
+      return res.json({ saved: false, unchanged: true, asset: mapAssetRow(row) });
+    }
+    const duplicateAsset = await findDuplicateAssetByHash(pdfHash, { excludeAssetId: assetId });
+    if (duplicateAsset) {
+      return res.status(409).json({
+        error: 'An identical asset file already exists',
+        code: 'duplicate_asset_content',
+        existingAsset: buildDuplicateAssetPayload(duplicateAsset)
+      });
+    }
 
     const inputFileName = String(req.body?.fileName || row.file_name || `${assetId}.pdf`).trim();
     const safeBase = sanitizeFileName(path.basename(inputFileName, path.extname(inputFileName)) || `asset-${assetId}`);
@@ -9037,10 +9215,11 @@ app.post('/api/assets/:id/pdf/save', requirePdfAdvancedTools, async (req, res) =
               file_name = $4,
               mime_type = $5,
               thumbnail_url = '',
-              updated_at = $6
+              file_hash = $6,
+              updated_at = $7
           WHERE id = $1
         `,
-        [assetId, mediaUrl, absPath, nextFileName, 'application/pdf', nowIso]
+        [assetId, mediaUrl, absPath, nextFileName, 'application/pdf', pdfHash, nowIso]
       );
       await pool.query('COMMIT');
     } catch (error) {
@@ -9286,6 +9465,7 @@ app.post('/api/assets/:id/pdf-restore', requireAdminAccess, async (req, res) => 
               file_name = $4,
               mime_type = $5,
               thumbnail_url = $6,
+              file_hash = '',
               updated_at = $7
           WHERE id = $1
         `,
@@ -9414,6 +9594,7 @@ app.post('/api/assets/:id/office-restore', requireAdminAccess, async (req, res) 
               file_name = $4,
               mime_type = $5,
               thumbnail_url = $6,
+              file_hash = '',
               updated_at = $7
           WHERE id = $1
         `,
@@ -9505,6 +9686,7 @@ app.post('/api/assets/:id/office-restore-original', requireAdminAccess, async (r
             file_name = $4,
             mime_type = $5,
             thumbnail_url = $6,
+            file_hash = '',
             updated_at = $7
         WHERE id = $1
       `,
@@ -10961,6 +11143,7 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
         if (!fileBuffer || fileBuffer.length < 16) {
           return res.status(400).json({ error: 'Decoded file content is empty' });
         }
+        const fileHash = computeBufferSha256(fileBuffer);
 
         const inputFileName = String(req.body?.fileName || row.file_name || `${row.id}.bin`).trim();
         const safeFileName = sanitizeFileName(inputFileName || row.file_name || `${row.id}.bin`);
@@ -10969,68 +11152,80 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
           return res.status(400).json({ error: 'Selected source file must be a video file' });
         }
 
-        const safeBase = sanitizeFileName(path.basename(safeFileName, path.extname(safeFileName)) || `asset-${row.id}`);
-        const extWithDot = path.extname(safeFileName) || '';
-        const extSafe = extWithDot ? sanitizeFileName(extWithDot.replace(/^\./, '')) : '';
-        const storedName = `${Date.now()}-${nanoid()}-${safeBase}${extSafe ? `.${extSafe}` : ''}`;
-        const storage = getIngestStoragePath({ type: inferAssetType(row.type, nextMimeType), mimeType: nextMimeType, fileName: safeFileName });
-        const absPath = path.join(storage.absoluteDir, storedName);
-        const relativePath = path.join(storage.relativeDir, storedName);
-        const mediaUrl = `/uploads/${relativePath.replace(/\\/g, '/')}`;
-        fs.writeFileSync(absPath, fileBuffer);
-
         const nowIso = new Date().toISOString();
         const actor = String(req.userPermissions?.displayName || req.userPermissions?.username || 'admin').trim() || 'admin';
-        const hadExistingSource = Boolean(String(row.media_url || '').trim() || String(row.source_path || '').trim());
-        if (hadExistingSource) {
-          // Var olan kaynak eziliyorsa geri dönüş için önce sürüm kaydı alıyoruz.
-          const versionCount = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [row.id]);
-          const nextVersion = Number(versionCount.rows?.[0]?.c || 0) + 1;
-          await pool.query(
-            `
-              INSERT INTO asset_versions (
-                version_id, asset_id, label, note,
-                snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
-                actor_username, action_type, restored_from_version_id,
-                created_at
-              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-            `,
-            [
-              nanoid(),
-              row.id,
-              `Asset Replace ${nextVersion}`,
-              `File attached during proxy generation by ${actor}`,
-              String(row.media_url || ''),
-              String(row.source_path || ''),
-              String(row.file_name || ''),
-              String(row.mime_type || ''),
-              String(row.thumbnail_url || ''),
-              actor,
-              'file_replace',
-              null,
-              nowIso
-            ]
-          );
-        }
+        const currentHash = await getAssetStoredFileHash(row, { persist: true });
+        if (!(fileHash && currentHash && fileHash === currentHash)) {
+          const duplicateAsset = await findDuplicateAssetByHash(fileHash, { excludeAssetId: row.id });
+          if (duplicateAsset) {
+            return res.status(409).json({
+              error: 'An identical asset file already exists',
+              code: 'duplicate_asset_content',
+              existingAsset: buildDuplicateAssetPayload(duplicateAsset)
+            });
+          }
 
-        const updated = await pool.query(
-          `
-            UPDATE assets
-            SET media_url = $2,
-                source_path = $3,
-                file_name = $4,
-                mime_type = $5,
-                type = $6,
-                proxy_url = '',
-                proxy_status = 'not_applicable',
-                thumbnail_url = '',
-                updated_at = $7
-            WHERE id = $1
-            RETURNING *
-          `,
-          [row.id, mediaUrl, absPath, safeFileName, nextMimeType, inferAssetType(row.type, nextMimeType), nowIso]
-        );
-        row = updated.rows?.[0] || row;
+          const safeBase = sanitizeFileName(path.basename(safeFileName, path.extname(safeFileName)) || `asset-${row.id}`);
+          const extWithDot = path.extname(safeFileName) || '';
+          const extSafe = extWithDot ? sanitizeFileName(extWithDot.replace(/^\./, '')) : '';
+          const storedName = `${Date.now()}-${nanoid()}-${safeBase}${extSafe ? `.${extSafe}` : ''}`;
+          const storage = getIngestStoragePath({ type: inferAssetType(row.type, nextMimeType), mimeType: nextMimeType, fileName: safeFileName });
+          const absPath = path.join(storage.absoluteDir, storedName);
+          const relativePath = path.join(storage.relativeDir, storedName);
+          const mediaUrl = `/uploads/${relativePath.replace(/\\/g, '/')}`;
+          fs.writeFileSync(absPath, fileBuffer);
+
+          const hadExistingSource = Boolean(String(row.media_url || '').trim() || String(row.source_path || '').trim());
+          if (hadExistingSource) {
+            const versionCount = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [row.id]);
+            const nextVersion = Number(versionCount.rows?.[0]?.c || 0) + 1;
+            await pool.query(
+              `
+                INSERT INTO asset_versions (
+                  version_id, asset_id, label, note,
+                  snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
+                  actor_username, action_type, restored_from_version_id,
+                  created_at
+                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+              `,
+              [
+                nanoid(),
+                row.id,
+                `Asset Replace ${nextVersion}`,
+                `File attached during proxy generation by ${actor}`,
+                String(row.media_url || ''),
+                String(row.source_path || ''),
+                String(row.file_name || ''),
+                String(row.mime_type || ''),
+                String(row.thumbnail_url || ''),
+                actor,
+                'file_replace',
+                null,
+                nowIso
+              ]
+            );
+          }
+
+          const updated = await pool.query(
+            `
+              UPDATE assets
+              SET media_url = $2,
+                  source_path = $3,
+                  file_name = $4,
+                  mime_type = $5,
+                  type = $6,
+                  file_hash = $7,
+                  proxy_url = '',
+                  proxy_status = 'not_applicable',
+                  thumbnail_url = '',
+                  updated_at = $8
+              WHERE id = $1
+              RETURNING *
+            `,
+            [row.id, mediaUrl, absPath, safeFileName, nextMimeType, inferAssetType(row.type, nextMimeType), fileHash, nowIso]
+          );
+          row = updated.rows?.[0] || row;
+        }
       }
       const inputPath = resolveAssetInputPath(row);
       if (!inputPath || !fs.existsSync(inputPath)) {
@@ -11080,6 +11275,7 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
       if (!fileBuffer || fileBuffer.length < 16) {
         return res.status(400).json({ error: 'Decoded file content is empty' });
       }
+      const fileHash = computeBufferSha256(fileBuffer);
 
       const inputFileName = String(req.body?.fileName || row.file_name || `${row.id}.bin`).trim();
       const safeFileName = sanitizeFileName(inputFileName || row.file_name || `${row.id}.bin`);
@@ -11095,65 +11291,77 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
       }
       const generateThumbnail = Boolean(req.body?.generateThumbnail);
       const generatePreview = Boolean(req.body?.generatePreview);
-      const safeBase = sanitizeFileName(path.basename(safeFileName, path.extname(safeFileName)) || `asset-${row.id}`);
-      const extWithDot = path.extname(safeFileName) || '';
-      const extSafe = extWithDot ? sanitizeFileName(extWithDot.replace(/^\./, '')) : '';
-      const storedName = `${Date.now()}-${nanoid()}-${safeBase}${extSafe ? `.${extSafe}` : ''}`;
-      const storage = getIngestStoragePath({ type: inferAssetType(row.type, nextMimeType), mimeType: nextMimeType, fileName: safeFileName });
-      const absPath = path.join(storage.absoluteDir, storedName);
-      const relativePath = path.join(storage.relativeDir, storedName);
-      const mediaUrl = `/uploads/${relativePath.replace(/\\/g, '/')}`;
-      fs.writeFileSync(absPath, fileBuffer);
-
       const nowIso = new Date().toISOString();
       const actor = String(req.userPermissions?.displayName || req.userPermissions?.username || 'admin').trim() || 'admin';
-      const versionCount = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [row.id]);
-      const nextVersion = Number(versionCount.rows?.[0]?.c || 0) + 1;
-      const nextFileName = safeFileName;
-      await pool.query(
-        `
-          INSERT INTO asset_versions (
-            version_id, asset_id, label, note,
-            snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
-            actor_username, action_type, restored_from_version_id,
-            created_at
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-        `,
-        [
-          nanoid(),
-          row.id,
-          `Asset Replace ${nextVersion}`,
-          `File replaced via admin proxy tool by ${actor}`,
-          mediaUrl,
-          absPath,
-          nextFileName,
-          nextMimeType,
-          '',
-          actor,
-          'file_replace',
-          null,
-          nowIso
-        ]
-      );
-      await pool.query(
-        `
-          UPDATE assets
-          SET media_url = $2,
-              proxy_url = '',
-              proxy_status = 'not_applicable',
-              source_path = $3,
-              file_name = $4,
-              mime_type = $5,
-              type = $6,
-              thumbnail_url = '',
-              updated_at = $7
-          WHERE id = $1
-          RETURNING *
-        `,
-        [row.id, mediaUrl, absPath, nextFileName, nextMimeType, inferAssetType(row.type, nextMimeType), nowIso]
-      ).then((result) => {
-        row = result.rows[0] || row;
-      });
+      const currentHash = await getAssetStoredFileHash(row, { persist: true });
+      if (!(fileHash && currentHash && fileHash === currentHash)) {
+        const duplicateAsset = await findDuplicateAssetByHash(fileHash, { excludeAssetId: row.id });
+        if (duplicateAsset) {
+          return res.status(409).json({
+            error: 'An identical asset file already exists',
+            code: 'duplicate_asset_content',
+            existingAsset: buildDuplicateAssetPayload(duplicateAsset)
+          });
+        }
+        const safeBase = sanitizeFileName(path.basename(safeFileName, path.extname(safeFileName)) || `asset-${row.id}`);
+        const extWithDot = path.extname(safeFileName) || '';
+        const extSafe = extWithDot ? sanitizeFileName(extWithDot.replace(/^\./, '')) : '';
+        const storedName = `${Date.now()}-${nanoid()}-${safeBase}${extSafe ? `.${extSafe}` : ''}`;
+        const storage = getIngestStoragePath({ type: inferAssetType(row.type, nextMimeType), mimeType: nextMimeType, fileName: safeFileName });
+        const absPath = path.join(storage.absoluteDir, storedName);
+        const relativePath = path.join(storage.relativeDir, storedName);
+        const mediaUrl = `/uploads/${relativePath.replace(/\\/g, '/')}`;
+        fs.writeFileSync(absPath, fileBuffer);
+
+        const versionCount = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [row.id]);
+        const nextVersion = Number(versionCount.rows?.[0]?.c || 0) + 1;
+        const nextFileName = safeFileName;
+        await pool.query(
+          `
+            INSERT INTO asset_versions (
+              version_id, asset_id, label, note,
+              snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
+              actor_username, action_type, restored_from_version_id,
+              created_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          `,
+          [
+            nanoid(),
+            row.id,
+            `Asset Replace ${nextVersion}`,
+            `File replaced via admin proxy tool by ${actor}`,
+            mediaUrl,
+            absPath,
+            nextFileName,
+            nextMimeType,
+            '',
+            actor,
+            'file_replace',
+            null,
+            nowIso
+          ]
+        );
+        await pool.query(
+          `
+            UPDATE assets
+            SET media_url = $2,
+                proxy_url = '',
+                proxy_status = 'not_applicable',
+                source_path = $3,
+                file_name = $4,
+                mime_type = $5,
+                type = $6,
+                file_hash = $7,
+                thumbnail_url = '',
+                updated_at = $8
+            WHERE id = $1
+            RETURNING *
+          `,
+          [row.id, mediaUrl, absPath, nextFileName, nextMimeType, inferAssetType(row.type, nextMimeType), fileHash, nowIso]
+        ).then((result) => {
+          row = result.rows[0] || row;
+        });
+      }
       let previewChars = 0;
       if (generateThumbnail) {
         if (isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
