@@ -26,8 +26,16 @@ if [[ -z "${DOCKER_CMD}" ]]; then
 fi
 
 dc() {
+  local profile_args=()
+  local provider=""
+  if [[ -f "${ENV_FILE}" ]]; then
+    provider="$(grep -E '^OFFICE_EDITOR_PROVIDER=' "${ENV_FILE}" | tail -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" | tr '[:upper:]' '[:lower:]' || true)"
+  fi
+  if [[ "${provider}" == "onlyoffice" ]]; then
+    profile_args=(--profile onlyoffice)
+  fi
   # shellcheck disable=SC2086
-  ${DOCKER_CMD} compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
+  ${DOCKER_CMD} compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "${profile_args[@]}" "$@"
 }
 
 init_if_needed() {

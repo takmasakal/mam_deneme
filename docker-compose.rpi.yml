@@ -67,6 +67,8 @@ services:
     restart: unless-stopped
 
   onlyoffice:
+    profiles:
+      - onlyoffice
     image: onlyoffice/documentserver:8.3
     container_name: mam-onlyoffice
     environment:
