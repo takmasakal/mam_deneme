@@ -1123,7 +1123,13 @@
       };
 
 
-      if (!file || !file.startsWith('/uploads/')) {
+      const isAllowedPreviewFile = (value) => {
+        const safeValue = String(value || '').trim();
+        if (safeValue.startsWith('/uploads/')) return true;
+        return /^\/api\/assets\/[^/]+\/libreoffice-preview\.pdf(?:$|[?#])/.test(safeValue);
+      };
+
+      if (!file || !isAllowedPreviewFile(file)) {
         topBar.style.display = 'none';
         errorBox.style.display = 'block';
         errorBox.innerHTML = '<strong>Gecersiz dosya yolu.</strong><br>Sadece <code>/uploads/</code> altindaki dosyalar onizlenebilir.';

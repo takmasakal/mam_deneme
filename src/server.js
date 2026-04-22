@@ -3502,6 +3502,10 @@ function getIngestStoragePath({ type, mimeType, fileName }) {
   return { absoluteDir, relativeDir };
 }
 
+function inferAssetStorageSubdir(input = {}) {
+  return normalizeTypeFolder(input.type, input.mimeType, input.fileName);
+}
+
 function getDatePart(value) {
   const d = value ? new Date(value) : new Date();
   if (!Number.isFinite(d.getTime())) return new Date().toISOString().slice(0, 10);
@@ -3979,6 +3983,20 @@ function publicUploadUrlToAbsolutePath(publicUrl) {
   if (!url.startsWith('/uploads/')) return '';
   const rel = url.replace('/uploads/', '');
   return path.join(UPLOADS_DIR, rel);
+}
+
+function normalizePublicUploadUrl(value, defaultSubdir = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('/uploads/')) return raw;
+  if (raw.startsWith('uploads/')) return `/${raw}`;
+  if (path.isAbsolute(raw)) {
+    const rel = path.relative(UPLOADS_DIR, raw);
+    if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) {
+      return `/uploads/${rel.replace(/\\/g, '/')}`;
+    }
+  }
+  return resolveStoredUrl(raw, defaultSubdir);
 }
 
 function resolveAssetInputPath(row) {
@@ -4615,10 +4633,10 @@ async function createAssetRecord(input) {
     owner: input.owner?.trim() || 'Unknown',
     durationSeconds: Number(input.durationSeconds) || 0,
     sourcePath: input.sourcePath?.trim() || '',
-    mediaUrl: input.mediaUrl?.trim() || '',
-    proxyUrl: input.proxyUrl?.trim() || '',
+    mediaUrl: normalizePublicUploadUrl(input.mediaUrl || input.sourcePath, inferAssetStorageSubdir(input)) || input.mediaUrl?.trim() || '',
+    proxyUrl: normalizePublicUploadUrl(input.proxyUrl, 'proxies') || input.proxyUrl?.trim() || '',
     proxyStatus: input.proxyStatus?.trim() || 'not_applicable',
-    thumbnailUrl: input.thumbnailUrl?.trim() || '',
+    thumbnailUrl: normalizePublicUploadUrl(input.thumbnailUrl, 'thumbnails') || input.thumbnailUrl?.trim() || '',
     fileName: input.fileName?.trim() || '',
     mimeType: input.mimeType?.trim() || '',
     fileHash: input.fileHash?.trim().toLowerCase() || '',
@@ -6632,6 +6650,7 @@ const officeService = createOfficeService({
   inferMimeTypeFromFileName,
   isOfficeDocumentCandidate,
   publicUploadUrlToAbsolutePath,
+  normalizePublicUploadUrl,
   getIngestStoragePath,
   sanitizeFileName,
   runCommandCapture,

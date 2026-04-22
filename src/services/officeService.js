@@ -20,6 +20,7 @@ function createOfficeService(deps) {
     inferMimeTypeFromFileName,
     isOfficeDocumentCandidate,
     publicUploadUrlToAbsolutePath,
+    normalizePublicUploadUrl,
     getIngestStoragePath,
     sanitizeFileName,
     runCommandCapture,
@@ -164,9 +165,19 @@ function createOfficeService(deps) {
     const fileType = getFileExtension(row.file_name) || 'docx';
     const documentType = getOnlyOfficeDocumentType({ mimeType: row.mime_type, fileName: row.file_name });
     const publicTitle = String(row.title || row.file_name || row.id || 'Document').trim() || 'Document';
-    const mediaUrl = String(row.media_url || '').trim();
+    const mediaUrl = typeof normalizePublicUploadUrl === 'function'
+      ? normalizePublicUploadUrl(row.media_url || row.source_path, 'document')
+      : String(row.media_url || '').trim();
     if (!mediaUrl.startsWith('/uploads/')) {
       throw createHttpError(400, 'Document URL is invalid');
+    }
+    if (mediaUrl !== String(row.media_url || '').trim()) {
+      await pool.query('UPDATE assets SET media_url = $2, updated_at = $3 WHERE id = $1', [
+        row.id,
+        mediaUrl,
+        new Date().toISOString()
+      ]);
+      row.media_url = mediaUrl;
     }
 
     const canEditOffice = Boolean(effective?.canEditOffice);
