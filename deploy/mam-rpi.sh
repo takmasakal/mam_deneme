@@ -48,7 +48,11 @@ env_value() {
 }
 
 should_build_app() {
-  local provider install_libreoffice
+  local provider install_libreoffice build_local
+  build_local="$(env_value MAM_BUILD_LOCAL | tr '[:upper:]' '[:lower:]')"
+  if [[ -z "${build_local}" || "${build_local}" == "true" || "${build_local}" == "1" || "${build_local}" == "yes" ]]; then
+    return 0
+  fi
   provider="$(env_value OFFICE_EDITOR_PROVIDER | tr '[:upper:]' '[:lower:]')"
   install_libreoffice="$(env_value INSTALL_LIBREOFFICE | tr '[:upper:]' '[:lower:]')"
   [[ "${provider}" == "libreoffice" || "${install_libreoffice}" == "true" ]]
