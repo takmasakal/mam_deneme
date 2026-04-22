@@ -38,6 +38,32 @@ dc() {
   ${DOCKER_CMD} compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "${profile_args[@]}" "$@"
 }
 
+env_value() {
+  local key="$1"
+  if [[ ! -f "${ENV_FILE}" ]]; then
+    echo ""
+    return
+  fi
+  grep -E "^${key}=" "${ENV_FILE}" | tail -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true
+}
+
+should_build_app() {
+  local provider install_libreoffice
+  provider="$(env_value OFFICE_EDITOR_PROVIDER | tr '[:upper:]' '[:lower:]')"
+  install_libreoffice="$(env_value INSTALL_LIBREOFFICE | tr '[:upper:]' '[:lower:]')"
+  [[ "${provider}" == "libreoffice" || "${install_libreoffice}" == "true" ]]
+}
+
+warn_office_config() {
+  local provider install_libreoffice
+  provider="$(env_value OFFICE_EDITOR_PROVIDER | tr '[:upper:]' '[:lower:]')"
+  install_libreoffice="$(env_value INSTALL_LIBREOFFICE | tr '[:upper:]' '[:lower:]')"
+  if [[ "${provider}" == "libreoffice" && "${install_libreoffice}" != "true" ]]; then
+    echo "WARN: OFFICE_EDITOR_PROVIDER=libreoffice but INSTALL_LIBREOFFICE is not true."
+    echo "      Set INSTALL_LIBREOFFICE=true in ${ENV_FILE}, then run ./deploy/mam-rpi.sh restart."
+  fi
+}
+
 init_if_needed() {
   ./deploy/init-rpi.sh "${1:-}"
 }
@@ -63,15 +89,25 @@ case "${cmd}" in
     ;;
   up)
     init_if_needed "${2:-}"
-    dc up -d
+    warn_office_config
+    if should_build_app; then
+      dc up -d --build
+    else
+      dc up -d
+    fi
     ;;
   down)
     dc down
     ;;
   restart)
     init_if_needed "${2:-}"
+    warn_office_config
     dc down
-    dc up -d
+    if should_build_app; then
+      dc up -d --build
+    else
+      dc up -d
+    fi
     ;;
   ps)
     dc ps
