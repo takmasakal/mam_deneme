@@ -6,6 +6,8 @@ const pool = new Pool({ connectionString });
 
 async function initDb() {
   await pool.query(`
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
     CREATE TABLE IF NOT EXISTS assets (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -167,19 +169,32 @@ async function initDb() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_assets_updated_at ON assets(updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_assets_deleted_updated ON assets(deleted_at, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_assets_status ON assets(status);
     CREATE INDEX IF NOT EXISTS idx_assets_type ON assets(type);
     CREATE INDEX IF NOT EXISTS idx_assets_tags_gin ON assets USING GIN(tags);
     CREATE INDEX IF NOT EXISTS idx_assets_file_hash ON assets(file_hash);
+    CREATE INDEX IF NOT EXISTS idx_assets_title_trgm ON assets USING GIN (LOWER(title) gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS idx_assets_file_name_trgm ON assets USING GIN (LOWER(file_name) gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS idx_assets_owner_trgm ON assets USING GIN (LOWER(owner) gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS idx_assets_title_fold_trgm ON assets USING GIN ((REPLACE(LOWER(TRANSLATE(COALESCE(title, ''), 'İIı', 'iii')), U&'\\0307', '')) gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS idx_assets_file_name_fold_trgm ON assets USING GIN ((REPLACE(LOWER(TRANSLATE(COALESCE(file_name, ''), 'İIı', 'iii')), U&'\\0307', '')) gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS idx_assets_owner_fold_trgm ON assets USING GIN ((REPLACE(LOWER(TRANSLATE(COALESCE(owner, ''), 'İIı', 'iii')), U&'\\0307', '')) gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS idx_assets_description_fold_trgm ON assets USING GIN ((REPLACE(LOWER(TRANSLATE(COALESCE(description, ''), 'İIı', 'iii')), U&'\\0307', '')) gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS idx_asset_cuts_label_fold_trgm ON asset_cuts USING GIN ((REPLACE(LOWER(TRANSLATE(COALESCE(label, ''), 'İIı', 'iii')), U&'\\0307', '')) gin_trgm_ops);
     CREATE INDEX IF NOT EXISTS idx_asset_cuts_asset_id ON asset_cuts(asset_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_asset_versions_asset_created ON asset_versions(asset_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_asset_versions_action ON asset_versions(action_type);
     CREATE INDEX IF NOT EXISTS idx_subtitle_cues_asset ON asset_subtitle_cues(asset_id);
     CREATE INDEX IF NOT EXISTS idx_subtitle_cues_asset_url ON asset_subtitle_cues(asset_id, subtitle_url);
+    CREATE INDEX IF NOT EXISTS idx_subtitle_cues_asset_url_start ON asset_subtitle_cues(asset_id, subtitle_url, start_sec);
     CREATE INDEX IF NOT EXISTS idx_subtitle_cues_norm ON asset_subtitle_cues(norm_text);
+    CREATE INDEX IF NOT EXISTS idx_subtitle_cues_norm_trgm ON asset_subtitle_cues USING GIN (norm_text gin_trgm_ops);
     CREATE INDEX IF NOT EXISTS idx_ocr_segments_asset ON asset_ocr_segments(asset_id);
     CREATE INDEX IF NOT EXISTS idx_ocr_segments_asset_url ON asset_ocr_segments(asset_id, ocr_url);
+    CREATE INDEX IF NOT EXISTS idx_ocr_segments_asset_url_start ON asset_ocr_segments(asset_id, ocr_url, start_sec);
     CREATE INDEX IF NOT EXISTS idx_ocr_segments_norm ON asset_ocr_segments(norm_text);
+    CREATE INDEX IF NOT EXISTS idx_ocr_segments_norm_trgm ON asset_ocr_segments USING GIN (norm_text gin_trgm_ops);
     CREATE INDEX IF NOT EXISTS idx_media_jobs_asset_type_updated ON media_processing_jobs(asset_id, job_type, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_media_jobs_status ON media_processing_jobs(status);
     CREATE INDEX IF NOT EXISTS idx_learned_turkish_corrections_updated ON learned_turkish_corrections(updated_at DESC);

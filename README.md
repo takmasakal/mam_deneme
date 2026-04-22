@@ -82,7 +82,15 @@ Compose starts:
 
 Office editor mode:
 - Default is ONLYOFFICE mode: `OFFICE_EDITOR_PROVIDER=onlyoffice`.
-- DOCX/XLSX/PPTX files are opened through ONLYOFFICE; document viewing does not fall back to extracted text or thumbnail previews.
+- DOCX/XLSX/PPTX files are opened through ONLYOFFICE by default; document viewing does not silently fall back to extracted text or thumbnail previews.
+- Raspberry Pi can use an offline read-only LibreOffice preview mode without running ONLYOFFICE:
+
+  ```bash
+  OFFICE_EDITOR_PROVIDER=libreoffice INSTALL_LIBREOFFICE=true docker compose -f docker-compose.rpi.yml up -d --build
+  docker compose -f docker-compose.rpi.yml stop onlyoffice
+  ```
+
+  LibreOffice mode keeps the original Office file unchanged and generates a cached PDF preview under `uploads/previews/libreoffice`.
 - Start normally with:
   ```bash
   docker compose up -d --build

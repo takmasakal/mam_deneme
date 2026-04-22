@@ -21,6 +21,7 @@ const panelVideoToolsBtn = document.getElementById('panelVideoToolsBtn');
 const statusSelect = searchForm.querySelector('[name="status"]');
 const searchQueryInput = searchForm.querySelector('[name="q"]');
 const searchSuggestList = document.getElementById('searchSuggestList');
+const clearSearchBtn = document.getElementById('clearSearchBtn');
 // OCR ve Altyazi aramalari 1. kolonda birbirinden bagimsiz iki ayri kutu olarak calisir.
 const ocrQueryInput = searchForm.querySelector('[name="ocrQ"]');
 const ocrSuggestList = document.getElementById('ocrSuggestList');
@@ -141,6 +142,42 @@ function applyVideoToolsPageLayoutMode() {
   panelVisibility.panelIngest = false;
   panelVisibility.panelAssets = false;
   panelVisibility.panelDetail = true;
+}
+
+function hasActiveSearchFields() {
+  const textNames = ['q', 'ocrQ', 'subtitleQ', 'tag', 'type'];
+  const hasText = textNames.some((name) => {
+    const field = searchForm?.querySelector(`[name="${name}"]`);
+    return Boolean(String(field?.value || '').trim());
+  });
+  if (hasText) return true;
+  if (String(statusSelect?.value || '').trim()) return true;
+  const trashSelect = searchForm?.querySelector('[name="trash"]');
+  if (String(trashSelect?.value || 'active').trim().toLowerCase() !== 'active') return true;
+  return assetTypeFilters.some((input) => !input.checked);
+}
+
+function updateClearSearchButtonState() {
+  if (!clearSearchBtn) return;
+  clearSearchBtn.disabled = !hasActiveSearchFields();
+}
+
+async function clearSearchFields() {
+  ['q', 'ocrQ', 'subtitleQ', 'tag', 'type'].forEach((name) => {
+    const field = searchForm?.querySelector(`[name="${name}"]`);
+    if (field) field.value = '';
+  });
+  if (statusSelect) statusSelect.value = '';
+  const trashSelect = searchForm?.querySelector('[name="trash"]');
+  if (trashSelect) trashSelect.value = 'active';
+  assetTypeFilters.forEach((input) => {
+    input.checked = true;
+  });
+  hideSearchSuggestions();
+  hideOcrSuggestions();
+  hideSubtitleSuggestions();
+  await loadAssets();
+  updateClearSearchButtonState();
 }
 
 function getActiveOcrQueryInput() {
@@ -569,6 +606,7 @@ let i18n = {
     admin_page: 'Admin',
     ingest_title: 'Ingest Asset',
     search_title: 'Search',
+    clear_search_fields: 'Clear all search fields',
     search_upload_tag: 'SEARCH / UPLOAD',
     assets_title: 'Assets',
     asset_detail_title: 'Detail',
@@ -884,6 +922,7 @@ let i18n = {
     admin_page: 'Yönetim',
     ingest_title: 'Varlık Yükle',
     search_title: 'Ara',
+    clear_search_fields: 'Tüm arama alanlarını temizle',
     search_upload_tag: 'ARA / YUKLE',
     assets_title: 'Varlıklar',
     asset_detail_title: 'Detay',
@@ -1322,7 +1361,7 @@ async function loadCurrentUser() {
     currentUserCanEditOffice = canEditOffice;
     currentUserCanDeleteAssets = canDeleteAssets;
     currentUserCanUsePdfAdvancedTools = canUsePdfAdvancedTools;
-    currentOfficeEditorProvider = ['onlyoffice'].includes(String(me.officeEditorProvider || '').trim().toLowerCase())
+    currentOfficeEditorProvider = ['onlyoffice', 'libreoffice'].includes(String(me.officeEditorProvider || '').trim().toLowerCase())
       ? String(me.officeEditorProvider || '').trim().toLowerCase()
       : 'none';
     currentUsername = username.toLowerCase();
@@ -1649,6 +1688,19 @@ async function api(path, options = {}) {
   return {};
 }
 
+function explainApiError(error) {
+  const message = String(error?.message || 'Request failed');
+  if (/missing api token/i.test(message)) {
+    return `${message}. OAuth aktifken arayuzu dogrudan app portundan acmayin; http://localhost:3000/ uzerinden girin.`;
+  }
+  return message;
+}
+
+function showAssetLoadError(error) {
+  const message = explainApiError(error);
+  assetGrid.innerHTML = `<div class="empty">${escapeHtml(message)}</div>`;
+}
+
 async function deleteApi(path) {
   const response = await fetch(path, { method: 'DELETE' });
   if (!response.ok) {
@@ -1860,6 +1912,10 @@ function serializeForm(form) {
 
 function escapeRegexForSuggest(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function escapeRegExp(value) {
+  return escapeRegexForSuggest(value);
 }
 
 function highlightSuggestText(text, query) {
@@ -2569,6 +2625,7 @@ function textIncludesSearchTerm(text, term) {
 }
 
 function effectiveSearchHighlightClass(query, highlightQuery, fuzzyUsed = false) {
+  if (hasQuotedHighlightTerm(highlightQuery || query)) return 'search-hit-exact';
   return foldSearchText(highlightQuery || '') !== foldSearchText(query || '') || fuzzyUsed
     ? 'search-hit-fuzzy'
     : 'search-hit';
@@ -2576,10 +2633,11 @@ function effectiveSearchHighlightClass(query, highlightQuery, fuzzyUsed = false)
 
 function highlightMatch(value, query, markClass = 'search-hit') {
   const raw = String(value ?? '');
-  const terms = extractHighlightTerms(query);
-  if (!terms.length) return escapeHtml(raw);
+  const specs = extractHighlightSpecs(query);
+  if (!specs.length) return escapeHtml(raw);
 
   const foldChar = (ch) => String(ch || '')
+    .replace(/[İIı]/g, 'i')
     .toLocaleLowerCase('tr-TR')
     .normalize('NFD')
     .replace(/\p{M}+/gu, '');
@@ -2597,52 +2655,85 @@ function highlightMatch(value, query, markClass = 'search-hit') {
   }
   if (!folded || !foldedToOriginal.length) return escapeHtml(raw);
 
-  const foldedTerms = terms
-    .map((term) => foldSearchText(term))
-    .filter(Boolean)
-    .sort((a, b) => b.length - a.length);
+  const foldedTerms = specs
+    .map((spec) => ({
+      term: foldSearchText(spec.term),
+      exactPhrase: Boolean(spec.exactPhrase)
+    }))
+    .filter((spec) => spec.term)
+    .sort((a, b) => b.term.length - a.term.length);
   if (!foldedTerms.length) return escapeHtml(raw);
 
   const ranges = [];
   const occupied = new Set();
-  for (const term of foldedTerms) {
+  const pushRange = (idx, end, spec) => {
+    if (idx < 0 || end <= idx) return false;
+    let overlaps = false;
+    for (let p = idx; p < end; p += 1) {
+      if (occupied.has(p)) {
+        overlaps = true;
+        break;
+      }
+    }
+    if (overlaps) return false;
+    const startOrig = foldedToOriginal[idx];
+    const endOrig = foldedToOriginal[end - 1] + 1;
+    ranges.push([startOrig, endOrig, spec.exactPhrase ? 'search-hit-exact' : markClass]);
+    for (let p = idx; p < end; p += 1) occupied.add(p);
+    return true;
+  };
+
+  for (const spec of foldedTerms) {
     let from = 0;
     while (from < folded.length) {
-      const idx = folded.indexOf(term, from);
+      const idx = folded.indexOf(spec.term, from);
       if (idx < 0) break;
-      const end = idx + term.length;
-      let overlaps = false;
-      for (let p = idx; p < end; p += 1) {
-        if (occupied.has(p)) {
-          overlaps = true;
-          break;
-        }
-      }
-      if (!overlaps) {
-        const startOrig = foldedToOriginal[idx];
-        const endOrig = foldedToOriginal[end - 1] + 1;
-        ranges.push([startOrig, endOrig]);
-        for (let p = idx; p < end; p += 1) occupied.add(p);
-      }
+      const end = idx + spec.term.length;
+      pushRange(idx, end, spec);
       from = idx + 1;
     }
   }
+
+  // Quoted phrases should still highlight when OCR/subtitle inserted variable whitespace.
+  foldedTerms
+    .filter((spec) => spec.exactPhrase && /\s/.test(spec.term))
+    .forEach((spec) => {
+      const parts = spec.term.split(/\s+/).filter(Boolean).map(escapeRegExp);
+      if (parts.length < 2) return;
+      const regex = new RegExp(parts.join('\\s+'), 'g');
+      let match = regex.exec(folded);
+      while (match) {
+        pushRange(match.index, match.index + match[0].length, spec);
+        regex.lastIndex = match.index + 1;
+        match = regex.exec(folded);
+      }
+    });
+
   if (!ranges.length) return escapeHtml(raw);
   ranges.sort((a, b) => a[0] - b[0]);
 
   let out = '';
   let cursor = 0;
-  const fuzzyStyle = 'background:#ff1f1f;color:#fff;border:1px solid #b30000;border-radius:3px;padding:0 2px;';
-  const markAttr = markClass === 'search-hit-fuzzy'
-    ? `class="${escapeHtml(markClass)}" style="${fuzzyStyle}"`
-    : `class="${escapeHtml(markClass)}"`;
-  for (const [start, end] of ranges) {
+  const inlineStyles = {
+    'search-hit-fuzzy': 'background:#ff1f1f;color:#fff;border:1px solid #b30000;border-radius:3px;padding:0 2px;',
+    'search-hit-exact': 'background:#28a745;color:#fff;border:1px solid #146c2e;border-radius:3px;padding:0 2px;'
+  };
+  for (const [start, end, rangeClass] of ranges) {
     if (start > cursor) out += escapeHtml(raw.slice(cursor, start));
-    out += `<mark ${markAttr}>${escapeHtml(raw.slice(start, end))}</mark>`;
+    const safeClass = rangeClass || markClass || 'search-hit';
+    const style = inlineStyles[safeClass] ? ` style="${inlineStyles[safeClass]}"` : '';
+    out += `<mark class="${escapeHtml(safeClass)}"${style}>${escapeHtml(raw.slice(start, end))}</mark>`;
     cursor = Math.max(cursor, end);
   }
   if (cursor < raw.length) out += escapeHtml(raw.slice(cursor));
   return out;
+}
+
+function extractHighlightTerms(query) {
+  return extractHighlightSpecs(query)
+    .map((spec) => spec.term)
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
 }
 
 function dcHighlightSnippet(asset, query, markClass = 'search-hit') {
@@ -2772,19 +2863,21 @@ function buildInlineFieldMatch(value, query, markClass = 'search-hit') {
   return `<span class="field-inline-match">${highlighted}</span>`;
 }
 
-function extractHighlightTerms(query) {
+function extractHighlightSpecs(query) {
   const text = String(query || '').trim();
   if (!text) return [];
 
-  const terms = [];
-  const tokenRegex = /"([^"]+)"|(\S+)/g;
+  const specs = [];
+  const tokenRegex = /([+-]?)"([^"]+)"|(\S+)/g;
   let match = tokenRegex.exec(text);
 
   while (match) {
-    const quoted = match[1];
-    let token = String(quoted || match[2] || '').trim();
+    const quotedPrefix = String(match[1] || '');
+    const quoted = match[2];
+    const exactPhrase = quoted !== undefined;
+    let token = String(quoted || match[3] || '').trim();
     if (token) {
-      let isExcluded = false;
+      let isExcluded = quotedPrefix === '-';
       while (token.startsWith('+') || token.startsWith('-')) {
         if (token.startsWith('-')) isExcluded = true;
         token = token.slice(1).trim();
@@ -2796,14 +2889,26 @@ function extractHighlightTerms(query) {
         token = token.replace(/[*?]/g, '').trim();
         const upper = token.toUpperCase();
         if (token && upper !== 'AND' && upper !== 'OR' && upper !== 'NOT') {
-          terms.push(token.toLowerCase());
+          specs.push({ term: token.toLowerCase(), exactPhrase });
         }
       }
     }
     match = tokenRegex.exec(text);
   }
 
-  return Array.from(new Set(terms)).sort((a, b) => b.length - a.length);
+  const seen = new Set();
+  return specs
+    .filter((spec) => {
+      const key = `${spec.exactPhrase ? '1' : '0'}:${spec.term}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => b.term.length - a.term.length);
+}
+
+function hasQuotedHighlightTerm(query) {
+  return extractHighlightSpecs(query).some((spec) => spec.exactPhrase);
 }
 
 function hashString(input) {
@@ -3580,7 +3685,7 @@ function mediaViewer(asset, options = {}) {
   }
 
   if (isDocument(asset)) {
-    if (isOfficeDocument(asset) && currentOfficeEditorProvider !== 'onlyoffice') {
+    if (isOfficeDocument(asset) && currentOfficeEditorProvider === 'none') {
       return `
         <div class="doc-native-shell">
           <strong>${escapeHtml(asset.fileName || asset.title || 'Office document')}</strong>
@@ -3591,7 +3696,9 @@ function mediaViewer(asset, options = {}) {
       `;
     }
     const viewerSrc = isOfficeDocument(asset)
-      ? `/office-viewer.html?assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&v=oo-save-v9`
+      ? (currentOfficeEditorProvider === 'libreoffice'
+        ? `/pdf-viewer.html?file=${encodeURIComponent(`/api/assets/${encodeURIComponent(asset.id)}/libreoffice-preview.pdf`)}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&pdfAdvanced=0&provider=libreoffice`
+        : `/office-viewer.html?assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&v=oo-save-v9`)
       : `/pdf-viewer.html?file=${encodeURIComponent(String(asset.mediaUrl || '').split('#')[0])}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&pdfAdvanced=${currentUserCanUsePdfAdvancedTools ? '1' : '0'}`;
     return `
       <div class="viewer-resizable">
@@ -6852,7 +6959,7 @@ async function loadAssets() {
   currentOcrFuzzyUsed = false;
 
   if (selectedTypes.length === 0) {
-    if (!currentOcrQuery && !currentSubtitleQuery) {
+    if (!currentSearchQuery && !currentOcrQuery && !currentSubtitleQuery) {
       currentAssets = [];
       renderAssets(currentAssets);
       return;
@@ -6928,6 +7035,43 @@ function scrollElementIntoContainerView(container, element, align = 0.38, offset
     top: Math.max(0, targetTop),
     behavior: 'smooth'
   });
+}
+
+function scrollDetailPanelToVideoTop(root = assetDetail) {
+  if (!(root instanceof Element)) return;
+  const target = root.querySelector('.detail-video-fixed')
+    || root.querySelector('.viewer-shell')
+    || root.querySelector('#assetMediaEl');
+  if (!(target instanceof Element)) return;
+  requestAnimationFrame(() => {
+    const rootRect = root.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const targetTop = root.scrollTop + (targetRect.top - rootRect.top) - 4;
+    if (Math.abs(root.scrollTop - targetTop) < 12) return;
+    root.scrollTo({
+      top: Math.max(0, targetTop),
+      behavior: 'smooth'
+    });
+  });
+}
+
+function seekOpenDetailMedia(assetId, startAtSeconds) {
+  const targetAssetId = String(assetId || '').trim();
+  const mediaEl = assetDetail?.querySelector('#assetMediaEl');
+  if (!targetAssetId || !(mediaEl instanceof HTMLMediaElement)) return false;
+  const currentAssetId = String(mediaEl.dataset?.assetId || selectedAssetId || '').trim();
+  if (currentAssetId !== targetAssetId) return false;
+  const targetSec = Math.max(0, Number(startAtSeconds) || 0);
+  try {
+    const maxSec = Number.isFinite(mediaEl.duration) && mediaEl.duration > 0
+      ? Math.min(targetSec, mediaEl.duration)
+      : targetSec;
+    mediaEl.currentTime = maxSec;
+    scrollDetailPanelToVideoTop(assetDetail);
+    return true;
+  } catch (_error) {
+    return false;
+  }
 }
 
 function focusCutRowInDetail(root = document, cutId = '') {
@@ -7016,6 +7160,7 @@ async function openAsset(id, workflow, options = {}) {
       startAtSeconds: Number(options.startAtSeconds) || 0,
       focusCutId: String(options.focusCutId || '').trim()
     });
+    if (options.scrollToVideoTop) scrollDetailPanelToVideoTop(assetDetail);
     const leaveBtn = document.getElementById('leaveVideoToolsPageBtn');
     leaveBtn?.addEventListener('click', () => {
       const mediaEl = assetDetail.querySelector('#assetMediaEl');
@@ -7050,6 +7195,7 @@ async function openAsset(id, workflow, options = {}) {
     startAtSeconds: Number(options.startAtSeconds) || 0,
     focusCutId: String(options.focusCutId || '').trim()
   });
+  if (options.scrollToVideoTop) scrollDetailPanelToVideoTop(assetDetail);
   const focusFieldName = String(options.focusFieldName || '').trim();
   const focusTag = String(options.focusTag || '').trim();
   const focusCutId = String(options.focusCutId || '').trim();
@@ -7394,9 +7540,10 @@ assetGrid.addEventListener('click', async (event) => {
     const id = String(ocrJumpBtn.dataset.id || '').trim();
     const startAtSeconds = Math.max(0, Number(ocrJumpBtn.dataset.startSec || 0));
     if (!id) return;
+    if (seekOpenDetailMedia(id, startAtSeconds)) return;
     setSingleSelection(id);
     const workflow = await api('/api/workflow');
-    await openAsset(id, workflow, { startAtSeconds });
+    await openAsset(id, workflow, { startAtSeconds, scrollToVideoTop: true });
     return;
   }
 
@@ -7510,6 +7657,7 @@ assetDetail.addEventListener('click', async (event) => {
 
 assetTypeFilters.forEach((input) => {
   input.addEventListener('change', () => {
+    updateClearSearchButtonState();
     if (document.activeElement === searchQueryInput) queueSearchSuggestions();
     if (document.activeElement === ocrQueryInput) queueOcrSuggestions();
     loadAssets().catch((error) => alert(error.message));
@@ -7522,6 +7670,7 @@ assetsTitleToggleBtn?.addEventListener('click', () => {
   assetTypeFilters.forEach((input) => {
     input.checked = nextChecked;
   });
+  updateClearSearchButtonState();
   if (document.activeElement === searchQueryInput) queueSearchSuggestions();
   if (document.activeElement === ocrQueryInput) queueOcrSuggestions();
   loadAssets().catch((error) => alert(error.message));
@@ -7647,7 +7796,19 @@ searchForm.addEventListener('submit', async (event) => {
   hideSearchSuggestions();
   hideOcrSuggestions();
   hideSubtitleSuggestions();
-  await loadAssets();
+  try {
+    await loadAssets();
+  } catch (error) {
+    showAssetLoadError(error);
+  }
+});
+
+clearSearchBtn?.addEventListener('click', async () => {
+  try {
+    await clearSearchFields();
+  } catch (error) {
+    showAssetLoadError(error);
+  }
 });
 
 searchQueryInput?.addEventListener('focus', () => {
@@ -7675,13 +7836,16 @@ subtitleQueryInput?.addEventListener('focus', () => {
 });
 
 searchQueryInput?.addEventListener('input', () => {
+  updateClearSearchButtonState();
   queueSearchSuggestions();
 });
 
 ocrQueryInput?.addEventListener('input', () => {
+  updateClearSearchButtonState();
   queueOcrSuggestions();
 });
 subtitleQueryInput?.addEventListener('input', () => {
+  updateClearSearchButtonState();
   queueSubtitleSuggestions();
 });
 
@@ -7842,6 +8006,7 @@ subtitleSuggestList?.addEventListener('click', async (event) => {
 ['tag', 'type'].forEach((name) => {
   const el = searchForm.querySelector(`[name="${name}"]`);
   el?.addEventListener('input', () => {
+    updateClearSearchButtonState();
     if (document.activeElement === searchQueryInput) queueSearchSuggestions();
     if (getActiveOcrQueryInput() === ocrQueryInput) queueOcrSuggestions();
     if (document.activeElement === subtitleQueryInput) queueSubtitleSuggestions();
@@ -7851,6 +8016,7 @@ subtitleSuggestList?.addEventListener('click', async (event) => {
 ['status', 'trash'].forEach((name) => {
   const el = searchForm.querySelector(`[name="${name}"]`);
   el?.addEventListener('change', () => {
+    updateClearSearchButtonState();
     if (document.activeElement === searchQueryInput) queueSearchSuggestions();
     if (getActiveOcrQueryInput() === ocrQueryInput) queueOcrSuggestions();
     if (document.activeElement === subtitleQueryInput) queueSubtitleSuggestions();
@@ -7993,6 +8159,7 @@ logoutBtn?.addEventListener('click', async () => {
     }
     applyPanelLayout();
     initPanelSplitters();
+    updateClearSearchButtonState();
     await loadCurrentUser();
     const workflow = await loadWorkflow();
     applyAssetViewModeUI();

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MAM Console</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=20260422-search-phrase-2" />
     <link rel="stylesheet" href="https://vjs.zencdn.net/8.20.0/video-js.css" />
   </head>
   <body>
@@ -37,7 +37,10 @@
 
         <div class="ingest-panel-card">
           <form id="searchForm" class="stack search">
-            <h2 data-i18n="search_title">Search</h2>
+            <div class="search-title-row">
+              <h2 data-i18n="search_title">Search</h2>
+              <button type="button" id="clearSearchBtn" class="search-clear-btn" data-i18n="clear" data-i18n-title="clear_search_fields" data-i18n-aria="clear_search_fields" title="Clear search fields" aria-label="Clear search fields">Clear</button>
+            </div>
             <div class="search-query-wrap">
               <input id="searchQueryInput" name="q" autocomplete="off" data-i18n-placeholder="ph_query" placeholder="Query" />
               <div id="searchSuggestList" class="search-suggest hidden"></div>
@@ -133,6 +136,6 @@
     </main>
 
     <script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
-    <script src="/main.js"></script>
+    <script src="/main.js?v=20260422-search-phrase-2"></script>
   </body>
 </html>

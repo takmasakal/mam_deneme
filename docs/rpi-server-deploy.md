@@ -94,3 +94,58 @@ değerini değiştirip:
 ```
 
 çalıştır.
+
+## 9. Office önizleme seçeneği: ONLYOFFICE veya LibreOffice
+
+Varsayılan kurulumda Office dokümanları için `ONLYOFFICE` kullanılır.
+
+Bu mod:
+- Word / Excel / PowerPoint dosyalarını tarayıcı içinde açar
+- yetkisi olan kullanıcılarda düzenleme ve versiyon oluşturma destekler
+- daha fazla RAM kullanır
+
+Raspberry Pi gibi düşük kaynaklı cihazlarda daha hafif bir alternatif olarak `LibreOffice` modu kullanılabilir.
+
+LibreOffice modu:
+- Office dosyalarını düzenlemez
+- orijinal Word / Excel / PowerPoint dosyasını değiştirmez
+- dokümanı sunucu tarafında geçici PDF önizlemeye çevirir
+- oluşan PDF önizlemeyi `uploads/previews/libreoffice` altında cache'ler
+- ONLYOFFICE container'ını çalıştırmadan doküman görüntüleme sağlar
+
+LibreOffice modunu açmak için `deploy/.env.rpi` içine şu değerleri yaz:
+
+```text
+OFFICE_EDITOR_PROVIDER=libreoffice
+INSTALL_LIBREOFFICE=true
+```
+
+Sonra yeniden build ederek başlat:
+
+```bash
+./deploy/mam-rpi.sh restart
+```
+
+Eğer ONLYOFFICE container'ını da kapatmak istiyorsan:
+
+```bash
+docker compose --env-file deploy/.env.rpi -f docker-compose.rpi.yml stop onlyoffice
+```
+
+Tekrar ONLYOFFICE moduna dönmek için `deploy/.env.rpi` içinde:
+
+```text
+OFFICE_EDITOR_PROVIDER=onlyoffice
+INSTALL_LIBREOFFICE=false
+```
+
+Sonra:
+
+```bash
+./deploy/mam-rpi.sh restart
+```
+
+Notlar:
+- `INSTALL_LIBREOFFICE=true` app image'ını büyütür; sadece LibreOffice modu kullanılacaksa açılması önerilir.
+- LibreOffice modu düzenleme modu değildir; sadece offline önizleme sağlar.
+- Office düzenleme ve otomatik versiyon oluşturma gerekiyorsa `ONLYOFFICE` modu kullanılmalıdır.

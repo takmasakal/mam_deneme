@@ -25,6 +25,7 @@ Amaç:
 - versioning
 - Keycloak tabanlı login
 - ONLYOFFICE ile Office belge düzenleme
+- opsiyonel LibreOffice headless ile offline Office önizleme
 
 Uygulama hem frontend hem backend olarak tek Node.js servisi içinde çalışır. Auth, arama ve doküman servisleri ayrı container’larda tutulur.
 
@@ -76,6 +77,53 @@ Bu mod, Keycloak realm import ve env üretimini otomatikleştirir.
 - [deploy/mam-rpi.sh](/Users/erinc/OyunAlanım/mam_deneme/deploy/mam-rpi.sh)
 
 Bu mod RPi / düşük kaynaklı cihazlar için ayrı bir kurulum akışı sağlar.
+
+RPI modunun farkları:
+- dışarı sadece auth'li MAM portu açılır: `3000`
+- direct app portu `3001` dışarı açılmaz
+- `deploy/init-rpi.sh` cihaz IP'sini otomatik algılar ve `deploy/.env.rpi` üretir
+- Keycloak realm import dosyası `deploy/keycloak/mam-rpi-realm.json` olarak üretilir
+- IP değişirse `./deploy/mam-rpi.sh restart` ile env ve realm URL'leri yeniden yazılır
+
+Temel RPI kurulum akışı:
+```bash
+sudo apt update
+sudo apt install -y git docker.io docker-compose
+sudo usermod -aG docker $USER
+newgrp docker
+
+cd ~
+git clone https://github.com/takmasakal/mam_deneme.git
+cd mam_deneme
+git checkout main
+git pull
+
+./deploy/mam-rpi.sh up
+./deploy/mam-rpi.sh urls
+```
+
+Beklenen adresler:
+```text
+MAM:      http://<pi-ip>:3000
+Keycloak: http://<pi-ip>:8081
+```
+
+RPI log komutları:
+```bash
+./deploy/mam-rpi.sh logs keycloak
+./deploy/mam-rpi.sh logs oauth2-proxy
+./deploy/mam-rpi.sh logs app
+```
+
+Harici medya diski kullanılacaksa `deploy/.env.rpi` içindeki değer değiştirilir:
+```text
+UPLOADS_DIR=/mnt/mamdata/uploads
+```
+
+Sonra:
+```bash
+./deploy/mam-rpi.sh restart
+```
 
 ## 4. Kod Haritası
 
@@ -353,6 +401,30 @@ Easy deploy için env ve Keycloak realm import dosyalarını üretir.
 ### [deploy/mam.sh](/Users/erinc/OyunAlanım/mam_deneme/deploy/mam.sh)
 Easy deploy için wrapper komutudur.
 
+### [deploy/init-rpi.sh](/Users/erinc/OyunAlanım/mam_deneme/deploy/init-rpi.sh)
+RPI kurulumu için host/IP algılar, `deploy/.env.rpi` üretir ve Keycloak realm import dosyasını güncel URL'lerle yazar.
+
+Önemli env alanları:
+- `PUBLIC_HOST`
+- `KEYCLOAK_ADMIN`
+- `KEYCLOAK_ADMIN_PASSWORD`
+- `OAUTH2_PROXY_CLIENT_SECRET`
+- `OAUTH2_PROXY_COOKIE_SECRET`
+- `OFFICE_EDITOR_PROVIDER`
+- `INSTALL_LIBREOFFICE`
+
+### [deploy/mam-rpi.sh](/Users/erinc/OyunAlanım/mam_deneme/deploy/mam-rpi.sh)
+RPI stack için wrapper komutudur.
+
+Kullanım:
+```bash
+./deploy/mam-rpi.sh up
+./deploy/mam-rpi.sh restart
+./deploy/mam-rpi.sh down
+./deploy/mam-rpi.sh urls
+./deploy/mam-rpi.sh logs keycloak
+```
+
 ## 5. Veri Akışları
 
 ## 5.1 Login akışı
@@ -391,6 +463,66 @@ Easy deploy için wrapper komutudur.
 3. gerekirse version kaydı oluşturulur
 4. asset satırı yeni path / file hash ile güncellenir
 
+## 5.6 Office provider seçimi
+
+Office dokümanları için provider `OFFICE_EDITOR_PROVIDER` ile seçilir.
+
+Desteklenen değerler:
+- `onlyoffice`
+- `libreoffice`
+- `none`
+
+`onlyoffice`:
+- varsayılan moddur
+- Word / Excel / PowerPoint dosyalarını tarayıcı içinde açar
+- yetkili kullanıcılarda düzenleme ve kayıt sonrası version oluşturma destekler
+- daha fazla RAM ve CPU kullanır
+
+`libreoffice`:
+- offline ve daha hafif önizleme modudur
+- Office dosyasını düzenlemez
+- orijinal dosyayı değiştirmez
+- dosyayı sunucu tarafında headless LibreOffice ile PDF önizlemeye çevirir
+- cache çıktısını `uploads/previews/libreoffice` altında tutar
+- RPI gibi düşük kaynaklı cihazlarda ONLYOFFICE yerine kullanılabilir
+
+`none`:
+- Office viewer kapalıdır
+- fallback preview üretilmez
+
+LibreOffice modunu açmak için:
+```bash
+OFFICE_EDITOR_PROVIDER=libreoffice
+INSTALL_LIBREOFFICE=true
+```
+
+RPI için bu değerler `deploy/.env.rpi` içine yazılır:
+```text
+OFFICE_EDITOR_PROVIDER=libreoffice
+INSTALL_LIBREOFFICE=true
+```
+
+Sonra:
+```bash
+./deploy/mam-rpi.sh restart
+```
+
+ONLYOFFICE container'ını ayrıca durdurmak istersen:
+```bash
+docker compose --env-file deploy/.env.rpi -f docker-compose.rpi.yml stop onlyoffice
+```
+
+Tekrar ONLYOFFICE moduna dönmek için:
+```text
+OFFICE_EDITOR_PROVIDER=onlyoffice
+INSTALL_LIBREOFFICE=false
+```
+
+Sonra:
+```bash
+./deploy/mam-rpi.sh restart
+```
+
 ## 6. Docker Yapısı
 
 ## 6.1 Servisler ve görevleri
@@ -409,6 +541,12 @@ Easy deploy için wrapper komutudur.
 ### `onlyoffice`
 - Office belge preview/edit
 
+### LibreOffice headless
+- ayrı bir container değildir
+- `INSTALL_LIBREOFFICE=true` ise app image içine kurulur
+- `OFFICE_EDITOR_PROVIDER=libreoffice` olduğunda Office dosyalarını PDF önizlemeye çevirir
+- düzenleme ve version save callback sağlamaz
+
 ### `keycloak-postgres`
 - Keycloak’un kendi DB’si
 
@@ -425,9 +563,22 @@ Ana dosya: [Dockerfile](/Users/erinc/OyunAlanım/mam_deneme/Dockerfile)
 Mantık:
 - base image: `node:22-bookworm-slim`
 - system deps: `ffmpeg`, `poppler-utils`, `antiword`, `python3`, `pip`
+- opsiyonel build arg: `INSTALL_LIBREOFFICE=true`
 - Python deps:
   - `faster-whisper`
   - `opencv-python-headless`
+
+LibreOffice build seçeneği:
+```bash
+INSTALL_LIBREOFFICE=true docker compose build app
+```
+
+Compose dosyalarında bu değer build arg olarak geçer:
+```yaml
+build:
+  args:
+    INSTALL_LIBREOFFICE: ${INSTALL_LIBREOFFICE:-false}
+```
   - `numpy`
   - `torch`
   - `torchaudio`
@@ -486,6 +637,69 @@ Ne işe yarar:
 - Keycloak gerçekten hazır mı
 - discovery issuer doğru mu
 - startup çok mu geç sürüyor
+
+## 7.4.1 Keycloak admin hesabı ve şifre yönetimi
+
+Varsayılan geliştirme hesabı çoğu kurulumda:
+```text
+admin / admin
+```
+
+Bu değer hard-coded kullanılmamalıdır. Compose tarafında env üzerinden yönetilir.
+
+Yerel normal compose için `.env`:
+```env
+KEYCLOAK_ADMIN=admin
+KEYCLOAK_ADMIN_PASSWORD=YeniGucluSifre
+KEYCLOAK_DB_USER=keycloak
+KEYCLOAK_DB_PASSWORD=keycloak
+KEYCLOAK_DB_NAME=keycloak
+```
+
+Sonra Keycloak container'ını yeniden oluştur:
+```bash
+docker compose up -d --force-recreate keycloak
+```
+
+RPI için `deploy/.env.rpi`:
+```env
+KEYCLOAK_ADMIN=admin
+KEYCLOAK_ADMIN_PASSWORD=YeniGucluSifre
+```
+
+Sonra:
+```bash
+./deploy/mam-rpi.sh restart
+```
+
+Önemli davranış:
+- `KEYCLOAK_ADMIN` ve `KEYCLOAK_ADMIN_PASSWORD` ilk bootstrap sırasında admin hesabı oluşturmak için kullanılır
+- Keycloak veritabanı volume'u zaten oluşmuşsa env değiştirmek mevcut admin şifresini otomatik değiştirmeyebilir
+- mevcut admin şifresi biliniyorsa en temiz yöntem Keycloak panelinden değiştirmektir
+
+Panelden değiştirme:
+```text
+master realm -> Users -> admin -> Credentials -> Set password -> Temporary OFF
+```
+
+Eski şifre biliniyorsa CLI ile değiştirme:
+```bash
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh config credentials \
+  --server http://localhost:8080 \
+  --realm master \
+  --user admin \
+  --password EskiSifre
+
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh set-password \
+  --realm master \
+  --username admin \
+  --new-password YeniGucluSifre
+```
+
+Eski şifre bilinmiyorsa:
+- production/veri koruma senaryosunda Keycloak DB backup alınmadan volume silinmez
+- geliştirme ortamında tüm Keycloak verisini sıfırlamak kabul ediliyorsa `keycloak_pg_data` volume'u silinip stack yeniden bootstrap edilebilir
+- bu işlem realm, client, kullanıcı ve rol verilerini de sileceği için dikkatli uygulanmalıdır
 
 ## 7.5 oauth2-proxy kontrolü
 ```bash

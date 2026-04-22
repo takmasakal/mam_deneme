@@ -16,6 +16,20 @@ const {
   isAdminName,
   isAdminByGroupsOrRoles
 } = require('./permissions');
+const { createOfficeService } = require('./services/officeService');
+const { createSearchService } = require('./services/searchService');
+const { registerOfficeRoutes } = require('./routes/office');
+const { registerPdfRoutes } = require('./routes/pdf');
+const {
+  sanitizeFileName,
+  getFileExtension,
+  inferMimeTypeFromFileName
+} = require('./utils/files');
+const {
+  proxyJobs,
+  subtitleJobs,
+  videoOcrJobs
+} = require('./services/mediaJobs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -29,10 +43,6 @@ const OCR_FRAME_CACHE_DIR = path.join(OCR_FRAMES_DIR, '_cache');
 const OCR_FRAME_CACHE_ENABLED = String(process.env.OCR_FRAME_CACHE_ENABLE || 'false').trim().toLowerCase() === 'true';
 const OCR_FRAME_CACHE_TTL_DAYS = Math.max(1, Math.min(30, Number(process.env.OCR_FRAME_CACHE_TTL_DAYS) || 3));
 const PADDLE_CACHE_DIR = process.env.PADDLE_PDX_CACHE_HOME || path.join(UPLOADS_DIR, '.paddlex');
-const proxyJobs = new Map();
-const subtitleJobs = new Map();
-const videoOcrJobs = new Map();
-
 app.use(express.json({ limit: '300mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/uploads', express.static(UPLOADS_DIR));
@@ -78,7 +88,7 @@ const KEYCLOAK_ADMIN_USERNAME = process.env.KEYCLOAK_ADMIN_USERNAME || process.e
 const KEYCLOAK_ADMIN_PASSWORD = process.env.KEYCLOAK_ADMIN_PASSWORD || '';
 const KEYCLOAK_ADMIN_CLIENT_ID = process.env.KEYCLOAK_ADMIN_CLIENT_ID || 'admin-cli';
 const USE_OAUTH2_PROXY = String(process.env.USE_OAUTH2_PROXY || 'false').trim().toLowerCase() === 'true';
-const OFFICE_EDITOR_PROVIDER = ['onlyoffice'].includes(String(process.env.OFFICE_EDITOR_PROVIDER || '').trim().toLowerCase())
+const OFFICE_EDITOR_PROVIDER = ['onlyoffice', 'libreoffice'].includes(String(process.env.OFFICE_EDITOR_PROVIDER || '').trim().toLowerCase())
   ? String(process.env.OFFICE_EDITOR_PROVIDER || '').trim().toLowerCase()
   : 'none';
 const ONLYOFFICE_CONFIG_VERSION = 'oo-save-v9';
@@ -89,6 +99,18 @@ const AUTH_DEBUG = String(process.env.AUTH_DEBUG || 'false').trim().toLowerCase(
 const OIDC_JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
 const oidcJwksCache = new Map();
 const pdfOcrCache = new Map();
+const KEYCLOAK_ADMIN_CACHE_TTL_MS = Math.max(5, Number(process.env.KEYCLOAK_ADMIN_CACHE_TTL_SECONDS) || 60) * 1000;
+const SYSTEM_HEALTH_CACHE_TTL_MS = Math.max(5, Number(process.env.SYSTEM_HEALTH_CACHE_TTL_SECONDS) || 30) * 1000;
+let keycloakUsersCache = { expiresAt: 0, value: null };
+const keycloakPermissionDefaultsCache = new Map();
+let systemHealthCache = { expiresAt: 0, value: null };
+const searchService = createSearchService({
+  pool,
+  elasticUrl: ELASTIC_URL,
+  elasticIndex: ELASTIC_INDEX,
+  parseTextSearchQuery,
+  normalizeForSearch
+});
 
 function trimTrailingSlashes(value) {
   return String(value || '').trim().replace(/\/+$/, '');
@@ -210,82 +232,28 @@ const learnedTurkishCorrections = new Map();
 let learnedTurkishCorrectionsCompiled = [];
 const turkishWordSet = new Set();
 
-function escapeElasticId(value) {
-  return encodeURIComponent(String(value || '').trim());
-}
-
-
-async function elasticRequest(method, endpoint, body) {
-  try {
-    const response = await fetch(`${ELASTIC_URL}${endpoint}`, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: body ? JSON.stringify(body) : undefined
-    });
-    const payload = await response.json().catch(() => ({}));
-    return { ok: response.ok, status: response.status, payload };
-  } catch (_error) {
-    return { ok: false, status: 0, payload: {} };
-  }
-}
-
-async function ensureElasticIndex() {
-  const exists = await elasticRequest('HEAD', `/${ELASTIC_INDEX}`);
-  if (exists.ok) return true;
-
-  const create = await elasticRequest('PUT', `/${ELASTIC_INDEX}`, {
-    mappings: {
-      properties: {
-        id: { type: 'keyword' },
-        title: { type: 'text' },
-        description: { type: 'text' },
-        owner: { type: 'text' },
-        type: { type: 'keyword' },
-        status: { type: 'keyword' },
-        tags: { type: 'text' },
-        dc: { type: 'text' },
-        clips: { type: 'text' },
-        inTrash: { type: 'boolean' }
-      }
-    }
-  });
-  return create.ok;
-}
-
-async function buildAssetSearchDoc(assetId) {
-  const [assetResult, cutsResult] = await Promise.all([
-    pool.query('SELECT * FROM assets WHERE id = $1', [assetId]),
-    pool.query('SELECT label FROM asset_cuts WHERE asset_id = $1 ORDER BY created_at DESC', [assetId])
-  ]);
-  if (!assetResult.rowCount) return null;
-  const row = assetResult.rows[0];
-  return {
-    id: row.id,
-    title: row.title || '',
-    description: row.description || '',
-    owner: row.owner || '',
-    type: row.type || '',
-    status: row.status || '',
-    tags: Array.isArray(row.tags) ? row.tags.join(' ') : '',
-    dc: JSON.stringify(row.dc_metadata || {}),
-    clips: cutsResult.rows.map((r) => String(r.label || '')).join(' '),
-    inTrash: Boolean(row.deleted_at)
-  };
+function ensureElasticIndex() {
+  return searchService.ensureElasticIndex();
 }
 
 async function indexAssetToElastic(assetId) {
-  const doc = await buildAssetSearchDoc(assetId);
-  if (!doc) return;
-  await ensureElasticIndex();
-  await elasticRequest('PUT', `/${ELASTIC_INDEX}/_doc/${escapeElasticId(assetId)}`, doc);
+  return searchService.indexAssetToElastic(assetId);
 }
 
 async function removeAssetFromElastic(assetId) {
-  await elasticRequest('DELETE', `/${ELASTIC_INDEX}/_doc/${escapeElasticId(assetId)}`);
+  return searchService.removeAssetFromElastic(assetId);
 }
 
-function escapeElasticQueryTerm(value) {
-  return String(value || '').replace(/[\\*?]/g, '\\$&');
+async function searchAssetIdsElastic(queryText, limit = 500) {
+  return searchService.searchAssetIdsElastic(queryText, limit);
+}
+
+async function suggestAssetIdsElastic(queryText, limit = 10) {
+  return searchService.suggestAssetIdsElastic(queryText, limit);
+}
+
+async function backfillElasticIndex() {
+  return searchService.backfillElasticIndex();
 }
 
 function parseSearchTokens(value, normalizeFn = (input) => String(input || '').trim()) {
@@ -447,159 +415,12 @@ function normalizedTextHasExactTerm(text, term) {
   }
 }
 
-async function searchAssetIdsElastic(queryText, limit = 500) {
-  const q = String(queryText || '').trim();
-  if (!q) return [];
-  await ensureElasticIndex();
-  const parsedQuery = parseTextSearchQuery(q, normalizeForSearch);
-  const fields = ['title^4', 'description^2', 'owner^2', 'tags^2', 'dc', 'clips^3', 'type', 'status'];
-  const buildElasticShouldClauses = (term) => ([
-    {
-      multi_match: {
-        query: term,
-        type: 'bool_prefix',
-        fields,
-        boost: 3
-      }
-    },
-    { match_phrase_prefix: { title: { query: term, boost: 6 } } },
-    { match_phrase_prefix: { clips: { query: term, boost: 5 } } },
-    { match_phrase_prefix: { dc: { query: term, boost: 2 } } }
-  ]);
-  const buildElasticExactClauses = (term) => ([
-    { match_phrase: { title: { query: term, boost: 8 } } },
-    { match_phrase: { description: { query: term, boost: 4 } } },
-    { match_phrase: { owner: { query: term, boost: 4 } } },
-    { match_phrase: { tags: { query: term, boost: 3 } } },
-    { match_phrase: { dc: { query: term, boost: 2 } } },
-    { match_phrase: { clips: { query: term, boost: 5 } } }
-  ]);
-  const buildElasticWildcardClauses = (term) => fields.map((fieldName) => ({
-    wildcard: {
-      [fieldName.replace(/\^.*$/, '')]: {
-        value: `*${escapeElasticQueryTerm(term)}*`,
-        case_insensitive: true
-      }
-    }
-  }));
-  const result = await elasticRequest('POST', `/${ELASTIC_INDEX}/_search`, {
-    size: limit,
-    query: {
-      bool: parsedQuery.hasOperators ? {
-        must: [
-          ...parsedQuery.mustInclude.flatMap((term) => buildElasticWildcardClauses(term)),
-          ...parsedQuery.mustIncludeExact.flatMap((term) => buildElasticExactClauses(term))
-        ],
-        must_not: [
-          ...parsedQuery.mustExclude.flatMap((term) => buildElasticWildcardClauses(term)),
-          ...parsedQuery.mustExcludeExact.flatMap((term) => buildElasticExactClauses(term))
-        ],
-        should: [
-          ...parsedQuery.optional.flatMap((term) => buildElasticShouldClauses(term)),
-          ...parsedQuery.optionalExact.flatMap((term) => buildElasticExactClauses(term))
-        ],
-        minimum_should_match: (parsedQuery.optional.length + parsedQuery.optionalExact.length) > 0 ? 1 : 0
-      } : {
-        should: [
-          {
-            query_string: {
-              query: q,
-              default_operator: 'AND',
-              fields,
-              boost: 5
-            }
-          },
-          ...buildElasticShouldClauses(q)
-        ],
-        minimum_should_match: 1
-      }
-    },
-    _source: false
-  });
-  if (!result.ok) return null;
-  const hits = result.payload?.hits?.hits;
-  if (!Array.isArray(hits)) return [];
-  return hits.map((h) => String(h._id || '')).filter(Boolean);
-}
-
-async function suggestAssetIdsElastic(queryText, limit = 10) {
-  const q = String(queryText || '').trim();
-  if (!q) return [];
-  await ensureElasticIndex();
-  const parsedQuery = parseTextSearchQuery(q, normalizeForSearch);
-  const simpleFields = ['title', 'owner', 'tags'];
-  const buildWildcardClauses = (term) => simpleFields.map((fieldName) => ({
-    wildcard: {
-      [fieldName]: {
-        value: `*${escapeElasticQueryTerm(term)}*`,
-        case_insensitive: true
-      }
-    }
-  }));
-  const buildExactSuggestClauses = (term) => ([
-    { match_phrase: { title: { query: term, boost: 10 } } },
-    { match_phrase: { owner: { query: term, boost: 4 } } },
-    { match_phrase: { tags: { query: term, boost: 4 } } }
-  ]);
-  const result = await elasticRequest('POST', `/${ELASTIC_INDEX}/_search`, {
-    size: Math.max(1, Math.min(20, Number(limit) || 10)),
-    query: {
-      bool: parsedQuery.hasOperators ? {
-        must: [
-          ...parsedQuery.mustInclude.flatMap((term) => buildWildcardClauses(term)),
-          ...parsedQuery.mustIncludeExact.flatMap((term) => buildExactSuggestClauses(term))
-        ],
-        must_not: [
-          ...parsedQuery.mustExclude.flatMap((term) => buildWildcardClauses(term)),
-          ...parsedQuery.mustExcludeExact.flatMap((term) => buildExactSuggestClauses(term))
-        ],
-        should: [
-          ...parsedQuery.optional.flatMap((term) => ([
-          { match_phrase_prefix: { title: { query: term, boost: 8 } } },
-          { match: { title: { query: term, fuzziness: 'AUTO', boost: 5 } } },
-          { match_phrase_prefix: { owner: { query: term, boost: 2 } } },
-          { match_phrase_prefix: { tags: { query: term, boost: 2 } } }
-        ])),
-          ...parsedQuery.optionalExact.flatMap((term) => buildExactSuggestClauses(term))
-        ],
-        minimum_should_match: (parsedQuery.optional.length + parsedQuery.optionalExact.length) > 0 ? 1 : 0
-      } : {
-        should: [
-          { match_phrase_prefix: { title: { query: q, boost: 8 } } },
-          { match: { title: { query: q, fuzziness: 'AUTO', boost: 5 } } },
-          { match_phrase_prefix: { owner: { query: q, boost: 2 } } },
-          { match_phrase_prefix: { tags: { query: q, boost: 2 } } }
-        ],
-        minimum_should_match: 1
-      }
-    },
-    _source: false
-  });
-  if (!result.ok) return null;
-  const hits = result.payload?.hits?.hits;
-  if (!Array.isArray(hits)) return [];
-  return hits.map((h) => String(h._id || '')).filter(Boolean);
-}
-
-async function backfillElasticIndex() {
-  await ensureElasticIndex();
-  const result = await pool.query('SELECT id FROM assets');
-  for (const row of result.rows) {
-    await indexAssetToElastic(row.id).catch(() => {});
-  }
-}
-
 function sqlTagFold(expression) {
   return `REPLACE(LOWER(TRANSLATE(${expression}, 'İIı', 'iii')), U&'\\0307', '')`;
 }
 
 function sqlTextFold(expression) {
   return `REPLACE(LOWER(TRANSLATE(COALESCE(${expression}, ''), 'İIı', 'iii')), U&'\\0307', '')`;
-}
-
-function sanitizeFileName(fileName) {
-  const cleaned = String(fileName || 'asset.bin').trim().replace(/[^a-zA-Z0-9._-]/g, '_');
-  return cleaned || 'asset.bin';
 }
 
 function normalizeSubtitleLang(value) {
@@ -1109,6 +930,112 @@ async function searchOcrMatchesForAssetRow(row, queryRaw, limit = 8) {
   }
 
   return { ocrUrl, matches, didYouMean, fuzzyUsed, highlightQuery };
+}
+
+async function searchOcrMatchesForAssetRows(rows, queryRaw, limit = 8) {
+  const parsedQuery = parseTextSearchQuery(queryRaw, normalizeSubtitleSearchText);
+  const cap = Math.max(1, Math.min(50, Number(limit) || 8));
+  const byAssetId = new Map();
+  const assetRows = Array.isArray(rows) ? rows : [];
+  if (!parsedQuery.raw || !assetRows.length) {
+    return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(queryRaw || '').trim() };
+  }
+
+  const activeUrlByAssetId = new Map();
+  assetRows.forEach((row) => {
+    const assetId = String(row?.id || '').trim();
+    const ocrUrl = String(pickLatestVideoOcrUrlFromDc(row?.dc_metadata || {}) || '').trim();
+    if (assetId && ocrUrl) activeUrlByAssetId.set(assetId, ocrUrl);
+  });
+  if (!activeUrlByAssetId.size) {
+    return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(queryRaw || '').trim() };
+  }
+
+  const assetIds = Array.from(activeUrlByAssetId.keys());
+  const activeUrls = Array.from(new Set(activeUrlByAssetId.values()));
+  const ocrWhere = buildSubtitleCueSearchWhereSql({
+    normColumn: 'norm_text',
+    startIndex: 3,
+    parsedQuery
+  });
+  const exactResult = await pool.query(
+    `
+      WITH matched AS (
+        SELECT asset_id, ocr_url, start_sec, end_sec, segment_text,
+               ROW_NUMBER() OVER (PARTITION BY asset_id ORDER BY start_sec ASC) AS rn
+        FROM asset_ocr_segments
+        WHERE asset_id = ANY($1::text[])
+          AND ocr_url = ANY($2::text[])
+          ${ocrWhere.clauses.length ? `AND ${ocrWhere.clauses.join(' AND ')}` : ''}
+      )
+      SELECT asset_id, ocr_url, start_sec, end_sec, segment_text
+      FROM matched
+      WHERE rn <= $${ocrWhere.nextIndex}
+      ORDER BY asset_id, start_sec ASC
+    `,
+    [assetIds, activeUrls, ...ocrWhere.params, cap]
+  );
+
+  exactResult.rows.forEach((row) => {
+    const assetId = String(row.asset_id || '').trim();
+    const activeUrl = activeUrlByAssetId.get(assetId);
+    if (!activeUrl || String(row.ocr_url || '').trim() !== activeUrl) return;
+    if (!byAssetId.has(assetId)) byAssetId.set(assetId, []);
+    byAssetId.get(assetId).push(mapOcrSegmentRow({
+      line: String(row.segment_text || ''),
+      startSec: Number(row.start_sec || 0),
+      endSec: Number(row.end_sec || 0)
+    }, queryRaw, activeUrl));
+  });
+
+  if (byAssetId.size || parsedQuery.hasOperators) {
+    return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(queryRaw || '').trim() };
+  }
+
+  const segmentResult = await pool.query(
+    `
+      SELECT asset_id, ocr_url, start_sec, end_sec, segment_text
+      FROM asset_ocr_segments
+      WHERE asset_id = ANY($1::text[])
+        AND ocr_url = ANY($2::text[])
+      ORDER BY asset_id, start_sec ASC
+    `,
+    [assetIds, activeUrls]
+  );
+  const activeSegments = segmentResult.rows.filter((row) => {
+    const assetId = String(row.asset_id || '').trim();
+    return String(row.ocr_url || '').trim() === activeUrlByAssetId.get(assetId);
+  });
+  const didYouMean = suggestDidYouMeanFromTexts(
+    activeSegments.map((row) => String(row.segment_text || '')),
+    queryRaw,
+    { parseFn: parseTextSearchQuery, normalizeFn: normalizeSubtitleSearchText }
+  );
+  const highlightQuery = didYouMean || String(queryRaw || '').trim();
+  const suggestedQuery = didYouMean ? parseTextSearchQuery(didYouMean, normalizeSubtitleSearchText) : null;
+
+  activeSegments.forEach((row) => {
+    const assetId = String(row.asset_id || '').trim();
+    if (!assetId || (byAssetId.get(assetId) || []).length >= cap) return;
+    const text = String(row.segment_text || '');
+    const matched = suggestedQuery
+      ? ocrLineMatchesParsedQuery(text, suggestedQuery)
+      : fuzzySearchTextMatch(parsedQuery.raw, text, normalizeSubtitleSearchText);
+    if (!matched) return;
+    if (!byAssetId.has(assetId)) byAssetId.set(assetId, []);
+    byAssetId.get(assetId).push(mapOcrSegmentRow({
+      line: text,
+      startSec: Number(row.start_sec || 0),
+      endSec: Number(row.end_sec || 0)
+    }, highlightQuery, String(row.ocr_url || '').trim()));
+  });
+
+  return {
+    byAssetId,
+    didYouMean,
+    fuzzyUsed: byAssetId.size > 0,
+    highlightQuery
+  };
 }
 
 function normalizeSubtitleTime(value) {
@@ -2940,6 +2867,104 @@ async function searchSubtitleMatchesForAssetRow(row, query, limit = 20) {
   };
 }
 
+async function searchSubtitleMatchesForAssetRows(rows, query, limit = 8) {
+  const parsedQuery = parseSubtitleTextSearchQuery(query);
+  const cap = Math.max(1, Math.min(50, Number(limit) || 8));
+  const byAssetId = new Map();
+  const assetRows = Array.isArray(rows) ? rows : [];
+  if (!parsedQuery.raw || !assetRows.length) {
+    return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(query || '').trim() };
+  }
+
+  const activeUrlByAssetId = new Map();
+  assetRows.forEach((row) => {
+    const assetId = String(row?.id || '').trim();
+    const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+    const subtitleUrl = String(dc.subtitleUrl || '').trim();
+    if (assetId && subtitleUrl) activeUrlByAssetId.set(assetId, subtitleUrl);
+  });
+  if (!activeUrlByAssetId.size) {
+    return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(query || '').trim() };
+  }
+
+  const assetIds = Array.from(activeUrlByAssetId.keys());
+  const activeUrls = Array.from(new Set(activeUrlByAssetId.values()));
+  const subtitleWhere = buildSubtitleCueSearchWhereSql({
+    normColumn: 'norm_text',
+    startIndex: 3,
+    parsedQuery
+  });
+  const exactResult = await pool.query(
+    `
+      WITH matched AS (
+        SELECT asset_id, subtitle_url, seq, start_sec, end_sec, cue_text,
+               ROW_NUMBER() OVER (PARTITION BY asset_id ORDER BY start_sec ASC) AS rn
+        FROM asset_subtitle_cues
+        WHERE asset_id = ANY($1::text[])
+          AND subtitle_url = ANY($2::text[])
+          ${subtitleWhere.clauses.length ? `AND ${subtitleWhere.clauses.join(' AND ')}` : ''}
+      )
+      SELECT asset_id, subtitle_url, seq, start_sec, end_sec, cue_text
+      FROM matched
+      WHERE rn <= $${subtitleWhere.nextIndex}
+      ORDER BY asset_id, start_sec ASC
+    `,
+    [assetIds, activeUrls, ...subtitleWhere.params, cap]
+  );
+
+  exactResult.rows.forEach((row) => {
+    const assetId = String(row.asset_id || '').trim();
+    const activeUrl = activeUrlByAssetId.get(assetId);
+    if (!activeUrl || String(row.subtitle_url || '').trim() !== activeUrl) return;
+    if (!byAssetId.has(assetId)) byAssetId.set(assetId, []);
+    byAssetId.get(assetId).push(mapSubtitleCueRow(row, query));
+  });
+
+  if (byAssetId.size || parsedQuery.hasOperators) {
+    return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(query || '').trim() };
+  }
+
+  const cueResult = await pool.query(
+    `
+      SELECT asset_id, subtitle_url, seq, start_sec, end_sec, cue_text
+      FROM asset_subtitle_cues
+      WHERE asset_id = ANY($1::text[])
+        AND subtitle_url = ANY($2::text[])
+      ORDER BY asset_id, start_sec ASC
+    `,
+    [assetIds, activeUrls]
+  );
+  const activeCues = cueResult.rows.filter((row) => {
+    const assetId = String(row.asset_id || '').trim();
+    return String(row.subtitle_url || '').trim() === activeUrlByAssetId.get(assetId);
+  });
+  const didYouMean = suggestSubtitleDidYouMean(
+    activeCues.map((row) => ({ cueText: String(row.cue_text || '') })),
+    query
+  );
+  const highlightQuery = didYouMean || String(query || '').trim();
+  const suggestedQuery = didYouMean ? parseSubtitleTextSearchQuery(didYouMean) : null;
+
+  activeCues.forEach((row) => {
+    const assetId = String(row.asset_id || '').trim();
+    if (!assetId || (byAssetId.get(assetId) || []).length >= cap) return;
+    const text = String(row.cue_text || '');
+    const matched = suggestedQuery
+      ? subtitleCueMatchesParsedQuery(text, suggestedQuery)
+      : fuzzySubtitleTextMatch(parsedQuery.raw, text);
+    if (!matched) return;
+    if (!byAssetId.has(assetId)) byAssetId.set(assetId, []);
+    byAssetId.get(assetId).push(mapSubtitleCueRow(row, highlightQuery));
+  });
+
+  return {
+    byAssetId,
+    didYouMean,
+    fuzzyUsed: byAssetId.size > 0,
+    highlightQuery
+  };
+}
+
 async function syncSubtitleCueIndexForAssetRow(row) {
   const assetId = String(row?.id || '').trim();
   if (!assetId) return 0;
@@ -3721,53 +3746,6 @@ function isPdfCandidate({ mimeType, fileName }) {
   return getFileExtension(fileName) === 'pdf';
 }
 
-function getFileExtension(fileName) {
-  return path.extname(String(fileName || '')).replace('.', '').toLowerCase();
-}
-
-function inferMimeTypeFromFileName(fileName) {
-  const ext = getFileExtension(fileName);
-  if (!ext) return '';
-  const byExt = {
-    mp4: 'video/mp4',
-    mov: 'video/quicktime',
-    m4v: 'video/x-m4v',
-    mkv: 'video/x-matroska',
-    avi: 'video/x-msvideo',
-    webm: 'video/webm',
-    mpg: 'video/mpeg',
-    mpeg: 'video/mpeg',
-    mp3: 'audio/mpeg',
-    wav: 'audio/wav',
-    m4a: 'audio/mp4',
-    aac: 'audio/aac',
-    flac: 'audio/flac',
-    ogg: 'audio/ogg',
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    png: 'image/png',
-    gif: 'image/gif',
-    webp: 'image/webp',
-    tif: 'image/tiff',
-    tiff: 'image/tiff',
-    svg: 'image/svg+xml',
-    bmp: 'image/bmp',
-    pdf: 'application/pdf',
-    txt: 'text/plain',
-    md: 'text/markdown',
-    csv: 'text/csv',
-    json: 'application/json',
-    xml: 'application/xml',
-    doc: 'application/msword',
-    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    xls: 'application/vnd.ms-excel',
-    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    ppt: 'application/vnd.ms-powerpoint',
-    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-  };
-  return byExt[ext] || '';
-}
-
 const TEXT_DOC_EXTENSIONS = new Set([
   'txt', 'md', 'csv', 'tsv', 'json', 'xml', 'yaml', 'yml', 'sql', 'py', 'js', 'jsx', 'ts', 'tsx',
   'java', 'c', 'cpp', 'h', 'hpp', 'go', 'rs', 'rb', 'php', 'swift', 'kt', 'log', 'ini', 'cfg',
@@ -3813,264 +3791,6 @@ function isOfficeDocumentCandidate({ mimeType, fileName }) {
     || mime.includes('presentation')
     || mime.includes('wordprocessingml')
   );
-}
-
-function getOnlyOfficeDocumentType({ mimeType, fileName }) {
-  const ext = getFileExtension(fileName);
-  if (['xls', 'xlsx', 'ods'].includes(ext)) return 'cell';
-  if (['ppt', 'pptx', 'odp'].includes(ext)) return 'slide';
-  const mime = String(mimeType || '').toLowerCase();
-  if (mime.includes('sheet') || mime.includes('excel')) return 'cell';
-  if (mime.includes('presentation') || mime.includes('powerpoint')) return 'slide';
-  return 'word';
-}
-
-async function normalizeDocxForOnlyOfficeEdit(filePath) {
-  if (!filePath || getFileExtension(filePath) !== 'docx' || !fs.existsSync(filePath)) {
-    return { changed: false, reason: 'not-docx' };
-  }
-
-  const settings = await runCommandCapture('unzip', ['-p', filePath, 'word/settings.xml']);
-  const settingsXml = String(settings.stdout || '');
-  if (!settings.ok || !settingsXml.includes('documentProtection')) {
-    return { changed: false, reason: 'no-protection' };
-  }
-
-  const protectionTags = settingsXml.match(/<w:documentProtection\b[^>]*(?:\/>|>[\s\S]*?<\/w:documentProtection>)/g) || [];
-  if (!protectionTags.length) return { changed: false, reason: 'no-protection-tag' };
-
-  const hasEnforcedProtection = protectionTags.some((tag) => /\bw:enforcement\s*=\s*["'](?:1|true)["']/i.test(tag));
-  if (hasEnforcedProtection) {
-    return { changed: false, reason: 'enforced-protection' };
-  }
-
-  const script = [
-    'import os, re, shutil, sys, tempfile, zipfile',
-    'path = sys.argv[1]',
-    'original_stat = os.stat(path)',
-    'with zipfile.ZipFile(path, "r") as zin:',
-    '    xml = zin.read("word/settings.xml").decode("utf-8")',
-    '    new_xml = re.sub(r"<w:documentProtection\\b[^>]*(?:/>|>[\\s\\S]*?</w:documentProtection>)", "", xml)',
-    '    if new_xml == xml:',
-    '        sys.exit(2)',
-    '    fd, tmp = tempfile.mkstemp(prefix=".office-unlocked-", suffix=".docx", dir=os.path.dirname(path) or ".")',
-    '    os.close(fd)',
-    '    try:',
-    '        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:',
-    '            for info in zin.infolist():',
-    '                data = zin.read(info.filename)',
-    '                if info.filename == "word/settings.xml":',
-    '                    data = new_xml.encode("utf-8")',
-    '                zout.writestr(info, data)',
-    '        backup = path + ".office-protection.bak"',
-    '        if not os.path.exists(backup):',
-    '            shutil.copy2(path, backup)',
-    '        os.chmod(tmp, original_stat.st_mode)',
-    '        os.replace(tmp, path)',
-    '    finally:',
-    '        if os.path.exists(tmp):',
-    '            os.unlink(tmp)'
-  ].join('\n');
-
-  const result = await runCommandCapture('python3', ['-c', script, filePath]);
-  if (!result.ok) {
-    return { changed: false, reason: 'normalize-failed', error: String(result.stderr || result.stdout || '').slice(0, 500) };
-  }
-  return { changed: true, reason: 'removed-unenforced-document-protection' };
-}
-
-function resolveOnlyofficeDownloadUrl(rawUrl) {
-  const input = String(rawUrl || '').trim();
-  if (!input) return '';
-  try {
-    const parsed = new URL(input);
-    const publicBase = new URL(ONLYOFFICE_PUBLIC_URL);
-    const internalBase = new URL(ONLYOFFICE_INTERNAL_URL);
-    if (parsed.host === publicBase.host) {
-      parsed.protocol = internalBase.protocol;
-      parsed.hostname = internalBase.hostname;
-      parsed.port = internalBase.port;
-      return parsed.toString();
-    }
-    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
-      parsed.protocol = internalBase.protocol;
-      parsed.hostname = internalBase.hostname;
-      parsed.port = internalBase.port;
-      return parsed.toString();
-    }
-    return parsed.toString();
-  } catch (_error) {
-    return input;
-  }
-}
-
-async function downloadOnlyofficeEditedBuffer(rawUrl) {
-  const candidates = Array.from(new Set([
-    resolveOnlyofficeDownloadUrl(rawUrl),
-    String(rawUrl || '').trim()
-  ].filter(Boolean)));
-  let lastError = null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    for (const candidate of candidates) {
-      try {
-        const response = await fetch(candidate);
-        if (!response.ok) {
-          lastError = new Error(`ONLYOFFICE download failed with ${response.status} for ${candidate}`);
-          continue;
-        }
-        const buffer = Buffer.from(await response.arrayBuffer());
-        if (!buffer.length) {
-          lastError = new Error(`ONLYOFFICE download returned an empty file for ${candidate}`);
-          continue;
-        }
-        return buffer;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  throw lastError || new Error('Failed to download edited Office document');
-}
-
-function getOnlyofficeCallbackActor(body, fallback = 'onlyoffice') {
-  const actionUser = Array.isArray(body?.actions)
-    ? String(body.actions.find((item) => item && item.userid)?.userid || '').trim()
-    : '';
-  const user = Array.isArray(body?.users) ? String(body.users[0] || '').trim() : '';
-  return actionUser || user || String(fallback || 'onlyoffice').trim() || 'onlyoffice';
-}
-
-async function saveOnlyofficeCallbackVersion(assetId, body) {
-  const callbackStatus = Number(body?.status || 0);
-  if (![2, 6].includes(callbackStatus)) {
-    return { saved: false, ignored: true, status: callbackStatus };
-  }
-  const downloadUrl = String(body?.url || '').trim();
-  if (!downloadUrl) {
-    return { saved: false, error: 'missing-url', status: callbackStatus };
-  }
-
-  const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-  const row = assetResult.rows[0];
-  if (!row) return { saved: false, error: 'asset-not-found', status: callbackStatus };
-  if (!isOfficeDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
-    return { saved: false, error: 'not-office', status: callbackStatus };
-  }
-
-  const editedBuffer = await downloadOnlyofficeEditedBuffer(downloadUrl);
-  const editedHash = computeBufferSha256(editedBuffer);
-  const currentHash = await getAssetStoredFileHash(row, { persist: true });
-  if (editedHash && currentHash && editedHash === currentHash) {
-    return { saved: false, unchanged: true, status: callbackStatus };
-  }
-
-  const ext = getFileExtension(row.file_name) || 'docx';
-  const safeBase = sanitizeFileName(
-    path.basename(String(row.file_name || row.id || 'office-document'), path.extname(String(row.file_name || '')))
-  ).slice(0, 80) || `asset-${assetId}`;
-  const nextFileName = `${safeBase}-edited.${ext}`;
-  const nextMimeType = String(row.mime_type || '').trim() || inferMimeTypeFromFileName(nextFileName);
-  const storage = getIngestStoragePath({ type: 'document', mimeType: nextMimeType, fileName: nextFileName });
-  const storedName = `${Date.now()}-${nanoid()}-${nextFileName}`;
-  const absPath = path.join(storage.absoluteDir, storedName);
-  const relativePath = path.join(storage.relativeDir, storedName);
-  const mediaUrl = `/uploads/${relativePath.replace(/\\/g, '/')}`;
-  fs.writeFileSync(absPath, editedBuffer);
-
-  const nowIso = new Date().toISOString();
-  const actor = getOnlyofficeCallbackActor(body, row.owner || 'onlyoffice');
-  const countResult = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [assetId]);
-  const nextVersion = Number(countResult.rows?.[0]?.c || 0) + 1;
-  const version = {
-    versionId: nanoid(),
-    label: `Office Edit ${nextVersion}`,
-    note: `Saved from ONLYOFFICE by ${actor}`,
-    snapshot: {
-      snapshotMediaUrl: mediaUrl,
-      snapshotSourcePath: absPath,
-      snapshotFileName: nextFileName,
-      snapshotMimeType: nextMimeType,
-      snapshotThumbnailUrl: ''
-    },
-    actorUsername: actor,
-    actionType: 'office_save',
-    createdAt: nowIso
-  };
-
-  await pool.query('BEGIN');
-  try {
-    const originalExists = await pool.query(
-      `SELECT 1 FROM asset_versions WHERE asset_id = $1 AND action_type = 'office_original' LIMIT 1`,
-      [assetId]
-    );
-    if (!originalExists.rowCount) {
-      await pool.query(
-        `
-          INSERT INTO asset_versions (
-            version_id, asset_id, label, note,
-            snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
-            actor_username, action_type, restored_from_version_id,
-            created_at
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-        `,
-        [
-          nanoid(),
-          assetId,
-          'Office Original',
-          'Hidden original snapshot before first Office edit',
-          String(row.media_url || '').trim(),
-          String(row.source_path || '').trim() || publicUploadUrlToAbsolutePath(row.media_url),
-          String(row.file_name || '').trim(),
-          String(row.mime_type || '').trim() || inferMimeTypeFromFileName(row.file_name),
-          String(row.thumbnail_url || '').trim(),
-          actor,
-          'office_original',
-          null,
-          nowIso
-        ]
-      );
-    }
-
-    await pool.query(
-      `
-        INSERT INTO asset_versions (
-          version_id, asset_id, label, note,
-          snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
-          actor_username, action_type, restored_from_version_id,
-          created_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-      `,
-      [
-        version.versionId, assetId, version.label, version.note,
-        version.snapshot.snapshotMediaUrl, version.snapshot.snapshotSourcePath, version.snapshot.snapshotFileName, version.snapshot.snapshotMimeType, version.snapshot.snapshotThumbnailUrl,
-        version.actorUsername, version.actionType, null,
-        version.createdAt
-      ]
-    );
-    await pool.query(
-      `
-        UPDATE assets
-        SET media_url = $2,
-            source_path = $3,
-            file_name = $4,
-            mime_type = $5,
-            thumbnail_url = '',
-            file_hash = $6,
-            updated_at = $7
-        WHERE id = $1
-      `,
-      [assetId, mediaUrl, absPath, nextFileName, nextMimeType, editedHash, nowIso]
-    );
-    await pool.query('COMMIT');
-  } catch (error) {
-    await pool.query('ROLLBACK');
-    try { if (fs.existsSync(absPath)) fs.unlinkSync(absPath); } catch (_cleanupError) {}
-    throw error;
-  }
-
-  await indexAssetToElastic(assetId).catch(() => {});
-  return { saved: true, status: callbackStatus, versionId: version.versionId, mediaUrl };
 }
 
 function getAssetFamily({ mimeType, fileName, declaredType }) {
@@ -4685,6 +4405,8 @@ function normalizeForSearch(value) {
   return String(value || '')
     .normalize('NFC')
     .toLocaleLowerCase('tr')
+    .replace(/[İIı]/g, 'i')
+    .replace(/\u0307/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -6900,6 +6622,25 @@ function sanitizeOnlyOfficeUserName(value) {
   return normalized || 'mam user';
 }
 
+const officeService = createOfficeService({
+  pool,
+  onlyofficePublicUrl: ONLYOFFICE_PUBLIC_URL,
+  onlyofficeInternalUrl: ONLYOFFICE_INTERNAL_URL,
+  appInternalUrl: APP_INTERNAL_URL,
+  configVersion: ONLYOFFICE_CONFIG_VERSION,
+  getFileExtension,
+  inferMimeTypeFromFileName,
+  isOfficeDocumentCandidate,
+  publicUploadUrlToAbsolutePath,
+  getIngestStoragePath,
+  sanitizeFileName,
+  runCommandCapture,
+  computeBufferSha256,
+  getAssetStoredFileHash,
+  indexAssetToElastic,
+  sanitizeOnlyOfficeUserId
+});
+
 function buildUserContextFromRequest(req) {
   const usernameRaw =
     getHeaderString(req, 'x-forwarded-user') ||
@@ -6988,6 +6729,10 @@ async function getKeycloakAdminAccessToken() {
 }
 
 async function fetchKeycloakUsers() {
+  const now = Date.now();
+  if (keycloakUsersCache.value && keycloakUsersCache.expiresAt > now) {
+    return keycloakUsersCache.value;
+  }
   const token = await getKeycloakAdminAccessToken();
   if (!token) return { users: [], realmByUsername: new Map() };
   const realms = getKeycloakCandidateRealms();
@@ -7020,7 +6765,9 @@ async function fetchKeycloakUsers() {
       // Try next realm candidate.
     }
   }
-  return { users, realmByUsername };
+  const value = { users, realmByUsername };
+  keycloakUsersCache = { expiresAt: now + KEYCLOAK_ADMIN_CACHE_TTL_MS, value };
+  return value;
 }
 
 function isVisibleKeycloakUser(user) {
@@ -7033,6 +6780,14 @@ function isVisibleKeycloakUser(user) {
 }
 
 async function fetchKeycloakUserPermissionDefaults(users, realmByUsername) {
+  const cacheKey = (Array.isArray(users) ? users : [])
+    .map((user) => `${String(user?.id || '').trim()}:${String(user?.username || '').trim().toLowerCase()}`)
+    .sort()
+    .join('|');
+  const now = Date.now();
+  const cached = keycloakPermissionDefaultsCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) return new Map(cached.value);
+
   const token = await getKeycloakAdminAccessToken();
   if (!token) return new Map();
   const candidateRealms = getKeycloakCandidateRealms();
@@ -7067,6 +6822,10 @@ async function fetchKeycloakUserPermissionDefaults(users, realmByUsername) {
       results.set(username, defaults.permissionKeys);
     })
   );
+  keycloakPermissionDefaultsCache.set(cacheKey, {
+    expiresAt: now + KEYCLOAK_ADMIN_CACHE_TTL_MS,
+    value: Array.from(results.entries())
+  });
   return results;
 }
 
@@ -7433,6 +7192,7 @@ app.get('/api/assets', async (req, res) => {
       .filter(Boolean);
     const status = (req.query.status || '').toString().trim();
     const trash = (req.query.trash || 'active').toString().trim().toLowerCase();
+    const ensurePreview = String(req.query.ensurePreview || '').trim() === '1';
     const dateRange = normalizeUploadDateRange(uploadDateFrom, uploadDateTo);
     const normalizedSortBy = normalizeSortBy(sortBy);
     const baseWhere = [];
@@ -7591,6 +7351,14 @@ app.get('/api/assets', async (req, res) => {
           });
         }
       }
+      let pageClause = '';
+      if (Number(options.limit) > 0) {
+        queryValues.push(Math.max(1, Math.min(100, Number(options.limit) || 10)));
+        const limitIdx = queryValues.length;
+        queryValues.push(Math.max(0, Number(options.offset) || 0));
+        const offsetIdx = queryValues.length;
+        pageClause = `LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
+      }
       const sql = `
         SELECT
           assets.*,
@@ -7613,19 +7381,39 @@ app.get('/api/assets', async (req, res) => {
         FROM assets
         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
         ORDER BY ${orderClause}
+        ${pageClause}
       `;
       const result = await pool.query(sql, queryValues);
       return result.rows;
     };
 
+    const countAssetRows = async (extraWhere = [], extraParams = []) => {
+      const queryValues = [...baseValues, ...extraParams];
+      const where = [...baseWhere, ...extraWhere];
+      const result = await pool.query(
+        `
+          SELECT COUNT(*)::int AS total
+          FROM assets
+          ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        `,
+        queryValues
+      );
+      return Number(result.rows?.[0]?.total || 0);
+    };
+
     let rows = [];
+    let totalOverride = null;
+    const canUseSqlPagination = pageLimit > 0 && !q && !ocrQ && !subtitleQ;
     if (q) {
+      const textWhere = buildAssetTextWhere(parsedAssetQuery);
       rankedIds = await searchAssetIdsElastic(q);
       if (rankedIds === null) {
-        const textWhere = buildAssetTextWhere(parsedAssetQuery);
         rows = await fetchAssetRows(textWhere.clauses, textWhere.params);
       } else if (rankedIds.length) {
         rows = await fetchAssetRows([], [], { rankedIds });
+      } else {
+        // Elasticsearch can be empty/stale after local rebuilds; SQL remains the source of truth.
+        rows = await fetchAssetRows(textWhere.clauses, textWhere.params);
       }
       if (!rows.length && !parsedAssetQuery.hasOperators) {
         const candidateRows = await fetchAssetRows();
@@ -7638,15 +7426,26 @@ app.get('/api/assets', async (req, res) => {
         };
       }
     } else {
-      rows = await fetchAssetRows();
+      if (canUseSqlPagination) {
+        const [paged, totalCount] = await Promise.all([
+          fetchAssetRows([], [], { limit: pageLimit, offset: pageOffset }),
+          countAssetRows()
+        ]);
+        rows = paged;
+        totalOverride = totalCount;
+      } else {
+        rows = await fetchAssetRows();
+      }
     }
 
     if (ocrQ) {
       const parsedOcrQuery = parseTextSearchQuery(ocrQ, normalizeSubtitleSearchText);
+      const ocrSearch = parsedOcrQuery.raw
+        ? await searchOcrMatchesForAssetRows(rows, ocrQ, 8)
+        : { byAssetId: new Map(), didYouMean: '', fuzzyUsed: false, highlightQuery: ocrQ };
       const filtered = [];
       for (const row of rows) {
-        const ocrSearch = await searchOcrMatchesForAssetRow(row, ocrQ, 8);
-        const hits = Array.isArray(ocrSearch.matches) ? ocrSearch.matches : [];
+        const hits = ocrSearch.byAssetId.get(String(row.id || '').trim()) || [];
         if (!hits.length) continue;
         const hitQuery = String(ocrSearch.highlightQuery || ocrQ).trim() || ocrQ;
         const hit = hits[0];
@@ -7664,14 +7463,14 @@ app.get('/api/assets', async (req, res) => {
           endSec: Number(item.endSec || 0),
           startTc: formatTimecode(Number(item.startSec || 0))
         }));
-        if (!searchMeta.ocrQ.fuzzyUsed && (ocrSearch.fuzzyUsed || String(ocrSearch.didYouMean || '').trim())) {
-          searchMeta.ocrQ = {
-            didYouMean: String(ocrSearch.didYouMean || '').trim(),
-            fuzzyUsed: Boolean(ocrSearch.fuzzyUsed),
-            highlightQuery: hitQuery
-          };
-        }
         filtered.push(row);
+      }
+      if (ocrSearch.fuzzyUsed || String(ocrSearch.didYouMean || '').trim()) {
+        searchMeta.ocrQ = {
+          didYouMean: String(ocrSearch.didYouMean || '').trim(),
+          fuzzyUsed: Boolean(ocrSearch.fuzzyUsed),
+          highlightQuery: String(ocrSearch.highlightQuery || ocrQ).trim() || ocrQ
+        };
       }
       rows = parsedOcrQuery.raw ? filtered : [];
     }
@@ -7681,10 +7480,10 @@ app.get('/api/assets', async (req, res) => {
       if (!parsedSubtitleQuery.raw) {
         rows = [];
       } else {
+        const subtitleSearch = await searchSubtitleMatchesForAssetRows(rows, subtitleQ, 8);
         const filtered = [];
         for (const row of rows) {
-          const subtitleSearch = await searchSubtitleMatchesForAssetRow(row, subtitleQ, 8);
-          const hits = Array.isArray(subtitleSearch.matches) ? subtitleSearch.matches : [];
+          const hits = subtitleSearch.byAssetId.get(String(row.id || '').trim()) || [];
           if (!hits.length) continue;
           const hitQuery = String(subtitleSearch.highlightQuery || subtitleQ).trim() || subtitleQ;
           const match = hits[0];
@@ -7702,25 +7501,28 @@ app.get('/api/assets', async (req, res) => {
             endSec: Number(item.endSec || 0),
             startTc: String(item.startTc || formatTimecode(Number(item.startSec || 0)))
           }));
-          if (!searchMeta.subtitleQ.fuzzyUsed && (subtitleSearch.fuzzyUsed || String(subtitleSearch.didYouMean || '').trim())) {
-            searchMeta.subtitleQ = {
-              didYouMean: String(subtitleSearch.didYouMean || '').trim(),
-              fuzzyUsed: Boolean(subtitleSearch.fuzzyUsed),
-              highlightQuery: hitQuery
-            };
-          }
           filtered.push(row);
+        }
+        if (subtitleSearch.fuzzyUsed || String(subtitleSearch.didYouMean || '').trim()) {
+          searchMeta.subtitleQ = {
+            didYouMean: String(subtitleSearch.didYouMean || '').trim(),
+            fuzzyUsed: Boolean(subtitleSearch.fuzzyUsed),
+            highlightQuery: String(subtitleSearch.highlightQuery || subtitleQ).trim() || subtitleQ
+          };
         }
         rows = filtered;
       }
     }
 
-    const total = rows.length;
-    const pagedRows = pageLimit ? rows.slice(pageOffset, pageOffset + pageLimit) : rows;
+    const total = totalOverride == null ? rows.length : totalOverride;
+    const pagedRows = totalOverride == null && pageLimit ? rows.slice(pageOffset, pageOffset + pageLimit) : rows;
     const hydratedRows = [];
     for (const row of pagedRows) {
+      if (!ensurePreview) {
+        hydratedRows.push(row);
+        continue;
+      }
       const withPdfThumb = await ensurePdfThumbnailForRow(row);
-      // Backfill missing document thumbnails lazily so existing uploads also get previews.
       hydratedRows.push(await ensureDocumentThumbnailForRow(withPdfThumb));
     }
     res.json({
@@ -8218,141 +8020,6 @@ app.get('/api/assets/:id', async (req, res) => {
     res.json(asset);
   } catch (_error) {
     res.status(500).json({ error: 'Failed to load asset' });
-  }
-});
-
-app.get('/api/assets/:id/office-config', async (req, res) => {
-  try {
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-    if (!assetResult.rowCount) {
-      return res.status(404).json({ error: 'Asset not found' });
-    }
-    const row = assetResult.rows[0];
-    if (!isOfficeDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
-      return res.status(400).json({ error: 'Asset is not an Office document' });
-    }
-    const fileType = getFileExtension(row.file_name) || 'docx';
-    const documentType = getOnlyOfficeDocumentType({ mimeType: row.mime_type, fileName: row.file_name });
-    const publicTitle = String(row.title || row.file_name || row.id || 'Document').trim() || 'Document';
-    const mediaUrl = String(row.media_url || '').trim();
-    if (!mediaUrl.startsWith('/uploads/')) {
-      return res.status(400).json({ error: 'Document URL is invalid' });
-    }
-
-    const effective = await resolveEffectivePermissions(req).catch(() => null);
-    const canEditOffice = Boolean(effective?.canEditOffice);
-    let officeFileRevision = '';
-    if (canEditOffice && fileType === 'docx') {
-      const mediaPath = publicUploadUrlToAbsolutePath(mediaUrl);
-      const normalized = await normalizeDocxForOnlyOfficeEdit(mediaPath);
-      if (normalized.changed || normalized.reason === 'enforced-protection') {
-        console.log(JSON.stringify({
-          event: 'onlyoffice-docx-normalize',
-          assetId: String(row.id || '').trim(),
-          changed: Boolean(normalized.changed),
-          reason: normalized.reason
-        }));
-      }
-      try {
-        const stat = fs.statSync(mediaPath);
-        officeFileRevision = String(Math.round(stat.mtimeMs || 0));
-      } catch (_error) {
-        officeFileRevision = '';
-      }
-    }
-
-    const documentUrl = `${APP_INTERNAL_URL}${mediaUrl}`;
-    const callbackUrl = `${APP_INTERNAL_URL}/api/assets/${encodeURIComponent(String(row.id || '').trim())}/office-callback`;
-    const officeKeySeed = [
-      String(row.id || '').trim(),
-      String(row.updated_at || row.created_at || '').trim(),
-      String(row.media_url || '').trim(),
-      officeFileRevision,
-      canEditOffice ? 'edit' : 'view',
-      ONLYOFFICE_CONFIG_VERSION
-    ].join('|');
-    const officeDocumentKey = crypto.createHash('sha1').update(officeKeySeed).digest('hex');
-    const editorUserId = sanitizeOnlyOfficeUserId(effective?.username || effective?.email || row.owner || 'mam-user');
-    const editorUserName = String(effective?.displayName || effective?.username || row.owner || 'MAM User').trim() || 'MAM User';
-    console.log(JSON.stringify({
-      event: 'onlyoffice-config',
-      assetId: String(row.id || '').trim(),
-      username: String(effective?.username || '').trim(),
-      email: String(effective?.email || '').trim(),
-      canEditOffice,
-      mode: canEditOffice ? 'edit' : 'view',
-      userId: editorUserId
-    }));
-    const documentPermissions = {
-      copy: true,
-      download: true,
-      edit: canEditOffice,
-      print: true
-    };
-    const config = {
-      document: {
-        fileType,
-        key: officeDocumentKey,
-        title: publicTitle,
-        url: documentUrl,
-        permissions: documentPermissions
-      },
-      documentType,
-      editorConfig: {
-        mode: canEditOffice ? 'edit' : 'view',
-        lang: String(req.query.lang || 'tr').trim().toLowerCase().startsWith('tr') ? 'tr' : 'en',
-        callbackUrl,
-        customization: {
-          forcesave: canEditOffice
-        },
-        user: {
-          id: editorUserId,
-          name: editorUserName
-        }
-      }
-    };
-    if (!canEditOffice) {
-      config.editorConfig.customization = {
-        ...config.editorConfig.customization,
-        compactHeader: true,
-        compactToolbar: true,
-        help: false,
-        hideRightMenu: true,
-        hideRulers: true
-      };
-    }
-    return res.json({
-      onlyofficeUrl: ONLYOFFICE_PUBLIC_URL,
-      config
-    });
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to build ONLYOFFICE config' });
-  }
-});
-
-app.post('/api/assets/:id/office-callback', express.json({ limit: '10mb' }), async (req, res) => {
-  try {
-    const assetId = String(req.params.id || '').trim();
-    if (!assetId) return res.json({ error: 0 });
-    const result = await saveOnlyofficeCallbackVersion(assetId, req.body || {});
-    console.log(JSON.stringify({
-      event: 'onlyoffice-callback',
-      assetId,
-      status: Number(req.body?.status || 0),
-      saved: Boolean(result.saved),
-      unchanged: Boolean(result.unchanged),
-      ignored: Boolean(result.ignored),
-      versionId: String(result.versionId || ''),
-      error: String(result.error || '')
-    }));
-    return res.json({ error: 0 });
-  } catch (error) {
-    console.error('ONLYOFFICE callback save failed', {
-      assetId: String(req.params.id || '').trim(),
-      status: Number(req.body?.status || 0),
-      error: String(error?.message || error)
-    });
-    return res.json({ error: 1 });
   }
 });
 
@@ -9068,453 +8735,6 @@ app.get('/api/assets/:id/preview-text', async (req, res) => {
   }
 });
 
-app.get('/api/assets/:id/pdf-search', async (req, res) => {
-  try {
-    const query = String(req.query.q || '').trim();
-    if (!query) return res.status(400).json({ error: 'q is required' });
-
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-    if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
-    const row = assetResult.rows[0];
-    if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
-      return res.status(400).json({ error: 'Asset is not a PDF' });
-    }
-
-    let inputPath = row.source_path;
-    if (!inputPath || !fs.existsSync(inputPath)) {
-      const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
-      if (mediaPath && fs.existsSync(mediaPath)) inputPath = mediaPath;
-    }
-    if (!inputPath || !fs.existsSync(inputPath)) {
-      return res.status(404).json({ error: 'PDF file not found on server' });
-    }
-
-    const pages = await extractPdfPagesText(inputPath);
-    if (!pages.length) {
-      return res.json({ query, totalPages: 0, matches: [] });
-    }
-
-    const queryLower = query.toLowerCase();
-    const matches = [];
-    for (let i = 0; i < pages.length; i += 1) {
-      const pageText = String(pages[i] || '');
-      const lowered = pageText.toLowerCase();
-      let from = 0;
-      let count = 0;
-      while (true) {
-        const hit = lowered.indexOf(queryLower, from);
-        if (hit < 0) break;
-        count += 1;
-        from = hit + queryLower.length;
-      }
-      if (count > 0) {
-        matches.push({
-          page: i + 1,
-          count,
-          snippet: buildPdfSearchSnippet(pageText, query)
-        });
-      }
-    }
-
-    return res.json({ query, totalPages: pages.length, matches: matches.slice(0, 200) });
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to search PDF' });
-  }
-});
-
-app.get('/api/assets/:id/pdf-search-ocr', async (_req, res) => {
-  return res.status(410).json({ error: 'PDF OCR search is disabled.' });
-});
-
-app.get('/api/assets/:id/pdf-page-text', async (req, res) => {
-  try {
-    const requestedPage = Math.max(1, Number(req.query.page) || 1);
-
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-    if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
-    const row = assetResult.rows[0];
-    if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
-      return res.status(400).json({ error: 'Asset is not a PDF' });
-    }
-
-    let inputPath = row.source_path;
-    if (!inputPath || !fs.existsSync(inputPath)) {
-      const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
-      if (mediaPath && fs.existsSync(mediaPath)) inputPath = mediaPath;
-    }
-    if (!inputPath || !fs.existsSync(inputPath)) {
-      return res.status(404).json({ error: 'PDF file not found on server' });
-    }
-
-    const pages = await extractPdfPagesText(inputPath);
-    if (!pages.length) {
-      return res.json({ page: requestedPage, totalPages: 0, text: '' });
-    }
-
-    const safePage = Math.min(Math.max(1, requestedPage), pages.length);
-    return res.json({
-      page: safePage,
-      totalPages: pages.length,
-      text: String(pages[safePage - 1] || ''),
-    });
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to load PDF page text' });
-  }
-});
-
-app.get('/api/assets/:id/pdf-meta', async (req, res) => {
-  try {
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-    if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
-    const row = assetResult.rows[0];
-    if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
-      return res.status(400).json({ error: 'Asset is not a PDF' });
-    }
-
-    let inputPath = row.source_path;
-    if (!inputPath || !fs.existsSync(inputPath)) {
-      const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
-      if (mediaPath && fs.existsSync(mediaPath)) inputPath = mediaPath;
-    }
-    if (!inputPath || !fs.existsSync(inputPath)) {
-      return res.status(404).json({ error: 'PDF file not found on server' });
-    }
-
-    const totalPages = await getPdfPageCount(inputPath);
-    return res.json({ totalPages });
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to load PDF metadata' });
-  }
-});
-
-app.get('/api/assets/:id/pdf-page-image', async (req, res) => {
-  try {
-    const requestedPage = Math.max(1, Number(req.query.page) || 1);
-    const requestedWidth = Math.max(320, Math.min(2200, Number(req.query.width) || 1200));
-
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-    if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
-    const row = assetResult.rows[0];
-    if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
-      return res.status(400).json({ error: 'Asset is not a PDF' });
-    }
-
-    let inputPath = row.source_path;
-    if (!inputPath || !fs.existsSync(inputPath)) {
-      const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
-      if (mediaPath && fs.existsSync(mediaPath)) inputPath = mediaPath;
-    }
-    if (!inputPath || !fs.existsSync(inputPath)) {
-      return res.status(404).json({ error: 'PDF file not found on server' });
-    }
-
-    const totalPages = await getPdfPageCount(inputPath);
-    const safePage = totalPages > 0 ? Math.min(requestedPage, totalPages) : requestedPage;
-    const imageBuffer = await renderPdfPageJpegBuffer(inputPath, safePage, requestedWidth);
-    if (!imageBuffer) return res.status(500).json({ error: 'Failed to render PDF page image' });
-
-    res.setHeader('Content-Type', 'image/jpeg');
-    res.setHeader('Cache-Control', 'no-store');
-    return res.send(imageBuffer);
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to load PDF page image' });
-  }
-});
-
-app.post('/api/assets/:id/pdf/save', requirePdfAdvancedTools, async (req, res) => {
-  try {
-    const assetId = String(req.params.id || '').trim();
-    if (!assetId) return res.status(400).json({ error: 'Invalid asset id' });
-    const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-    const row = rowResult.rows[0];
-    if (!row) return res.status(404).json({ error: 'Asset not found' });
-    if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
-      return res.status(400).json({ error: 'PDF save is only supported for PDF assets' });
-    }
-
-    const rawBase64 = String(req.body?.pdfBase64 || '').trim();
-    if (!rawBase64) return res.status(400).json({ error: 'pdfBase64 is required' });
-    const sanitizedBase64 = rawBase64.replace(/^data:application\/pdf;base64,/i, '');
-    let pdfBuffer = null;
-    try {
-      pdfBuffer = Buffer.from(sanitizedBase64, 'base64');
-    } catch (_error) {
-      return res.status(400).json({ error: 'Invalid base64 payload' });
-    }
-    if (!pdfBuffer || pdfBuffer.length < 16) {
-      return res.status(400).json({ error: 'Decoded PDF content is empty' });
-    }
-    const isPdfHeader = String(pdfBuffer.slice(0, 5).toString('utf8') || '').startsWith('%PDF-');
-    if (!isPdfHeader) {
-      return res.status(400).json({ error: 'Decoded content is not a valid PDF' });
-    }
-    const pdfHash = computeBufferSha256(pdfBuffer);
-    const currentHash = await getAssetStoredFileHash(row, { persist: true });
-    if (pdfHash && currentHash && pdfHash === currentHash) {
-      return res.json({ saved: false, unchanged: true, asset: mapAssetRow(row) });
-    }
-    const duplicateAsset = await findDuplicateAssetByHash(pdfHash, { excludeAssetId: assetId });
-    if (duplicateAsset) {
-      return res.status(409).json({
-        error: 'An identical asset file already exists',
-        code: 'duplicate_asset_content',
-        existingAsset: buildDuplicateAssetPayload(duplicateAsset)
-      });
-    }
-
-    const inputFileName = String(req.body?.fileName || row.file_name || `${assetId}.pdf`).trim();
-    const safeBase = sanitizeFileName(path.basename(inputFileName, path.extname(inputFileName)) || `asset-${assetId}`);
-    const storage = getIngestStoragePath({ type: 'document', mimeType: 'application/pdf', fileName: `${safeBase}.pdf` });
-    const storedName = `${Date.now()}-${nanoid()}-${safeBase}-edited.pdf`;
-    const absPath = path.join(storage.absoluteDir, storedName);
-    const relativePath = path.join(storage.relativeDir, storedName);
-    const mediaUrl = `/uploads/${relativePath.replace(/\\/g, '/')}`;
-    fs.writeFileSync(absPath, pdfBuffer);
-
-    const nowIso = new Date().toISOString();
-    const versionCount = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [assetId]);
-    const nextVersion = Number(versionCount.rows?.[0]?.c || 0) + 1;
-    const actor = String(req.userPermissions?.displayName || req.userPermissions?.username || 'admin').trim() || 'admin';
-    const rawKinds = Array.isArray(req.body?.changeKinds) ? req.body.changeKinds : [];
-    const normalizedKinds = Array.from(new Set(rawKinds.map((k) => String(k || '').trim().toLowerCase()).filter(Boolean)));
-    let effectiveKind = 'unknown';
-    if (normalizedKinds.includes('redaction') && normalizedKinds.includes('text_insert')) effectiveKind = 'mixed';
-    else if (normalizedKinds.includes('redaction') && normalizedKinds.includes('annotation')) effectiveKind = 'mixed';
-    else if (normalizedKinds.includes('text_insert') && normalizedKinds.includes('annotation')) effectiveKind = 'mixed';
-    else if (normalizedKinds.includes('redaction')) effectiveKind = 'redaction';
-    else if (normalizedKinds.includes('text_insert')) effectiveKind = 'text_insert';
-    else if (normalizedKinds.includes('annotation')) effectiveKind = 'annotation';
-    const nextFileName = `${safeBase}-edited.pdf`;
-    const version = {
-      versionId: nanoid(),
-      label: `PDF Edit ${nextVersion}`,
-      note: `Saved from PDF viewer by ${actor} [change:${effectiveKind}]`,
-      snapshot: {
-        snapshotMediaUrl: mediaUrl,
-        snapshotSourcePath: absPath,
-        snapshotFileName: nextFileName,
-        snapshotMimeType: 'application/pdf',
-        snapshotThumbnailUrl: ''
-      },
-      actorUsername: actor,
-      actionType: 'pdf_save',
-      createdAt: nowIso
-    };
-    await pool.query('BEGIN');
-    try {
-      const originalExists = await pool.query(
-        `SELECT 1 FROM asset_versions WHERE asset_id = $1 AND action_type = 'pdf_original' LIMIT 1`,
-        [assetId]
-      );
-      if (!originalExists.rowCount) {
-        await pool.query(
-          `
-            INSERT INTO asset_versions (
-              version_id, asset_id, label, note,
-              snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
-              actor_username, action_type, restored_from_version_id,
-              created_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-          `,
-          [
-            nanoid(),
-            assetId,
-            'PDF Original',
-            'Hidden original snapshot before first PDF edit',
-            String(row.media_url || '').trim(),
-            String(row.source_path || '').trim(),
-            String(row.file_name || '').trim(),
-            String(row.mime_type || '').trim() || 'application/pdf',
-            String(row.thumbnail_url || '').trim(),
-            actor,
-            'pdf_original',
-            null,
-            nowIso
-          ]
-        );
-      }
-
-      await pool.query(
-        `
-          INSERT INTO asset_versions (
-            version_id, asset_id, label, note,
-            snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
-            actor_username, action_type, restored_from_version_id,
-            created_at
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-        `,
-        [
-          version.versionId, assetId, version.label, version.note,
-          version.snapshot.snapshotMediaUrl, version.snapshot.snapshotSourcePath, version.snapshot.snapshotFileName, version.snapshot.snapshotMimeType, version.snapshot.snapshotThumbnailUrl,
-          version.actorUsername, version.actionType, null,
-          version.createdAt
-        ]
-      );
-      await pool.query(
-        `
-          UPDATE assets
-          SET media_url = $2,
-              source_path = $3,
-              file_name = $4,
-              mime_type = $5,
-              thumbnail_url = '',
-              file_hash = $6,
-              updated_at = $7
-          WHERE id = $1
-        `,
-        [assetId, mediaUrl, absPath, nextFileName, 'application/pdf', pdfHash, nowIso]
-      );
-      await pool.query('COMMIT');
-    } catch (error) {
-      await pool.query('ROLLBACK');
-      throw error;
-    }
-
-    const updatedResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-    let updatedRow = updatedResult.rows[0];
-    updatedRow = await ensurePdfThumbnailForRow(updatedRow);
-
-    return res.json({
-      saved: true,
-      asset: mapAssetRow(updatedRow),
-      changeKind: effectiveKind,
-      version
-    });
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to save PDF edits' });
-  }
-});
-
-app.post('/api/assets/:id/pdf-restore-original', requireAdminAccess, async (req, res) => {
-  try {
-    if (!req.userPermissions?.canUsePdfAdvancedTools) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-    const assetId = String(req.params.id || '').trim();
-    if (!assetId) return res.status(400).json({ error: 'assetId is required' });
-
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-    const currentRow = assetResult.rows[0];
-    if (!currentRow) return res.status(404).json({ error: 'Asset not found' });
-    if (!isPdfCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
-      return res.status(400).json({ error: 'PDF restore is only supported for PDF assets' });
-    }
-
-    let targetResult = await pool.query(
-      `SELECT * FROM asset_versions WHERE asset_id = $1 AND action_type = 'pdf_original' ORDER BY created_at ASC LIMIT 1`,
-      [assetId]
-    );
-    if (!targetResult.rowCount) {
-      targetResult = await pool.query(
-        `SELECT * FROM asset_versions WHERE asset_id = $1 AND action_type = 'ingest' ORDER BY created_at ASC LIMIT 1`,
-        [assetId]
-      );
-    }
-    const target = targetResult.rows[0];
-    if (!target) return res.status(404).json({ error: 'Original PDF snapshot not found' });
-
-    const snapshotMediaUrl = String(target.snapshot_media_url || '').trim();
-    const snapshotFileName = String(target.snapshot_file_name || '').trim() || currentRow.file_name;
-    const snapshotMimeType = String(target.snapshot_mime_type || '').trim() || 'application/pdf';
-    const snapshotThumbnailUrl = String(target.snapshot_thumbnail_url || '').trim();
-    let snapshotSourcePath = String(target.snapshot_source_path || '').trim();
-    if (!snapshotMediaUrl.startsWith('/uploads/')) {
-      return res.status(400).json({ error: 'Original snapshot is not restorable' });
-    }
-    if (!snapshotSourcePath || !fs.existsSync(snapshotSourcePath)) {
-      const resolved = publicUploadUrlToAbsolutePath(snapshotMediaUrl);
-      snapshotSourcePath = resolved && fs.existsSync(resolved) ? resolved : '';
-    }
-    if (!snapshotSourcePath || !fs.existsSync(snapshotSourcePath)) {
-      return res.status(400).json({ error: 'Original snapshot file is missing on disk' });
-    }
-
-    const nowIso = new Date().toISOString();
-    const actor = String(req.userPermissions?.displayName || req.userPermissions?.username || 'admin').trim() || 'admin';
-
-    await pool.query(
-      `
-        UPDATE assets
-        SET media_url = $2,
-            source_path = $3,
-            file_name = $4,
-            mime_type = $5,
-            thumbnail_url = $6,
-            updated_at = $7
-        WHERE id = $1
-      `,
-      [assetId, snapshotMediaUrl, snapshotSourcePath, snapshotFileName, snapshotMimeType, snapshotThumbnailUrl, nowIso]
-    );
-
-    const countResult = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [assetId]);
-    const nextVersion = Number(countResult.rows?.[0]?.c || 0) + 1;
-    const restoreVersion = {
-      versionId: nanoid(),
-      label: `PDF Original Restore ${nextVersion}`,
-      note: `Restored to original snapshot by ${actor}`,
-      snapshot: {
-        snapshotMediaUrl,
-        snapshotSourcePath,
-        snapshotFileName,
-        snapshotMimeType,
-        snapshotThumbnailUrl
-      },
-      actorUsername: actor,
-      actionType: 'pdf_restore_original',
-      restoredFromVersionId: target.version_id,
-      createdAt: nowIso
-    };
-    await pool.query(
-      `
-        INSERT INTO asset_versions (
-          version_id, asset_id, label, note,
-          snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
-          actor_username, action_type, restored_from_version_id,
-          created_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-      `,
-      [
-        restoreVersion.versionId, assetId, restoreVersion.label, restoreVersion.note,
-        restoreVersion.snapshot.snapshotMediaUrl, restoreVersion.snapshot.snapshotSourcePath, restoreVersion.snapshot.snapshotFileName, restoreVersion.snapshot.snapshotMimeType, restoreVersion.snapshot.snapshotThumbnailUrl,
-        restoreVersion.actorUsername, restoreVersion.actionType, restoreVersion.restoredFromVersionId,
-        restoreVersion.createdAt
-      ]
-    );
-
-    const updatedResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-    let updatedRow = updatedResult.rows[0];
-    updatedRow = await ensurePdfThumbnailForRow(updatedRow);
-    await indexAssetToElastic(assetId).catch(() => {});
-
-    return res.json({ restored: true, original: true, asset: mapAssetRow(updatedRow), version: restoreVersion });
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to restore original PDF' });
-  }
-});
-
-app.get('/api/assets/:id/pdf-original/download', requireAdminAccess, async (req, res) => {
-  try {
-    if (!req.userPermissions?.canUsePdfAdvancedTools) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-    const assetId = String(req.params.id || '').trim();
-    if (!assetId) return res.status(400).json({ error: 'assetId is required' });
-
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-    const currentRow = assetResult.rows[0];
-    if (!currentRow) return res.status(404).json({ error: 'Asset not found' });
-    if (!isPdfCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
-      return res.status(400).json({ error: 'PDF download is only supported for PDF assets' });
-    }
-
-    const snapshot = await findOriginalVersionSnapshot(assetId, 'pdf_original');
-    if (!snapshot) return res.status(404).json({ error: 'Original PDF snapshot not found' });
-    return sendSnapshotDownload(res, snapshot, currentRow.file_name || `${assetId}.pdf`);
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to download original PDF' });
-  }
-});
-
 app.delete('/api/assets/:id/versions/:versionId', async (req, res) => {
   try {
     const effective = await resolveEffectivePermissions(req);
@@ -9579,329 +8799,6 @@ app.patch('/api/assets/:id/versions/:versionId', async (req, res) => {
   }
 });
 
-app.post('/api/assets/:id/pdf-restore', requireAdminAccess, async (req, res) => {
-  try {
-    if (!req.userPermissions?.canUsePdfAdvancedTools) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-    const assetId = String(req.params.id || '').trim();
-    const versionId = String(req.body?.versionId || '').trim();
-    if (!assetId || !versionId) return res.status(400).json({ error: 'assetId and versionId are required' });
-
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-    const currentRow = assetResult.rows[0];
-    if (!currentRow) return res.status(404).json({ error: 'Asset not found' });
-    if (!isPdfCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
-      return res.status(400).json({ error: 'PDF restore is only supported for PDF assets' });
-    }
-
-    const versionResult = await pool.query(
-      'SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2',
-      [assetId, versionId]
-    );
-    const target = versionResult.rows[0];
-    if (!target) return res.status(404).json({ error: 'Version not found' });
-
-    const snapshotMediaUrl = String(target.snapshot_media_url || '').trim();
-    const snapshotFileName = String(target.snapshot_file_name || '').trim();
-    const snapshotMimeType = String(target.snapshot_mime_type || '').trim() || 'application/pdf';
-    const snapshotThumbnailUrl = String(target.snapshot_thumbnail_url || '').trim();
-    let snapshotSourcePath = String(target.snapshot_source_path || '').trim();
-    if (!snapshotMediaUrl.startsWith('/uploads/')) {
-      return res.status(400).json({ error: 'Selected version has no restorable PDF snapshot' });
-    }
-    if (!snapshotSourcePath || !fs.existsSync(snapshotSourcePath)) {
-      const resolved = publicUploadUrlToAbsolutePath(snapshotMediaUrl);
-      snapshotSourcePath = resolved && fs.existsSync(resolved) ? resolved : '';
-    }
-    if (!snapshotSourcePath || !fs.existsSync(snapshotSourcePath)) {
-      return res.status(400).json({ error: 'Snapshot file for selected version is missing on disk' });
-    }
-
-    const nowIso = new Date().toISOString();
-    const actor = String(req.userPermissions?.displayName || req.userPermissions?.username || 'admin').trim() || 'admin';
-
-    await pool.query('BEGIN');
-    try {
-      await pool.query(
-        `
-          UPDATE assets
-          SET media_url = $2,
-              source_path = $3,
-              file_name = $4,
-              mime_type = $5,
-              thumbnail_url = $6,
-              file_hash = '',
-              updated_at = $7
-          WHERE id = $1
-        `,
-        [assetId, snapshotMediaUrl, snapshotSourcePath, snapshotFileName || currentRow.file_name, snapshotMimeType, snapshotThumbnailUrl, nowIso]
-      );
-
-      const countResult = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [assetId]);
-      const nextVersion = Number(countResult.rows?.[0]?.c || 0) + 1;
-      const restoreVersion = {
-        versionId: nanoid(),
-        label: `PDF Restore ${nextVersion}`,
-        note: `Restored to ${String(target.label || target.version_id)} by ${actor}`,
-        snapshot: {
-          snapshotMediaUrl,
-          snapshotSourcePath,
-          snapshotFileName: snapshotFileName || currentRow.file_name,
-          snapshotMimeType,
-          snapshotThumbnailUrl
-        },
-        actorUsername: actor,
-        actionType: 'pdf_restore',
-        restoredFromVersionId: target.version_id,
-        createdAt: nowIso
-      };
-      await pool.query(
-        `
-          INSERT INTO asset_versions (
-            version_id, asset_id, label, note,
-            snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
-            actor_username, action_type, restored_from_version_id,
-            created_at
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-        `,
-        [
-          restoreVersion.versionId, assetId, restoreVersion.label, restoreVersion.note,
-          restoreVersion.snapshot.snapshotMediaUrl, restoreVersion.snapshot.snapshotSourcePath, restoreVersion.snapshot.snapshotFileName, restoreVersion.snapshot.snapshotMimeType, restoreVersion.snapshot.snapshotThumbnailUrl,
-          restoreVersion.actorUsername, restoreVersion.actionType, restoreVersion.restoredFromVersionId,
-          restoreVersion.createdAt
-        ]
-      );
-      await pool.query('COMMIT');
-
-      const updatedResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-      let updatedRow = updatedResult.rows[0];
-      updatedRow = await ensurePdfThumbnailForRow(updatedRow);
-      return res.json({
-        restored: true,
-        asset: mapAssetRow(updatedRow),
-        version: restoreVersion
-      });
-    } catch (error) {
-      await pool.query('ROLLBACK');
-      throw error;
-    }
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to restore PDF version' });
-  }
-});
-
-app.post('/api/assets/:id/office-restore', requireOfficeEdit, async (req, res) => {
-  try {
-    const assetId = String(req.params.id || '').trim();
-    const versionId = String(req.body?.versionId || '').trim();
-    if (!assetId || !versionId) return res.status(400).json({ error: 'assetId and versionId are required' });
-
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-    const currentRow = assetResult.rows[0];
-    if (!currentRow) return res.status(404).json({ error: 'Asset not found' });
-    if (!isOfficeDocumentCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
-      return res.status(400).json({ error: 'Office restore is only supported for Office assets' });
-    }
-
-    const versionResult = await pool.query(
-      'SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2',
-      [assetId, versionId]
-    );
-    const target = versionResult.rows[0];
-    if (!target) return res.status(404).json({ error: 'Version not found' });
-
-    const snapshotMediaUrl = String(target.snapshot_media_url || '').trim();
-    const snapshotSourcePath = String(target.snapshot_source_path || '').trim();
-    const snapshotFileName = String(target.snapshot_file_name || '').trim() || String(currentRow.file_name || '').trim();
-    const snapshotMimeType = String(target.snapshot_mime_type || '').trim() || String(currentRow.mime_type || '').trim();
-    const snapshotThumbnailUrl = String(target.snapshot_thumbnail_url || '').trim() || String(currentRow.thumbnail_url || '').trim();
-
-    if (!snapshotMediaUrl.startsWith('/uploads/')) {
-      return res.status(400).json({ error: 'Selected version has no restorable Office snapshot' });
-    }
-    const resolvedSnapshotPath = (() => {
-      if (snapshotSourcePath && fs.existsSync(snapshotSourcePath)) return snapshotSourcePath;
-      const resolved = publicUploadUrlToAbsolutePath(snapshotMediaUrl);
-      return resolved && fs.existsSync(resolved) ? resolved : '';
-    })();
-    if (!resolvedSnapshotPath) {
-      return res.status(400).json({ error: 'Snapshot file for selected version is missing on disk' });
-    }
-
-    const nowIso = new Date().toISOString();
-    const actor = String(req.userPermissions?.displayName || req.userPermissions?.username || currentRow.owner || 'admin').trim() || 'admin';
-    const countResult = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [assetId]);
-    const nextVersion = Number(countResult.rows?.[0]?.c || 0) + 1;
-    const restoreVersion = {
-      versionId: nanoid(),
-      label: `Office Restore ${nextVersion}`,
-      note: `Restored to ${String(target.label || target.version_id)} by ${actor}`,
-      snapshot: {
-        snapshotMediaUrl,
-        snapshotSourcePath: resolvedSnapshotPath,
-        snapshotFileName,
-        snapshotMimeType,
-        snapshotThumbnailUrl
-      },
-      actorUsername: String(req.userPermissions?.username || actor).trim() || actor,
-      actionType: 'office_restore',
-      restoredFromVersionId: target.version_id,
-      createdAt: nowIso
-    };
-
-    await pool.query('BEGIN');
-    try {
-      await pool.query(
-        `
-          UPDATE assets
-          SET media_url = $2,
-              source_path = $3,
-              file_name = $4,
-              mime_type = $5,
-              thumbnail_url = $6,
-              file_hash = '',
-              updated_at = $7
-          WHERE id = $1
-        `,
-        [assetId, snapshotMediaUrl, resolvedSnapshotPath, snapshotFileName, snapshotMimeType, snapshotThumbnailUrl, nowIso]
-      );
-      await pool.query(
-        `
-          INSERT INTO asset_versions (
-            version_id, asset_id, label, note,
-            snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
-            actor_username, action_type, restored_from_version_id,
-            created_at
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-        `,
-        [
-          restoreVersion.versionId, assetId, restoreVersion.label, restoreVersion.note,
-          restoreVersion.snapshot.snapshotMediaUrl, restoreVersion.snapshot.snapshotSourcePath, restoreVersion.snapshot.snapshotFileName, restoreVersion.snapshot.snapshotMimeType, restoreVersion.snapshot.snapshotThumbnailUrl,
-          restoreVersion.actorUsername, restoreVersion.actionType, restoreVersion.restoredFromVersionId,
-          restoreVersion.createdAt
-        ]
-      );
-      await pool.query('COMMIT');
-    } catch (error) {
-      await pool.query('ROLLBACK');
-      throw error;
-    }
-
-    await indexAssetToElastic(assetId).catch(() => {});
-    const refreshed = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-    return res.json({
-      restored: true,
-      asset: mapAssetRow(refreshed.rows[0]),
-      version: restoreVersion
-    });
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to restore Office version' });
-  }
-});
-
-app.post('/api/assets/:id/office-restore-original', requireOfficeEdit, async (req, res) => {
-  try {
-    const assetId = String(req.params.id || '').trim();
-    if (!assetId) return res.status(400).json({ error: 'assetId is required' });
-
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-    const currentRow = assetResult.rows[0];
-    if (!currentRow) return res.status(404).json({ error: 'Asset not found' });
-    if (!isOfficeDocumentCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
-      return res.status(400).json({ error: 'Office restore is only supported for Office assets' });
-    }
-
-    let targetResult = await pool.query(
-      `SELECT * FROM asset_versions WHERE asset_id = $1 AND action_type = 'office_original' ORDER BY created_at ASC LIMIT 1`,
-      [assetId]
-    );
-    if (!targetResult.rowCount) {
-      targetResult = await pool.query(
-        `SELECT * FROM asset_versions WHERE asset_id = $1 AND action_type = 'ingest' ORDER BY created_at ASC LIMIT 1`,
-        [assetId]
-      );
-    }
-    const target = targetResult.rows[0];
-    if (!target) return res.status(404).json({ error: 'Original Office snapshot not found' });
-
-    const snapshotMediaUrl = String(target.snapshot_media_url || '').trim();
-    const snapshotFileName = String(target.snapshot_file_name || '').trim() || currentRow.file_name;
-    const snapshotMimeType = String(target.snapshot_mime_type || '').trim() || String(currentRow.mime_type || '').trim();
-    const snapshotThumbnailUrl = String(target.snapshot_thumbnail_url || '').trim();
-    let snapshotSourcePath = String(target.snapshot_source_path || '').trim();
-    if (!snapshotMediaUrl.startsWith('/uploads/')) {
-      return res.status(400).json({ error: 'Original snapshot is not restorable' });
-    }
-    if (!snapshotSourcePath || !fs.existsSync(snapshotSourcePath)) {
-      const resolved = publicUploadUrlToAbsolutePath(snapshotMediaUrl);
-      snapshotSourcePath = resolved && fs.existsSync(resolved) ? resolved : '';
-    }
-    if (!snapshotSourcePath || !fs.existsSync(snapshotSourcePath)) {
-      return res.status(400).json({ error: 'Original snapshot file is missing on disk' });
-    }
-
-    const nowIso = new Date().toISOString();
-    const actor = String(req.userPermissions?.displayName || req.userPermissions?.username || 'admin').trim() || 'admin';
-
-    await pool.query(
-      `
-        UPDATE assets
-        SET media_url = $2,
-            source_path = $3,
-            file_name = $4,
-            mime_type = $5,
-            thumbnail_url = $6,
-            file_hash = '',
-            updated_at = $7
-        WHERE id = $1
-      `,
-      [assetId, snapshotMediaUrl, snapshotSourcePath, snapshotFileName, snapshotMimeType, snapshotThumbnailUrl, nowIso]
-    );
-
-    const countResult = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [assetId]);
-    const nextVersion = Number(countResult.rows?.[0]?.c || 0) + 1;
-    const restoreVersion = {
-      versionId: nanoid(),
-      label: `Office Original Restore ${nextVersion}`,
-      note: `Restored to original snapshot by ${actor}`,
-      snapshot: {
-        snapshotMediaUrl,
-        snapshotSourcePath,
-        snapshotFileName,
-        snapshotMimeType,
-        snapshotThumbnailUrl
-      },
-      actorUsername: actor,
-      actionType: 'office_restore_original',
-      restoredFromVersionId: target.version_id,
-      createdAt: nowIso
-    };
-    await pool.query(
-      `
-        INSERT INTO asset_versions (
-          version_id, asset_id, label, note,
-          snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
-          actor_username, action_type, restored_from_version_id,
-          created_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-      `,
-      [
-        restoreVersion.versionId, assetId, restoreVersion.label, restoreVersion.note,
-        restoreVersion.snapshot.snapshotMediaUrl, restoreVersion.snapshot.snapshotSourcePath, restoreVersion.snapshot.snapshotFileName, restoreVersion.snapshot.snapshotMimeType, restoreVersion.snapshot.snapshotThumbnailUrl,
-        restoreVersion.actorUsername, restoreVersion.actionType, restoreVersion.restoredFromVersionId,
-        restoreVersion.createdAt
-      ]
-    );
-
-    await indexAssetToElastic(assetId).catch(() => {});
-    const updatedResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-    return res.json({ restored: true, original: true, asset: mapAssetRow(updatedResult.rows[0]), version: restoreVersion });
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to restore original Office document' });
-  }
-});
-
 app.post('/api/assets/:id/ensure-proxy', async (req, res) => {
   try {
     const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
@@ -9944,26 +8841,6 @@ app.post('/api/assets/backfill-proxies', async (_req, res) => {
     return res.json({ processed, generated, errors });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to backfill proxies' });
-  }
-});
-
-app.get('/api/assets/:id/office-original/download', requireOfficeEdit, async (req, res) => {
-  try {
-    const assetId = String(req.params.id || '').trim();
-    if (!assetId) return res.status(400).json({ error: 'assetId is required' });
-
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-    const currentRow = assetResult.rows[0];
-    if (!currentRow) return res.status(404).json({ error: 'Asset not found' });
-    if (!isOfficeDocumentCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
-      return res.status(400).json({ error: 'Office download is only supported for Office assets' });
-    }
-
-    const snapshot = await findOriginalVersionSnapshot(assetId, 'office_original');
-    if (!snapshot) return res.status(404).json({ error: 'Original Office snapshot not found' });
-    return sendSnapshotDownload(res, snapshot, currentRow.file_name || `${assetId}.${getFileExtension(currentRow.file_name) || 'docx'}`);
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to download original Office document' });
   }
 });
 
@@ -11092,8 +9969,17 @@ async function checkHttpService(url, timeoutMs = 2200) {
   }
 }
 
-app.get('/api/admin/system-health', async (_req, res) => {
+app.get('/api/admin/system-health', async (req, res) => {
   try {
+    const forceRefresh = String(req.query?.refresh || '').trim() === '1';
+    const nowMs = Date.now();
+    if (!forceRefresh && systemHealthCache.value && systemHealthCache.expiresAt > nowMs) {
+      return res.json({
+        ...systemHealthCache.value,
+        cached: true,
+        cacheTtlSeconds: Math.max(0, Math.ceil((systemHealthCache.expiresAt - nowMs) / 1000))
+      });
+    }
     const buildHealthMediaJobSummary = (row) => {
       if (!row) return null;
       const jobType = normalizeMediaJobType(row.job_type);
@@ -11199,7 +10085,7 @@ app.get('/api/admin/system-health', async (_req, res) => {
       }
     });
 
-    return res.json({
+    const payload = {
       disk: {
         uploadsBytes,
         uploadsFiles,
@@ -11228,7 +10114,12 @@ app.get('/api/admin/system-health', async (_req, res) => {
         missingOcr
       },
       recentJobs
-    });
+    };
+    systemHealthCache = {
+      expiresAt: Date.now() + SYSTEM_HEALTH_CACHE_TTL_MS,
+      value: payload
+    };
+    return res.json({ ...payload, cached: false, cacheTtlSeconds: Math.ceil(SYSTEM_HEALTH_CACHE_TTL_MS / 1000) });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to load system health' });
   }
@@ -11253,13 +10144,7 @@ app.get('/api/admin/ffmpeg-health', async (_req, res) => {
 
 app.post('/api/admin/search/reindex', async (_req, res) => {
   try {
-    await ensureElasticIndex();
-    const assets = await pool.query('SELECT id FROM assets');
-    let indexed = 0;
-    for (const row of assets.rows) {
-      await indexAssetToElastic(row.id).catch(() => {});
-      indexed += 1;
-    }
+    const indexed = await backfillElasticIndex();
     return res.json({ indexed });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to reindex search' });
@@ -12029,6 +10914,48 @@ app.post('/api/collections', async (req, res) => {
   } catch (_error) {
     res.status(500).json({ error: 'Failed to create collection' });
   }
+});
+
+registerOfficeRoutes(app, {
+  pool,
+  officeService,
+  resolveEffectivePermissions,
+  requireOfficeEdit,
+  isOfficeDocumentCandidate,
+  publicUploadUrlToAbsolutePath,
+  indexAssetToElastic,
+  mapAssetRow,
+  findOriginalVersionSnapshot,
+  sendSnapshotDownload,
+  getFileExtension,
+  officeEditorProvider: OFFICE_EDITOR_PROVIDER,
+  uploadsDir: UPLOADS_DIR,
+  runCommandCapture,
+  sanitizeFileName
+});
+
+registerPdfRoutes(app, {
+  pool,
+  requirePdfAdvancedTools,
+  requireAdminAccess,
+  isPdfCandidate,
+  extractPdfPagesText,
+  getPdfPageCount,
+  renderPdfPageJpegBuffer,
+  buildPdfSearchSnippet,
+  computeBufferSha256,
+  getAssetStoredFileHash,
+  findDuplicateAssetByHash,
+  buildDuplicateAssetPayload,
+  sanitizeFileName,
+  getIngestStoragePath,
+  publicUploadUrlToAbsolutePath,
+  inferMimeTypeFromFileName,
+  indexAssetToElastic,
+  ensurePdfThumbnailForRow,
+  mapAssetRow,
+  findOriginalVersionSnapshot,
+  sendSnapshotDownload
 });
 
 loadTurkishWordSet();
