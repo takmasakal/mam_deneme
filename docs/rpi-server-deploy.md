@@ -44,12 +44,14 @@ Script şunları yapar:
 
 ```text
 MAM:      http://<pi-ip>:3000
+Mobile/API: http://<pi-ip>:3001
 Keycloak: http://<pi-ip>:8081
 ```
 
 Not:
-- `3001` dışarı açılmaz
-- böylece `Unknown user` ve direct-app/logout karışıklığı olmaz
+- Browser login için `3000` kullanılır.
+- Cep uygulaması/direct API için lokal kurulumla aynı şekilde `3001` kullanılır.
+- `3001` sadece güvenilir LAN içinde kullanılmalı, internete açılmamalıdır.
 
 ## 5. Kullanıcılar
 

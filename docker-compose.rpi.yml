@@ -62,6 +62,8 @@ services:
       ONLYOFFICE_PUBLIC_URL: http://${PUBLIC_HOST}:8082
       ONLYOFFICE_INTERNAL_URL: http://onlyoffice
       APP_INTERNAL_URL: http://app:3000
+    ports:
+      - "3001:3000"
     volumes:
       - ${UPLOADS_DIR:-./uploads}:/app/uploads
     restart: unless-stopped

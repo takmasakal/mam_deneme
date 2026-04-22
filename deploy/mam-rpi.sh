@@ -125,8 +125,9 @@ case "${cmd}" in
       # shellcheck disable=SC1090
       source "${ENV_FILE}"
       echo "MAM: http://${PUBLIC_HOST}:3000"
+      echo "Mobile/API: http://${PUBLIC_HOST}:3001"
       echo "Keycloak: http://${PUBLIC_HOST}:8081"
-      echo "Direct app is intentionally not exposed."
+      echo "Browser login uses MAM URL; mobile/direct API uses Mobile/API URL."
     else
       echo "Run ./deploy/mam-rpi.sh init first."
     fi
