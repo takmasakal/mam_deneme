@@ -6657,14 +6657,18 @@ function buildUserContextFromRequest(req) {
     getHeaderString(req, 'x-auth-request-access-token') ||
     String(req.headers?.authorization || '').replace(/^Bearer\s+/i, '').trim();
   const tokenPayload = decodeJwtPayload(accessToken) || {};
+  const tokenUsername = String(tokenPayload.preferred_username || tokenPayload.username || '').trim();
+  const tokenEmail = String(tokenPayload.email || '').trim();
+  const tokenName = String(tokenPayload.name || tokenPayload.given_name || '').trim();
   const tokenGroups = Array.isArray(tokenPayload.groups) ? tokenPayload.groups : [];
   const realmRoles = Array.isArray(tokenPayload?.realm_access?.roles) ? tokenPayload.realm_access.roles : [];
   const resourceRoles = Object.values(tokenPayload?.resource_access || {})
     .flatMap((entry) => (Array.isArray(entry?.roles) ? entry.roles : []));
   const uuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  const localFromEmail = emailRaw.includes('@') ? emailRaw.split('@')[0] : '';
-  const username = preferred || (!uuidLike.test(usernameRaw) ? usernameRaw : '') || localFromEmail;
-  const displayName = (!uuidLike.test(usernameRaw) ? usernameRaw : '') || username || localFromEmail;
+  const effectiveEmail = emailRaw || tokenEmail;
+  const localFromEmail = effectiveEmail.includes('@') ? effectiveEmail.split('@')[0] : '';
+  const username = preferred || tokenUsername || (!uuidLike.test(usernameRaw) ? usernameRaw : '') || localFromEmail;
+  const displayName = (!uuidLike.test(usernameRaw) ? usernameRaw : '') || tokenName || username || localFromEmail;
   const groups = groupsRaw
     .split(/[,\s]+/)
     .concat(tokenGroups.map((g) => String(g || '')))
@@ -6682,7 +6686,7 @@ function buildUserContextFromRequest(req) {
   return {
     username,
     displayName,
-    email: emailRaw || '',
+    email: effectiveEmail || '',
     baseIsAdmin: resolved.permissionKeys.includes('admin.access'),
     basePermissionKeys: resolved.permissionKeys,
     baseIsSuperAdmin: resolved.isSuperAdmin

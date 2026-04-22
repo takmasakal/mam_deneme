@@ -2,7 +2,7 @@ const PERMISSION_DEFINITIONS = [
   {
     key: 'admin.access',
     legacyField: 'adminPageAccess',
-    roleNames: ['mam-admin', 'mam-admin-access'],
+    roleNames: ['mam-admin', 'mam-admin-access', 'admin-access'],
     labelKey: 'perm_admin_access'
   },
   {
@@ -20,7 +20,7 @@ const PERMISSION_DEFINITIONS = [
   {
     key: 'asset.delete',
     legacyField: 'assetDelete',
-    roleNames: ['mam-asset-delete'],
+    roleNames: ['mam-asset-delete', 'asset-delete'],
     labelKey: 'perm_asset_delete'
   },
   {
@@ -152,7 +152,7 @@ function isAdminName(value) {
 
 function isAdminByGroupsOrRoles(groupsOrRoles) {
   return normalizePrincipalNames(groupsOrRoles)
-    .some((name) => SUPER_ADMIN_ROLE_NAMES.includes(name) || name === 'mam-admin' || name === 'mam-admin-access');
+    .some((name) => SUPER_ADMIN_ROLE_NAMES.includes(name) || name === 'mam-admin' || name === 'mam-admin-access' || name === 'admin-access');
 }
 
 module.exports = {

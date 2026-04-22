@@ -28,10 +28,42 @@
       "attributes": {
         "post.logout.redirect.uris": "+"
       }
+    },
+    {
+      "clientId": "metmam-mobile",
+      "name": "metmam-mobile",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "redirectUris": [
+        "com.example.metmam:/oauth2redirect"
+      ],
+      "webOrigins": [
+        "+"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false
     }
   ],
   "roles": {
     "realm": [
+      {
+        "name": "mam-admin-access"
+      },
+      {
+        "name": "mam-asset-delete"
+      },
+      {
+        "name": "mam-office-edit"
+      },
+      {
+        "name": "mam-metadata-edit"
+      },
+      {
+        "name": "mam-pdf-advanced"
+      },
       {
         "name": "admin-access"
       },
@@ -53,6 +85,11 @@
         }
       ],
       "realmRoles": [
+        "mam-admin-access",
+        "mam-asset-delete",
+        "mam-office-edit",
+        "mam-metadata-edit",
+        "mam-pdf-advanced",
         "admin-access",
         "asset-delete"
       ]
