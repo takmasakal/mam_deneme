@@ -1509,8 +1509,8 @@ async function loadSettings() {
   settingsForm.elements.workflowTrackingEnabled.checked = Boolean(settings.workflowTrackingEnabled);
   settingsForm.elements.autoProxyBackfillOnUpload.checked = Boolean(settings.autoProxyBackfillOnUpload);
   {
-    const mode = String(settings.playerUiMode || 'native').toLowerCase();
-    settingsForm.elements.playerUiMode.value = (mode === 'custom' || mode === 'videojs' || mode === 'vidstack' || mode === 'mpegdash') ? mode : 'native';
+    const mode = String(settings.playerUiMode || 'vidstack').toLowerCase();
+    settingsForm.elements.playerUiMode.value = (mode === 'vidstack' || mode === 'mpegdash') ? mode : 'vidstack';
   }
   settingsForm.elements.apiTokenEnabled.checked = Boolean(settings.apiTokenEnabled);
   settingsForm.elements.oidcBearerEnabled.checked = Boolean(settings.oidcBearerEnabled);
@@ -1566,7 +1566,7 @@ settingsForm.addEventListener('submit', async (event) => {
   const payload = {
     workflowTrackingEnabled: settingsForm.elements.workflowTrackingEnabled.checked,
     autoProxyBackfillOnUpload: settingsForm.elements.autoProxyBackfillOnUpload.checked,
-    playerUiMode: String(settingsForm.elements.playerUiMode.value || 'native'),
+    playerUiMode: String(settingsForm.elements.playerUiMode.value || 'vidstack'),
     apiTokenEnabled: settingsForm.elements.apiTokenEnabled.checked,
     apiToken: String(settingsForm.elements.apiToken.value || '').trim(),
     oidcBearerEnabled: settingsForm.elements.oidcBearerEnabled.checked,

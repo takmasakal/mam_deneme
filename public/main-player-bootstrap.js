@@ -8,10 +8,8 @@
       isVideo,
       isAudio,
       useMpegDashPlayerUI,
-      useVideoJsPlayerUI,
       useCustomLikeTimelineUI,
       initMpegDashPlayer,
-      initVideoJsPlayer,
       initFrameControls,
       initCustomVideoControls,
       initVideoSubtitleTools,
@@ -49,7 +47,6 @@
         }
         if (isVideo(asset)) {
           if (useMpegDashPlayerUI()) cleanups.push(initMpegDashPlayer(mediaEl, asset, root));
-          if (useVideoJsPlayerUI()) cleanups.push(initVideoJsPlayer(mediaEl, root));
           cleanups.push(initFrameControls(mediaEl, asset, root, options));
           if (useCustomLikeTimelineUI()) cleanups.push(initCustomVideoControls(mediaEl, root));
           cleanups.push(initVideoSubtitleTools(mediaEl, asset, root));

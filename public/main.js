@@ -61,8 +61,7 @@ const PANELS = [
 let currentAssets = [];
 let activePlayerCleanup = null;
 let activeDetailPinCleanup = null;
-let playerUiMode = 'native';
-let videoJsLoadPromise = null;
+let playerUiMode = 'vidstack';
 let dashJsLoadPromise = null;
 let detailVideoPinned = localStorage.getItem(LOCAL_DETAIL_VIDEO_PIN) === '1';
 let selectedAssetId = null;
@@ -848,33 +847,25 @@ function tf(key, vars = {}) {
   return text;
 }
 
-function useCustomPlayerUI() {
-  return String(playerUiMode || 'native') === 'custom';
-}
-
 function useVidstackPlayerUI() {
-  return String(playerUiMode || 'native') === 'vidstack';
-}
-
-function useVideoJsPlayerUI() {
-  return String(playerUiMode || 'native') === 'videojs';
+  return String(playerUiMode || 'vidstack') === 'vidstack';
 }
 
 function useMpegDashPlayerUI() {
-  return String(playerUiMode || 'native') === 'mpegdash';
+  return String(playerUiMode || 'vidstack') === 'mpegdash';
 }
 
 function useCustomLikeTimelineUI() {
-  return useCustomPlayerUI() || useVidstackPlayerUI() || useMpegDashPlayerUI();
+  return useVidstackPlayerUI() || useMpegDashPlayerUI();
 }
 
 async function loadUiSettings() {
   try {
     const settings = await api('/api/ui-settings');
-    const mode = String(settings?.playerUiMode || 'native').trim().toLowerCase();
-    playerUiMode = (mode === 'custom' || mode === 'videojs' || mode === 'vidstack' || mode === 'mpegdash') ? mode : 'native';
+    const mode = String(settings?.playerUiMode || 'vidstack').trim().toLowerCase();
+    playerUiMode = (mode === 'vidstack' || mode === 'mpegdash') ? mode : 'vidstack';
   } catch (_error) {
-    playerUiMode = 'native';
+    playerUiMode = 'vidstack';
   }
 }
 
@@ -1523,7 +1514,6 @@ const mediaViewerModule = window.createMainMediaViewerModule({
   subtitleTrackMarkup: (asset) => subtitleTrackMarkup(asset),
   getSubtitleOverlayEnabled,
   useCustomLikeTimelineUI,
-  useVideoJsPlayerUI,
   useMpegDashPlayerUI
 });
 
@@ -1533,20 +1523,6 @@ function mediaViewer(asset, options = {}) {
 
 function videoToolsPageMarkup(asset) {
   return mediaViewerModule.videoToolsPageMarkup(asset);
-}
-
-function loadVideoJs() {
-  if (window.videojs) return Promise.resolve(true);
-  if (videoJsLoadPromise) return videoJsLoadPromise;
-  videoJsLoadPromise = new Promise((resolve) => {
-    const script = document.createElement('script');
-    script.src = 'https://vjs.zencdn.net/8.20.0/video.min.js';
-    script.async = true;
-    script.onload = () => resolve(Boolean(window.videojs));
-    script.onerror = () => resolve(false);
-    document.head.appendChild(script);
-  });
-  return videoJsLoadPromise;
 }
 
 function loadDashJs() {
@@ -1592,40 +1568,6 @@ function initMpegDashPlayer(mediaEl, _asset, _root = document) {
         player.reset();
       } catch (_error) {
         // ignore reset failures
-      }
-    }
-  };
-}
-
-function initVideoJsPlayer(mediaEl, _root = document) {
-  if (!mediaEl || !useVideoJsPlayerUI()) return () => {};
-  let disposed = false;
-  let player = null;
-
-  (async () => {
-    const ready = await loadVideoJs();
-    if (!ready || disposed || !window.videojs) return;
-    try {
-      player = window.videojs(mediaEl, {
-        controls: true,
-        preload: 'metadata',
-        fluid: true,
-        controlBar: {
-          pictureInPictureToggle: true
-        }
-      });
-    } catch (_error) {
-      player = null;
-    }
-  })();
-
-  return () => {
-    disposed = true;
-    if (player && typeof player.dispose === 'function') {
-      try {
-        if (typeof player.isDisposed !== 'function' || !player.isDisposed()) player.dispose();
-      } catch (_error) {
-        // ignore dispose failures
       }
     }
   };
@@ -1949,10 +1891,8 @@ const playerBootstrapModule = window.createMainPlayerBootstrapModule({
   isVideo,
   isAudio,
   useMpegDashPlayerUI,
-  useVideoJsPlayerUI,
   useCustomLikeTimelineUI,
   initMpegDashPlayer,
-  initVideoJsPlayer,
   initFrameControls,
   initCustomVideoControls,
   initVideoSubtitleTools,

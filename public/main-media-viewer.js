@@ -17,7 +17,6 @@
       subtitleTrackMarkup,
       getSubtitleOverlayEnabled,
       useCustomLikeTimelineUI,
-      useVideoJsPlayerUI,
       useMpegDashPlayerUI
     } = deps || {};
 
@@ -39,7 +38,6 @@ function mediaViewer(asset, options = {}) {
 
   if (isVideo(asset)) {
     const customMode = useCustomLikeTimelineUI();
-    const videoJsMode = useVideoJsPlayerUI();
     const rawProxyUrl = String(asset.proxyUrl || '').trim();
     const rawDashManifestUrl = String(asset?.dcMetadata?.dashProxyUrl || '').trim();
     const dashManifestUrl = useMpegDashPlayerUI()
@@ -84,7 +82,7 @@ function mediaViewer(asset, options = {}) {
         <div class="video-top-layout${audioSideLayout ? '' : ' no-audio-side'}">
           <div class="video-main-col">
             <div class="viewer-resizable video-resizable${audioOverlayInViewer ? ' video-resizable-audio-overlay' : ''}">
-              <video id="assetMediaEl" data-asset-id="${escapeHtml(asset.id)}" class="asset-viewer${videoJsMode ? ' video-js vjs-default-skin' : ''}"${nativeControlsAttr} preload="metadata"${srcAttr}${dashManifestAttr} poster="${escapeHtml(asset.thumbnailUrl || '')}"${audioChannelsAttr}>
+              <video id="assetMediaEl" data-asset-id="${escapeHtml(asset.id)}" class="asset-viewer"${nativeControlsAttr} preload="metadata"${srcAttr}${dashManifestAttr} poster="${escapeHtml(asset.thumbnailUrl || '')}"${audioChannelsAttr}>
                 ${subtitleTrackMarkup(asset)}
               </video>
               ${audioOverlayInViewer ? `<div class="video-audio-overlay-panel">${audioToolsMarkup}</div>` : ''}

@@ -52,7 +52,7 @@ const WORKFLOW = ['Ingested', 'QC', 'Approved', 'Published', 'Archived'];
 const DEFAULT_ADMIN_SETTINGS = {
   workflowTrackingEnabled: true,
   autoProxyBackfillOnUpload: false,
-  playerUiMode: 'native',
+  playerUiMode: 'vidstack',
   ocrDefaultAdvancedMode: true,
   ocrDefaultTurkishAiCorrect: true,
   ocrDefaultEnableBlurFilter: true,
@@ -68,8 +68,8 @@ const DEFAULT_ADMIN_SETTINGS = {
 
 function normalizePlayerUiMode(value) {
   const mode = String(value || '').trim().toLowerCase();
-  if (mode === 'custom' || mode === 'videojs' || mode === 'vidstack' || mode === 'mpegdash') return mode;
-  return 'native';
+  if (mode === 'vidstack' || mode === 'mpegdash') return mode;
+  return 'vidstack';
 }
 const DEFAULT_USER_PERMISSIONS = {};
 const ELASTIC_URL = process.env.ELASTIC_URL || 'http://localhost:9200';
@@ -6923,7 +6923,7 @@ app.get('/api/ui-settings', async (_req, res) => {
     const playerUiMode = normalizePlayerUiMode(settings.playerUiMode);
     return res.json({ playerUiMode });
   } catch (_error) {
-    return res.json({ playerUiMode: 'native' });
+    return res.json({ playerUiMode: 'vidstack' });
   }
 });
 
