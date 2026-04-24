@@ -63,6 +63,9 @@ let activePlayerCleanup = null;
 let activeDetailPinCleanup = null;
 let playerUiMode = 'vidstack';
 let detailVideoPinned = localStorage.getItem(LOCAL_DETAIL_VIDEO_PIN) === '1';
+let commonModule = null;
+let detailModule = null;
+let ingestModule = null;
 let selectedAssetId = null;
 let currentUserCanAccessAdmin = false;
 let currentUserCanEditMetadata = false;
@@ -846,6 +849,58 @@ function tf(key, vars = {}) {
   return text;
 }
 
+commonModule = window.createMainCommonModule({
+  t,
+  api: (...args) => api(...args),
+  currentLangRef: {
+    get: () => currentLang
+  },
+  subtitleOverlayEnabledByAsset,
+  PLAYER_FPS,
+  selectedAssetIdRef: {
+    get: () => selectedAssetId
+  }
+});
+
+function escapeHtml(value) { return commonModule.escapeHtml(value); }
+function escapeRegExp(value) { return commonModule.escapeRegExp(value); }
+function renderPdfChangeKindLabel(version) { return commonModule.renderPdfChangeKindLabel(version); }
+function cleanVersionNoteText(note) { return commonModule.cleanVersionNoteText(note); }
+function findMatchRanges(text, query) { return commonModule.findMatchRanges(text, query); }
+function highlightTextByRanges(text, ranges) { return commonModule.highlightTextByRanges(text, ranges); }
+function serializeForm(form) { return commonModule.serializeForm(form); }
+function highlightSuggestText(text, query) { return commonModule.highlightSuggestText(text, query); }
+function getSubtitleOverlayEnabled(assetId, fallback = false) { return commonModule.getSubtitleOverlayEnabled(assetId, fallback); }
+function syncSubtitleOverlayInOpenPlayers(asset) { return commonModule.syncSubtitleOverlayInOpenPlayers(asset); }
+async function readFileAsBase64(file) { return commonModule.readFileAsBase64(file); }
+function getFileExtension(asset) { return commonModule.getFileExtension(asset); }
+function isVideo(asset) { return commonModule.isVideo(asset); }
+function isAudio(asset) { return commonModule.isAudio(asset); }
+function isImage(asset) { return commonModule.isImage(asset); }
+function isPdf(asset) { return commonModule.isPdf(asset); }
+function isDocument(asset) { return commonModule.isDocument(asset); }
+function isOfficeDocument(asset) { return commonModule.isOfficeDocument(asset); }
+function isTextPreviewable(asset) { return commonModule.isTextPreviewable(asset); }
+function thumbFallbackForAsset(asset) { return commonModule.thumbFallbackForAsset(asset); }
+function documentSearchControls() { return commonModule.documentSearchControls(); }
+function formatDate(value) { return commonModule.formatDate(value); }
+function formatDuration(seconds) { return commonModule.formatDuration(seconds); }
+async function loadAssetTechnicalInfo(asset) { return commonModule.loadAssetTechnicalInfo(asset); }
+function extractDcMetadataFromPayload(payload) { return commonModule.extractDcMetadataFromPayload(payload); }
+function foldSearchText(value) { return commonModule.foldSearchText(value); }
+function effectiveSearchHighlightClass(query, highlightQuery, fuzzyUsed = false) { return commonModule.effectiveSearchHighlightClass(query, highlightQuery, fuzzyUsed); }
+function highlightMatch(value, query, markClass) { return commonModule.highlightMatch(value, query, markClass); }
+function dcHighlightSnippet(asset, query) { return commonModule.dcHighlightSnippet(asset, query); }
+function metadataHighlightSnippet(asset, query) { return commonModule.metadataHighlightSnippet(asset, query); }
+function tagHighlightSnippet(asset, query) { return commonModule.tagHighlightSnippet(asset, query); }
+function clipHighlightSnippet(asset, query) { return commonModule.clipHighlightSnippet(asset, query); }
+function buildInlineFieldMatch(value, query) { return commonModule.buildInlineFieldMatch(value, query); }
+function tagColorStyle(tag) { return commonModule.tagColorStyle(tag); }
+function assetTagChipStyle(asset) { return commonModule.assetTagChipStyle(asset); }
+function secondsToTimecode(timeSeconds, fps) { return commonModule.secondsToTimecode(timeSeconds, fps); }
+function parseTimecodeInput(value, fps) { return commonModule.parseTimecodeInput(value, fps); }
+function subtitleTrackMarkup(asset) { return commonModule.subtitleTrackMarkup(asset); }
+
 function useVidstackPlayerUI() {
   return String(playerUiMode || 'vidstack') === 'vidstack';
 }
@@ -1277,93 +1332,6 @@ async function deleteApi(path) {
   }
 }
 
-function setUploadProgress(percent, label = '') {
-  if (!uploadProgressWrap || !uploadProgressText) return;
-  uploadProgressWrap.classList.remove('hidden');
-  if (uploadProgressSpinner) uploadProgressSpinner.classList.remove('hidden');
-  uploadProgressText.textContent = label || t('uploading');
-}
-
-function hideUploadProgress() {
-  if (!uploadProgressWrap || !uploadProgressText) return;
-  uploadProgressWrap.classList.add('hidden');
-  if (uploadProgressBar) uploadProgressBar.style.width = '0%';
-  if (uploadProgressSpinner) uploadProgressSpinner.classList.add('hidden');
-  uploadProgressText.textContent = '';
-}
-
-function uploadAssetWithProgress(payload, onProgress) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/assets/upload');
-    xhr.setRequestHeader('Content-Type', 'application/json');
-
-    xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable) return;
-      const pct = (event.loaded / event.total) * 100;
-      onProgress?.(pct);
-    };
-
-    xhr.onerror = () => reject(new Error('Upload request failed'));
-    xhr.onload = () => {
-      const raw = String(xhr.responseText || '');
-      let parsed = {};
-      try { parsed = raw ? JSON.parse(raw) : {}; } catch (_e) { parsed = {}; }
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(parsed);
-      } else {
-        const error = new Error(parsed.error || 'Upload failed');
-        if (parsed && typeof parsed === 'object') {
-          Object.assign(error, parsed);
-        }
-        reject(error);
-      }
-    };
-
-    xhr.send(JSON.stringify(payload));
-  });
-}
-
-function formatIngestWarningMessage(created) {
-  const warnings = Array.isArray(created?.ingestWarnings) ? created.ingestWarnings : [];
-  if (!warnings.length) return '';
-  const lines = [t('upload_saved_with_warnings')];
-  const hintSet = new Set();
-  warnings.forEach((warning) => {
-    const message = localizeUploadWarning(warning);
-    if (message) lines.push(`- ${message}`);
-    const hint = localizeUploadRetryHint(String(warning?.code || '').trim(), warning?.retryHint);
-    if (hint) hintSet.add(hint);
-  });
-  if (hintSet.size) {
-    lines.push('');
-    hintSet.forEach((hint) => lines.push(hint));
-  } else {
-    lines.push(t('upload_warning_retry_hint'));
-  }
-  return lines.join('\n');
-}
-
-function localizeUploadWarning(warning) {
-  const code = String(warning?.code || '').trim();
-  if (code === 'proxy_generation_failed') return t('upload_warning_proxy_generation_failed');
-  if (code === 'proxy_generation_skipped') return t('upload_warning_proxy_generation_skipped');
-  if (code === 'proxy_audio_fallback') return t('upload_warning_proxy_audio_fallback');
-  if (code === 'thumbnail_generation_failed') return t('upload_warning_thumbnail_generation_failed');
-  const message = String(warning?.message || '').trim();
-  return message;
-}
-
-function localizeUploadRetryHint(code, fallback = '') {
-  if (code === 'proxy_generation_failed' || code === 'proxy_generation_skipped' || code === 'proxy_audio_fallback') {
-    return t('upload_warning_proxy_retry_hint');
-  }
-  if (code === 'thumbnail_generation_failed') {
-    return t('upload_warning_thumbnail_retry_hint');
-  }
-  return String(fallback || '').trim();
-}
-
 const dialogsModule = window.createMainDialogsModule({
   t,
   escapeHtml
@@ -1388,6 +1356,34 @@ function openVersionDeleteDialog() {
 function openTimecodeJumpDialog(initialTc = '') {
   return dialogsModule.openTimecodeJumpDialog(initialTc);
 }
+
+ingestModule = window.createMainIngestModule({
+  ingestForm,
+  mediaFileInput,
+  mediaFileBtn,
+  mediaFileName,
+  uploadProgressWrap,
+  uploadProgressBar,
+  uploadProgressText,
+  uploadProgressSpinner,
+  t,
+  readFileAsBase64,
+  showUploadProxyDecisionModal,
+  currentAssetsRef: {
+    get: () => currentAssets
+  },
+  loadAssets: (...args) => loadAssets(...args)
+});
+
+function setUploadProgress(percent, label = '') { return ingestModule.setUploadProgress(percent, label); }
+function hideUploadProgress() { return ingestModule.hideUploadProgress(); }
+function uploadAssetWithProgress(payload, onProgress) { return ingestModule.uploadAssetWithProgress(payload, onProgress); }
+function formatIngestWarningMessage(created) { return ingestModule.formatIngestWarningMessage(created); }
+function localizeUploadWarning(warning) { return ingestModule.localizeUploadWarning(warning); }
+function localizeUploadRetryHint(code, fallback = '') { return ingestModule.localizeUploadRetryHint(code, fallback); }
+async function waitUntilAssetVisible(assetId, maxAttempts = 8) { return ingestModule.waitUntilAssetVisible(assetId, maxAttempts); }
+async function detectDurationSeconds(file) { return ingestModule.detectDurationSeconds(file); }
+function initIngestHandlers() { return ingestModule.initIngestHandlers(); }
 
 const assetBrowserModule = window.createMainAssetBrowserModule({
   assetGrid,
@@ -1523,6 +1519,63 @@ function mediaViewer(asset, options = {}) {
 function videoToolsPageMarkup(asset) {
   return mediaViewerModule.videoToolsPageMarkup(asset);
 }
+
+detailModule = window.createMainDetailModule({
+  t,
+  tf,
+  api,
+  deleteApi,
+  escapeHtml,
+  isVideo,
+  isOfficeDocument,
+  mediaViewer,
+  tagColorStyle,
+  assetTagChipStyle,
+  highlightMatch,
+  dcHighlightSnippet,
+  buildInlineFieldMatch,
+  workflowLabel,
+  effectiveSearchHighlightClass,
+  renderPdfChangeKindLabel,
+  cleanVersionNoteText,
+  currentUserCanUsePdfAdvancedTools: () => currentUserCanUsePdfAdvancedTools,
+  currentUserCanEditOffice: () => currentUserCanEditOffice,
+  currentUserCanAccessAdmin: () => currentUserCanAccessAdmin,
+  currentUserCanDeleteAssets: () => currentUserCanDeleteAssets,
+  currentUserCanEditMetadata: () => currentUserCanEditMetadata,
+  currentUsername: () => currentUsername,
+  currentSearchQuery: () => currentSearchQuery,
+  currentSearchHighlightQuery: () => currentSearchHighlightQuery,
+  currentSearchFuzzyUsed: () => currentSearchFuzzyUsed,
+  currentAssets: () => currentAssets,
+  selectedAssetIds: () => selectedAssetIds,
+  selectedAssetId: () => selectedAssetId,
+  assetDetail: () => assetDetail,
+  panelDetail: () => panelDetail,
+  detailVideoPinned: () => detailVideoPinned,
+  setDetailVideoPinned: (value) => { detailVideoPinned = Boolean(value); },
+  setPanelVisible,
+  resetDetailPanelDynamicMinWidth,
+  setSingleSelection,
+  renderAssets,
+  setPanelVideoToolsButtonState,
+  loadAssets,
+  openAsset,
+  activePlayerCleanupRef: {
+    get: () => activePlayerCleanup,
+    set: (value) => { activePlayerCleanup = value; }
+  },
+  activeDetailPinCleanupRef: {
+    get: () => activeDetailPinCleanup,
+    set: (value) => { activeDetailPinCleanup = value; }
+  }
+});
+
+function getVersionSectionAccess(asset) { return detailModule.getVersionSectionAccess(asset); }
+function renderVersionRow(asset, version, access, interactive) { return detailModule.renderVersionRow(asset, version, access, interactive); }
+async function refreshAssetDetail(assetId, workflow) { return detailModule.refreshAssetDetail(assetId, workflow); }
+function detailMarkup(asset, workflow) { return detailModule.detailMarkup(asset, workflow); }
+async function openMultiSelectionDetail() { return detailModule.openMultiSelectionDetail(); }
 
 const playerRuntimeModule = window.createMainPlayerRuntimeModule({
   t,
@@ -2318,108 +2371,7 @@ assetViewThumbBtn?.addEventListener('click', () => {
   renderAssets(currentAssets);
 });
 
-async function detectDurationSeconds(file) {
-  const type = String(file.type || '').toLowerCase();
-  if (!(type.startsWith('video/') || type.startsWith('audio/'))) {
-    return 0;
-  }
-
-  const url = URL.createObjectURL(file);
-  try {
-    const el = document.createElement(type.startsWith('video/') ? 'video' : 'audio');
-    el.preload = 'metadata';
-    el.src = url;
-
-    const duration = await new Promise((resolve) => {
-      el.onloadedmetadata = () => resolve(Number.isFinite(el.duration) ? el.duration : 0);
-      el.onerror = () => resolve(0);
-    });
-
-    return Math.max(0, Math.round(duration));
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-mediaFileBtn?.addEventListener('click', () => {
-  mediaFileInput?.click();
-});
-
-mediaFileInput?.addEventListener('change', async (event) => {
-  const file = event.target.files?.[0];
-  if (mediaFileName) mediaFileName.textContent = file?.name || '';
-});
-
-ingestForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const formData = new FormData(ingestForm);
-  const mediaFile = formData.get('mediaFile');
-  const submitBtn = ingestForm.querySelector('button[type="submit"]');
-
-  if (!(mediaFile instanceof File) || !mediaFile.size) {
-    alert(t('select_media_first'));
-    return;
-  }
-
-  const base64 = await readFileAsBase64(mediaFile);
-
-  const payload = {
-    title: formData.get('title'),
-    type: formData.get('type'),
-    tags: formData.get('tags'),
-    description: formData.get('description'),
-    fileName: mediaFile.name,
-    mimeType: mediaFile.type || 'application/octet-stream',
-    fileData: base64
-  };
-  payload.dcMetadata = {
-    title: String(payload.title || ''),
-    subject: String(payload.tags || ''),
-    description: String(payload.description || ''),
-    type: String(payload.type || ''),
-    format: String(payload.mimeType || ''),
-    identifier: String(payload.fileName || '')
-  };
-
-  if (submitBtn) submitBtn.disabled = true;
-  try {
-    setUploadProgress(1, t('uploading'));
-    let created = null;
-    const sendUpload = async (extraPayload = {}) => uploadAssetWithProgress({ ...payload, ...extraPayload }, (pct) => {
-      const mapped = Math.min(95, Math.round((Number(pct) || 0) * 0.95));
-      setUploadProgress(mapped, t('uploading'));
-    });
-    try {
-      created = await sendUpload();
-    } catch (error) {
-      if (String(error?.code || '') !== 'proxy_audio_confirmation_required') throw error;
-      const decision = await showUploadProxyDecisionModal(error);
-      if (decision === 'cancel') {
-        hideUploadProgress();
-        return;
-      }
-      setUploadProgress(30, t('processing'));
-      created = await sendUpload(decision === 'silent'
-        ? { allowSilentProxyFallback: true }
-        : { skipProxyGeneration: true });
-    }
-    setUploadProgress(96, t('processing'));
-    ingestForm.reset();
-    ingestForm.querySelector('[name="type"]').value = 'Video';
-    if (mediaFileName) mediaFileName.textContent = '';
-    await waitUntilAssetVisible(created?.id || null);
-    setUploadProgress(100, t('processing'));
-    const warningMessage = formatIngestWarningMessage(created);
-    if (warningMessage) {
-      alert(warningMessage);
-    }
-  } catch (error) {
-    alert(String(error?.message || 'Upload failed'));
-  } finally {
-    if (submitBtn) submitBtn.disabled = false;
-    setTimeout(() => hideUploadProgress(), 450);
-  }
-});
+initIngestHandlers();
 
 searchForm.addEventListener('submit', async (event) => {
   event.preventDefault();
