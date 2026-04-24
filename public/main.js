@@ -62,7 +62,6 @@ let currentAssets = [];
 let activePlayerCleanup = null;
 let activeDetailPinCleanup = null;
 let playerUiMode = 'vidstack';
-let dashJsLoadPromise = null;
 let detailVideoPinned = localStorage.getItem(LOCAL_DETAIL_VIDEO_PIN) === '1';
 let selectedAssetId = null;
 let currentUserCanAccessAdmin = false;
@@ -1525,288 +1524,53 @@ function videoToolsPageMarkup(asset) {
   return mediaViewerModule.videoToolsPageMarkup(asset);
 }
 
+const playerRuntimeModule = window.createMainPlayerRuntimeModule({
+  t,
+  escapeHtml,
+  PLAYER_FPS,
+  useMpegDashPlayerUI,
+  isVideo,
+  cutMarksByAsset,
+  currentUserCanDeleteAssetsRef: {
+    get: () => currentUserCanDeleteAssets
+  },
+  searchStateRef: {
+    get currentSearchQuery() { return currentSearchQuery; },
+    get currentSearchHighlightQuery() { return currentSearchHighlightQuery; },
+    get currentSearchFuzzyUsed() { return currentSearchFuzzyUsed; }
+  },
+  highlightMatch,
+  effectiveSearchHighlightClass,
+  secondsToTimecode,
+  parseTimecodeInput,
+  api,
+  deleteApi,
+  openClipEditorDialog,
+  openTimecodeJumpDialog,
+  ensureDetailPanelMinWidth,
+  measureClipsPanelRequiredWidth,
+  initFullscreenOverlay,
+  toggleFullscreenForElement,
+  getSubtitleOverlayEnabled,
+  setSubtitleOverlayEnabled,
+  syncSubtitleOverlayInOpenPlayers,
+  showShortcutToast
+});
+
 function loadDashJs() {
-  if (window.dashjs) return Promise.resolve(true);
-  if (dashJsLoadPromise) return dashJsLoadPromise;
-  dashJsLoadPromise = new Promise((resolve) => {
-    const script = document.createElement('script');
-    script.src = 'https://cdn.dashjs.org/latest/dash.all.min.js';
-    script.async = true;
-    script.onload = () => resolve(Boolean(window.dashjs?.MediaPlayer));
-    script.onerror = () => resolve(false);
-    document.head.appendChild(script);
-  });
-  return dashJsLoadPromise;
+  return playerRuntimeModule.loadDashJs();
 }
 
-function initMpegDashPlayer(mediaEl, _asset, _root = document) {
-  if (!mediaEl || !useMpegDashPlayerUI()) return () => {};
-  const manifestFromData = String(mediaEl.dataset?.dashManifest || '').trim();
-  const srcAttr = String(mediaEl.getAttribute('src') || '').trim();
-  const manifestUrl = manifestFromData || (/\.(mpd)(?:[?#].*)?$/i.test(srcAttr) ? srcAttr : '');
-  // Keep native playback for non-MPD proxies.
-  if (!manifestUrl) return () => {};
-
-  let disposed = false;
-  let player = null;
-
-  (async () => {
-    const ready = await loadDashJs();
-    if (!ready || disposed || !window.dashjs?.MediaPlayer) return;
-    try {
-      player = window.dashjs.MediaPlayer().create();
-      player.initialize(mediaEl, manifestUrl, false);
-    } catch (_error) {
-      player = null;
-    }
-  })();
-
-  return () => {
-    disposed = true;
-    if (player && typeof player.reset === 'function') {
-      try {
-        player.reset();
-      } catch (_error) {
-        // ignore reset failures
-      }
-    }
-  };
+function initMpegDashPlayer(mediaEl, asset, root = document) {
+  return playerRuntimeModule.initMpegDashPlayer(mediaEl, asset, root);
 }
 
 function initPlaybackRateLongPress(mediaEl, triggerBtn, backwardBtn, forwardBtn) {
-  if (!(mediaEl instanceof HTMLMediaElement) || !(triggerBtn instanceof HTMLElement) || !(backwardBtn instanceof HTMLElement) || !(forwardBtn instanceof HTMLElement)) return () => {};
+  return playerRuntimeModule.initPlaybackRateLongPress(mediaEl, triggerBtn, backwardBtn, forwardBtn);
+}
 
-  const rates = [0.25, 0.5, 1, 2, 4, 8];
-  let menuOpen = false;
-  let menuEl = null;
-  let preferredRate = Number(mediaEl.dataset.preferredPlaybackRate || mediaEl.playbackRate) || 1;
-  let preferredDirection = String(mediaEl.dataset.preferredPlaybackDirection || 'forward') === 'reverse' ? 'reverse' : 'forward';
-  let reverseTimer = null;
-  let suppressPauseHandling = false;
-
-  // More natural speech at non-1x and fewer browser artifacts around pause/resume.
-  try { mediaEl.preservesPitch = false; } catch (_error) {}
-  try { mediaEl.mozPreservesPitch = false; } catch (_error) {}
-  try { mediaEl.webkitPreservesPitch = false; } catch (_error) {}
-
-  const closeMenu = () => {
-    if (menuEl?.parentNode) menuEl.parentNode.removeChild(menuEl);
-    menuEl = null;
-    menuOpen = false;
-  };
-
-  const isPlaying = () => Boolean(reverseTimer) || (!mediaEl.paused && !mediaEl.ended);
-
-  const stopReversePlayback = ({ restoreAudio = true } = {}) => {
-    if (reverseTimer) {
-      clearInterval(reverseTimer);
-      reverseTimer = null;
-    }
-  };
-
-  const updateButtonHint = () => {
-    const displayRate = Number(preferredRate) || 1;
-    triggerBtn.textContent = `${displayRate}x`;
-    triggerBtn.title = `Playback rate ${displayRate}x`;
-    triggerBtn.setAttribute('aria-label', `Playback rate ${displayRate}x`);
-    triggerBtn.dataset.playbackRate = String(displayRate);
-    const showForwardActive = Math.abs(displayRate - 1) < 0.001 || preferredDirection === 'forward';
-    backwardBtn.classList.toggle('is-active', !showForwardActive && preferredDirection === 'reverse');
-    forwardBtn.classList.toggle('is-active', showForwardActive);
-  };
-
-  const positionMenu = (anchorBtn) => {
-    if (!menuEl) return;
-    const rect = anchorBtn.getBoundingClientRect();
-    const estimatedHeight = 52;
-    const openBelow = rect.top < (estimatedHeight + 24);
-    const menuWidth = menuEl.offsetWidth || 340;
-    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1280;
-    const preferredCenter = rect.left + (rect.width / 2);
-    const halfWidth = menuWidth / 2;
-    const clampedCenter = Math.min(
-      viewportWidth - halfWidth - 8,
-      Math.max(halfWidth + 8, preferredCenter)
-    );
-    menuEl.style.left = `${clampedCenter}px`;
-    menuEl.style.top = openBelow
-      ? `${Math.max(8, rect.bottom + 10)}px`
-      : `${Math.max(8, rect.top - 10)}px`;
-    menuEl.style.transform = openBelow ? 'translate(-50%, 0)' : 'translate(-50%, -100%)';
-  };
-
-  const openMenu = (direction, anchorBtn) => {
-    closeMenu();
-    menuOpen = true;
-    menuEl = document.createElement('div');
-    menuEl.className = 'playback-rate-menu';
-    menuEl.setAttribute('role', 'menu');
-    menuEl.dataset.direction = direction;
-    menuEl.innerHTML = rates
-      .map((rate) => {
-        const isActive = preferredDirection === direction && Math.abs((preferredRate || 1) - rate) < 0.001;
-        return `<button type="button" class="playback-rate-option${isActive ? ' active' : ''}" data-rate="${rate}" role="menuitemradio" aria-checked="${isActive ? 'true' : 'false'}">${rate}x</button>`;
-      })
-      .join('');
-    document.body.appendChild(menuEl);
-    positionMenu(anchorBtn);
-  };
-
-  const onLabelClick = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-  };
-
-  const applyPreferredRate = () => {
-    const nextRate = Number(preferredRate) || 1;
-    mediaEl.defaultPlaybackRate = nextRate;
-    mediaEl.playbackRate = nextRate;
-    updateButtonHint();
-  };
-
-  const startReversePlayback = () => {
-    stopReversePlayback({ restoreAudio: false });
-    try {
-      suppressPauseHandling = true;
-      mediaEl.pause();
-    } catch (_error) {
-      // ignore pause failures
-    } finally {
-      suppressPauseHandling = false;
-    }
-    const fps = Math.max(1, PLAYER_FPS || 25);
-    const stepSeconds = Math.max(0.001, preferredRate / fps);
-    reverseTimer = window.setInterval(() => {
-      const current = Number(mediaEl.currentTime) || 0;
-      const next = Math.max(0, current - stepSeconds);
-      mediaEl.currentTime = next;
-      if (next <= 0) {
-        stopReversePlayback();
-        updateButtonHint();
-      }
-    }, Math.max(16, Math.round(1000 / fps)));
-    updateButtonHint();
-  };
-
-  const applyDirectionState = () => {
-    if (preferredDirection === 'reverse') {
-      if (isPlaying()) startReversePlayback();
-      else updateButtonHint();
-      return;
-    }
-    stopReversePlayback();
-    applyPreferredRate();
-  };
-
-  const onPause = () => {
-    if (suppressPauseHandling) return;
-    updateButtonHint();
-    if (preferredDirection === 'reverse') {
-      stopReversePlayback();
-      return;
-    }
-    if (Math.abs(preferredRate - 1) > 0.001) {
-      try {
-        mediaEl.defaultPlaybackRate = 1;
-        mediaEl.playbackRate = 1;
-      } catch (_error) {
-        // ignore browser-specific setter failures
-      }
-    }
-  };
-
-  const onMenuClick = (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-    const option = target.closest('.playback-rate-option');
-    if (!(option instanceof HTMLElement)) return;
-    const selectedRate = Number(option.dataset.rate || 1);
-    const direction = String(menuEl?.dataset.direction || 'forward') === 'reverse' ? 'reverse' : 'forward';
-    const nextRate = Number(selectedRate) || 1;
-    if (!Number.isFinite(nextRate) || nextRate <= 0) return;
-    preferredRate = nextRate;
-    preferredDirection = Math.abs(nextRate - 1) < 0.001 ? 'forward' : direction;
-    mediaEl.dataset.preferredPlaybackRate = String(nextRate);
-    mediaEl.dataset.preferredPlaybackDirection = preferredDirection;
-    if (isPlaying()) applyDirectionState();
-    else updateButtonHint();
-    closeMenu();
-  };
-
-  const onDocumentPointerDown = (event) => {
-    const target = event.target;
-    if (!(target instanceof Node)) return;
-    if (menuEl && menuEl.contains(target)) return;
-    if (triggerBtn.contains(target)) return;
-    closeMenu();
-  };
-
-  const onEscape = (event) => {
-    if (event.key === 'Escape') closeMenu();
-  };
-
-  const onWindowResize = () => {
-    if (menuOpen) {
-      const anchor = menuEl?.dataset.direction === 'reverse' ? backwardBtn : forwardBtn;
-      positionMenu(anchor);
-    }
-  };
-
-  const onBackwardClick = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (menuOpen && menuEl?.dataset.direction === 'reverse') {
-      closeMenu();
-      return;
-    }
-    openMenu('reverse', backwardBtn);
-  };
-
-  const onForwardClick = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (menuOpen && menuEl?.dataset.direction === 'forward') {
-      closeMenu();
-      return;
-    }
-    openMenu('forward', forwardBtn);
-  };
-
-  triggerBtn.addEventListener('click', onLabelClick);
-  backwardBtn.addEventListener('click', onBackwardClick);
-  forwardBtn.addEventListener('click', onForwardClick);
-  document.addEventListener('click', onMenuClick);
-  document.addEventListener('pointerdown', onDocumentPointerDown);
-  document.addEventListener('keydown', onEscape);
-  window.addEventListener('resize', onWindowResize);
-  mediaEl.addEventListener('ratechange', updateButtonHint);
-  mediaEl.addEventListener('play', applyDirectionState);
-  mediaEl.addEventListener('pause', onPause);
-  mediaEl.addEventListener('ended', updateButtonHint);
-  updateButtonHint();
-
-  mediaEl.__mamPreferredPlaybackDirection = () => preferredDirection;
-  mediaEl.__mamStartReversePlayback = () => startReversePlayback();
-  mediaEl.__mamStopReversePlayback = () => stopReversePlayback();
-
-  return () => {
-    stopReversePlayback();
-    closeMenu();
-    triggerBtn.removeEventListener('click', onLabelClick);
-    backwardBtn.removeEventListener('click', onBackwardClick);
-    forwardBtn.removeEventListener('click', onForwardClick);
-    document.removeEventListener('click', onMenuClick);
-    document.removeEventListener('pointerdown', onDocumentPointerDown);
-    document.removeEventListener('keydown', onEscape);
-    window.removeEventListener('resize', onWindowResize);
-    mediaEl.removeEventListener('ratechange', updateButtonHint);
-    mediaEl.removeEventListener('play', applyDirectionState);
-    mediaEl.removeEventListener('pause', onPause);
-    mediaEl.removeEventListener('ended', updateButtonHint);
-    delete mediaEl.__mamPreferredPlaybackDirection;
-    delete mediaEl.__mamStartReversePlayback;
-    delete mediaEl.__mamStopReversePlayback;
-  };
+function initFrameControls(mediaEl, asset, root = document, options = {}) {
+  return playerRuntimeModule.initFrameControls(mediaEl, asset, root, options);
 }
 
 const playerUiModule = window.createMainPlayerUiModule({
