@@ -6858,11 +6858,13 @@ async function resolveEffectivePermissions(req) {
   const override = getPermissionOverrideForUser(settings, user);
   const effective = normalizePermissionEntry(override, user.basePermissionKeys || []);
   const canAccessAdmin = Boolean(effective.adminPageAccess);
+  const canAccessTextAdmin = Boolean(effective.textAdminAccess || canAccessAdmin);
   const canEditOffice = Boolean(effective.officeEdit || canAccessAdmin);
   return {
     ...user,
     isAdmin: canAccessAdmin,
     canAccessAdmin,
+    canAccessTextAdmin,
     canEditMetadata: Boolean(effective.metadataEdit),
     canEditOffice,
     canDeleteAssets: Boolean(effective.assetDelete),
@@ -6889,6 +6891,7 @@ app.get('/api/me', async (req, res) => {
       email: effective.email || '',
       isAdmin: effective.isAdmin,
       canAccessAdmin: effective.canAccessAdmin,
+      canAccessTextAdmin: effective.canAccessTextAdmin,
       canEditMetadata: effective.canEditMetadata,
       canEditOffice: effective.canEditOffice,
       canDeleteAssets: effective.canDeleteAssets,
@@ -8878,6 +8881,30 @@ async function requireAdminAccess(req, res, next) {
   }
 }
 
+async function requireTextAdminAccess(req, res, next) {
+  try {
+    const effective = await resolveEffectivePermissions(req);
+    if (!effective.canAccessTextAdmin) return res.status(403).json({ error: 'Forbidden' });
+    req.userPermissions = effective;
+    return next();
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to verify text admin permissions' });
+  }
+}
+
+async function requireScopedAdminAccess(req, res, next) {
+  const textAdminPaths = [
+    /^\/ocr-records(?:\/content)?$/,
+    /^\/subtitle-records(?:\/content)?$/,
+    /^\/text-search$/
+  ];
+  const safePath = String(req.path || '').trim();
+  if (textAdminPaths.some((pattern) => pattern.test(safePath))) {
+    return requireTextAdminAccess(req, res, next);
+  }
+  return requireAdminAccess(req, res, next);
+}
+
 async function requireAssetDelete(req, res, next) {
   try {
     const effective = await resolveEffectivePermissions(req);
@@ -9007,7 +9034,7 @@ function sendSnapshotDownload(res, snapshot, fallbackFileName) {
   });
 }
 
-app.use('/api/admin', requireAdminAccess);
+app.use('/api/admin', requireScopedAdminAccess);
 
 app.get('/api/admin/turkish-corrections', async (_req, res) => {
   try {
@@ -9856,6 +9883,7 @@ app.get('/api/admin/user-permissions', async (req, res) => {
           username,
           permissionKeys: effective.permissionKeys,
           adminPageAccess: effective.adminPageAccess,
+          textAdminAccess: effective.textAdminAccess,
           metadataEdit: effective.metadataEdit,
           assetDelete: effective.assetDelete,
           pdfAdvancedTools: effective.pdfAdvancedTools
@@ -9894,6 +9922,7 @@ app.patch('/api/admin/user-permissions/:username', async (req, res) => {
       {
         permissionKeys: requestedPermissionKeys,
         adminPageAccess: req.body?.adminPageAccess,
+        textAdminAccess: req.body?.textAdminAccess,
         metadataEdit: req.body?.metadataEdit,
         assetDelete: req.body?.assetDelete,
         pdfAdvancedTools: req.body?.pdfAdvancedTools

@@ -65,6 +65,9 @@
         "name": "mam-pdf-advanced"
       },
       {
+        "name": "mam-text-admin"
+      },
+      {
         "name": "admin-access"
       },
       {
@@ -104,6 +107,21 @@
           "value": "__MAM_USER_PASSWORD__",
           "temporary": false
         }
+      ]
+    },
+    {
+      "username": "__MAM_TEXT_ADMIN_USER__",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "__MAM_TEXT_ADMIN_PASSWORD__",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "mam-text-admin"
       ]
     }
   ]

@@ -57,6 +57,8 @@ MAM_ADMIN_USER="${MAM_ADMIN_USER:-mamadmin}"
 MAM_ADMIN_PASSWORD="${MAM_ADMIN_PASSWORD:-mamadmin}"
 MAM_USER="${MAM_USER:-mamuser}"
 MAM_USER_PASSWORD="${MAM_USER_PASSWORD:-mamuser}"
+MAM_TEXT_ADMIN_USER="${MAM_TEXT_ADMIN_USER:-yazici}"
+MAM_TEXT_ADMIN_PASSWORD="${MAM_TEXT_ADMIN_PASSWORD:-yazici}"
 
 OAUTH2_PROXY_CLIENT_ID="mam-web"
 OAUTH2_PROXY_CLIENT_SECRET="${OAUTH2_PROXY_CLIENT_SECRET:-$(rand_hex 24)}"
@@ -76,6 +78,8 @@ MAM_ADMIN_USER=${MAM_ADMIN_USER}
 MAM_ADMIN_PASSWORD=${MAM_ADMIN_PASSWORD}
 MAM_USER=${MAM_USER}
 MAM_USER_PASSWORD=${MAM_USER_PASSWORD}
+MAM_TEXT_ADMIN_USER=${MAM_TEXT_ADMIN_USER}
+MAM_TEXT_ADMIN_PASSWORD=${MAM_TEXT_ADMIN_PASSWORD}
 EOF
 
 sed \
@@ -85,6 +89,8 @@ sed \
   -e "s|__MAM_ADMIN_PASSWORD__|$(escape_sed "${MAM_ADMIN_PASSWORD}")|g" \
   -e "s|__MAM_USER__|$(escape_sed "${MAM_USER}")|g" \
   -e "s|__MAM_USER_PASSWORD__|$(escape_sed "${MAM_USER_PASSWORD}")|g" \
+  -e "s|__MAM_TEXT_ADMIN_USER__|$(escape_sed "${MAM_TEXT_ADMIN_USER}")|g" \
+  -e "s|__MAM_TEXT_ADMIN_PASSWORD__|$(escape_sed "${MAM_TEXT_ADMIN_PASSWORD}")|g" \
   "${REALM_TEMPLATE}" > "${REALM_OUT}"
 
 chmod 600 "${ENV_OUT}"
@@ -103,3 +109,4 @@ echo
 echo "Users created in realm 'mam':"
 echo "  - ${MAM_ADMIN_USER} / ${MAM_ADMIN_PASSWORD} (realm roles: admin-access, asset-delete)"
 echo "  - ${MAM_USER} / ${MAM_USER_PASSWORD}"
+echo "  - ${MAM_TEXT_ADMIN_USER} / ${MAM_TEXT_ADMIN_PASSWORD} (realm roles: mam-text-admin)"

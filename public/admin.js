@@ -65,6 +65,7 @@ let proxySuggestHideTimer = null;
 let ocrRecordsTimer = null;
 let subtitleRecordsTimer = null;
 let availableUserPermissions = [];
+let currentAdminProfile = null;
 
 let i18n = {
   en: {
@@ -234,6 +235,7 @@ let i18n = {
     perm_office_edit: 'Office edit',
     perm_asset_delete: 'Asset delete',
     perm_pdf_advanced: 'PDF advanced tools',
+    perm_text_admin: 'OCR / subtitle admin',
     user_permissions_saved: 'User permissions saved.',
     access_denied: 'Access denied.',
     ocr_records: 'OCR Records',
@@ -462,6 +464,7 @@ let i18n = {
     perm_office_edit: 'Office düzenleme',
     perm_asset_delete: 'Varlık silme',
     perm_pdf_advanced: 'PDF gelişmiş araçlar',
+    perm_text_admin: 'OCR / altyazı yöneticisi',
     user_permissions_saved: 'Kullanıcı yetkileri kaydedildi.',
     access_denied: 'Erişim engellendi.',
     ocr_records: 'OCR Kayıtları',
@@ -1404,7 +1407,8 @@ function renderUserPermissions(users, definitions = []) {
         { key: 'metadata.edit', legacyField: 'metadataEdit', labelKey: 'perm_metadata_edit' },
         { key: 'office.edit', legacyField: 'officeEdit', labelKey: 'perm_office_edit' },
         { key: 'asset.delete', legacyField: 'assetDelete', labelKey: 'perm_asset_delete' },
-        { key: 'pdf.advanced', legacyField: 'pdfAdvancedTools', labelKey: 'perm_pdf_advanced' }
+        { key: 'pdf.advanced', legacyField: 'pdfAdvancedTools', labelKey: 'perm_pdf_advanced' },
+        { key: 'text.admin', legacyField: 'textAdminAccess', labelKey: 'perm_text_admin' }
       ];
   userPermissionsRows.innerHTML = list.map((user) => {
     const uname = escapeHtml(user.username || '');
@@ -1464,6 +1468,50 @@ async function loadUserPermissions() {
   const result = await api('/api/admin/user-permissions');
   availableUserPermissions = Array.isArray(result.availablePermissions) ? result.availablePermissions : [];
   renderUserPermissions(result.users || [], availableUserPermissions);
+}
+
+function setAdminTabVisibility(tabName, visible) {
+  const tab = adminTabs.find((item) => item.dataset.tab === tabName);
+  const panel = adminPanels.find((item) => item.dataset.panel === tabName);
+  if (tab) tab.classList.toggle('hidden', !visible);
+  if (panel) panel.classList.toggle('hidden', !visible);
+}
+
+function setSettingsSubtabVisibility(tabName, visible) {
+  const tab = settingsSubTabs.find((item) => item.dataset.settingsTab === tabName);
+  const panel = settingsSubPanels.find((item) => item.dataset.settingsPanel === tabName);
+  if (tab) tab.classList.toggle('hidden', !visible);
+  if (panel) panel.classList.toggle('hidden', !visible);
+}
+
+function applyAdminAccessMode(me = {}) {
+  currentAdminProfile = me && typeof me === 'object' ? me : {};
+  const canAccessAdmin = Boolean(currentAdminProfile.canAccessAdmin || currentAdminProfile.isAdmin);
+  const canAccessTextAdmin = Boolean(currentAdminProfile.canAccessTextAdmin || canAccessAdmin);
+  const isTextOnly = canAccessTextAdmin && !canAccessAdmin;
+
+  setAdminTabVisibility('apiHelp', !isTextOnly);
+  setAdminTabVisibility('systemHealth', !isTextOnly);
+  setAdminTabVisibility('settings', true);
+
+  setSettingsSubtabVisibility('general', !isTextOnly);
+  setSettingsSubtabVisibility('workflow', !isTextOnly);
+  setSettingsSubtabVisibility('proxy', !isTextOnly);
+  setSettingsSubtabVisibility('ocr', true);
+  setSettingsSubtabVisibility('subtitle', true);
+  setSettingsSubtabVisibility('users', !isTextOnly);
+
+  if (settingsForm) settingsForm.classList.toggle('hidden', isTextOnly);
+  if (settingsMsg) settingsMsg.classList.toggle('hidden', isTextOnly);
+  if (ocrSettingsForm) ocrSettingsForm.classList.toggle('hidden', isTextOnly);
+  if (ocrSettingsMsg) ocrSettingsMsg.classList.toggle('hidden', isTextOnly);
+
+  if (isTextOnly) {
+    switchTab('settings');
+    switchSettingsSubtab('ocr');
+  }
+
+  return { canAccessAdmin, canAccessTextAdmin, isTextOnly };
 }
 
 function renderOcrRecords(records) {
@@ -2225,8 +2273,10 @@ languageSelect?.addEventListener('change', async (event) => {
   currentLang = event.target.value === 'tr' ? 'tr' : 'en';
   localStorage.setItem(LOCAL_LANG, currentLang);
   applyI18n();
-  await refreshTrackingAndHealth();
-  await loadUserPermissions();
+  if (!currentAdminProfile?.canAccessTextAdmin || currentAdminProfile?.canAccessAdmin || currentAdminProfile?.isAdmin) {
+    await refreshTrackingAndHealth();
+    await loadUserPermissions();
+  }
   await loadOcrRecords();
   await loadSubtitleRecords();
   if (activeJobId) {
@@ -2252,7 +2302,8 @@ document.addEventListener('keydown', onLanguageShortcut);
 (async () => {
   try {
     const me = await api('/api/me');
-    if (!me.canAccessAdmin && !me.isAdmin) {
+    const access = applyAdminAccessMode(me);
+    if (!access.canAccessAdmin && !access.canAccessTextAdmin) {
       window.location.href = '/';
       return;
     }
@@ -2261,12 +2312,14 @@ document.addEventListener('keydown', onLanguageShortcut);
     if (languageSelect) languageSelect.value = currentLang;
     applyI18n();
     updateProxyToolUi();
-    await loadSettings();
-    await refreshTrackingAndHealth();
-    await loadUserPermissions();
+    if (!access.isTextOnly) {
+      await loadSettings();
+      await refreshTrackingAndHealth();
+      await loadUserPermissions();
+    }
     await loadOcrRecords();
     await loadSubtitleRecords();
-    switchSettingsSubtab('general');
+    switchSettingsSubtab(access.isTextOnly ? 'ocr' : 'general');
   } catch (error) {
     ffmpegHealthEl.textContent = error.message;
   }

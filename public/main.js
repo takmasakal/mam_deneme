@@ -1352,6 +1352,7 @@ async function loadCurrentUser() {
     const displayName = String(me.displayName || '').trim();
     const email = String(me.email || '').trim();
     const canAccessAdmin = toStrictBool(me.canAccessAdmin, toStrictBool(me.isAdmin, false));
+    const canAccessTextAdmin = toStrictBool(me.canAccessTextAdmin, canAccessAdmin);
     const canEditMetadata = toStrictBool(me.canEditMetadata, false);
     const canEditOffice = toStrictBool(me.canEditOffice, false);
     const canDeleteAssets = toStrictBool(me.canDeleteAssets, toStrictBool(me.isAdmin, false));
@@ -1370,7 +1371,7 @@ async function loadCurrentUser() {
     currentUserBtn.textContent = value;
     currentUserBtn.title = value;
     if (adminMenuLink) {
-      adminMenuLink.classList.toggle('hidden', !canAccessAdmin);
+      adminMenuLink.classList.toggle('hidden', !(canAccessAdmin || canAccessTextAdmin));
     }
   } catch (_error) {
     currentUserCanAccessAdmin = false;

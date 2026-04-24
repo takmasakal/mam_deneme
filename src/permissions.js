@@ -28,6 +28,12 @@ const PERMISSION_DEFINITIONS = [
     legacyField: 'pdfAdvancedTools',
     roleNames: ['mam-pdf-advanced'],
     labelKey: 'perm_pdf_advanced'
+  },
+  {
+    key: 'text.admin',
+    legacyField: 'textAdminAccess',
+    roleNames: ['mam-text-admin', 'text-admin'],
+    labelKey: 'perm_text_admin'
   }
 ];
 
