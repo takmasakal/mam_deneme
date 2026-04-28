@@ -50,6 +50,7 @@ function registerAdminRoutes(app, deps) {
     collectAssetCleanupPaths,
     cleanupAssetFiles,
     deleteAssetFromElastic,
+    removeAssetFromCollections,
     ensureVideoProxyAndThumbnail,
     isVideoCandidate,
     computeBufferSha256,
@@ -1336,6 +1337,7 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
       await pool.query('DELETE FROM asset_subtitle_cues WHERE asset_id = $1', [row.id]);
       await pool.query('DELETE FROM asset_ocr_segments WHERE asset_id = $1', [row.id]);
       await pool.query('DELETE FROM assets WHERE id = $1', [row.id]);
+      await removeAssetFromCollections(row.id);
       const cleanup = cleanupAssetFiles(cleanupTargets);
       await deleteAssetFromElastic(row.id).catch(() => {});
       info = {

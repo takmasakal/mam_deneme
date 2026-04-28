@@ -145,7 +145,9 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
     </div>
     <div class="fullscreen-overlay-bottom">
       <button type="button" class="fs-play-btn">▶</button>
-      <input type="range" class="fs-seek" min="0" max="1000" step="1" value="0" />
+      <div class="fs-seek-wrap">
+        <input type="range" class="fs-seek" min="0" max="1000" step="1" value="0" />
+      </div>
       <span class="fs-time">00:00:00 / 00:00:00</span>
     </div>
     <div class="fs-tc-jump hidden">
@@ -171,6 +173,7 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
   const fsAudioCanvas = overlay.querySelector('.fs-audio-graph');
   const fsBottom = overlay.querySelector('.fullscreen-overlay-bottom');
   const fsPlayBtn = overlay.querySelector('.fs-play-btn');
+  const fsSeekWrap = overlay.querySelector('.fs-seek-wrap');
   const fsSeek = overlay.querySelector('.fs-seek');
   const fsTime = overlay.querySelector('.fs-time');
   const fsTcJump = overlay.querySelector('.fs-tc-jump');
@@ -226,6 +229,133 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
     const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
     const ss = String(Math.floor(s % 60)).padStart(2, '0');
     return `${hh}:${mm}:${ss}`;
+  };
+
+  const initFsSeekPreview = () => {
+    if (!(fsSeek instanceof HTMLElement) || !(fsSeekWrap instanceof HTMLElement) || !(mediaEl instanceof HTMLMediaElement)) return () => {};
+    const bubble = document.createElement('div');
+    bubble.className = 'seek-preview-bubble seek-preview-bubble-fs hidden';
+    bubble.innerHTML = `
+      <div class="seek-preview-frame-wrap">
+        <img class="seek-preview-poster hidden" alt="" />
+        <canvas class="seek-preview-canvas hidden" width="160" height="90"></canvas>
+      </div>
+      <div class="seek-preview-time">00:00:00</div>
+    `;
+    fsSeekWrap.appendChild(bubble);
+
+    const posterEl = bubble.querySelector('.seek-preview-poster');
+    const canvasEl = bubble.querySelector('.seek-preview-canvas');
+    const timeEl = bubble.querySelector('.seek-preview-time');
+    const ctx = canvasEl instanceof HTMLCanvasElement ? canvasEl.getContext('2d') : null;
+    const posterUrl = String(mediaEl.getAttribute('poster') || '').trim();
+    if (posterEl instanceof HTMLImageElement && posterUrl) {
+      posterEl.src = posterUrl;
+      posterEl.classList.remove('hidden');
+    }
+
+    const sourceUrl = String(mediaEl.currentSrc || mediaEl.getAttribute('src') || '').trim();
+    const canFramePreview = Boolean(sourceUrl && !/\.mpd(?:[?#].*)?$/i.test(sourceUrl));
+    const previewVideo = canFramePreview ? document.createElement('video') : null;
+    let previewReady = false;
+    let previewBusy = false;
+    let pendingTime = null;
+    let seekTimer = null;
+
+    const getDurationSafe = () => Number.isFinite(mediaEl.duration) ? Math.max(0, mediaEl.duration) : 0;
+    const drawFrame = () => {
+      if (!(canvasEl instanceof HTMLCanvasElement) || !ctx || !previewVideo || !previewReady) return;
+      const vw = Number(previewVideo.videoWidth) || 0;
+      const vh = Number(previewVideo.videoHeight) || 0;
+      if (!vw || !vh) return;
+      ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+      ctx.drawImage(previewVideo, 0, 0, canvasEl.width, canvasEl.height);
+      canvasEl.classList.remove('hidden');
+      posterEl?.classList.add('hidden');
+    };
+
+    const queuePreviewTime = (seconds) => {
+      if (!previewVideo || !previewReady) return;
+      pendingTime = Math.max(0, Math.min(getDurationSafe(), Number(seconds) || 0));
+      if (seekTimer) clearTimeout(seekTimer);
+      seekTimer = setTimeout(() => {
+        if (!previewVideo || previewBusy || pendingTime == null) return;
+        const next = pendingTime;
+        pendingTime = null;
+        previewBusy = true;
+        try {
+          previewVideo.currentTime = next;
+        } catch (_error) {
+          previewBusy = false;
+        }
+      }, 55);
+    };
+
+    if (previewVideo) {
+      previewVideo.preload = 'auto';
+      previewVideo.muted = true;
+      previewVideo.playsInline = true;
+      previewVideo.src = sourceUrl;
+      previewVideo.addEventListener('loadedmetadata', () => {
+        previewReady = true;
+      });
+      previewVideo.addEventListener('seeked', () => {
+        previewBusy = false;
+        drawFrame();
+        if (pendingTime != null) queuePreviewTime(pendingTime);
+      });
+      previewVideo.addEventListener('error', () => {
+        previewBusy = false;
+      });
+    }
+
+    const showPreview = (ratio) => {
+      const duration = getDurationSafe();
+      const clampedRatio = Math.max(0, Math.min(1, Number(ratio) || 0));
+      const seconds = duration > 0 ? clampedRatio * duration : 0;
+      bubble.style.left = `${clampedRatio * 100}%`;
+      bubble.style.top = '';
+      bubble.style.bottom = 'calc(100% + 12px)';
+      if (timeEl) timeEl.textContent = formatClock(seconds);
+      bubble.classList.remove('hidden');
+      fsSeekWrap.classList.add('seek-preview-active');
+      queuePreviewTime(seconds);
+    };
+
+    const hidePreview = () => {
+      bubble.classList.add('hidden');
+      fsSeekWrap.classList.remove('seek-preview-active');
+    };
+
+    const onPointerMove = (event) => {
+      const rect = fsSeek.getBoundingClientRect();
+      if (!rect.width) return;
+      showPreview((event.clientX - rect.left) / rect.width);
+    };
+    const onLeave = () => hidePreview();
+    const onInputPreview = () => {
+      showPreview(Number(fsSeek.value || 0) / 1000);
+    };
+
+    fsSeek.addEventListener('pointermove', onPointerMove);
+    fsSeek.addEventListener('pointerleave', onLeave);
+    fsSeek.addEventListener('input', onInputPreview);
+    fsSeek.addEventListener('focus', onInputPreview);
+    fsSeek.addEventListener('blur', onLeave);
+
+    return () => {
+      if (seekTimer) clearTimeout(seekTimer);
+      fsSeek.removeEventListener('pointermove', onPointerMove);
+      fsSeek.removeEventListener('pointerleave', onLeave);
+      fsSeek.removeEventListener('input', onInputPreview);
+      fsSeek.removeEventListener('focus', onInputPreview);
+      fsSeek.removeEventListener('blur', onLeave);
+      if (previewVideo) {
+        previewVideo.removeAttribute('src');
+        try { previewVideo.load(); } catch (_error) {}
+      }
+      bubble.remove();
+    };
   };
 
   const applySubtitleSetting = () => {
@@ -424,6 +554,7 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
   };
 
   settingInputs.forEach((input) => input.addEventListener('change', onSettingsToggle));
+  const destroyFsSeekPreview = initFsSeekPreview();
   settingsBtn?.addEventListener('click', onSettingsButton);
   fsPlayBtn?.addEventListener('click', onPlayToggle);
   fsSeek?.addEventListener('input', onSeekInput);
@@ -454,6 +585,7 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
     fsTcJumpGo?.removeEventListener('click', onTimecodeJumpApply);
     fsTcJumpCancel?.removeEventListener('click', onTcJumpCancel);
     fsTcJumpInput?.removeEventListener('keydown', onTcJumpKeydown);
+    destroyFsSeekPreview?.();
     mediaEl.removeEventListener('timeupdate', syncOverlay);
     mediaEl.removeEventListener('play', syncOverlay);
     mediaEl.removeEventListener('pause', syncOverlay);

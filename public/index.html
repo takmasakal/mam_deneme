@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MAM Console</title>
-    <link rel="stylesheet" href="/styles.css?v=20260422-search-phrase-2" />
+    <link rel="stylesheet" href="/styles.css?v=20260424-search-counter-10" />
   </head>
   <body>
     <main class="layout">
@@ -38,6 +38,7 @@
           <form id="searchForm" class="stack search">
             <div class="search-title-row">
               <h2 data-i18n="search_title">Search</h2>
+              <div id="searchResultCounter" class="search-result-counter hidden" aria-live="polite"></div>
               <button type="button" id="clearSearchBtn" class="search-clear-btn" data-i18n="clear" data-i18n-title="clear_search_fields" data-i18n-aria="clear_search_fields" title="Clear search fields" aria-label="Clear search fields">Clear</button>
             </div>
             <div class="search-query-wrap">
@@ -62,7 +63,9 @@
               <option value="trash" data-i18n="trash_only">Trash only</option>
               <option value="all" data-i18n="trash_all">All (active + trash)</option>
             </select>
-            <button type="submit" data-i18n="btn_apply_filters">Apply Filters</button>
+            <div class="search-actions-row">
+              <button type="submit" data-i18n="btn_apply_filters">Apply Filters</button>
+            </div>
           </form>
         </div>
 
@@ -79,7 +82,7 @@
             </select>
             <div class="file-picker">
               <input id="mediaFileInput" name="mediaFile" type="file" hidden accept="video/*,audio/*,image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,.csv,.sql,.py,.js,.ts,.tsx,.jsx,.json,.md,.xml,.yaml,.yml,.log,.ini,.cfg,.conf,.sh,.bash,.zsh,.java,.c,.cpp,.h,.hpp,.go,.rs,.rb,.php,.swift,.kt" required />
-              <button type="button" id="mediaFileBtn" class="file-picker-btn" data-i18n="choose_file">Dosya Sec</button>
+              <button type="button" id="mediaFileBtn" class="file-picker-btn" data-i18n="choose_file">Dosya Seç</button>
               <span id="mediaFileName" class="file-picker-name"></span>
             </div>
             <input name="tags" data-i18n-placeholder="ph_tags" placeholder="Tags (comma separated)" />
@@ -138,17 +141,17 @@
     <script src="/main-search-suggest.js?v=20260424-main-refactor-1"></script>
     <script src="/main-assets.js?v=20260424-main-refactor-3"></script>
     <script src="/main-asset-browser.js?v=20260424-main-refactor-10"></script>
-    <script src="/main-shell.js?v=20260424-main-refactor-8"></script>
+    <script src="/main-shell.js?v=20260424-seek-preview-2"></script>
     <script src="/main-dialogs.js?v=20260424-main-refactor-9"></script>
     <script src="/main-detail.js?v=20260424-main-refactor-2"></script>
     <script src="/main-common.js?v=20260424-main-refactor-13"></script>
     <script src="/main-ingest.js?v=20260424-main-refactor-13"></script>
     <script src="/main-document-preview.js?v=20260424-main-refactor-7"></script>
     <script src="/main-media-viewer.js?v=20260424-main-refactor-11"></script>
-    <script src="/main-player-ui.js?v=20260424-main-refactor-5"></script>
+    <script src="/main-player-ui.js?v=20260424-seek-preview-1"></script>
     <script src="/main-player-runtime.js?v=20260424-main-refactor-12"></script>
     <script src="/main-video-tools.js?v=20260424-main-refactor-6"></script>
     <script src="/main-player-bootstrap.js?v=20260424-main-refactor-4"></script>
-    <script src="/main.js?v=20260424-main-refactor-13"></script>
+    <script src="/main.js?v=20260424-main-refactor-19"></script>
   </body>
 </html>

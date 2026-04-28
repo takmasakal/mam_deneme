@@ -22,6 +22,7 @@ const statusSelect = searchForm.querySelector('[name="status"]');
 const searchQueryInput = searchForm.querySelector('[name="q"]');
 const searchSuggestList = document.getElementById('searchSuggestList');
 const clearSearchBtn = document.getElementById('clearSearchBtn');
+const searchResultCounter = document.getElementById('searchResultCounter');
 // OCR ve Altyazi aramalari 1. kolonda birbirinden bagimsiz iki ayri kutu olarak calisir.
 const ocrQueryInput = searchForm.querySelector('[name="ocrQ"]');
 const ocrSuggestList = document.getElementById('ocrSuggestList');
@@ -52,6 +53,7 @@ const LOCAL_ASSET_VIEW_MODE = 'mam.assets.view.mode';
 const LOCAL_DETAIL_VIDEO_PIN = 'mam.detail.video.pin';
 const I18N_PATH = '/i18n.json';
 const DETAIL_PANEL_BASE_MIN_PX = 377;
+const PLAYER_FPS = 25;
 const PANELS = [
   { id: 'panelIngest', defaultSize: 1 },
   { id: 'panelAssets', defaultSize: 1.2 },
@@ -74,6 +76,7 @@ let currentUserCanDeleteAssets = false;
 let currentUserCanUsePdfAdvancedTools = false;
 let currentOfficeEditorProvider = 'none';
 let currentUsername = '';
+let searchSuggestModule = null;
 const selectedAssetIds = new Set();
 let lastSelectedAssetId = null;
 let currentSearchQuery = '';
@@ -85,12 +88,55 @@ let currentSearchFuzzyUsed = false;
 let currentOcrHighlightQuery = '';
 let currentOcrDidYouMean = '';
 let currentOcrFuzzyUsed = false;
+let searchResultCounterVisible = false;
 const cutMarksByAsset = new Map();
 const subtitleOverlayEnabledByAsset = new Map();
 let panelSizes = Object.fromEntries(PANELS.map((p) => [p.id, p.defaultSize]));
 let panelVisibility = { panelIngest: true, panelAssets: true, panelDetail: true };
 let dynamicDetailMinPx = DETAIL_PANEL_BASE_MIN_PX;
 let assetViewMode = localStorage.getItem(LOCAL_ASSET_VIEW_MODE) === 'list' ? 'list' : 'grid';
+
+function hideSearchSuggestions() {
+  return searchSuggestModule?.hideSearchSuggestions?.();
+}
+
+function hideOcrSuggestions() {
+  return searchSuggestModule?.hideOcrSuggestions?.();
+}
+
+function hideSubtitleSuggestions() {
+  return searchSuggestModule?.hideSubtitleSuggestions?.();
+}
+
+function queueSearchSuggestions() {
+  return searchSuggestModule?.queueSearchSuggestions?.();
+}
+
+function queueOcrSuggestions() {
+  return searchSuggestModule?.queueOcrSuggestions?.();
+}
+
+function queueSubtitleSuggestions() {
+  return searchSuggestModule?.queueSubtitleSuggestions?.();
+}
+
+function setSearchResultCounterVisible(visible) {
+  searchResultCounterVisible = Boolean(visible);
+  if (!searchResultCounter) return;
+  searchResultCounter.classList.toggle('hidden', !searchResultCounterVisible);
+}
+
+function updateSearchResultCounter() {
+  if (!searchResultCounter) return;
+  if (!searchResultCounterVisible) {
+    searchResultCounter.textContent = '';
+    searchResultCounter.classList.add('hidden');
+    return;
+  }
+  const count = Array.isArray(currentAssets) ? currentAssets.length : 0;
+  searchResultCounter.textContent = String(count);
+  searchResultCounter.classList.remove('hidden');
+}
 
 const shellModule = window.createMainShellModule({
   searchForm,
@@ -222,6 +268,7 @@ let i18n = {
     uploading: 'Uploading',
     processing: 'Processing',
     btn_apply_filters: 'Apply Filters',
+    search_result_count: '{count} matches',
     no_assets: 'No assets found.',
     playback_source: 'Playback source',
     low_res_proxy: 'Low-res proxy',
@@ -514,7 +561,7 @@ let i18n = {
     type_photo: 'Fotoğraf',
     type_other: 'Diğer',
     ph_owner: 'Sahip',
-    choose_file: 'Dosya Sec',
+    choose_file: 'Dosya Seç',
     ph_tags: 'Etiketler (virgülle)',
     ph_duration_auto: 'Süre otomatik algılanır',
     ph_source: 'Kaynak yolu',
@@ -538,6 +585,7 @@ let i18n = {
     uploading: 'Yükleniyor',
     processing: 'İşleniyor',
     btn_apply_filters: 'Filtreleri Uygula',
+    search_result_count: '{count} eslesme',
     no_assets: 'Varlık bulunamadı.',
     playback_source: 'Oynatma kaynağı',
     low_res_proxy: 'Düşük çözünürlük proxy',
@@ -900,6 +948,27 @@ function assetTagChipStyle(asset) { return commonModule.assetTagChipStyle(asset)
 function secondsToTimecode(timeSeconds, fps) { return commonModule.secondsToTimecode(timeSeconds, fps); }
 function parseTimecodeInput(value, fps) { return commonModule.parseTimecodeInput(value, fps); }
 function subtitleTrackMarkup(asset) { return commonModule.subtitleTrackMarkup(asset); }
+
+searchSuggestModule = window.createMainSearchSuggestModule({
+  api,
+  t,
+  escapeHtml,
+  highlightMatch,
+  serializeForm,
+  assetTypeFilters,
+  searchForm,
+  searchQueryInput,
+  searchSuggestList,
+  ocrQueryInput,
+  ocrSuggestList,
+  subtitleQueryInput,
+  subtitleSuggestList,
+  getActiveOcrQueryInput,
+  setSingleSelection,
+  openAsset,
+  loadAssets,
+  updateClearSearchButtonState
+});
 
 function useVidstackPlayerUI() {
   return String(playerUiMode || 'vidstack') === 'vidstack';
@@ -1781,7 +1850,9 @@ async function loadWorkflow() {
 }
 
 async function loadAssets() {
-  return assetsModule.loadAssets();
+  const result = await assetsModule.loadAssets();
+  updateSearchResultCounter();
+  return result;
 }
 
 function clearDetailHeaderTimecode() {
@@ -2372,12 +2443,14 @@ assetViewThumbBtn?.addEventListener('click', () => {
 });
 
 initIngestHandlers();
+searchSuggestModule?.init?.();
 
 searchForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   hideSearchSuggestions();
   hideOcrSuggestions();
   hideSubtitleSuggestions();
+  setSearchResultCounterVisible(hasActiveSearchFields());
   try {
     await loadAssets();
   } catch (error) {
@@ -2386,6 +2459,7 @@ searchForm.addEventListener('submit', async (event) => {
 });
 
 clearSearchBtn?.addEventListener('click', async () => {
+  setSearchResultCounterVisible(false);
   try {
     await clearSearchFields();
   } catch (error) {
