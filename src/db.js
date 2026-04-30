@@ -160,6 +160,19 @@ async function initDb() {
       updated_at TIMESTAMPTZ NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id TEXT PRIMARY KEY,
+      created_at TIMESTAMPTZ NOT NULL,
+      actor TEXT NOT NULL DEFAULT '',
+      action TEXT NOT NULL,
+      target_type TEXT NOT NULL DEFAULT '',
+      target_id TEXT NOT NULL DEFAULT '',
+      target_title TEXT NOT NULL DEFAULT '',
+      details JSONB NOT NULL DEFAULT '{}'::jsonb,
+      ip TEXT NOT NULL DEFAULT '',
+      user_agent TEXT NOT NULL DEFAULT ''
+    );
+
     CREATE TABLE IF NOT EXISTS learned_turkish_corrections (
       wrong_key TEXT PRIMARY KEY,
       wrong TEXT NOT NULL,
@@ -198,6 +211,10 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_media_jobs_asset_type_updated ON media_processing_jobs(asset_id, job_type, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_media_jobs_status ON media_processing_jobs(status);
     CREATE INDEX IF NOT EXISTS idx_learned_turkish_corrections_updated ON learned_turkish_corrections(updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_created ON audit_events(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_action ON audit_events(action);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_actor ON audit_events(actor);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_target ON audit_events(target_type, target_id);
   `);
 }
 

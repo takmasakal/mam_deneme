@@ -64,6 +64,16 @@ let currentAssets = [];
 let activePlayerCleanup = null;
 let activeDetailPinCleanup = null;
 let playerUiMode = 'vidstack';
+let subtitleStyleSettings = {
+  customOverlayEnabled: true,
+  bottomOffset: 56,
+  fontSize: 24,
+  textColor: '#ffffff',
+  backgroundColor: '#000000',
+  backgroundOpacity: 0.72,
+  horizontalPadding: 16,
+  maxWidth: 82
+};
 let detailVideoPinned = localStorage.getItem(LOCAL_DETAIL_VIDEO_PIN) === '1';
 let commonModule = null;
 let detailModule = null;
@@ -162,6 +172,7 @@ const shellModule = window.createMainShellModule({
   currentLangRef: {
     get: () => currentLang
   },
+  scheduleNativeSubtitleCuePosition,
   secondsToTimecode,
   PLAYER_FPS,
   parseTimecodeInput
@@ -907,6 +918,12 @@ commonModule = window.createMainCommonModule({
   PLAYER_FPS,
   selectedAssetIdRef: {
     get: () => selectedAssetId
+  },
+  subtitleStyleRef: {
+    get: () => subtitleStyleSettings
+  },
+  currentSubtitleQueryRef: {
+    get: () => currentSubtitleQuery
   }
 });
 
@@ -920,6 +937,8 @@ function serializeForm(form) { return commonModule.serializeForm(form); }
 function highlightSuggestText(text, query) { return commonModule.highlightSuggestText(text, query); }
 function getSubtitleOverlayEnabled(assetId, fallback = false) { return commonModule.getSubtitleOverlayEnabled(assetId, fallback); }
 function syncSubtitleOverlayInOpenPlayers(asset) { return commonModule.syncSubtitleOverlayInOpenPlayers(asset); }
+function initCustomSubtitleOverlay(mediaEl, asset, root = document) { return commonModule.initCustomSubtitleOverlay(mediaEl, asset, root); }
+function scheduleNativeSubtitleCuePosition(mediaEl) { return commonModule.scheduleNativeSubtitleCuePosition(mediaEl); }
 async function readFileAsBase64(file) { return commonModule.readFileAsBase64(file); }
 function getFileExtension(asset) { return commonModule.getFileExtension(asset); }
 function isVideo(asset) { return commonModule.isVideo(asset); }
@@ -982,14 +1001,60 @@ function useCustomLikeTimelineUI() {
   return useVidstackPlayerUI() || useMpegDashPlayerUI();
 }
 
+function normalizeClientSubtitleStyle(style = {}) {
+  const input = style && typeof style === 'object' ? style : {};
+  const hex = (value, fallback) => (/^#[0-9a-fA-F]{6}$/.test(String(value || '').trim()) ? String(value).trim().toLowerCase() : fallback);
+  const clamp = (value, min, max, fallback) => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return fallback;
+    return Math.max(min, Math.min(max, num));
+  };
+  return {
+    customOverlayEnabled: Object.prototype.hasOwnProperty.call(input, 'customOverlayEnabled') ? Boolean(input.customOverlayEnabled) : true,
+    bottomOffset: clamp(input.bottomOffset, 0, 240, 56),
+    fontSize: clamp(input.fontSize, 12, 64, 24),
+    textColor: hex(input.textColor, '#ffffff'),
+    backgroundColor: hex(input.backgroundColor, '#000000'),
+    backgroundOpacity: clamp(input.backgroundOpacity, 0, 1, 0.72),
+    horizontalPadding: clamp(input.horizontalPadding, 0, 80, 16),
+    maxWidth: clamp(input.maxWidth, 35, 100, 82)
+  };
+}
+
+function hexToRgb(value) {
+  const raw = String(value || '').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(raw)) return '0, 0, 0';
+  return [
+    parseInt(raw.slice(0, 2), 16),
+    parseInt(raw.slice(2, 4), 16),
+    parseInt(raw.slice(4, 6), 16)
+  ].join(', ');
+}
+
+function applySubtitleStyleSettings() {
+  const style = normalizeClientSubtitleStyle(subtitleStyleSettings);
+  subtitleStyleSettings = style;
+  const root = document.documentElement;
+  root.style.setProperty('--mam-subtitle-font-size', `${style.fontSize}px`);
+  root.style.setProperty('--mam-subtitle-text-color', style.textColor);
+  root.style.setProperty('--mam-subtitle-background', `rgba(${hexToRgb(style.backgroundColor)}, ${style.backgroundOpacity})`);
+  root.style.setProperty('--mam-subtitle-horizontal-padding', `${style.horizontalPadding}px`);
+  root.style.setProperty('--mam-subtitle-max-width', `${style.maxWidth}%`);
+  root.style.setProperty('--mam-subtitle-bottom-offset', `${style.bottomOffset}px`);
+  document.body.classList.toggle('subtitle-custom-overlay-enabled', style.customOverlayEnabled);
+}
+
 async function loadUiSettings() {
   try {
     const settings = await api('/api/ui-settings');
     const mode = String(settings?.playerUiMode || 'vidstack').trim().toLowerCase();
     playerUiMode = (mode === 'vidstack' || mode === 'mpegdash') ? mode : 'vidstack';
+    subtitleStyleSettings = normalizeClientSubtitleStyle(settings?.subtitleStyle || {});
   } catch (_error) {
     playerUiMode = 'vidstack';
+    subtitleStyleSettings = normalizeClientSubtitleStyle({});
   }
+  applySubtitleStyleSettings();
 }
 
 function applyStaticI18n() {
@@ -1455,6 +1520,7 @@ async function detectDurationSeconds(file) { return ingestModule.detectDurationS
 function initIngestHandlers() { return ingestModule.initIngestHandlers(); }
 
 const assetBrowserModule = window.createMainAssetBrowserModule({
+  api,
   assetGrid,
   assetDetail,
   panelDetail,
@@ -1607,6 +1673,7 @@ detailModule = window.createMainDetailModule({
   effectiveSearchHighlightClass,
   renderPdfChangeKindLabel,
   cleanVersionNoteText,
+  formatDate,
   currentUserCanUsePdfAdvancedTools: () => currentUserCanUsePdfAdvancedTools,
   currentUserCanEditOffice: () => currentUserCanEditOffice,
   currentUserCanAccessAdmin: () => currentUserCanAccessAdmin,
@@ -1785,7 +1852,11 @@ const playerBootstrapModule = window.createMainPlayerBootstrapModule({
   initVideoOcrTools,
   initCollapsibleSections,
   initVideoToolsSorting,
-  initAudioTools
+  initAudioTools,
+  initCustomSubtitleOverlay,
+  getSubtitleOverlayEnabled,
+  setSubtitleOverlayEnabled,
+  syncSubtitleOverlayInOpenPlayers
 });
 
 function openVideoToolsDialog(asset, options = {}) {
@@ -1914,6 +1985,9 @@ async function openAsset(id, workflow, options = {}) {
       startAtSeconds: Number(options.startAtSeconds) || 0,
       focusCutId: String(options.focusCutId || '').trim()
     });
+    const overlayCheck = assetDetail.querySelector('#subtitleOverlayCheck');
+    if (overlayCheck) overlayCheck.checked = getSubtitleOverlayEnabled(asset.id, false);
+    syncSubtitleOverlayInOpenPlayers(asset);
     if (options.scrollToVideoTop) scrollDetailPanelToVideoTop(assetDetail);
     const leaveBtn = document.getElementById('leaveVideoToolsPageBtn');
     leaveBtn?.addEventListener('click', () => {
@@ -1939,6 +2013,15 @@ async function openAsset(id, workflow, options = {}) {
   }
   setPanelVideoToolsButtonState(hasPlayableVideoProxy && !isVideoToolsPageMode, () => {
     const panelMedia = assetDetail.querySelector('#assetMediaEl');
+    const panelSubtitleCheck = assetDetail.querySelector('#subtitleOverlayCheck');
+    const panelTrackEnabled = panelMedia
+      ? Array.from(panelMedia.textTracks || []).some((track) => (track.kind === 'subtitles' || track.kind === 'captions') && track.mode === 'showing')
+        || Boolean(panelMedia.querySelector('#assetSubtitleTrack'))
+      : false;
+    const nextSubtitleEnabled = panelSubtitleCheck
+      ? Boolean(panelSubtitleCheck.checked)
+      : (panelTrackEnabled || getSubtitleOverlayEnabled(asset.id, false));
+    setSubtitleOverlayEnabled(asset.id, nextSubtitleEnabled);
     if (panelMedia && typeof panelMedia.pause === 'function') {
       try { panelMedia.pause(); } catch (_error) {}
     }

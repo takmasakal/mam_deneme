@@ -8,6 +8,8 @@ const settingsForm = document.getElementById('settingsForm');
 const settingsMsg = document.getElementById('settingsMsg');
 const ocrSettingsForm = document.getElementById('ocrSettingsForm');
 const ocrSettingsMsg = document.getElementById('ocrSettingsMsg');
+const subtitleSettingsForm = document.getElementById('subtitleSettingsForm');
+const subtitleSettingsMsg = document.getElementById('subtitleSettingsMsg');
 const apiTokenInput = document.getElementById('apiTokenInput');
 const oidcIssuerUrlInput = document.getElementById('oidcIssuerUrlInput');
 const oidcJwksUrlInput = document.getElementById('oidcJwksUrlInput');
@@ -53,6 +55,15 @@ const combinedSearchLimit = document.getElementById('combinedSearchLimit');
 const runCombinedSearchBtn = document.getElementById('runCombinedSearchBtn');
 const combinedSearchRows = document.getElementById('combinedSearchRows');
 const combinedSearchMsg = document.getElementById('combinedSearchMsg');
+const auditActorInput = document.getElementById('auditActorInput');
+const auditActionSelect = document.getElementById('auditActionSelect');
+const auditTargetInput = document.getElementById('auditTargetInput');
+const auditTargetSuggestList = document.getElementById('auditTargetSuggestList');
+const auditFromInput = document.getElementById('auditFromInput');
+const auditToInput = document.getElementById('auditToInput');
+const runAuditSearchBtn = document.getElementById('runAuditSearchBtn');
+const auditEventsRows = document.getElementById('auditEventsRows');
+const auditEventsMsg = document.getElementById('auditEventsMsg');
 
 let currentLang = localStorage.getItem(LOCAL_LANG) || 'en';
 let pollTimer = null;
@@ -62,6 +73,11 @@ let proxySuggestReqSeq = 0;
 let proxySuggestItems = [];
 let proxySuggestActiveIndex = -1;
 let proxySuggestHideTimer = null;
+let auditSuggestTimer = null;
+let auditSuggestReqSeq = 0;
+let auditSuggestItems = [];
+let auditSuggestActiveIndex = -1;
+let auditSuggestHideTimer = null;
 let currentAdminProfile = null;
 
 let i18n = {
@@ -70,6 +86,7 @@ let i18n = {
     admin_subtitle: 'Workflow tracking, proxy generation, and system health.',
     back_to_mam: 'Back to MAM',
     system_health: 'System Health',
+    audit_events: 'Audit Log',
     settings: 'Settings',
     loading: 'Loading...',
     workflow_tracking_enabled: 'Workflow tracking enabled',
@@ -116,7 +133,24 @@ let i18n = {
     settings_group_workflow: 'Workflow & Player',
     settings_group_security: 'Security',
     settings_group_identity: 'Token & OIDC',
+    settings_group_audit: 'Audit Log',
+    audit_retention_days: 'Log retention (days)',
     settings_group_docs: 'Documentation',
+    audit_filter_actor: 'User',
+    audit_filter_action: 'Action',
+    audit_filter_action_all: 'All',
+    audit_filter_target: 'Asset',
+    audit_filter_from: 'From',
+    audit_filter_to: 'To',
+    audit_filter_run: 'Filter',
+    audit_none: 'No audit event found.',
+    audit_load_failed: 'Failed to load audit events.',
+    audit_action_asset_uploaded: 'Asset uploaded',
+    audit_action_asset_created: 'Asset created',
+    audit_action_asset_updated: 'Asset updated',
+    audit_action_asset_trashed: 'Moved to trash',
+    audit_action_asset_restored: 'Restored',
+    audit_action_asset_deleted: 'Permanently deleted',
     ocr_defaults: 'OCR Defaults',
     ocr_filters: 'OCR Filters',
     ocr_default_advanced_mode: 'Advanced OCR mode default',
@@ -131,6 +165,7 @@ let i18n = {
     settings_sub_subtitle: 'Subtitle',
     settings_sub_users: 'Users',
     save_settings: 'Save Settings',
+    set_as_default: 'Set as Default',
     settings_saved: 'Settings saved.',
     workflow_tracking: 'Workflow Tracking',
     proxy_jobs: 'Proxy Jobs',
@@ -283,6 +318,18 @@ let i18n = {
     subtitle_saved: 'Subtitle record saved.',
     subtitle_deleted: 'Subtitle record deleted.',
     subtitle_none: 'No subtitle records found.',
+    subtitle_records_none: 'No subtitle records found.',
+    subtitle_custom_overlay: 'Use custom overlay',
+    subtitle_bottom_offset: 'Bottom offset (px)',
+    subtitle_display_settings: 'Subtitle Display Settings',
+    subtitle_display_style: 'Subtitle Style',
+    subtitle_font_size: 'Font size (px)',
+    subtitle_text_color: 'Text color',
+    subtitle_background_color: 'Background color',
+    subtitle_background_opacity: 'Background opacity',
+    subtitle_horizontal_padding: 'Left/right padding (px)',
+    subtitle_max_width: 'Max width (%)',
+    subtitle_display_native_note: 'Custom overlay applies all style settings and enables match highlighting. Native browser subtitles only support limited font/color/background styling.',
     subtitle_confirm_delete: 'Delete this subtitle record from database?',
     combined_search: 'Combined Subtitle + OCR Search',
     combined_search_query: 'Search Query',
@@ -296,6 +343,7 @@ let i18n = {
     admin_subtitle: 'İş akışı izleme, proxy üretimi ve sistem sağlığı.',
     back_to_mam: "MAM'e Dön",
     system_health: 'Sistem Sağlığı',
+    audit_events: 'İşlem Geçmişi',
     settings: 'Ayarlar',
     loading: 'Yükleniyor...',
     workflow_tracking_enabled: 'İş akışı izleme etkin',
@@ -342,7 +390,24 @@ let i18n = {
     settings_group_workflow: 'İş Akışı ve Oynatıcı',
     settings_group_security: 'Güvenlik',
     settings_group_identity: 'Token ve OIDC',
+    settings_group_audit: 'Audit Log',
+    audit_retention_days: 'Log saklama süresi (gün)',
     settings_group_docs: 'Dokümantasyon',
+    audit_filter_actor: 'Kullanıcı',
+    audit_filter_action: 'İşlem',
+    audit_filter_action_all: 'Tümü',
+    audit_filter_target: 'Varlık',
+    audit_filter_from: 'Başlangıç',
+    audit_filter_to: 'Bitiş',
+    audit_filter_run: 'Filtrele',
+    audit_none: 'İşlem kaydı bulunamadı.',
+    audit_load_failed: 'İşlem geçmişi yüklenemedi.',
+    audit_action_asset_uploaded: 'Varlık yüklendi',
+    audit_action_asset_created: 'Varlık oluşturuldu',
+    audit_action_asset_updated: 'Varlık güncellendi',
+    audit_action_asset_trashed: 'Çöpe taşındı',
+    audit_action_asset_restored: 'Geri yüklendi',
+    audit_action_asset_deleted: 'Kalıcı silindi',
     ocr_defaults: 'OCR Varsayılanları',
     ocr_filters: 'OCR Filtreleri',
     ocr_default_advanced_mode: 'Gelişmiş OCR varsayılan açık',
@@ -357,6 +422,7 @@ let i18n = {
     settings_sub_subtitle: 'Altyazı',
     settings_sub_users: 'Kullanıcılar',
     save_settings: 'Ayarları Kaydet',
+    set_as_default: 'Varsayılan Yap',
     settings_saved: 'Ayarlar kaydedildi.',
     workflow_tracking: 'İş Akışı İzleme',
     proxy_jobs: 'Proxy Görevleri',
@@ -509,6 +575,18 @@ let i18n = {
     subtitle_saved: 'Altyazı kaydı kaydedildi.',
     subtitle_deleted: 'Altyazı kaydı silindi.',
     subtitle_none: 'Altyazı kaydı bulunamadı.',
+    subtitle_records_none: 'Altyazı kaydı bulunamadı.',
+    subtitle_custom_overlay: 'Custom overlay kullan',
+    subtitle_bottom_offset: 'Alttan mesafe (px)',
+    subtitle_display_settings: 'Altyazı Görünüm Ayarları',
+    subtitle_display_style: 'Altyazı Stili',
+    subtitle_font_size: 'Font boyutu (px)',
+    subtitle_text_color: 'Yazı rengi',
+    subtitle_background_color: 'Arka plan rengi',
+    subtitle_background_opacity: 'Arka plan opaklığı',
+    subtitle_horizontal_padding: 'Sağ/sol padding (px)',
+    subtitle_max_width: 'Maksimum genişlik (%)',
+    subtitle_display_native_note: 'Custom overlay tüm stil ayarlarını uygular ve eşleşme vurgusunu açar. Native tarayıcı altyazıları sadece sınırlı font/renk/arka plan stilini destekler.',
     subtitle_confirm_delete: 'Bu altyazı kaydı veritabanından silinsin mi?',
     combined_search: 'Birleşik Altyazı + OCR Arama',
     combined_search_query: 'Arama Metni',
@@ -1051,13 +1129,12 @@ function formatAdminDateTime(value) {
   if (!value) return '-';
   const dt = new Date(value);
   if (Number.isNaN(dt.getTime())) return '-';
-  return dt.toLocaleString(currentLang === 'tr' ? 'tr-TR' : 'en-US', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  const day = String(dt.getDate()).padStart(2, '0');
+  const month = String(dt.getMonth() + 1).padStart(2, '0');
+  const year = String(dt.getFullYear());
+  const hour = String(dt.getHours()).padStart(2, '0');
+  const minute = String(dt.getMinutes()).padStart(2, '0');
+  return `${day}.${month}.${year} ${hour}:${minute}`;
 }
 
 function jobStatusLabel(status) {
@@ -1374,6 +1451,88 @@ function queueProxySuggestionRequest() {
   }, 180);
 }
 
+function hideAuditSuggestions() {
+  if (!auditTargetSuggestList) return;
+  auditTargetSuggestList.classList.add('hidden');
+  auditTargetSuggestList.innerHTML = '';
+  auditSuggestItems = [];
+  auditSuggestActiveIndex = -1;
+}
+
+function setAuditSuggestActive(index) {
+  if (!auditTargetSuggestList) return;
+  const buttons = Array.from(auditTargetSuggestList.querySelectorAll('.proxy-suggest-item'));
+  if (!buttons.length) {
+    auditSuggestActiveIndex = -1;
+    return;
+  }
+  const safeIndex = Math.max(0, Math.min(buttons.length - 1, index));
+  auditSuggestActiveIndex = safeIndex;
+  buttons.forEach((btn, idx) => {
+    btn.classList.toggle('active', idx === safeIndex);
+  });
+}
+
+function applyAuditSuggestion(item) {
+  if (!item || !auditTargetInput) return;
+  const title = String(item.title || '').trim();
+  const fileName = String(item.fileName || '').trim();
+  auditTargetInput.value = title || fileName;
+  hideAuditSuggestions();
+  loadAuditEvents().catch((error) => {
+    if (auditEventsMsg) auditEventsMsg.textContent = String(error.message || 'Request failed');
+  });
+}
+
+function renderAuditSuggestions(items, query) {
+  if (!auditTargetSuggestList) return;
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {
+    hideAuditSuggestions();
+    return;
+  }
+  auditSuggestItems = list;
+  auditSuggestActiveIndex = -1;
+  auditTargetSuggestList.innerHTML = list.map((item, index) => {
+    const title = String(item.title || item.fileName || item.id || '');
+    const fileName = String(item.fileName || '');
+    const type = String(item.type || '-');
+    const trashState = item.inTrash ? 'trash' : 'active';
+    return `
+      <button type="button" class="proxy-suggest-item" data-index="${index}">
+        <strong>${highlightSuggestion(title, query)}</strong>
+        <span>${escapeHtml(type)} | ${escapeHtml(fileName || '-')} | ${escapeHtml(trashState)}</span>
+      </button>
+    `;
+  }).join('');
+  auditTargetSuggestList.classList.remove('hidden');
+}
+
+async function requestAuditSuggestions() {
+  const query = String(auditTargetInput?.value || '').trim();
+  if (query.length < 2) {
+    hideAuditSuggestions();
+    return;
+  }
+  const reqId = ++auditSuggestReqSeq;
+  const params = new URLSearchParams({ q: query, limit: '8', includeTrash: '1' });
+  try {
+    const result = await api(`/api/admin/assets/suggest?${params.toString()}`);
+    if (reqId !== auditSuggestReqSeq) return;
+    renderAuditSuggestions(result, query);
+  } catch (_error) {
+    if (reqId !== auditSuggestReqSeq) return;
+    hideAuditSuggestions();
+  }
+}
+
+function queueAuditSuggestionRequest() {
+  if (auditSuggestTimer) clearTimeout(auditSuggestTimer);
+  auditSuggestTimer = setTimeout(() => {
+    requestAuditSuggestions().catch(() => {});
+  }, 180);
+}
+
 const adminRecordsModule = window.createAdminRecordsModule({
   api,
   t,
@@ -1438,6 +1597,7 @@ function applyAdminAccessMode(me = {}) {
 
   setAdminTabVisibility('apiHelp', !isTextOnly);
   setAdminTabVisibility('systemHealth', !isTextOnly);
+  setAdminTabVisibility('auditEvents', !isTextOnly);
   setAdminTabVisibility('settings', true);
 
   setSettingsSubtabVisibility('general', !isTextOnly);
@@ -1451,6 +1611,8 @@ function applyAdminAccessMode(me = {}) {
   if (settingsMsg) settingsMsg.classList.toggle('hidden', isTextOnly);
   if (ocrSettingsForm) ocrSettingsForm.classList.toggle('hidden', isTextOnly);
   if (ocrSettingsMsg) ocrSettingsMsg.classList.toggle('hidden', isTextOnly);
+  if (subtitleSettingsForm) subtitleSettingsForm.classList.toggle('hidden', false);
+  if (subtitleSettingsMsg) subtitleSettingsMsg.classList.toggle('hidden', false);
 
   if (isTextOnly) {
     switchTab('settings');
@@ -1498,6 +1660,116 @@ function renderApiGuide() {
   ].join('');
 }
 
+function clampNumber(value, min, max, fallback) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.max(min, Math.min(max, num));
+}
+
+function readSubtitleStyleForm() {
+  return {
+    customOverlayEnabled: Boolean(document.getElementById('subtitleCustomOverlayCheck')?.checked),
+    bottomOffset: clampNumber(document.getElementById('subtitleBottomOffsetInput')?.value, 0, 240, 56),
+    fontSize: clampNumber(document.getElementById('subtitleFontSizeInput')?.value, 12, 64, 24),
+    textColor: String(document.getElementById('subtitleTextColorInput')?.value || '#ffffff'),
+    backgroundColor: String(document.getElementById('subtitleBackgroundColorInput')?.value || '#000000'),
+    backgroundOpacity: clampNumber(document.getElementById('subtitleBackgroundOpacityInput')?.value, 0, 1, 0.72),
+    horizontalPadding: clampNumber(document.getElementById('subtitleHorizontalPaddingInput')?.value, 0, 80, 16),
+    maxWidth: clampNumber(document.getElementById('subtitleMaxWidthInput')?.value, 35, 100, 82)
+  };
+}
+
+function writeSubtitleStyleForm(style = {}) {
+  const normalized = {
+    customOverlayEnabled: Object.prototype.hasOwnProperty.call(style, 'customOverlayEnabled') ? Boolean(style.customOverlayEnabled) : true,
+    bottomOffset: clampNumber(style.bottomOffset, 0, 240, 56),
+    fontSize: clampNumber(style.fontSize, 12, 64, 24),
+    textColor: /^#[0-9a-fA-F]{6}$/.test(String(style.textColor || '')) ? String(style.textColor) : '#ffffff',
+    backgroundColor: /^#[0-9a-fA-F]{6}$/.test(String(style.backgroundColor || '')) ? String(style.backgroundColor) : '#000000',
+    backgroundOpacity: clampNumber(style.backgroundOpacity, 0, 1, 0.72),
+    horizontalPadding: clampNumber(style.horizontalPadding, 0, 80, 16),
+    maxWidth: clampNumber(style.maxWidth, 35, 100, 82)
+  };
+  const customOverlayEl = document.getElementById('subtitleCustomOverlayCheck');
+  const bottomOffsetEl = document.getElementById('subtitleBottomOffsetInput');
+  const fontSizeEl = document.getElementById('subtitleFontSizeInput');
+  const textColorEl = document.getElementById('subtitleTextColorInput');
+  const bgColorEl = document.getElementById('subtitleBackgroundColorInput');
+  const bgOpacityEl = document.getElementById('subtitleBackgroundOpacityInput');
+  const horizontalPaddingEl = document.getElementById('subtitleHorizontalPaddingInput');
+  const maxWidthEl = document.getElementById('subtitleMaxWidthInput');
+  if (customOverlayEl) customOverlayEl.checked = normalized.customOverlayEnabled;
+  if (bottomOffsetEl) bottomOffsetEl.value = String(normalized.bottomOffset);
+  if (fontSizeEl) fontSizeEl.value = String(normalized.fontSize);
+  if (textColorEl) textColorEl.value = normalized.textColor;
+  if (bgColorEl) bgColorEl.value = normalized.backgroundColor;
+  if (bgOpacityEl) bgOpacityEl.value = String(normalized.backgroundOpacity);
+  if (horizontalPaddingEl) horizontalPaddingEl.value = String(normalized.horizontalPadding);
+  if (maxWidthEl) maxWidthEl.value = String(normalized.maxWidth);
+  syncSubtitleColorLabels();
+}
+
+function syncSubtitleColorLabels() {
+  const textColor = String(document.getElementById('subtitleTextColorInput')?.value || '#ffffff');
+  const bgColor = String(document.getElementById('subtitleBackgroundColorInput')?.value || '#000000');
+  const textValue = document.getElementById('subtitleTextColorValue');
+  const bgValue = document.getElementById('subtitleBackgroundColorValue');
+  if (textValue) textValue.textContent = textColor;
+  if (bgValue) bgValue.textContent = bgColor;
+}
+
+function auditActionLabel(action) {
+  const key = `audit_action_${String(action || '').replace(/\./g, '_')}`;
+  return t(key) === key ? String(action || '') : t(key);
+}
+
+function renderAuditEvents(events = []) {
+  if (!auditEventsRows) return;
+  if (!events.length) {
+    auditEventsRows.innerHTML = `<div class="empty">${escapeHtml(t('audit_none'))}</div>`;
+    return;
+  }
+  auditEventsRows.innerHTML = events.map((event) => {
+    const created = formatAdminDateTime(event.createdAt);
+    const title = event.targetTitle || event.targetId || event.targetType || '-';
+    const details = event.details && typeof event.details === 'object'
+      ? Object.entries(event.details)
+        .slice(0, 4)
+        .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : String(value)}`)
+        .join(' · ')
+      : '';
+    return `
+      <div class="row audit-event-row">
+        <strong>${escapeHtml(created)} · ${escapeHtml(event.actor || 'unknown')}</strong>
+        <span>${escapeHtml(auditActionLabel(event.action))} · ${escapeHtml(title)}</span>
+        ${details ? `<small>${escapeHtml(details)}</small>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+async function loadAuditEvents() {
+  if (!auditEventsRows) return;
+  if (auditEventsMsg) auditEventsMsg.textContent = '';
+  const params = new URLSearchParams({ limit: '100' });
+  const actor = String(auditActorInput?.value || '').trim();
+  const action = String(auditActionSelect?.value || '').trim();
+  const target = String(auditTargetInput?.value || '').trim();
+  const from = String(auditFromInput?.value || '').trim();
+  const to = String(auditToInput?.value || '').trim();
+  if (actor) params.set('actor', actor);
+  if (action) params.set('action', action);
+  if (target) params.set('target', target);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  try {
+    const data = await api(`/api/admin/audit-events?${params.toString()}`);
+    renderAuditEvents(Array.isArray(data.events) ? data.events : []);
+  } catch (error) {
+    if (auditEventsMsg) auditEventsMsg.textContent = error.message || t('audit_load_failed');
+  }
+}
+
 async function loadSettings() {
   const settings = await api('/api/admin/settings');
   settingsForm.elements.workflowTrackingEnabled.checked = Boolean(settings.workflowTrackingEnabled);
@@ -1512,6 +1784,9 @@ async function loadSettings() {
   if (oidcIssuerUrlInput) oidcIssuerUrlInput.value = String(settings.oidcIssuerUrl || '');
   if (oidcJwksUrlInput) oidcJwksUrlInput.value = String(settings.oidcJwksUrl || '');
   if (oidcAudienceInput) oidcAudienceInput.value = String(settings.oidcAudience || '');
+  if (settingsForm.elements.auditRetentionDays) {
+    settingsForm.elements.auditRetentionDays.value = String(settings.auditRetentionDays || 180);
+  }
   {
     const advancedModeInput = document.getElementById('ocrDefaultAdvancedMode');
     const turkishFixInput = document.getElementById('ocrDefaultTurkishAiCorrect');
@@ -1524,6 +1799,7 @@ async function loadSettings() {
     if (regionModeInput) regionModeInput.checked = Boolean(settings.ocrDefaultEnableRegionMode);
     if (staticOverlayInput) staticOverlayInput.checked = Boolean(settings.ocrDefaultIgnoreStaticOverlays);
   }
+  writeSubtitleStyleForm(settings.subtitleStyle || {});
   renderApiHelp();
   renderApiGuide();
 }
@@ -1566,7 +1842,8 @@ settingsForm.addEventListener('submit', async (event) => {
     oidcBearerEnabled: settingsForm.elements.oidcBearerEnabled.checked,
     oidcIssuerUrl: String(settingsForm.elements.oidcIssuerUrl.value || '').trim(),
     oidcJwksUrl: String(settingsForm.elements.oidcJwksUrl.value || '').trim(),
-    oidcAudience: String(settingsForm.elements.oidcAudience.value || '').trim()
+    oidcAudience: String(settingsForm.elements.oidcAudience.value || '').trim(),
+    auditRetentionDays: Number(settingsForm.elements.auditRetentionDays?.value) || 180
   };
   await api('/api/admin/settings', { method: 'PATCH', body: JSON.stringify(payload) });
   settingsMsg.textContent = t('settings_saved');
@@ -1585,6 +1862,27 @@ ocrSettingsForm?.addEventListener('submit', async (event) => {
   };
   await api('/api/admin/settings', { method: 'PATCH', body: JSON.stringify(payload) });
   if (ocrSettingsMsg) ocrSettingsMsg.textContent = t('settings_saved');
+});
+
+subtitleSettingsForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  await api('/api/admin/settings', {
+    method: 'PATCH',
+    body: JSON.stringify({ subtitleStyle: readSubtitleStyleForm() })
+  });
+  if (subtitleSettingsMsg) subtitleSettingsMsg.textContent = t('settings_saved');
+});
+
+document.getElementById('subtitleTextColorInput')?.addEventListener('input', syncSubtitleColorLabels);
+document.getElementById('subtitleBackgroundColorInput')?.addEventListener('input', syncSubtitleColorLabels);
+
+document.getElementById('subtitleSetDefaultBtn')?.addEventListener('click', async () => {
+  const current = readSubtitleStyleForm();
+  await api('/api/admin/settings', {
+    method: 'PATCH',
+    body: JSON.stringify({ subtitleStyle: current })
+  });
+  if (subtitleSettingsMsg) subtitleSettingsMsg.textContent = t('settings_saved');
 });
 
 rotateApiTokenBtn?.addEventListener('click', async () => {
@@ -1769,6 +2067,57 @@ proxyToolSuggestList?.addEventListener('click', (event) => {
   applyProxySuggestion(proxySuggestItems[index]);
 });
 
+auditTargetInput?.addEventListener('input', () => {
+  queueAuditSuggestionRequest();
+});
+
+auditTargetInput?.addEventListener('focus', () => {
+  queueAuditSuggestionRequest();
+});
+
+auditTargetInput?.addEventListener('blur', () => {
+  if (auditSuggestHideTimer) clearTimeout(auditSuggestHideTimer);
+  auditSuggestHideTimer = setTimeout(() => {
+    hideAuditSuggestions();
+    auditSuggestHideTimer = null;
+  }, 120);
+});
+
+auditTargetInput?.addEventListener('keydown', (event) => {
+  const isOpen = Boolean(auditTargetSuggestList && !auditTargetSuggestList.classList.contains('hidden'));
+  if (!isOpen && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+    queueAuditSuggestionRequest();
+    return;
+  }
+  if (!isOpen) return;
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    setAuditSuggestActive((auditSuggestActiveIndex < 0 ? -1 : auditSuggestActiveIndex) + 1);
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    setAuditSuggestActive((auditSuggestActiveIndex < 0 ? auditSuggestItems.length : auditSuggestActiveIndex) - 1);
+  } else if (event.key === 'Enter') {
+    if (auditSuggestActiveIndex >= 0 && auditSuggestItems[auditSuggestActiveIndex]) {
+      event.preventDefault();
+      applyAuditSuggestion(auditSuggestItems[auditSuggestActiveIndex]);
+    }
+  } else if (event.key === 'Escape') {
+    hideAuditSuggestions();
+  }
+});
+
+auditTargetSuggestList?.addEventListener('mousedown', (event) => {
+  event.preventDefault();
+});
+
+auditTargetSuggestList?.addEventListener('click', (event) => {
+  const button = event.target.closest('.proxy-suggest-item');
+  if (!button) return;
+  const index = Number(button.dataset.index);
+  if (!Number.isFinite(index) || index < 0 || index >= auditSuggestItems.length) return;
+  applyAuditSuggestion(auditSuggestItems[index]);
+});
+
 includeTrash?.addEventListener('change', () => {
   if (document.activeElement === proxyToolAssetName) {
     queueProxySuggestionRequest();
@@ -1778,6 +2127,7 @@ includeTrash?.addEventListener('change', () => {
 adminTabs.forEach((btn) => {
   btn.addEventListener('click', () => {
     hideProxySuggestions();
+    hideAuditSuggestions();
     const target = btn.dataset.tab || 'apiHelp';
     switchTab(target);
     if (target === 'settings') {
@@ -1785,7 +2135,17 @@ adminTabs.forEach((btn) => {
       loadSettingsSubtabData(activeSub).catch((error) => {
         if (settingsMsg) settingsMsg.textContent = String(error.message || 'Request failed');
       });
+    } else if (target === 'auditEvents') {
+      loadAuditEvents().catch((error) => {
+        if (auditEventsMsg) auditEventsMsg.textContent = String(error.message || 'Request failed');
+      });
     }
+  });
+});
+
+runAuditSearchBtn?.addEventListener('click', () => {
+  loadAuditEvents().catch((error) => {
+    if (auditEventsMsg) auditEventsMsg.textContent = String(error.message || 'Request failed');
   });
 });
 

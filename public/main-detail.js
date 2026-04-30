@@ -18,6 +18,7 @@
       effectiveSearchHighlightClass,
       renderPdfChangeKindLabel,
       cleanVersionNoteText,
+      formatDate,
       currentUserCanUsePdfAdvancedTools,
       currentUserCanEditOffice,
       currentUserCanAccessAdmin,
@@ -108,7 +109,7 @@
       return `
         <div class="${rowClass}" data-version-id="${escapeHtml(version.versionId)}"${restoreAttr}>
           <strong>${escapeHtml(version.label)}</strong> - ${escapeHtml(cleanNote)}<br />
-          <span class="asset-meta">${new Date(version.createdAt).toLocaleString()}</span><br />
+          <span class="asset-meta">${escapeHtml(formatDate(version.createdAt))}</span><br />
           <span class="asset-meta">${escapeHtml(t('version_action'))}: ${escapeHtml(t(`action_${rowState.actionType}`) || String(version.actionType || 'manual'))} | ${escapeHtml(t('version_actor'))}: ${escapeHtml(version.actorUsername || '-')}</span>
           ${changeKindLabel ? `<br /><span class="asset-meta">${escapeHtml(t('version_change_type'))}: ${escapeHtml(changeKindLabel)}</span>` : ''}
           ${actionBar}

@@ -6,8 +6,12 @@
       currentLangRef,
       subtitleOverlayEnabledByAsset,
       PLAYER_FPS,
-      selectedAssetIdRef
+      selectedAssetIdRef,
+      subtitleStyleRef,
+      currentSubtitleQueryRef
     } = deps || {};
+    const nativeCuePositionBoundTracks = new WeakSet();
+    const nativeSubtitleObjectUrls = new WeakMap();
 
     function escapeHtml(value) {
       return String(value ?? '')
@@ -86,9 +90,38 @@
       const key = String(assetId || '').trim();
       if (!key) return false;
       if (!subtitleOverlayEnabledByAsset.has(key)) {
-        subtitleOverlayEnabledByAsset.set(key, Boolean(fallback));
+        const stored = (() => {
+          try {
+            return window.localStorage.getItem(`mam:subtitle-overlay:${key}`);
+          } catch (_error) {
+            return null;
+          }
+        })();
+        if (stored === '1' || stored === '0') {
+          subtitleOverlayEnabledByAsset.set(key, stored === '1');
+        } else {
+          subtitleOverlayEnabledByAsset.set(key, Boolean(fallback));
+        }
       }
       return subtitleOverlayEnabledByAsset.get(key) === true;
+    }
+
+    function getSubtitleStyleSettings() {
+      const style = subtitleStyleRef?.get?.() || {};
+      return {
+        customOverlayEnabled: Object.prototype.hasOwnProperty.call(style, 'customOverlayEnabled') ? Boolean(style.customOverlayEnabled) : true,
+        bottomOffset: Math.max(0, Math.min(240, Number(style.bottomOffset) || 56)),
+        fontSize: Math.max(12, Math.min(64, Number(style.fontSize) || 24)),
+        textColor: /^#[0-9a-fA-F]{6}$/.test(String(style.textColor || '')) ? String(style.textColor).toLowerCase() : '#ffffff',
+        backgroundColor: /^#[0-9a-fA-F]{6}$/.test(String(style.backgroundColor || '')) ? String(style.backgroundColor).toLowerCase() : '#000000',
+        backgroundOpacity: Math.max(0, Math.min(1, Number(style.backgroundOpacity) || 0.72)),
+        horizontalPadding: Math.max(0, Math.min(80, Number(style.horizontalPadding) || 16)),
+        maxWidth: Math.max(35, Math.min(100, Number(style.maxWidth) || 82))
+      };
+    }
+
+    function customSubtitleOverlayEnabled() {
+      return getSubtitleStyleSettings().customOverlayEnabled;
     }
 
     function syncSubtitleOverlayInOpenPlayers(asset) {
@@ -96,6 +129,7 @@
       const subtitleUrl = String(asset?.subtitleUrl || '').trim();
       if (!assetId) return;
       const enabled = getSubtitleOverlayEnabled(assetId, false) && Boolean(subtitleUrl);
+      const useCustomOverlay = customSubtitleOverlayEnabled();
       const currentLang = currentLangRef?.get?.() || 'tr';
       const subtitleLang = String(asset?.subtitleLang || currentLang || 'tr').slice(0, 12);
       const subtitleLabel = String(asset?.subtitleLabel || t('subtitles'));
@@ -110,9 +144,10 @@
           });
         };
 
-        if (!enabled) {
+        if (!enabled || useCustomOverlay) {
           if (existing) existing.remove();
           hideAll();
+          mediaEl.dispatchEvent(new CustomEvent('mam:subtitle-overlay-sync', { detail: { enabled, asset } }));
           return;
         }
 
@@ -123,17 +158,20 @@
         track.default = true;
         track.label = subtitleLabel;
         track.srclang = subtitleLang;
-        track.src = `${subtitleUrl}${subtitleUrl.includes('?') ? '&' : '?'}v=${Date.now()}`;
         mediaEl.appendChild(track);
+        setNativeSubtitleTrackSource(track, mediaEl, subtitleUrl);
 
         const showLastTrack = () => {
           hideAll();
           const tracks = Array.from(mediaEl.textTracks || []);
           const active = tracks[tracks.length - 1];
           if (active) active.mode = 'showing';
+          scheduleNativeSubtitleCuePosition(mediaEl);
         };
         track.addEventListener('load', showLastTrack, { once: true });
         setTimeout(showLastTrack, 60);
+        setTimeout(() => scheduleNativeSubtitleCuePosition(mediaEl), 180);
+        mediaEl.dispatchEvent(new CustomEvent('mam:subtitle-overlay-sync', { detail: { enabled, asset } }));
       });
     }
 
@@ -247,7 +285,15 @@
     }
 
     function formatDate(value) {
-      return new Date(value).toLocaleString();
+      if (!value) return '-';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '-';
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = String(date.getFullYear());
+      const hour = String(date.getHours()).padStart(2, '0');
+      const minute = String(date.getMinutes()).padStart(2, '0');
+      return `${day}.${month}.${year} ${hour}:${minute}`;
     }
 
     function formatDuration(seconds) {
@@ -596,9 +642,344 @@
       return (hh * 3600) + (mm * 60) + ss + (ff / safeFps);
     }
 
+    function parseVttTime(value) {
+      const raw = String(value || '').trim().replace(',', '.');
+      const parts = raw.split(':').map((part) => part.trim());
+      if (parts.length < 2 || parts.length > 3) return NaN;
+      const sec = Number(parts.pop());
+      const min = Number(parts.pop());
+      const hour = parts.length ? Number(parts.pop()) : 0;
+      if (![hour, min, sec].every(Number.isFinite)) return NaN;
+      return Math.max(0, (hour * 3600) + (min * 60) + sec);
+    }
+
+    function parseVttCues(rawText) {
+      const blocks = String(rawText || '')
+        .replace(/\r/g, '')
+        .split(/\n{2,}/)
+        .map((block) => block.trim())
+        .filter(Boolean);
+      const cues = [];
+      blocks.forEach((block) => {
+        const lines = block.split('\n').map((line) => line.trim()).filter(Boolean);
+        const timeIndex = lines.findIndex((line) => line.includes('-->'));
+        if (timeIndex < 0) return;
+        const [startRaw, endRaw] = lines[timeIndex].split('-->').map((part) => part.trim().split(/\s+/)[0]);
+        const start = parseVttTime(startRaw);
+        const end = parseVttTime(endRaw);
+        if (!Number.isFinite(start) || !Number.isFinite(end)) return;
+        const text = lines.slice(timeIndex + 1)
+          .join(' ')
+          .replace(/<[^>]+>/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (text) cues.push({ start, end, text });
+      });
+      return cues;
+    }
+
+    function getSubtitleRenderScale(mediaEl, hostEl) {
+      const mediaRect = mediaEl?.getBoundingClientRect?.();
+      const hostRect = hostEl?.getBoundingClientRect?.();
+      const width = Number(mediaRect?.width) || Number(hostRect?.width) || 900;
+      const height = Number(mediaRect?.height) || Number(hostRect?.height) || 506;
+      const widthScale = width / 900;
+      const heightScale = height / 506;
+      return Math.max(0.46, Math.min(1.55, Math.min(widthScale, heightScale)));
+    }
+
+    function applyCustomSubtitleOverlayStyle(overlayEl, mediaEl) {
+      const style = getSubtitleStyleSettings();
+      const scale = getSubtitleRenderScale(mediaEl, overlayEl.parentElement);
+      const fontSize = Math.max(10, Math.round(style.fontSize * scale));
+      const bottomOffset = Math.max(0, Math.round(style.bottomOffset * scale));
+      const horizontalPadding = Math.max(0, Math.round(style.horizontalPadding * scale));
+      const verticalPadding = Math.max(5, Math.round(10 * scale));
+      const radius = Math.max(4, Math.round(8 * scale));
+      const hitRadius = Math.max(3, Math.round(5 * scale));
+      const hitPadding = Math.max(1, Math.round(3 * scale));
+      overlayEl.style.bottom = `${bottomOffset}px`;
+      overlayEl.style.fontSize = `${fontSize}px`;
+      overlayEl.style.color = style.textColor;
+      overlayEl.style.maxWidth = `${style.maxWidth}%`;
+      overlayEl.style.setProperty('--mam-subtitle-overlay-bg', `rgba(${parseInt(style.backgroundColor.slice(1, 3), 16)}, ${parseInt(style.backgroundColor.slice(3, 5), 16)}, ${parseInt(style.backgroundColor.slice(5, 7), 16)}, ${style.backgroundOpacity})`);
+      overlayEl.style.setProperty('--mam-subtitle-overlay-pad-x', `${horizontalPadding}px`);
+      overlayEl.style.setProperty('--mam-subtitle-overlay-pad-y', `${verticalPadding}px`);
+      overlayEl.style.setProperty('--mam-subtitle-overlay-radius', `${radius}px`);
+      overlayEl.style.setProperty('--mam-subtitle-overlay-hit-radius', `${hitRadius}px`);
+      overlayEl.style.setProperty('--mam-subtitle-overlay-hit-pad-x', `${hitPadding}px`);
+    }
+
+    function applyNativeSubtitleCuePosition(mediaEl) {
+      if (!(mediaEl instanceof HTMLMediaElement)) return;
+      const style = getSubtitleStyleSettings();
+      const rect = mediaEl.getBoundingClientRect?.();
+      const height = Math.max(1, Number(rect?.height) || 506);
+      const scale = getSubtitleRenderScale(mediaEl, mediaEl.parentElement);
+      const bottomPx = Math.max(0, Number(style.bottomOffset) || 0) * scale;
+      const linePercent = Math.max(5, Math.min(90, 95 - ((bottomPx / height) * 100)));
+      const fontSize = Math.max(10, Math.round((Number(style.fontSize) || 24) * scale));
+      Array.from(mediaEl.textTracks || []).forEach((track) => {
+        if (track.kind !== 'subtitles' && track.kind !== 'captions') return;
+        bindNativeCuePositionRefresh(track, mediaEl);
+        const cues = Array.from(new Set([
+          ...Array.from(track.cues || []),
+          ...Array.from(track.activeCues || [])
+        ]));
+        cues.forEach((cue) => {
+          try { cue.snapToLines = false; } catch (_error) {}
+          try { cue.line = linePercent; } catch (_error) {}
+          try { cue.position = 50; } catch (_error) {}
+          try { cue.positionAlign = 'center'; } catch (_error) {}
+          try { cue.lineAlign = 'center'; } catch (_error) {}
+          try { cue.align = 'center'; } catch (_error) {}
+          try { cue.size = 100; } catch (_error) {}
+          try { cue.region = null; } catch (_error) {}
+        });
+      });
+      mediaEl.style.setProperty('--mam-native-subtitle-font-size', `${fontSize}px`);
+    }
+
+    function nativeSubtitleWrapSettings(mediaEl) {
+      const style = getSubtitleStyleSettings();
+      const rect = mediaEl?.getBoundingClientRect?.();
+      const scale = getSubtitleRenderScale(mediaEl, mediaEl?.parentElement);
+      const width = Math.max(1, Number(rect?.width) || 900);
+      const fontSize = Math.max(10, Math.round((Number(style.fontSize) || 24) * scale));
+      const maxWidthPercent = Math.max(35, Math.min(100, Number(style.maxWidth) || 85));
+      const padding = Math.max(0, Number(style.horizontalPadding) || 0) * scale;
+      const usableWidth = Math.max(160, (width * (maxWidthPercent / 100)) - (padding * 2));
+      const avgCharWidth = Math.max(6, fontSize * 0.52);
+      return {
+        maxChars: Math.max(16, Math.min(96, Math.floor(usableWidth / avgCharWidth))),
+        fontSize,
+        width: Math.round(width),
+        maxWidthPercent: Math.round(maxWidthPercent)
+      };
+    }
+
+    function wrapNativeSubtitleText(text, maxChars) {
+      const raw = String(text || '').replace(/[ \t]+/g, ' ').trim();
+      const limit = Math.max(16, Number(maxChars) || 42);
+      if (!raw || raw.length <= limit) return raw;
+      const words = raw.split(' ');
+      const lines = [];
+      let line = '';
+      words.forEach((word) => {
+        const next = line ? `${line} ${word}` : word;
+        if (next.length > limit && line) {
+          lines.push(line);
+          line = word;
+          return;
+        }
+        line = next;
+      });
+      if (line) lines.push(line);
+      return lines.join('\n');
+    }
+
+    function rewriteNativeSubtitleTextWrap(rawText, settings) {
+      const lines = String(rawText || '').replace(/\r/g, '').split('\n');
+      const output = [];
+      let index = 0;
+      while (index < lines.length) {
+        const line = lines[index];
+        output.push(line);
+        if (!line.includes('-->')) {
+          index += 1;
+          continue;
+        }
+        index += 1;
+        const cueText = [];
+        while (index < lines.length && String(lines[index]).trim() !== '') {
+          cueText.push(lines[index]);
+          index += 1;
+        }
+        const normalizedText = cueText.join(' ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+        if (normalizedText) output.push(wrapNativeSubtitleText(normalizedText, settings.maxChars));
+      }
+      return output.join('\n');
+    }
+
+    async function setNativeSubtitleTrackSource(trackEl, mediaEl, subtitleUrl) {
+      if (!(trackEl instanceof HTMLTrackElement)) return;
+      const rawUrl = String(subtitleUrl || '').trim();
+      if (!rawUrl) return;
+      const settings = nativeSubtitleWrapSettings(mediaEl);
+      const signature = `${rawUrl}|${settings.width}|${settings.fontSize}|${settings.maxWidthPercent}|${settings.maxChars}`;
+      if (trackEl.dataset.mamNativeSubtitleSignature === signature) return;
+      trackEl.dataset.mamNativeSubtitleOriginalSrc = rawUrl;
+      trackEl.dataset.mamNativeSubtitleSignature = signature;
+      try {
+        const response = await fetch(`${rawUrl}${rawUrl.includes('?') ? '&' : '?'}v=${Date.now()}`, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`Subtitle fetch failed: ${response.status}`);
+        const text = await response.text();
+        const rewritten = rewriteNativeSubtitleTextWrap(text, settings);
+        const blobUrl = URL.createObjectURL(new Blob([rewritten], { type: 'text/vtt;charset=utf-8' }));
+        const previousUrl = nativeSubtitleObjectUrls.get(trackEl);
+        if (previousUrl) URL.revokeObjectURL(previousUrl);
+        nativeSubtitleObjectUrls.set(trackEl, blobUrl);
+        trackEl.src = blobUrl;
+      } catch (_error) {
+        const previousUrl = nativeSubtitleObjectUrls.get(trackEl);
+        if (previousUrl) URL.revokeObjectURL(previousUrl);
+        nativeSubtitleObjectUrls.delete(trackEl);
+        trackEl.src = `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}v=${Date.now()}`;
+      }
+    }
+
+    function refreshNativeSubtitleTrackSources(mediaEl) {
+      if (!(mediaEl instanceof HTMLMediaElement)) return;
+      Array.from(mediaEl.querySelectorAll('track[kind="subtitles"], track[kind="captions"]')).forEach((trackEl) => {
+        const originalSrc = String(trackEl.dataset.mamNativeSubtitleOriginalSrc || trackEl.getAttribute('src') || '').trim();
+        if (!originalSrc || originalSrc.startsWith('blob:')) return;
+        setNativeSubtitleTrackSource(trackEl, mediaEl, originalSrc);
+      });
+    }
+
+    function bindNativeCuePositionRefresh(track, mediaEl) {
+      if (!track || nativeCuePositionBoundTracks.has(track)) return;
+      nativeCuePositionBoundTracks.add(track);
+      if (typeof track.addEventListener === 'function') {
+        track.addEventListener('cuechange', () => applyNativeSubtitleCuePosition(mediaEl));
+      }
+    }
+
+    function scheduleNativeSubtitleCuePosition(mediaEl) {
+      if (!(mediaEl instanceof HTMLMediaElement)) return;
+      refreshNativeSubtitleTrackSources(mediaEl);
+      applyNativeSubtitleCuePosition(mediaEl);
+      const trackEls = Array.from(mediaEl.querySelectorAll('track[kind="subtitles"], track[kind="captions"]'));
+      trackEls.forEach((trackEl) => {
+        trackEl.addEventListener('load', () => applyNativeSubtitleCuePosition(mediaEl), { once: true });
+      });
+      setTimeout(() => applyNativeSubtitleCuePosition(mediaEl), 80);
+      setTimeout(() => applyNativeSubtitleCuePosition(mediaEl), 240);
+    }
+
+    function initCustomSubtitleOverlay(mediaEl, asset, root = document) {
+      if (!(mediaEl instanceof HTMLMediaElement) || !asset?.id) return () => {};
+      const host = mediaEl.closest('.viewer-resizable') || mediaEl.parentElement || mediaEl.closest('.viewer-core') || root;
+      if (!(host instanceof HTMLElement)) return () => {};
+      let disposed = false;
+      let cues = [];
+      let loadedUrl = '';
+      let loading = null;
+      const overlay = document.createElement('div');
+      overlay.className = 'mam-subtitle-overlay hidden';
+      overlay.setAttribute('aria-live', 'polite');
+      host.appendChild(overlay);
+
+      const clearNativeTracks = () => {
+        const existing = mediaEl.querySelector('#assetSubtitleTrack');
+        if (existing) existing.remove();
+        Array.from(mediaEl.textTracks || []).forEach((track) => {
+          track.mode = 'hidden';
+        });
+      };
+
+      const ensureCues = async () => {
+        const url = String(asset.subtitleUrl || '').trim();
+        if (!url) {
+          cues = [];
+          loadedUrl = '';
+          return;
+        }
+        if (loadedUrl === url && cues.length) return;
+        if (loading) return loading;
+        loading = fetch(`${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`, { cache: 'no-store' })
+          .then((response) => response.ok ? response.text() : '')
+          .then((text) => {
+            if (disposed) return;
+            cues = parseVttCues(text);
+            loadedUrl = url;
+          })
+          .catch(() => {
+            cues = [];
+            loadedUrl = '';
+          })
+          .finally(() => {
+            loading = null;
+          });
+        return loading;
+      };
+
+      const render = () => {
+        if (disposed) return;
+        const enabled = getSubtitleOverlayEnabled(asset.id, false) && Boolean(asset.subtitleUrl) && customSubtitleOverlayEnabled();
+        if (!enabled) {
+          overlay.classList.add('hidden');
+          overlay.innerHTML = '';
+          return;
+        }
+        clearNativeTracks();
+        applyCustomSubtitleOverlayStyle(overlay, mediaEl);
+        const now = Number(mediaEl.currentTime) || 0;
+        const cue = cues.find((item) => now >= item.start && now <= item.end);
+        if (!cue) {
+          overlay.classList.add('hidden');
+          overlay.innerHTML = '';
+          return;
+        }
+        const query = String(currentSubtitleQueryRef?.get?.() || '').trim();
+        overlay.innerHTML = `<span>${highlightMatch(cue.text, query, 'mam-subtitle-overlay-hit')}</span>`;
+        overlay.classList.remove('hidden');
+      };
+
+      const refresh = async () => {
+        if (disposed) return;
+        if (!customSubtitleOverlayEnabled()) {
+          overlay.classList.add('hidden');
+          scheduleNativeSubtitleCuePosition(mediaEl);
+          return;
+        }
+        clearNativeTracks();
+        await ensureCues();
+        render();
+      };
+
+      const onTimeUpdate = () => render();
+      const onSync = () => {
+        refresh();
+      };
+      const onLoadedMetadata = () => refresh();
+      const onResize = () => {
+        if (customSubtitleOverlayEnabled()) render();
+        else scheduleNativeSubtitleCuePosition(mediaEl);
+      };
+      let resizeObserver = null;
+      if (typeof ResizeObserver !== 'undefined') {
+        resizeObserver = new ResizeObserver(onResize);
+        resizeObserver.observe(host);
+        resizeObserver.observe(mediaEl);
+      }
+      mediaEl.addEventListener('timeupdate', onTimeUpdate);
+      mediaEl.addEventListener('seeked', onTimeUpdate);
+      mediaEl.addEventListener('loadedmetadata', onLoadedMetadata);
+      mediaEl.addEventListener('mam:subtitle-overlay-sync', onSync);
+      window.addEventListener('resize', onResize);
+      document.addEventListener('fullscreenchange', onResize);
+      document.addEventListener('webkitfullscreenchange', onResize);
+      refresh();
+
+      return () => {
+        disposed = true;
+        mediaEl.removeEventListener('timeupdate', onTimeUpdate);
+        mediaEl.removeEventListener('seeked', onTimeUpdate);
+        mediaEl.removeEventListener('loadedmetadata', onLoadedMetadata);
+        mediaEl.removeEventListener('mam:subtitle-overlay-sync', onSync);
+        window.removeEventListener('resize', onResize);
+        document.removeEventListener('fullscreenchange', onResize);
+        document.removeEventListener('webkitfullscreenchange', onResize);
+        resizeObserver?.disconnect?.();
+        overlay.remove();
+      };
+    }
+
     function subtitleTrackMarkup(asset) {
       if (!asset?.subtitleUrl) return '';
       if (!getSubtitleOverlayEnabled(asset.id, false)) return '';
+      if (customSubtitleOverlayEnabled()) return '';
       const currentLang = currentLangRef?.get?.() || 'tr';
       const src = `${asset.subtitleUrl}${asset.subtitleUrl.includes('?') ? '&' : '?'}v=${Date.now()}`;
       const lang = String(asset.subtitleLang || currentLang || 'tr').slice(0, 12);
@@ -657,6 +1038,9 @@
       assetTagChipStyle,
       secondsToTimecode,
       parseTimecodeInput,
+      initCustomSubtitleOverlay,
+      applyNativeSubtitleCuePosition,
+      scheduleNativeSubtitleCuePosition,
       subtitleTrackMarkup
     };
   }

@@ -1,6 +1,7 @@
 (function attachMainAssetBrowserModule(global) {
   function createMainAssetBrowserModule(deps) {
     const {
+      api,
       assetGrid,
       assetDetail,
       panelDetail,
@@ -38,6 +39,7 @@
       loadAssets,
       setPanelVideoToolsButtonState
     } = deps || {};
+    const assetHitPageSize = 10;
 
 function thumbnailMarkup(asset) {
   const thumbSrc = escapeHtml(asset.thumbnailUrl || '');
@@ -96,6 +98,45 @@ function buildAssetSearchNoticeHtml() {
   return notices.join('');
 }
 
+function assetHitPageKey(asset, type, query) {
+  return `${String(asset?.id || '').trim()}::${String(type || '').trim()}::${foldSearchText(query || '')}`;
+}
+
+function renderAssetHitList({ asset, type, hits, query, hitClass, label }) {
+  const list = Array.isArray(hits) ? hits : [];
+  if (!list.length) return '';
+  return `<div class="asset-hit-list asset-hit-list-${escapeHtml(type)}">${list
+    .map((hit) => {
+      const hitText = String(hit?.text || '').trim();
+      if (!hitText) return '';
+      const hitSec = Number(hit?.startSec || 0);
+      const hitTc = secondsToTimecode(hitSec, PLAYER_FPS);
+      return `<button type="button" class="asset-meta dc-hit-row ocr-hit-jump" data-ocr-jump="1" data-id="${escapeHtml(asset.id)}" data-start-sec="${escapeHtml(String(hitSec))}"><strong>${escapeHtml(label)} TC ${escapeHtml(hitTc)}:</strong> ${highlightMatch(hitText, query, hitClass)}</button>`;
+    })
+    .filter(Boolean)
+    .join('')}</div>`;
+}
+
+function renderAssetHitPager({ asset, type, requestQuery }) {
+  const page = type === 'subtitle' ? asset?.subtitleSearchPage : asset?.ocrSearchPage;
+  const hasPrev = Boolean(page?.hasPrev);
+  const hasNext = Boolean(page?.hasNext);
+  if (!hasPrev && !hasNext) return '';
+  const hits = type === 'subtitle' ? asset?.subtitleSearchHits : asset?.ocrSearchHits;
+  const visibleCount = Array.isArray(hits) ? hits.length : 0;
+  const offset = Math.max(0, Number(page?.offset) || 0);
+  const query = String(requestQuery || page?.query || '').trim();
+  return `
+    <div class="asset-hit-pager">
+      <span class="asset-hit-pager-range">${escapeHtml(String(offset + 1))}-${escapeHtml(String(offset + visibleCount))}${hasNext ? '+' : ''}</span>
+      <span class="asset-hit-pager-actions">
+        <button type="button" class="asset-hit-page-btn" data-hit-type="${escapeHtml(type)}" data-id="${escapeHtml(asset.id)}" data-hit-query="${escapeHtml(query)}" data-hit-offset="${escapeHtml(String(page?.prevOffset || 0))}" ${!hasPrev ? 'disabled' : ''}>&lt;</button>
+        <button type="button" class="asset-hit-page-btn" data-hit-type="${escapeHtml(type)}" data-id="${escapeHtml(asset.id)}" data-hit-query="${escapeHtml(query)}" data-hit-offset="${escapeHtml(String(page?.nextOffset || assetHitPageSize))}" ${!hasNext ? 'disabled' : ''}>&gt;</button>
+      </span>
+    </div>
+  `;
+}
+
 function renderAssets(assets) {
   applyAssetViewModeUI();
   const searchNoticeHtml = buildAssetSearchNoticeHtml();
@@ -129,18 +170,19 @@ function renderAssets(assets) {
         ? asset.ocrSearchHits
         : (asset?.ocrSearchHit ? [asset.ocrSearchHit] : []);
       const ocrHitClass = effectiveSearchHighlightClass(currentOcrQuery, ocrHitQuery, currentOcrFuzzyUsed);
-      const ocrHit = ocrHitsRaw.length
-        ? `<div class="asset-hit-list asset-hit-list-ocr">${ocrHitsRaw
-          .map((hit) => {
-            const hitText = String(hit?.text || '').trim();
-            if (!hitText) return '';
-            const hitSec = Number(hit?.startSec || 0);
-            const hitTc = secondsToTimecode(hitSec, PLAYER_FPS);
-            return `<button type="button" class="asset-meta dc-hit-row ocr-hit-jump" data-ocr-jump="1" data-id="${asset.id}" data-start-sec="${escapeHtml(String(hitSec))}"><strong>${escapeHtml(t('ocr_hit'))} TC ${escapeHtml(hitTc)}:</strong> ${highlightMatch(hitText, ocrHitQuery, ocrHitClass)}</button>`;
-          })
-          .filter(Boolean)
-          .join('')}</div>`
-        : '';
+      const ocrHit = renderAssetHitList({
+        asset,
+        type: 'ocr',
+        hits: ocrHitsRaw,
+        query: ocrHitQuery,
+        hitClass: ocrHitClass,
+        label: t('ocr_hit')
+      });
+      const ocrPager = renderAssetHitPager({
+        asset,
+        type: 'ocr',
+        requestQuery: currentOcrQuery
+      });
       const subtitleHitQuery = String(asset?.subtitleSearchHit?.query || currentSubtitleQuery || '').trim();
       const subtitleHitClass = foldSearchText(subtitleHitQuery) !== foldSearchText(currentSubtitleQuery || '')
         ? 'search-hit-fuzzy'
@@ -148,25 +190,27 @@ function renderAssets(assets) {
       const subtitleHitsRaw = Array.isArray(asset?.subtitleSearchHits) && asset.subtitleSearchHits.length
         ? asset.subtitleSearchHits
         : (asset?.subtitleSearchHit ? [asset.subtitleSearchHit] : []);
-      const subtitleHit = subtitleHitsRaw.length
-        ? `<div class="asset-hit-list asset-hit-list-subtitle">${subtitleHitsRaw
-          .map((hit) => {
-            const hitText = String(hit?.text || '').trim();
-            if (!hitText) return '';
-            const hitSec = Number(hit?.startSec || 0);
-            const hitTc = secondsToTimecode(hitSec, PLAYER_FPS);
-            return `<button type="button" class="asset-meta dc-hit-row ocr-hit-jump" data-ocr-jump="1" data-id="${asset.id}" data-start-sec="${escapeHtml(String(hitSec))}"><strong>${escapeHtml(t('subtitles'))} TC ${escapeHtml(hitTc)}:</strong> ${highlightMatch(hitText, subtitleHitQuery, subtitleHitClass)}</button>`;
-          })
-          .filter(Boolean)
-          .join('')}</div>`
-        : '';
+      const subtitleHit = renderAssetHitList({
+        asset,
+        type: 'subtitle',
+        hits: subtitleHitsRaw,
+        query: subtitleHitQuery,
+        hitClass: subtitleHitClass,
+        label: t('subtitles')
+      });
+      const subtitlePager = renderAssetHitPager({
+        asset,
+        type: 'subtitle',
+        requestQuery: currentSubtitleQuery
+      });
+      const hitPager = `${subtitlePager}${ocrPager}`;
       return `
         <article class="asset-card ${selected} ${trashClass} ${styleClass}" data-id="${asset.id}">
           ${thumbnailMarkup(asset)}
           <div class="asset-card-body">
             <h3><span class="type-icon" aria-hidden="true">${assetTypeIcon(asset)}</span> ${highlightMatch(asset.title, currentSearchHighlightQuery, searchHighlightClass)}</h3>
             <div class="asset-meta">${highlightMatch(asset.type, currentSearchHighlightQuery, searchHighlightClass)} | ${highlightMatch(asset.owner, currentSearchHighlightQuery, searchHighlightClass)}</div>
-            <div class="asset-meta">${escapeHtml(workflowLabel(asset.status))}${(isVideo(asset) || isAudio(asset)) ? ` | ${escapeHtml(formatDuration(asset.durationSeconds))}` : ''}</div>
+            <div class="asset-meta asset-status-row"><span>${escapeHtml(workflowLabel(asset.status))}${(isVideo(asset) || isAudio(asset)) ? ` | ${escapeHtml(formatDuration(asset.durationSeconds))}` : ''}</span>${hitPager}</div>
             ${metadataHits ? `<div class="asset-meta dc-hit-row">${metadataHits}</div>` : ''}
             ${tagHits ? `<div class="asset-meta dc-hit-row">${tagHits}</div>` : ''}
             ${dcHits ? `<div class="asset-meta dc-hit-row">${dcHits}</div>` : ''}
@@ -196,6 +240,59 @@ function renderAssets(assets) {
       if (type === 'ocr' && ocrQueryInput) ocrQueryInput.value = suggestion;
       else if (type === 'q' && searchQueryInput) searchQueryInput.value = suggestion;
       await loadAssets();
+    });
+  });
+  assetGrid.querySelectorAll('.asset-hit-page-btn').forEach((btn) => {
+    btn.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const assetId = String(event.currentTarget?.dataset?.id || '').trim();
+      const type = String(event.currentTarget?.dataset?.hitType || '').trim();
+      const query = String(event.currentTarget?.dataset?.hitQuery || '').trim();
+      const offset = Math.max(0, Number(event.currentTarget?.dataset?.hitOffset) || 0);
+      if (!assetId || !query || (type !== 'ocr' && type !== 'subtitle')) return;
+      event.currentTarget.disabled = true;
+      try {
+        const endpoint = type === 'ocr'
+          ? `/api/assets/${encodeURIComponent(assetId)}/video-ocr/search`
+          : `/api/assets/${encodeURIComponent(assetId)}/subtitles/search`;
+        const params = new URLSearchParams({
+          q: query,
+          offset: String(offset),
+          limit: String(assetHitPageSize)
+        });
+        const result = await api(`${endpoint}?${params.toString()}`);
+        const matches = Array.isArray(result.matches) ? result.matches : [];
+        const page = result.page && typeof result.page === 'object'
+          ? result.page
+          : { offset, limit: assetHitPageSize, count: matches.length, hasPrev: offset > 0, hasNext: false, prevOffset: Math.max(0, offset - assetHitPageSize), nextOffset: offset + assetHitPageSize };
+        const assets = currentAssetsRef.get();
+        const asset = assets.find((item) => String(item.id || '') === assetId);
+        if (!asset) return;
+        const highlightQuery = String(result.highlightQuery || page.query || query).trim() || query;
+        if (type === 'ocr') {
+          asset.ocrSearchHits = matches.map((item) => ({
+            query: String(item.query || highlightQuery).trim() || highlightQuery,
+            text: String(item.line || item.text || ''),
+            startSec: Number(item.startSec || 0),
+            endSec: Number(item.endSec || 0),
+            startTc: String(item.startTc || secondsToTimecode(Number(item.startSec || 0), PLAYER_FPS))
+          }));
+          asset.ocrSearchPage = { ...page, query: highlightQuery };
+        } else {
+          asset.subtitleSearchHits = matches.map((item) => ({
+            query: String(item.query || highlightQuery).trim() || highlightQuery,
+            text: String(item.text || ''),
+            startSec: Number(item.startSec || 0),
+            endSec: Number(item.endSec || 0),
+            startTc: String(item.startTc || secondsToTimecode(Number(item.startSec || 0), PLAYER_FPS))
+          }));
+          asset.subtitleSearchPage = { ...page, query: highlightQuery };
+        }
+        renderAssets(assets);
+      } catch (_error) {
+        renderAssets(currentAssetsRef.get());
+      }
     });
   });
 }

@@ -67,6 +67,7 @@ function registerAssetRoutes(app, deps) {
     buildVersionSnapshotFromRow,
     canCreateVersionForAsset,
     canManageVersionRow,
+    recordAuditEvent,
     nanoid
   } = deps;
 
@@ -337,16 +338,20 @@ function registerAssetRoutes(app, deps) {
         }
       }
   
+      const assetCardMatchPageSize = 10;
+      const assetCardMatchFetchLimit = assetCardMatchPageSize + 1;
+
       if (ocrQ) {
         const parsedOcrQuery = parseTextSearchQuery(ocrQ, normalizeSubtitleSearchText);
         const ocrSearch = parsedOcrQuery.raw
-          ? await searchOcrMatchesForAssetRows(rows, ocrQ, 8)
+          ? await searchOcrMatchesForAssetRows(rows, ocrQ, assetCardMatchFetchLimit)
           : { byAssetId: new Map(), didYouMean: '', fuzzyUsed: false, highlightQuery: ocrQ };
         const filtered = [];
         for (const row of rows) {
           const hits = ocrSearch.byAssetId.get(String(row.id || '').trim()) || [];
           if (!hits.length) continue;
           const hitQuery = String(ocrSearch.highlightQuery || ocrQ).trim() || ocrQ;
+          const visibleHits = hits.slice(0, assetCardMatchPageSize);
           const hit = hits[0];
           row._ocr_search_hit = {
             query: hitQuery,
@@ -355,13 +360,23 @@ function registerAssetRoutes(app, deps) {
             endSec: Number(hit.endSec || 0),
             startTc: formatTimecode(Number(hit.startSec || 0))
           };
-          row._ocr_search_hits = hits.map((item) => ({
+          row._ocr_search_hits = visibleHits.map((item) => ({
             query: String(item.query || hitQuery).trim() || hitQuery,
             text: String(item.line || ''),
             startSec: Number(item.startSec || 0),
             endSec: Number(item.endSec || 0),
             startTc: formatTimecode(Number(item.startSec || 0))
           }));
+          row._ocr_search_page = {
+            query: hitQuery,
+            offset: 0,
+            limit: assetCardMatchPageSize,
+            count: visibleHits.length,
+            hasPrev: false,
+            hasNext: hits.length > assetCardMatchPageSize,
+            nextOffset: assetCardMatchPageSize,
+            prevOffset: 0
+          };
           filtered.push(row);
         }
         if (ocrSearch.fuzzyUsed || String(ocrSearch.didYouMean || '').trim()) {
@@ -379,12 +394,13 @@ function registerAssetRoutes(app, deps) {
         if (!parsedSubtitleQuery.raw) {
           rows = [];
         } else {
-          const subtitleSearch = await searchSubtitleMatchesForAssetRows(rows, subtitleQ, 8);
+          const subtitleSearch = await searchSubtitleMatchesForAssetRows(rows, subtitleQ, assetCardMatchFetchLimit);
           const filtered = [];
           for (const row of rows) {
             const hits = subtitleSearch.byAssetId.get(String(row.id || '').trim()) || [];
             if (!hits.length) continue;
             const hitQuery = String(subtitleSearch.highlightQuery || subtitleQ).trim() || subtitleQ;
+            const visibleHits = hits.slice(0, assetCardMatchPageSize);
             const match = hits[0];
             row._subtitle_search_hit = {
               query: hitQuery,
@@ -393,13 +409,23 @@ function registerAssetRoutes(app, deps) {
               endSec: Number(match.endSec || 0),
               startTc: String(match.startTc || formatTimecode(Number(match.startSec || 0)))
             };
-            row._subtitle_search_hits = hits.map((item) => ({
+            row._subtitle_search_hits = visibleHits.map((item) => ({
               query: String(item.query || hitQuery).trim() || hitQuery,
               text: String(item.text || ''),
               startSec: Number(item.startSec || 0),
               endSec: Number(item.endSec || 0),
               startTc: String(item.startTc || formatTimecode(Number(item.startSec || 0)))
             }));
+            row._subtitle_search_page = {
+              query: hitQuery,
+              offset: 0,
+              limit: assetCardMatchPageSize,
+              count: visibleHits.length,
+              hasPrev: false,
+              hasNext: hits.length > assetCardMatchPageSize,
+              nextOffset: assetCardMatchPageSize,
+              prevOffset: 0
+            };
             filtered.push(row);
           }
           if (subtitleSearch.fuzzyUsed || String(subtitleSearch.didYouMean || '').trim()) {
@@ -666,6 +692,13 @@ function registerAssetRoutes(app, deps) {
         owner
       };
       const created = await createAssetRecord(payload);
+      await recordAuditEvent?.(req, {
+        action: 'asset.created',
+        targetType: 'asset',
+        targetId: created.id,
+        targetTitle: created.title,
+        details: { source: 'api', type: created.type, fileName: created.fileName || '' }
+      });
       res.status(201).json(created);
     } catch (_error) {
       res.status(500).json({ error: 'Failed to create asset' });
@@ -874,6 +907,19 @@ function registerAssetRoutes(app, deps) {
   
     try {
       const created = await createAssetRecord(payload);
+      await recordAuditEvent?.(req, {
+        action: 'asset.uploaded',
+        targetType: 'asset',
+        targetId: created.id,
+        targetTitle: created.title,
+        details: {
+          fileName: created.fileName || safeName,
+          mimeType: created.mimeType || String(mimeType || ''),
+          type: created.type,
+          proxyStatus: created.proxyStatus,
+          warnings: ingestWarnings.map((item) => item.code).filter(Boolean)
+        }
+      });
       return res.status(201).json({
         ...created,
         ingestWarnings,
@@ -1087,6 +1133,13 @@ function registerAssetRoutes(app, deps) {
         return res.status(404).json({ error: 'Asset not found' });
       }
       await indexAssetToElastic(req.params.id).catch(() => {});
+      await recordAuditEvent?.(req, {
+        action: 'asset.trashed',
+        targetType: 'asset',
+        targetId: result.rows[0].id,
+        targetTitle: result.rows[0].title,
+        details: {}
+      });
       return res.json(mapAssetRow(result.rows[0]));
     } catch (_error) {
       return res.status(500).json({ error: 'Failed to move asset to trash' });
@@ -1104,6 +1157,13 @@ function registerAssetRoutes(app, deps) {
         return res.status(404).json({ error: 'Asset not found' });
       }
       await indexAssetToElastic(req.params.id).catch(() => {});
+      await recordAuditEvent?.(req, {
+        action: 'asset.restored',
+        targetType: 'asset',
+        targetId: result.rows[0].id,
+        targetTitle: result.rows[0].title,
+        details: {}
+      });
       return res.json(mapAssetRow(result.rows[0]));
     } catch (_error) {
       return res.status(500).json({ error: 'Failed to restore asset' });
@@ -1122,6 +1182,13 @@ function registerAssetRoutes(app, deps) {
       await removeAssetFromCollections(req.params.id);
       cleanupAssetFiles(cleanupTargets);
       await removeAssetFromElastic(req.params.id).catch(() => {});
+      await recordAuditEvent?.(req, {
+        action: 'asset.deleted',
+        targetType: 'asset',
+        targetId: existing.rows[0].id,
+        targetTitle: existing.rows[0].title,
+        details: { cleanupTargets: cleanupTargets.length }
+      });
       return res.status(204).send();
     } catch (_error) {
       return res.status(500).json({ error: 'Failed to delete asset' });
@@ -1202,6 +1269,15 @@ function registerAssetRoutes(app, deps) {
       );
 
       await indexAssetToElastic(req.params.id).catch(() => {});
+      await recordAuditEvent?.(req, {
+        action: 'asset.updated',
+        targetType: 'asset',
+        targetId: result.rows[0].id,
+        targetTitle: result.rows[0].title,
+        details: {
+          fields: Object.keys(body).filter((key) => !['fileData'].includes(key)).slice(0, 40)
+        }
+      });
       res.json(mapAssetRow(result.rows[0]));
     } catch (_error) {
       res.status(500).json({ error: 'Failed to update asset' });

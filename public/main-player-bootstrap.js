@@ -16,7 +16,11 @@
       initVideoOcrTools,
       initCollapsibleSections,
       initVideoToolsSorting,
-      initAudioTools
+      initAudioTools,
+      initCustomSubtitleOverlay,
+      getSubtitleOverlayEnabled,
+      setSubtitleOverlayEnabled,
+      syncSubtitleOverlayInOpenPlayers
     } = deps || {};
 
     function initAssetPlayer(asset, root = document, options = {}) {
@@ -50,6 +54,9 @@
           cleanups.push(initFrameControls(mediaEl, asset, root, options));
           if (useCustomLikeTimelineUI()) cleanups.push(initCustomVideoControls(mediaEl, root));
           cleanups.push(initVideoSubtitleTools(mediaEl, asset, root));
+          if (typeof initCustomSubtitleOverlay === 'function') {
+            cleanups.push(initCustomSubtitleOverlay(mediaEl, asset, root));
+          }
           cleanups.push(initVideoOcrTools(asset, root));
           cleanups.push(initCollapsibleSections(root));
           cleanups.push(initVideoToolsSorting(root));
@@ -80,6 +87,9 @@
     }
 
     function openVideoToolsDialog(asset, options = {}) {
+      if (asset?.id && asset?.subtitleUrl && typeof getSubtitleOverlayEnabled === 'function' && typeof setSubtitleOverlayEnabled === 'function') {
+        setSubtitleOverlayEnabled(asset.id, getSubtitleOverlayEnabled(asset.id, false));
+      }
       const overlay = document.createElement('div');
       overlay.className = 'clip-modal-backdrop video-tools-backdrop';
       overlay.innerHTML = `
@@ -98,6 +108,9 @@
       const cleanup = initAssetPlayer(asset, overlay, {
         startAtSeconds: Number(options.startAtSeconds) || 0
       });
+      const overlayCheck = overlay.querySelector('#subtitleOverlayCheck');
+      if (overlayCheck && asset?.id) overlayCheck.checked = Boolean(getSubtitleOverlayEnabled?.(asset.id, false));
+      syncSubtitleOverlayInOpenPlayers?.(asset);
       const close = () => {
         cleanup?.();
         overlay.remove();

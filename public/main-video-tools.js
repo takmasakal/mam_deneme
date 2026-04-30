@@ -755,7 +755,11 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
   };
 
   const onOverlayChange = () => {
-    subtitleOverlayEnabledByAsset.set(asset.id, Boolean(overlayCheck?.checked));
+    const enabled = Boolean(overlayCheck?.checked);
+    subtitleOverlayEnabledByAsset.set(asset.id, enabled);
+    try {
+      window.localStorage.setItem(`mam:subtitle-overlay:${asset.id}`, enabled ? '1' : '0');
+    } catch (_error) {}
     applyTrackMode();
   };
   const onSubtitleSearch = async () => {

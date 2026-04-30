@@ -19,6 +19,7 @@
       escapeHtml,
       t,
       currentLangRef,
+      scheduleNativeSubtitleCuePosition,
       secondsToTimecode,
       PLAYER_FPS,
       parseTimecodeInput
@@ -221,6 +222,7 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
     track.srclang = subtitleLang;
     track.src = `${subtitleUrl}${subtitleUrl.includes('?') ? '&' : '?'}v=${Date.now()}`;
     mediaEl.appendChild(track);
+    scheduleNativeSubtitleCuePosition?.(mediaEl);
   };
 
   const formatClock = (sec) => {
@@ -366,6 +368,7 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
       if (!prevTrackModes[index]) prevTrackModes[index] = track.mode;
       track.mode = settings.subtitles ? 'showing' : 'hidden';
     });
+    if (settings.subtitles) scheduleNativeSubtitleCuePosition?.(mediaEl);
   };
 
   const drawThinAudio = () => {
@@ -622,6 +625,9 @@ function setSubtitleOverlayEnabled(assetId, enabled) {
   const key = String(assetId || '').trim();
   if (!key) return false;
   subtitleOverlayEnabledByAsset.set(key, Boolean(enabled));
+  try {
+    window.localStorage.setItem(`mam:subtitle-overlay:${key}`, enabled ? '1' : '0');
+  } catch (_error) {}
   return subtitleOverlayEnabledByAsset.get(key) === true;
 }
 

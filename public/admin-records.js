@@ -203,7 +203,7 @@
       if (!subtitleRecordsRows) return;
       const list = Array.isArray(records) ? records : [];
       if (!list.length) {
-        subtitleRecordsRows.innerHTML = `<div class="row"><span>${escapeHtml(t('subtitle_none'))}</span></div>`;
+        subtitleRecordsRows.innerHTML = `<div class="row"><span>${escapeHtml(t('subtitle_records_none'))}</span></div>`;
         return;
       }
       const groups = new Map();

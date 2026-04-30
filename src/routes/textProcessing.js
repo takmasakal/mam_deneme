@@ -30,6 +30,7 @@ function registerTextProcessingRoutes(app, deps) {
     SUBTITLES_DIR,
     syncSubtitleCueIndexForAssetRow,
     searchSubtitleMatchesForAssetRow,
+    searchOcrMatchesForAssetRow,
     ensureSubtitleCueIndexForAssetRow,
     parseSubtitleTextSearchQuery,
     buildSubtitleCueSearchWhereSql,
@@ -38,6 +39,25 @@ function registerTextProcessingRoutes(app, deps) {
     normalizeOcrEngine,
     nanoid
   } = deps;
+
+  function paginateMatches(matches, offset, limit) {
+    const safeOffset = Math.max(0, Number(offset) || 0);
+    const safeLimit = Math.max(1, Math.min(50, Number(limit) || 30));
+    const list = Array.isArray(matches) ? matches : [];
+    const visible = list.slice(safeOffset, safeOffset + safeLimit);
+    return {
+      visible,
+      page: {
+        offset: safeOffset,
+        limit: safeLimit,
+        count: visible.length,
+        hasPrev: safeOffset > 0,
+        hasNext: list.length > safeOffset + safeLimit,
+        prevOffset: Math.max(0, safeOffset - safeLimit),
+        nextOffset: safeOffset + safeLimit
+      }
+    };
+  }
 
   app.post('/api/assets/:id/subtitles', async (req, res) => {
     try {
@@ -385,6 +405,39 @@ function registerTextProcessingRoutes(app, deps) {
       return res.status(500).json({ error: 'Failed to load latest OCR job' });
     }
   });
+
+  app.get('/api/assets/:id/video-ocr/search', async (req, res) => {
+    try {
+      const assetId = String(req.params.id || '').trim();
+      const query = String(req.query.q || '').trim();
+      const limit = Math.max(1, Math.min(50, Number(req.query.limit) || 30));
+      const offset = Math.max(0, Number(req.query.offset) || 0);
+      if (!assetId) return res.status(400).json({ error: 'Asset id is required' });
+      if (!query) return res.status(400).json({ error: 'q is required' });
+
+      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+      if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
+      const row = assetResult.rows[0];
+      if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+        return res.status(400).json({ error: 'OCR search is supported only for video assets' });
+      }
+
+      const search = await searchOcrMatchesForAssetRow(row, query, offset + limit + 1);
+      const allMatches = Array.isArray(search.matches) ? search.matches : [];
+      const { visible, page } = paginateMatches(allMatches, offset, limit);
+      return res.json({
+        query,
+        ocrUrl: search.ocrUrl || '',
+        matches: visible,
+        page: { ...page, query: String(search.highlightQuery || query).trim() || query },
+        didYouMean: String(search.didYouMean || '').trim(),
+        fuzzyUsed: Boolean(search.fuzzyUsed),
+        highlightQuery: String(search.highlightQuery || query).trim() || query
+      });
+    } catch (_error) {
+      return res.status(500).json({ error: 'Failed to search OCR matches' });
+    }
+  });
   
   app.post('/api/assets/:id/video-ocr/save', async (req, res) => {
     try {
@@ -605,7 +658,8 @@ function registerTextProcessingRoutes(app, deps) {
     try {
       const assetId = String(req.params.id || '').trim();
       const query = String(req.query.q || '').trim();
-      const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 20));
+      const limit = Math.max(1, Math.min(50, Number(req.query.limit) || 30));
+      const offset = Math.max(0, Number(req.query.offset) || 0);
       if (!assetId) return res.status(400).json({ error: 'Asset id is required' });
       if (!query) return res.status(400).json({ error: 'q is required' });
       if (query.length < 1) return res.json({ query, total: 0, matches: [], didYouMean: '', fuzzyUsed: false });
@@ -620,15 +674,21 @@ function registerTextProcessingRoutes(app, deps) {
       const subtitleUrl = String(dc.subtitleUrl || '').trim();
       if (!subtitleUrl) return res.status(400).json({ error: 'No active subtitle for this asset' });
   
-      const subtitleSearch = await searchSubtitleMatchesForAssetRow(row, query, limit);
+      const subtitleSearch = await searchSubtitleMatchesForAssetRow(row, query, offset + limit + 1);
       const matches = Array.isArray(subtitleSearch.matches) ? subtitleSearch.matches : [];
+      const paged = paginateMatches(matches, offset, limit);
       return res.json({
         query,
         total: matches.length,
         subtitleUrl: subtitleSearch.subtitleUrl || subtitleUrl,
-        matches,
+        matches: paged.visible,
+        page: {
+          ...paged.page,
+          query: String(subtitleSearch.highlightQuery || query).trim() || query
+        },
         didYouMean: String(subtitleSearch.didYouMean || '').trim(),
-        fuzzyUsed: Boolean(subtitleSearch.fuzzyUsed)
+        fuzzyUsed: Boolean(subtitleSearch.fuzzyUsed),
+        highlightQuery: String(subtitleSearch.highlightQuery || query).trim() || query
       });
     } catch (_error) {
       return res.status(500).json({ error: 'Failed to search subtitles' });

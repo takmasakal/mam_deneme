@@ -607,6 +607,65 @@ button:hover {
   padding-right: 4px;
 }
 
+.asset-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.asset-status-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-hit-pager {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  color: #b8c2d8;
+  font-size: 12px;
+  line-height: 1;
+  margin-left: auto;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.asset-hit-pager-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.asset-hit-page-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid #56627f;
+  border-radius: 5px;
+  background: #2f3546;
+  color: #f6c36a;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.asset-hit-page-btn:hover:not(:disabled) {
+  background: #3a4359;
+}
+
+.asset-hit-page-btn:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
 .asset-hit-list::-webkit-scrollbar {
   width: 8px;
 }

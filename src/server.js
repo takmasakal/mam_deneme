@@ -81,6 +81,17 @@ const DEFAULT_ADMIN_SETTINGS = {
   ocrDefaultEnableBlurFilter: true,
   ocrDefaultEnableRegionMode: false,
   ocrDefaultIgnoreStaticOverlays: true,
+  subtitleStyle: {
+    customOverlayEnabled: true,
+    bottomOffset: 56,
+    fontSize: 24,
+    textColor: '#ffffff',
+    backgroundColor: '#000000',
+    backgroundOpacity: 0.72,
+    horizontalPadding: 16,
+    maxWidth: 82
+  },
+  auditRetentionDays: 180,
   apiTokenEnabled: false,
   apiToken: '',
   oidcBearerEnabled: false,
@@ -93,6 +104,39 @@ function normalizePlayerUiMode(value) {
   const mode = String(value || '').trim().toLowerCase();
   if (mode === 'vidstack' || mode === 'mpegdash') return mode;
   return 'vidstack';
+}
+
+function clampNumber(value, min, max, fallback) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.max(min, Math.min(max, num));
+}
+
+function normalizeHexColor(value, fallback) {
+  const raw = String(value || '').trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(raw)) return raw.toLowerCase();
+  return fallback;
+}
+
+function normalizeSubtitleStyle(value = {}) {
+  const defaults = DEFAULT_ADMIN_SETTINGS.subtitleStyle;
+  const input = value && typeof value === 'object' ? value : {};
+  return {
+    customOverlayEnabled: Object.prototype.hasOwnProperty.call(input, 'customOverlayEnabled')
+      ? Boolean(input.customOverlayEnabled)
+      : defaults.customOverlayEnabled,
+    bottomOffset: clampNumber(input.bottomOffset, 0, 240, defaults.bottomOffset),
+    fontSize: clampNumber(input.fontSize, 12, 64, defaults.fontSize),
+    textColor: normalizeHexColor(input.textColor, defaults.textColor),
+    backgroundColor: normalizeHexColor(input.backgroundColor, defaults.backgroundColor),
+    backgroundOpacity: clampNumber(input.backgroundOpacity, 0, 1, defaults.backgroundOpacity),
+    horizontalPadding: clampNumber(input.horizontalPadding, 0, 80, defaults.horizontalPadding),
+    maxWidth: clampNumber(input.maxWidth, 35, 100, defaults.maxWidth)
+  };
+}
+
+function normalizeAuditRetentionDays(value) {
+  return clampNumber(value, 1, 3650, DEFAULT_ADMIN_SETTINGS.auditRetentionDays);
 }
 const DEFAULT_USER_PERMISSIONS = {};
 const ELASTIC_URL = process.env.ELASTIC_URL || 'http://localhost:9200';
@@ -903,7 +947,7 @@ function mapOcrSegmentRow(segment, query, ocrUrl = '') {
 
 async function searchOcrMatchesForAssetRow(row, queryRaw, limit = 8) {
   const parsedQuery = parseTextSearchQuery(queryRaw, normalizeSubtitleSearchText);
-  const cap = Math.max(1, Math.min(50, Number(limit) || 8));
+  const cap = Math.max(1, Math.min(2000, Number(limit) || 8));
   if (!parsedQuery.raw) {
     return { ocrUrl: '', matches: [], didYouMean: '', fuzzyUsed: false, highlightQuery: String(queryRaw || '').trim() };
   }
@@ -958,7 +1002,7 @@ async function searchOcrMatchesForAssetRow(row, queryRaw, limit = 8) {
 
 async function searchOcrMatchesForAssetRows(rows, queryRaw, limit = 8) {
   const parsedQuery = parseTextSearchQuery(queryRaw, normalizeSubtitleSearchText);
-  const cap = Math.max(1, Math.min(50, Number(limit) || 8));
+  const cap = Math.max(1, Math.min(500, Number(limit) || 8));
   const byAssetId = new Map();
   const assetRows = Array.isArray(rows) ? rows : [];
   if (!parsedQuery.raw || !assetRows.length) {
@@ -2208,7 +2252,7 @@ function loadActiveSubtitleCuesForAssetRow(row) {
 async function searchSubtitleMatchesForAssetRow(row, query, limit = 20) {
   const assetId = String(row?.id || '').trim();
   const parsedQuery = parseSubtitleTextSearchQuery(query);
-  const safeLimit = Math.max(1, Math.min(300, Number(limit) || 20));
+  const safeLimit = Math.max(1, Math.min(2000, Number(limit) || 20));
   if (!assetId || !parsedQuery.raw) {
     return { subtitleUrl: '', matches: [], didYouMean: '', fuzzyUsed: false, highlightQuery: String(query || '').trim() };
   }
@@ -2294,7 +2338,7 @@ async function searchSubtitleMatchesForAssetRow(row, query, limit = 20) {
 
 async function searchSubtitleMatchesForAssetRows(rows, query, limit = 8) {
   const parsedQuery = parseSubtitleTextSearchQuery(query);
-  const cap = Math.max(1, Math.min(50, Number(limit) || 8));
+  const cap = Math.max(1, Math.min(500, Number(limit) || 8));
   const byAssetId = new Map();
   const assetRows = Array.isArray(rows) ? rows : [];
   if (!parsedQuery.raw || !assetRows.length) {
@@ -3949,8 +3993,10 @@ function mapAssetRow(row) {
     videoOcrItems,
     ocrSearchHit: row._ocr_search_hit || null,
     ocrSearchHits: Array.isArray(row._ocr_search_hits) ? row._ocr_search_hits : [],
+    ocrSearchPage: row._ocr_search_page || null,
     subtitleSearchHit: row._subtitle_search_hit || null,
     subtitleSearchHits: Array.isArray(row._subtitle_search_hits) ? row._subtitle_search_hits : [],
+    subtitleSearchPage: row._subtitle_search_page || null,
     cuts: listCuts,
     status: row.status,
     deletedAt: row.deleted_at,
@@ -5227,10 +5273,25 @@ function queueSubtitleGenerationJob(row, options = {}) {
 
 async function getAdminSettings() {
   const result = await pool.query("SELECT value FROM admin_settings WHERE key = 'general' LIMIT 1");
-  if (!result.rowCount) return { ...DEFAULT_ADMIN_SETTINGS };
+  if (!result.rowCount) {
+    return {
+      ...DEFAULT_ADMIN_SETTINGS,
+      subtitleStyle: normalizeSubtitleStyle(DEFAULT_ADMIN_SETTINGS.subtitleStyle)
+    };
+  }
   const value = result.rows[0].value;
-  if (!value || typeof value !== 'object') return { ...DEFAULT_ADMIN_SETTINGS };
-  return { ...DEFAULT_ADMIN_SETTINGS, ...value };
+  if (!value || typeof value !== 'object') {
+    return {
+      ...DEFAULT_ADMIN_SETTINGS,
+      subtitleStyle: normalizeSubtitleStyle(DEFAULT_ADMIN_SETTINGS.subtitleStyle)
+    };
+  }
+  return {
+    ...DEFAULT_ADMIN_SETTINGS,
+    ...value,
+    subtitleStyle: normalizeSubtitleStyle(value.subtitleStyle),
+    auditRetentionDays: normalizeAuditRetentionDays(value.auditRetentionDays)
+  };
 }
 
 async function saveAdminSettings(settings) {
@@ -5245,6 +5306,54 @@ async function saveAdminSettings(settings) {
     [JSON.stringify(settings), updatedAt]
   );
   return settings;
+}
+
+async function cleanupAuditEvents(retentionDays = DEFAULT_ADMIN_SETTINGS.auditRetentionDays) {
+  const days = normalizeAuditRetentionDays(retentionDays);
+  await pool.query(
+    "DELETE FROM audit_events WHERE created_at < NOW() - ($1::int * INTERVAL '1 day')",
+    [days]
+  );
+}
+
+async function recordAuditEvent(req, event = {}) {
+  try {
+    const action = String(event.action || '').trim();
+    if (!action) return;
+    const context = buildUserContextFromRequest(req || {});
+    const actor = String(
+      event.actor
+      || context.displayName
+      || context.username
+      || context.email
+      || ''
+    ).trim() || 'unknown';
+    const details = event.details && typeof event.details === 'object' ? event.details : {};
+    await pool.query(
+      `
+        INSERT INTO audit_events (
+          id, created_at, actor, action, target_type, target_id, target_title,
+          details, ip, user_agent
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)
+      `,
+      [
+        nanoid(),
+        new Date().toISOString(),
+        actor,
+        action,
+        String(event.targetType || '').trim(),
+        String(event.targetId || '').trim(),
+        String(event.targetTitle || '').trim(),
+        JSON.stringify(details),
+        String(req?.headers?.['x-forwarded-for'] || req?.socket?.remoteAddress || req?.ip || '').split(',')[0].trim(),
+        String(req?.headers?.['user-agent'] || '').slice(0, 500)
+      ]
+    );
+    const settings = await getAdminSettings().catch(() => DEFAULT_ADMIN_SETTINGS);
+    cleanupAuditEvents(settings.auditRetentionDays).catch(() => {});
+  } catch (_error) {
+    // Audit logging must never block the primary user action.
+  }
 }
 
 async function getUserPermissionsSettings() {
@@ -6295,9 +6404,15 @@ app.get('/api/ui-settings', async (_req, res) => {
   try {
     const settings = await getAdminSettings();
     const playerUiMode = normalizePlayerUiMode(settings.playerUiMode);
-    return res.json({ playerUiMode });
+    return res.json({
+      playerUiMode,
+      subtitleStyle: normalizeSubtitleStyle(settings.subtitleStyle)
+    });
   } catch (_error) {
-    return res.json({ playerUiMode: 'vidstack' });
+    return res.json({
+      playerUiMode: 'vidstack',
+      subtitleStyle: normalizeSubtitleStyle(DEFAULT_ADMIN_SETTINGS.subtitleStyle)
+    });
   }
 });
 
@@ -6811,6 +6926,7 @@ function sendSnapshotDownload(res, snapshot, fallbackFileName) {
 
 registerAdminRoutes(app, {
   pool,
+  WORKFLOW,
   proxyJobs,
   requireScopedAdminAccess,
   publicUploadUrlToAbsolutePath,
@@ -6837,6 +6953,11 @@ registerAdminRoutes(app, {
   saveUserPermissionsSettings,
   getAdminSettings,
   saveAdminSettings,
+  normalizePlayerUiMode,
+  normalizeSubtitleStyle,
+  normalizeAuditRetentionDays,
+  cleanupAuditEvents,
+  recordAuditEvent,
   generateApiToken,
   systemHealthCache,
   SYSTEM_HEALTH_CACHE_TTL_MS,
@@ -6853,6 +6974,8 @@ registerAdminRoutes(app, {
   createProxyJob,
   runProxyJob,
   queryAssetSuggestions,
+  suggestAssetIdsElastic,
+  hasStoredFile,
   collectAssetCleanupPaths,
   cleanupAssetFiles,
   deleteAssetFromElastic,
@@ -6883,6 +7006,7 @@ registerAdminRoutes(app, {
   syncSubtitleCueIndexForAssetRow,
   formatTimecode,
   getAssetFamily,
+  recordAuditEvent,
   nanoid,
   removeAssetFromElastic
 });
@@ -6915,6 +7039,7 @@ registerTextProcessingRoutes(app, {
   SUBTITLES_DIR,
   syncSubtitleCueIndexForAssetRow,
   searchSubtitleMatchesForAssetRow,
+  searchOcrMatchesForAssetRow,
   ensureSubtitleCueIndexForAssetRow,
   parseSubtitleTextSearchQuery,
   buildSubtitleCueSearchWhereSql,
@@ -6939,10 +7064,57 @@ registerAssetRoutes(app, {
   mapCutRow,
   sanitizeDcMetadata,
   toTags,
+  parseTextSearchQuery,
+  parseSubtitleTextSearchQuery,
+  normalizeForSearch,
+  normalizeSubtitleSearchText,
+  normalizeUploadDateRange,
+  normalizeSortBy,
+  normalizeTrashScope,
+  sqlTagFold,
+  sqlTextFold,
+  exactNormalizedTextRegex,
+  buildAssetOrderClause,
+  searchAssetIdsElastic,
+  searchAssetsByFuzzyQuery,
+  searchOcrMatchesForAssetRows,
+  searchSubtitleMatchesForAssetRows,
+  ensurePdfThumbnailForRow,
+  ensureDocumentThumbnailForRow,
+  queryAssetSuggestions,
+  findOcrMatchForAssetRow,
+  buildSubtitleCueSearchWhereSql,
+  formatTimecode,
+  buildUserContextFromRequest,
+  createAssetRecord,
+  isVideoCandidate,
+  computeBufferSha256,
+  findDuplicateAssetByHash,
+  buildDuplicateAssetPayload,
+  getIngestStoragePath,
+  buildArtifactPath,
+  generateVideoProxy,
+  getMediaAudioChannelCount,
+  summarizeFfmpegError,
+  generateVideoThumbnail,
+  isPdfCandidate,
+  generatePdfThumbnail,
+  generatePdfFallbackThumbnail,
+  isDocumentCandidate,
+  generateDocumentThumbnail,
+  getFileExtension,
+  isTextDocumentCandidate,
+  getVideoDurationSeconds,
+  resolvePlaybackInputPath,
+  getMediaAudioStreamOptions,
+  probeMediaTechnicalInfo,
+  publicUploadUrlToAbsolutePath,
+  resolveStoredUrl,
   buildVersionSnapshotFromRow,
   canCreateVersionForAsset,
   canManageVersionRow,
   mapVersionRow,
+  recordAuditEvent,
   nanoid
 });
 

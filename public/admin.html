@@ -26,6 +26,7 @@
       <nav class="admin-tabs" id="adminTabs">
         <button type="button" class="admin-tab active" data-tab="apiHelp" data-i18n="api_help_doc_title">API Help Document</button>
         <button type="button" class="admin-tab" data-tab="systemHealth" data-i18n="system_health">System Health</button>
+        <button type="button" class="admin-tab" data-tab="auditEvents" data-i18n="audit_events">İşlem Geçmişi</button>
         <button type="button" class="admin-tab" data-tab="settings" data-i18n="settings">Settings</button>
       </nav>
 
@@ -40,6 +41,46 @@
           <div id="ffmpegHealth" class="empty" data-i18n="loading">Loading...</div>
           <div id="systemHealthRows" class="rows"></div>
           <div id="systemJobStatus" class="system-job-status"></div>
+        </article>
+
+        <article class="admin-card admin-panel" data-panel="auditEvents">
+          <h2 data-i18n="audit_events">İşlem Geçmişi</h2>
+          <div class="proxy-tool-grid records-toolbar">
+            <label>
+              <span data-i18n="audit_filter_actor">Kullanıcı</span>
+              <input id="auditActorInput" type="text" />
+            </label>
+            <label>
+              <span data-i18n="audit_filter_action">İşlem</span>
+              <select id="auditActionSelect">
+                <option value="" data-i18n="audit_filter_action_all">Tümü</option>
+                <option value="asset.uploaded" data-i18n="audit_action_asset_uploaded">Varlık yüklendi</option>
+                <option value="asset.created" data-i18n="audit_action_asset_created">Varlık oluşturuldu</option>
+                <option value="asset.updated" data-i18n="audit_action_asset_updated">Varlık güncellendi</option>
+                <option value="asset.trashed" data-i18n="audit_action_asset_trashed">Çöpe taşındı</option>
+                <option value="asset.restored" data-i18n="audit_action_asset_restored">Geri yüklendi</option>
+                <option value="asset.deleted" data-i18n="audit_action_asset_deleted">Kalıcı silindi</option>
+              </select>
+            </label>
+            <label class="audit-target-field">
+              <span data-i18n="audit_filter_target">Varlık</span>
+              <input id="auditTargetInput" type="text" />
+              <div id="auditTargetSuggestList" class="proxy-suggest hidden"></div>
+            </label>
+            <label>
+              <span data-i18n="audit_filter_from">Başlangıç</span>
+              <input id="auditFromInput" type="date" />
+            </label>
+            <label>
+              <span data-i18n="audit_filter_to">Bitiş</span>
+              <input id="auditToInput" type="date" />
+            </label>
+            <div class="proxy-tool-actions">
+              <button id="runAuditSearchBtn" type="button" data-i18n="audit_filter_run">Filtrele</button>
+            </div>
+          </div>
+          <div id="auditEventsRows" class="rows"></div>
+          <div id="auditEventsMsg" class="admin-note"></div>
         </article>
 
         <article class="admin-card admin-panel" data-panel="settings">
@@ -108,6 +149,14 @@
                   <button id="rotateApiTokenBtn" type="button" data-i18n="rotate_token">Rotate Token</button>
                   <button id="copyApiTokenBtn" type="button" data-i18n="copy_token">Copy Token</button>
                 </div>
+              </fieldset>
+
+              <fieldset class="settings-group">
+                <legend data-i18n="settings_group_audit">Audit Log</legend>
+                <label>
+                  <span data-i18n="audit_retention_days">Log saklama süresi (gün)</span>
+                  <input name="auditRetentionDays" type="number" min="1" max="3650" step="1" />
+                </label>
               </fieldset>
 
               <fieldset class="settings-group">
@@ -223,6 +272,55 @@
           </section>
 
           <section class="settings-subpanel" data-settings-panel="subtitle">
+            <h3 data-i18n="subtitle_display_settings">Subtitle Display Settings</h3>
+            <form id="subtitleSettingsForm" class="stack">
+              <fieldset class="settings-group">
+                <legend data-i18n="subtitle_display_style">Subtitle Style</legend>
+                <div class="subtitle-style-grid">
+                  <label class="toggle-row subtitle-style-toggle">
+                    <input id="subtitleCustomOverlayCheck" type="checkbox" />
+                    <span data-i18n="subtitle_custom_overlay">Use custom overlay</span>
+                  </label>
+                  <label>
+                    <span data-i18n="subtitle_bottom_offset">Bottom offset (px)</span>
+                    <input id="subtitleBottomOffsetInput" type="number" min="0" max="240" step="1" />
+                  </label>
+                  <label>
+                    <span data-i18n="subtitle_font_size">Font size (px)</span>
+                    <input id="subtitleFontSizeInput" type="number" min="12" max="64" step="1" />
+                  </label>
+                  <label class="subtitle-color-field">
+                    <span data-i18n="subtitle_text_color">Text color</span>
+                    <input id="subtitleTextColorInput" type="color" />
+                    <span id="subtitleTextColorValue" class="subtitle-color-value">#ffffff</span>
+                  </label>
+                  <label class="subtitle-color-field">
+                    <span data-i18n="subtitle_background_color">Background color</span>
+                    <input id="subtitleBackgroundColorInput" type="color" />
+                    <span id="subtitleBackgroundColorValue" class="subtitle-color-value">#000000</span>
+                  </label>
+                  <label>
+                    <span data-i18n="subtitle_background_opacity">Background opacity</span>
+                    <input id="subtitleBackgroundOpacityInput" type="number" min="0" max="1" step="0.05" />
+                  </label>
+                  <label>
+                    <span data-i18n="subtitle_horizontal_padding">Left/right padding (px)</span>
+                    <input id="subtitleHorizontalPaddingInput" type="number" min="0" max="80" step="1" />
+                  </label>
+                  <label>
+                    <span data-i18n="subtitle_max_width">Max width (%)</span>
+                    <input id="subtitleMaxWidthInput" type="number" min="35" max="100" step="1" />
+                  </label>
+                </div>
+                <p class="admin-note" data-i18n="subtitle_display_native_note">Custom overlay applies all style settings and enables match highlighting. Native browser subtitles only support limited font/color/background styling.</p>
+              </fieldset>
+              <div class="settings-submit-row">
+                <button type="submit" data-i18n="save_settings">Save Settings</button>
+                <button id="subtitleSetDefaultBtn" type="button" data-i18n="set_as_default">Set as Default</button>
+              </div>
+            </form>
+            <div id="subtitleSettingsMsg" class="admin-note"></div>
+
             <h3 data-i18n="subtitle_records">Subtitle Records</h3>
             <div class="proxy-tool-grid">
               <label>

@@ -5,6 +5,7 @@ const { nanoid } = require('nanoid');
 function registerAdminRoutes(app, deps) {
   const {
     pool,
+    WORKFLOW,
     proxyJobs,
     requireScopedAdminAccess,
     publicUploadUrlToAbsolutePath,
@@ -31,6 +32,11 @@ function registerAdminRoutes(app, deps) {
     saveUserPermissionsSettings,
     getAdminSettings,
     saveAdminSettings,
+    normalizePlayerUiMode,
+    normalizeSubtitleStyle,
+    normalizeAuditRetentionDays,
+    cleanupAuditEvents,
+    recordAuditEvent,
     generateApiToken,
     systemHealthCache,
     SYSTEM_HEALTH_CACHE_TTL_MS,
@@ -47,6 +53,8 @@ function registerAdminRoutes(app, deps) {
     createProxyJob,
     runProxyJob,
     queryAssetSuggestions,
+    suggestAssetIdsElastic,
+    hasStoredFile,
     collectAssetCleanupPaths,
     cleanupAssetFiles,
     deleteAssetFromElastic,
@@ -872,6 +880,12 @@ app.patch('/api/admin/settings', async (req, res) => {
       ocrDefaultIgnoreStaticOverlays: Object.prototype.hasOwnProperty.call(req.body, 'ocrDefaultIgnoreStaticOverlays')
         ? Boolean(req.body.ocrDefaultIgnoreStaticOverlays)
         : current.ocrDefaultIgnoreStaticOverlays,
+      subtitleStyle: Object.prototype.hasOwnProperty.call(req.body, 'subtitleStyle')
+        ? normalizeSubtitleStyle(req.body.subtitleStyle)
+        : normalizeSubtitleStyle(current.subtitleStyle),
+      auditRetentionDays: Object.prototype.hasOwnProperty.call(req.body, 'auditRetentionDays')
+        ? normalizeAuditRetentionDays(req.body.auditRetentionDays)
+        : normalizeAuditRetentionDays(current.auditRetentionDays),
       apiTokenEnabled: Object.prototype.hasOwnProperty.call(req.body, 'apiTokenEnabled')
         ? Boolean(req.body.apiTokenEnabled)
         : current.apiTokenEnabled,
@@ -892,9 +906,81 @@ app.patch('/api/admin/settings', async (req, res) => {
         : current.oidcAudience
     };
     const saved = await saveAdminSettings(next);
+    cleanupAuditEvents?.(saved.auditRetentionDays).catch(() => {});
     return res.json(saved);
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to save settings' });
+  }
+});
+
+app.get('/api/admin/audit-events', async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 100));
+    const where = [];
+    const values = [];
+    const action = String(req.query.action || '').trim();
+    const actor = String(req.query.actor || '').trim();
+    const target = String(req.query.target || '').trim();
+    const from = String(req.query.from || '').trim();
+    const to = String(req.query.to || '').trim();
+
+    if (action) {
+      values.push(action);
+      where.push(`action = $${values.length}`);
+    }
+    if (actor) {
+      values.push(`%${actor.toLowerCase()}%`);
+      where.push(`LOWER(actor) LIKE $${values.length}`);
+    }
+    if (target) {
+      const elasticTargetIds = await suggestAssetIdsElastic?.(target, 100).catch(() => null);
+      const targetConditions = [];
+      values.push(`%${target.toLowerCase()}%`);
+      targetConditions.push(`LOWER(target_id) LIKE $${values.length}`);
+      targetConditions.push(`LOWER(target_title) LIKE $${values.length}`);
+      if (Array.isArray(elasticTargetIds) && elasticTargetIds.length) {
+        values.push(elasticTargetIds);
+        targetConditions.push(`target_id = ANY($${values.length}::text[])`);
+      }
+      where.push(`(${targetConditions.join(' OR ')})`);
+    }
+    if (from) {
+      values.push(from);
+      where.push(`created_at >= $${values.length}`);
+    }
+    if (to) {
+      values.push(to);
+      where.push(`created_at < ($${values.length}::date + INTERVAL '1 day')`);
+    }
+
+    values.push(limit);
+    const result = await pool.query(
+      `
+        SELECT id, created_at, actor, action, target_type, target_id, target_title, details, ip, user_agent
+        FROM audit_events
+        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY created_at DESC
+        LIMIT $${values.length}
+      `,
+      values
+    );
+
+    return res.json({
+      events: result.rows.map((row) => ({
+        id: row.id,
+        createdAt: row.created_at,
+        actor: row.actor,
+        action: row.action,
+        targetType: row.target_type,
+        targetId: row.target_id,
+        targetTitle: row.target_title,
+        details: row.details || {},
+        ip: row.ip,
+        userAgent: row.user_agent
+      }))
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load audit events' });
   }
 });
 
@@ -1214,10 +1300,8 @@ app.get('/api/admin/system-health', async (req, res) => {
       },
       recentJobs
     };
-    systemHealthCache = {
-      expiresAt: Date.now() + SYSTEM_HEALTH_CACHE_TTL_MS,
-      value: payload
-    };
+    systemHealthCache.expiresAt = Date.now() + SYSTEM_HEALTH_CACHE_TTL_MS;
+    systemHealthCache.value = payload;
     return res.json({ ...payload, cached: false, cacheTtlSeconds: Math.ceil(SYSTEM_HEALTH_CACHE_TTL_MS / 1000) });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to load system health' });
@@ -1340,6 +1424,17 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
       await removeAssetFromCollections(row.id);
       const cleanup = cleanupAssetFiles(cleanupTargets);
       await deleteAssetFromElastic(row.id).catch(() => {});
+      await recordAuditEvent?.(req, {
+        action: 'asset.deleted',
+        targetType: 'asset',
+        targetId: row.id,
+        targetTitle: String(row.title || row.file_name || row.id),
+        details: {
+          source: 'admin_proxy_tool',
+          cleanupTargets: cleanupTargets.length,
+          removedFiles: cleanup.removed.length
+        }
+      });
       info = {
         deleted: true,
         actor,
@@ -1619,6 +1714,19 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
         }
       }
       await indexAssetToElastic(row.id).catch(() => {});
+      await recordAuditEvent?.(req, {
+        action: 'asset.updated',
+        targetType: 'asset',
+        targetId: row.id,
+        targetTitle: String(row.title || row.file_name || row.id),
+        details: {
+          source: 'admin_proxy_tool',
+          mode,
+          fileName: row.file_name,
+          generatedThumbnail: generateThumbnail,
+          generatedPreview: generatePreview
+        }
+      });
       info = {
         replaced: true,
         thumbnailUrl: resolveStoredUrl(row.thumbnail_url, 'thumbnails'),
