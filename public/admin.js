@@ -190,6 +190,16 @@ let i18n = {
     audit_action_asset_trashed: 'Moved to trash',
     audit_action_asset_restored: 'Restored',
     audit_action_asset_deleted: 'Permanently deleted',
+    audit_action_asset_downloaded: 'Asset downloaded',
+    audit_detail_client: 'Client',
+    audit_detail_source: 'Source',
+    audit_detail_transport: 'Transport',
+    audit_detail_url: 'URL',
+    audit_detail_range: 'Range',
+    audit_detail_userAgent: 'User agent',
+    audit_client_mobile: 'Mobile app',
+    audit_client_web: 'Web',
+    audit_client_api: 'API/direct',
     ocr_defaults: 'OCR Defaults',
     ocr_filters: 'OCR Filters',
     ocr_default_advanced_mode: 'Advanced OCR mode default',
@@ -475,6 +485,16 @@ let i18n = {
     audit_action_asset_trashed: 'Çöpe taşındı',
     audit_action_asset_restored: 'Geri yüklendi',
     audit_action_asset_deleted: 'Kalıcı silindi',
+    audit_action_asset_downloaded: 'Varlık indirildi',
+    audit_detail_client: 'Kaynak',
+    audit_detail_source: 'Kanal',
+    audit_detail_transport: 'Aktarım',
+    audit_detail_url: 'URL',
+    audit_detail_range: 'Aralık',
+    audit_detail_userAgent: 'User-Agent',
+    audit_client_mobile: 'Cep uygulaması',
+    audit_client_web: 'Web',
+    audit_client_api: 'API/doğrudan',
     ocr_defaults: 'OCR Varsayılanları',
     ocr_filters: 'OCR Filtreleri',
     ocr_default_advanced_mode: 'Gelişmiş OCR varsayılan açık',
@@ -1979,6 +1999,25 @@ function auditActionLabel(action) {
   return t(key) === key ? String(action || '') : t(key);
 }
 
+function auditDetailLabel(key) {
+  const normalized = String(key || '');
+  const labelKey = `audit_detail_${normalized}`;
+  const label = t(labelKey);
+  return label === labelKey ? normalized : label;
+}
+
+function auditDetailValue(key, value) {
+  if (value == null || value === '') return '';
+  if (String(key || '') === 'client') {
+    const clientKey = `audit_client_${String(value || '').trim()}`;
+    const clientLabel = t(clientKey);
+    return clientLabel === clientKey ? String(value) : clientLabel;
+  }
+  if (Array.isArray(value)) return value.join(', ');
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
 function renderAuditEvents(events = []) {
   if (!auditEventsRows) return;
   if (!events.length) {
@@ -1991,7 +2030,8 @@ function renderAuditEvents(events = []) {
     const details = event.details && typeof event.details === 'object'
       ? Object.entries(event.details)
         .slice(0, 4)
-        .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : String(value)}`)
+        .map(([key, value]) => `${auditDetailLabel(key)}: ${auditDetailValue(key, value)}`)
+        .filter(Boolean)
         .join(' · ')
       : '';
     return `

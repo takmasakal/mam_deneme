@@ -3584,6 +3584,29 @@ function shouldAuditUploadAccess(publicUrl) {
   return true;
 }
 
+function detectAuditClient(req) {
+  const headers = req?.headers || {};
+  const explicitClient = String(headers['x-mam-client'] || headers['x-client-type'] || '').trim().toLowerCase();
+  const userAgent = String(headers['user-agent'] || '');
+  const userAgentLower = userAgent.toLowerCase();
+  const originOrReferer = String(headers.origin || headers.referer || '').trim();
+  const hasAuthorization = Boolean(String(headers.authorization || '').trim());
+
+  if (explicitClient.includes('mobile') || explicitClient.includes('cep') || explicitClient.includes('metmam')) {
+    return { client: 'mobile', source: 'Cep uygulaması' };
+  }
+  if (userAgentLower.includes('metmam') || userAgentLower.includes('flutter') || userAgentLower.includes('dart') || userAgentLower.includes('okhttp') || userAgentLower.includes('cfnetwork') || userAgentLower.includes('dalvik')) {
+    return { client: 'mobile', source: 'Cep uygulaması' };
+  }
+  if (!originOrReferer && hasAuthorization && !/(mozilla|chrome|safari|firefox|edge|edg\/)/i.test(userAgent)) {
+    return { client: 'mobile', source: 'Cep uygulaması' };
+  }
+  if (originOrReferer || /(mozilla|chrome|safari|firefox|edge|edg\/)/i.test(userAgent)) {
+    return { client: 'web', source: 'Web arayüz' };
+  }
+  return { client: 'api', source: 'API/doğrudan' };
+}
+
 async function findAssetForPublicUploadUrl(publicUrl) {
   const safeUrl = String(publicUrl || '').split('?')[0];
   if (!safeUrl.startsWith('/uploads/')) return null;
@@ -3620,13 +3643,16 @@ function auditUploadDownloadRequest(req, res, next) {
         const previous = Number(recentDownloadAuditKeys.get(cacheKey) || 0);
         if (previous && now - previous < DOWNLOAD_AUDIT_THROTTLE_MS) return;
         recentDownloadAuditKeys.set(cacheKey, now);
+        const clientInfo = detectAuditClient(req);
         await recordAuditEvent(req, {
           action: 'asset.downloaded',
           targetType: 'asset',
           targetId: row.id,
           targetTitle: String(row.title || row.file_name || row.id),
           details: {
-            source: 'uploads_static',
+            client: clientInfo.client,
+            source: clientInfo.source,
+            transport: 'uploads_static',
             url: publicUrl,
             range: String(req.headers?.range || ''),
             userAgent: String(req.headers?.['user-agent'] || '').slice(0, 160)
