@@ -1,10 +1,14 @@
 function createSubtitleService(deps = {}) {
   const {
+    normalizeOcrText,
     normalizeComparableOcr,
     parseSearchTokens,
     exactNormalizedTextRegex,
     normalizedTextHasExactTerm
   } = deps;
+  const normalizeCueText = typeof normalizeOcrText === 'function'
+    ? normalizeOcrText
+    : (value) => String(value || '').replace(/\s+/g, ' ').trim();
 
   function normalizeSubtitleTime(value) {
     const raw = String(value || '').trim();
@@ -151,7 +155,7 @@ function createSubtitleService(deps = {}) {
         textLines.push(row.trim());
         i += 1;
       }
-      const cueText = normalizeOcrText(textLines.join(' '));
+      const cueText = normalizeCueText(textLines.join(' '));
       if (Number.isFinite(startSec) && Number.isFinite(endSec) && endSec >= startSec && cueText) {
         cues.push({ startSec, endSec, cueText });
       }

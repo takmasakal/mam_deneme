@@ -1175,6 +1175,7 @@ async function searchOcrMatchesForAssetRows(rows, queryRaw, limit = 8) {
 }
 
 const subtitleService = createSubtitleService({
+  normalizeOcrText,
   normalizeComparableOcr,
   parseSearchTokens,
   exactNormalizedTextRegex,
