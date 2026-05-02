@@ -7,6 +7,24 @@ import sys
 from faster_whisper import WhisperModel
 
 
+def _truthy(value: str) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def configure_offline_env():
+    cache_root = os.getenv("MAM_MODEL_CACHE_DIR", "/opt/mam-models")
+    hf_home = os.getenv("HF_HOME") or os.path.join(cache_root, "huggingface")
+    os.environ.setdefault("HF_HOME", hf_home)
+    os.environ.setdefault("HF_HUB_CACHE", os.path.join(hf_home, "hub"))
+    os.environ.setdefault("TRANSFORMERS_CACHE", os.path.join(hf_home, "transformers"))
+    os.environ.setdefault("WHISPER_MODEL_CACHE", hf_home)
+    offline = _truthy(os.getenv("MAM_OFFLINE_MODE", "true"))
+    if offline:
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+    return offline, os.getenv("WHISPER_MODEL_CACHE") or hf_home
+
+
 def fmt_ts(seconds: float) -> str:
     value = max(0.0, float(seconds))
     millis = int(round(value * 1000.0))
@@ -164,7 +182,25 @@ def main() -> int:
         return 2
     os.makedirs(out_dir, exist_ok=True)
 
-    model = WhisperModel(args.model, device="cpu", compute_type="int8")
+    offline, model_cache = configure_offline_env()
+    try:
+        model = WhisperModel(
+            args.model,
+            device="cpu",
+            compute_type="int8",
+            download_root=model_cache,
+            local_files_only=offline,
+        )
+    except Exception as exc:
+        if offline:
+            print(
+                f"offline_model_missing: faster-whisper model '{args.model}' is not available in {model_cache}. "
+                "Prepare models during install/build with PRELOAD_ML_MODELS=true or run scripts/prepare_offline_models.py.",
+                file=sys.stderr,
+            )
+        else:
+            print(f"whisper_model_load_failed: {exc}", file=sys.stderr)
+        return 2
     lang = (args.lang or "").strip().lower()
     if lang in ("", "auto", "und"):
         lang = None

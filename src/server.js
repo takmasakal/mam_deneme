@@ -66,7 +66,13 @@ const OCR_FRAMES_DIR = path.join(OCR_DIR, '_frames');
 const OCR_FRAME_CACHE_DIR = path.join(OCR_FRAMES_DIR, '_cache');
 const OCR_FRAME_CACHE_ENABLED = String(process.env.OCR_FRAME_CACHE_ENABLE || 'false').trim().toLowerCase() === 'true';
 const OCR_FRAME_CACHE_TTL_DAYS = Math.max(1, Math.min(30, Number(process.env.OCR_FRAME_CACHE_TTL_DAYS) || 3));
-const PADDLE_CACHE_DIR = process.env.PADDLE_PDX_CACHE_HOME || path.join(UPLOADS_DIR, '.paddlex');
+const MAM_OFFLINE_MODE = String(process.env.MAM_OFFLINE_MODE ?? 'true').trim().toLowerCase() !== 'false';
+const MAM_MODEL_CACHE_DIR = process.env.MAM_MODEL_CACHE_DIR || '/opt/mam-models';
+const HF_HOME = process.env.HF_HOME || path.join(MAM_MODEL_CACHE_DIR, 'huggingface');
+const HF_HUB_CACHE = process.env.HF_HUB_CACHE || path.join(HF_HOME, 'hub');
+const TRANSFORMERS_CACHE = process.env.TRANSFORMERS_CACHE || path.join(HF_HOME, 'transformers');
+const WHISPER_MODEL_CACHE = process.env.WHISPER_MODEL_CACHE || HF_HOME;
+const PADDLE_CACHE_DIR = process.env.PADDLE_PDX_CACHE_HOME || path.join(MAM_MODEL_CACHE_DIR, 'paddle');
 app.use(express.json({ limit: '300mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/uploads', express.static(UPLOADS_DIR));
@@ -2418,6 +2424,16 @@ async function searchSubtitleMatchesForAssetRows(rows, query, limit = 8) {
     return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(query || '').trim() };
   }
 
+  for (const row of assetRows) {
+    const assetId = String(row?.id || '').trim();
+    if (!activeUrlByAssetId.has(assetId)) continue;
+    try {
+      await ensureSubtitleCueIndexForAssetRow(row);
+    } catch (error) {
+      console.warn(`Subtitle cue index sync skipped for asset ${assetId}: ${error?.message || error}`);
+    }
+  }
+
   const assetIds = Array.from(activeUrlByAssetId.keys());
   const activeUrls = Array.from(new Set(activeUrlByAssetId.values()));
   const subtitleWhere = buildSubtitleCueSearchWhereSql({
@@ -2451,7 +2467,7 @@ async function searchSubtitleMatchesForAssetRows(rows, query, limit = 8) {
     byAssetId.get(assetId).push(mapSubtitleCueRow(row, query));
   });
 
-  if (byAssetId.size || parsedQuery.hasOperators) {
+  if (byAssetId.size) {
     return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(query || '').trim() };
   }
 
@@ -2469,6 +2485,32 @@ async function searchSubtitleMatchesForAssetRows(rows, query, limit = 8) {
     const assetId = String(row.asset_id || '').trim();
     return String(row.subtitle_url || '').trim() === activeUrlByAssetId.get(assetId);
   });
+  if (!activeCues.length) {
+    assetRows.forEach((assetRow) => {
+      const assetId = String(assetRow?.id || '').trim();
+      const loaded = loadActiveSubtitleCuesForAssetRow(assetRow);
+      const cues = Array.isArray(loaded.cues) ? loaded.cues : [];
+      cues.forEach((cue) => {
+        if (!assetId || (byAssetId.get(assetId) || []).length >= cap) return;
+        const text = String(cue.cueText || '');
+        const matched = parsedQuery.hasOperators
+          ? subtitleCueMatchesParsedQuery(text, parsedQuery)
+          : fuzzySubtitleTextMatch(parsedQuery.raw, text);
+        if (!matched) return;
+        if (!byAssetId.has(assetId)) byAssetId.set(assetId, []);
+        byAssetId.get(assetId).push(mapSubtitleCueRow(cue, query));
+      });
+    });
+    return {
+      byAssetId,
+      didYouMean: '',
+      fuzzyUsed: byAssetId.size > 0,
+      highlightQuery: String(query || '').trim()
+    };
+  }
+  if (parsedQuery.hasOperators) {
+    return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(query || '').trim() };
+  }
   const didYouMean = suggestSubtitleDidYouMean(
     activeCues.map((row) => ({ cueText: String(row.cue_text || '') })),
     query
@@ -2662,7 +2704,10 @@ async function saveAssetSubtitleMetadata(assetId, row, subtitleUrl, subtitleLang
   const updatedRow = result.rows[0];
   try {
     await syncSubtitleCueIndexForAssetRow(updatedRow);
-  } catch (_error) {}
+  } catch (error) {
+    console.error(`Subtitle metadata saved but cue index failed for asset ${assetId}: ${error?.message || error}`);
+    throw error;
+  }
   return updatedRow;
 }
 
@@ -4453,7 +4498,18 @@ async function transcribeMediaToVtt(inputPath, outputPath, options = {}) {
     args.push('--lang', lang);
   }
   try {
-    return await runCommandCapture('python3', args);
+    return await runCommandCapture('python3', args, {
+      env: {
+        MAM_OFFLINE_MODE: MAM_OFFLINE_MODE ? 'true' : 'false',
+        MAM_MODEL_CACHE_DIR,
+        HF_HOME,
+        HF_HUB_CACHE,
+        TRANSFORMERS_CACHE,
+        HF_HUB_OFFLINE: MAM_OFFLINE_MODE ? '1' : (process.env.HF_HUB_OFFLINE || '0'),
+        TRANSFORMERS_OFFLINE: MAM_OFFLINE_MODE ? '1' : (process.env.TRANSFORMERS_OFFLINE || '0'),
+        WHISPER_MODEL_CACHE
+      }
+    });
   } finally {
     try { cleanupPreparedInput(); } catch (_error) {}
   }
@@ -4830,6 +4886,13 @@ async function extractVideoOcrFrameTextPaddle({ workDir, files, intervalSec, ocr
     ], {
       env: {
         PYTHONWARNINGS: 'ignore',
+        MAM_OFFLINE_MODE: MAM_OFFLINE_MODE ? 'true' : 'false',
+        MAM_MODEL_CACHE_DIR,
+        HF_HOME,
+        HF_HUB_CACHE,
+        TRANSFORMERS_CACHE,
+        HF_HUB_OFFLINE: MAM_OFFLINE_MODE ? '1' : (process.env.HF_HUB_OFFLINE || '0'),
+        TRANSFORMERS_OFFLINE: MAM_OFFLINE_MODE ? '1' : (process.env.TRANSFORMERS_OFFLINE || '0'),
         PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: 'True',
         PADDLE_PDX_CACHE_HOME: PADDLE_CACHE_DIR,
         PADDLE_HOME: PADDLE_CACHE_DIR
@@ -7195,6 +7258,7 @@ registerAssetRoutes(app, {
   computeBufferSha256,
   findDuplicateAssetByHash,
   buildDuplicateAssetPayload,
+  sanitizeFileName,
   getIngestStoragePath,
   buildArtifactPath,
   generateVideoProxy,

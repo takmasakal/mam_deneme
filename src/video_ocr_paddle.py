@@ -7,8 +7,12 @@ import sys
 
 # Avoid startup connectivity checks against model hosters in restricted networks.
 os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
-os.environ.setdefault("PADDLE_PDX_CACHE_HOME", "/app/uploads/.paddlex")
-os.environ.setdefault("PADDLE_HOME", "/app/uploads/.paddlex")
+_MODEL_CACHE_ROOT = os.getenv("MAM_MODEL_CACHE_DIR", "/opt/mam-models")
+os.environ.setdefault("PADDLE_PDX_CACHE_HOME", os.path.join(_MODEL_CACHE_ROOT, "paddle"))
+os.environ.setdefault("PADDLE_HOME", os.path.join(_MODEL_CACHE_ROOT, "paddle"))
+if str(os.getenv("MAM_OFFLINE_MODE", "true")).strip().lower() in {"1", "true", "yes", "on"}:
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
@@ -401,7 +405,14 @@ def main():
             cfg["lang"] = lang
         ocr = PaddleOCR(**cfg)
     except Exception as exc:
-        print(f"PaddleOCR init failed: {exc}", file=sys.stderr)
+        if str(os.getenv("MAM_OFFLINE_MODE", "true")).strip().lower() in {"1", "true", "yes", "on"}:
+            print(
+                f"PaddleOCR init failed in offline mode: {exc}. "
+                f"Prepare OCR models during install/build with PRELOAD_PADDLE_OCR=true. Cache: {os.getenv('PADDLE_PDX_CACHE_HOME')}",
+                file=sys.stderr,
+            )
+        else:
+            print(f"PaddleOCR init failed: {exc}", file=sys.stderr)
         sys.exit(4)
 
     items = []

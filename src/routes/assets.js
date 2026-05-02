@@ -45,6 +45,7 @@ function registerAssetRoutes(app, deps) {
     computeBufferSha256,
     findDuplicateAssetByHash,
     buildDuplicateAssetPayload,
+    sanitizeFileName,
     getIngestStoragePath,
     buildArtifactPath,
     generateVideoProxy,

@@ -84,6 +84,8 @@ print_urls() {
   source "${ENV_FILE}"
   local provider="${OFFICE_EDITOR_PROVIDER:-libreoffice}"
   local enable_onlyoffice="${ENABLE_ONLYOFFICE:-false}"
+  local offline_mode="${MAM_OFFLINE_MODE:-true}"
+  local preload_models="${PRELOAD_ML_MODELS:-true}"
   echo
   echo "Raspberry Pi endpoints:"
   echo "  MAM browser:      http://${PUBLIC_HOST}:3000"
@@ -96,6 +98,7 @@ print_urls() {
   else
     echo "  Office provider:  ${provider} (OnlyOffice disabled)"
   fi
+  echo "  Offline ML mode:  ${offline_mode} (build preload: ${preload_models})"
   echo
   echo "Published Docker ports:"
   dc ps --format "table {{.Service}}\t{{.State}}\t{{.Ports}}" || true

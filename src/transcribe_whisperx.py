@@ -5,6 +5,24 @@ import re
 import sys
 
 
+def _truthy(value: str) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def configure_offline_env():
+    cache_root = os.getenv("MAM_MODEL_CACHE_DIR", "/opt/mam-models")
+    hf_home = os.getenv("HF_HOME") or os.path.join(cache_root, "huggingface")
+    os.environ.setdefault("HF_HOME", hf_home)
+    os.environ.setdefault("HF_HUB_CACHE", os.path.join(hf_home, "hub"))
+    os.environ.setdefault("TRANSFORMERS_CACHE", os.path.join(hf_home, "transformers"))
+    os.environ.setdefault("WHISPER_MODEL_CACHE", hf_home)
+    offline = _truthy(os.getenv("MAM_OFFLINE_MODE", "true"))
+    if offline:
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+    return offline, hf_home
+
+
 def fmt_ts(seconds: float) -> str:
     value = max(0.0, float(seconds))
     millis = int(round(value * 1000.0))
@@ -175,6 +193,7 @@ def main() -> int:
         lang = None
 
     try:
+        offline, hf_home = configure_offline_env()
         device = "cpu"
         compute_type = "int8"
         model = whisperx.load_model(model_name, device=device, compute_type=compute_type, language=lang)
@@ -194,6 +213,14 @@ def main() -> int:
         print(f"ok cues={cue_count} output={out_path}")
         return 0
     except Exception as exc:
+        if _truthy(os.getenv("MAM_OFFLINE_MODE", "true")):
+            print(
+                f"whisperx_transcribe_failed_offline: {exc}. "
+                f"Model cache root: {os.getenv('HF_HOME') or hf_home if 'hf_home' in locals() else ''}. "
+                "Prepare models during install/build with PRELOAD_ML_MODELS=true or use faster-whisper fallback.",
+                file=sys.stderr,
+            )
+            return 2
         print(f"whisperx_transcribe_failed: {exc}", file=sys.stderr)
         return 2
 

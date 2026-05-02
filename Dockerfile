@@ -2,10 +2,23 @@ FROM node:22-bookworm-slim AS deps
 
 ARG TARGETARCH
 ARG INSTALL_LIBREOFFICE=false
+ARG PRELOAD_ML_MODELS=false
+ARG PRELOAD_PADDLE_OCR=false
+ARG WHISPER_MODEL=small
+ARG HF_TOKEN=""
 
 ENV NODE_ENV=production \
   PIP_DISABLE_PIP_VERSION_CHECK=1 \
-  PYTHONDONTWRITEBYTECODE=1
+  PYTHONDONTWRITEBYTECODE=1 \
+  MAM_OFFLINE_MODE=true \
+  MAM_MODEL_CACHE_DIR=/opt/mam-models \
+  HF_HOME=/opt/mam-models/huggingface \
+  HF_HUB_CACHE=/opt/mam-models/huggingface/hub \
+  TRANSFORMERS_CACHE=/opt/mam-models/huggingface/transformers \
+  WHISPER_MODEL_CACHE=/opt/mam-models/huggingface \
+  PADDLE_PDX_CACHE_HOME=/opt/mam-models/paddle \
+  PADDLE_HOME=/opt/mam-models/paddle \
+  PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
 
 WORKDIR /app
 
@@ -34,6 +47,15 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev \
   && npm cache clean --force
+
+COPY scripts ./scripts
+
+RUN mkdir -p /opt/mam-models/huggingface /opt/mam-models/paddle \
+  && if [ "$PRELOAD_ML_MODELS" = "true" ]; then \
+      python3 scripts/prepare_offline_models.py --whisper-model "$WHISPER_MODEL" $(if [ "$PRELOAD_PADDLE_OCR" = "true" ]; then printf '%s' "--paddle-ocr"; else printf '%s' "--skip-paddle-ocr"; fi); \
+    else \
+      echo "Skipping offline model preload. Set PRELOAD_ML_MODELS=true to bake model caches into the image."; \
+    fi
 
 COPY public ./public
 COPY src ./src

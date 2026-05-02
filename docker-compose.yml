@@ -36,6 +36,10 @@ services:
       dockerfile: Dockerfile
       args:
         INSTALL_LIBREOFFICE: ${INSTALL_LIBREOFFICE:-false}
+        PRELOAD_ML_MODELS: ${PRELOAD_ML_MODELS:-true}
+        PRELOAD_PADDLE_OCR: ${PRELOAD_PADDLE_OCR:-true}
+        WHISPER_MODEL: ${WHISPER_MODEL:-small}
+        HF_TOKEN: ${HF_TOKEN:-}
     container_name: mam-app
     depends_on:
       postgres:
@@ -47,7 +51,17 @@ services:
       ELASTIC_URL: http://elasticsearch:9200
       ELASTIC_INDEX: mam_assets
       PORT: 3000
-      PADDLE_PDX_CACHE_HOME: /app/uploads/.paddlex
+      MAM_OFFLINE_MODE: ${MAM_OFFLINE_MODE:-true}
+      MAM_MODEL_CACHE_DIR: /opt/mam-models
+      HF_HOME: /opt/mam-models/huggingface
+      HF_HUB_CACHE: /opt/mam-models/huggingface/hub
+      TRANSFORMERS_CACHE: /opt/mam-models/huggingface/transformers
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-1}
+      TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-1}
+      WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      WHISPER_MODEL_CACHE: /opt/mam-models/huggingface
+      PADDLE_PDX_CACHE_HOME: /opt/mam-models/paddle
+      PADDLE_HOME: /opt/mam-models/paddle
       PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True"
       PADDLE_OCR_ALLOW_FALLBACK: "false"
       KEYCLOAK_INTERNAL_URL: http://keycloak:8080
