@@ -73,8 +73,11 @@ const HF_HUB_CACHE = process.env.HF_HUB_CACHE || path.join(HF_HOME, 'hub');
 const TRANSFORMERS_CACHE = process.env.TRANSFORMERS_CACHE || path.join(HF_HOME, 'transformers');
 const WHISPER_MODEL_CACHE = process.env.WHISPER_MODEL_CACHE || HF_HOME;
 const PADDLE_CACHE_DIR = process.env.PADDLE_PDX_CACHE_HOME || path.join(MAM_MODEL_CACHE_DIR, 'paddle');
+const DOWNLOAD_AUDIT_THROTTLE_MS = Math.max(60_000, Math.min(3_600_000, Number(process.env.DOWNLOAD_AUDIT_THROTTLE_MS) || 300_000));
+const recentDownloadAuditKeys = new Map();
 app.use(express.json({ limit: '300mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use('/uploads', auditUploadDownloadRequest);
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 const WORKFLOW = ['Ingested', 'QC', 'Approved', 'Published', 'Archived'];
@@ -3559,6 +3562,82 @@ function publicUploadUrlToAbsolutePath(publicUrl) {
   if (!url.startsWith('/uploads/')) return '';
   const rel = url.replace('/uploads/', '');
   return path.join(UPLOADS_DIR, rel);
+}
+
+function pruneDownloadAuditCache(now = Date.now()) {
+  if (recentDownloadAuditKeys.size < 2000) return;
+  for (const [key, ts] of recentDownloadAuditKeys.entries()) {
+    if (now - Number(ts || 0) > DOWNLOAD_AUDIT_THROTTLE_MS) {
+      recentDownloadAuditKeys.delete(key);
+    }
+  }
+}
+
+function shouldAuditUploadAccess(publicUrl) {
+  const safeUrl = String(publicUrl || '').split('?')[0];
+  if (!safeUrl.startsWith('/uploads/')) return false;
+  const lower = safeUrl.toLowerCase();
+  if (lower.includes('/thumbnails/')) return false;
+  if (lower.includes('/subtitles/')) return false;
+  if (lower.includes('/ocr/')) return false;
+  if (/\.(vtt|srt|json|txt|jpg|jpeg|png|webp|gif|svg)$/i.test(lower)) return false;
+  return true;
+}
+
+async function findAssetForPublicUploadUrl(publicUrl) {
+  const safeUrl = String(publicUrl || '').split('?')[0];
+  if (!safeUrl.startsWith('/uploads/')) return null;
+  const result = await pool.query(
+    `
+      SELECT id, title, file_name, media_url, proxy_url
+      FROM assets
+      WHERE media_url = $1
+         OR proxy_url = $1
+         OR CONCAT('/uploads/proxies/', proxy_url) = $1
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `,
+    [safeUrl]
+  );
+  return result.rows?.[0] || null;
+}
+
+function auditUploadDownloadRequest(req, res, next) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  const publicUrl = `/uploads/${String(req.path || '').replace(/^\/+/, '')}`;
+  if (!shouldAuditUploadAccess(publicUrl)) return next();
+  res.on('finish', () => {
+    if (res.statusCode < 200 || res.statusCode >= 300) return;
+    setTimeout(async () => {
+      try {
+        const row = await findAssetForPublicUploadUrl(publicUrl);
+        if (!row) return;
+        const context = buildUserContextFromRequest(req);
+        const actorKey = String(context.username || context.email || context.displayName || '').trim().toLowerCase() || 'unknown';
+        const cacheKey = `${actorKey}|${row.id}|${publicUrl}`;
+        const now = Date.now();
+        pruneDownloadAuditCache(now);
+        const previous = Number(recentDownloadAuditKeys.get(cacheKey) || 0);
+        if (previous && now - previous < DOWNLOAD_AUDIT_THROTTLE_MS) return;
+        recentDownloadAuditKeys.set(cacheKey, now);
+        await recordAuditEvent(req, {
+          action: 'asset.downloaded',
+          targetType: 'asset',
+          targetId: row.id,
+          targetTitle: String(row.title || row.file_name || row.id),
+          details: {
+            source: 'uploads_static',
+            url: publicUrl,
+            range: String(req.headers?.range || ''),
+            userAgent: String(req.headers?.['user-agent'] || '').slice(0, 160)
+          }
+        });
+      } catch (_error) {
+        // Static file access must never depend on audit logging.
+      }
+    }, 0);
+  });
+  return next();
 }
 
 function normalizePublicUploadUrl(value, defaultSubdir = '') {
