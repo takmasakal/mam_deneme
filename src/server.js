@@ -5559,12 +5559,19 @@ async function recordAuditEvent(req, event = {}) {
       || ''
     ).trim() || 'unknown';
     const details = event.details && typeof event.details === 'object' ? event.details : {};
+    const requestClient = detectAuditClient(req);
+    const clientMedium = String(
+      event.clientMedium
+      || details.client
+      || requestClient.client
+      || ''
+    ).trim();
     await pool.query(
       `
         INSERT INTO audit_events (
           id, created_at, actor, action, target_type, target_id, target_title,
-          details, ip, user_agent
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)
+          client_medium, details, ip, user_agent
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11)
       `,
       [
         nanoid(),
@@ -5574,6 +5581,7 @@ async function recordAuditEvent(req, event = {}) {
         String(event.targetType || '').trim(),
         String(event.targetId || '').trim(),
         String(event.targetTitle || '').trim(),
+        clientMedium,
         JSON.stringify(details),
         String(req?.headers?.['x-forwarded-for'] || req?.socket?.remoteAddress || req?.ip || '').split(',')[0].trim(),
         String(req?.headers?.['user-agent'] || '').slice(0, 500)

@@ -960,7 +960,7 @@ app.get('/api/admin/audit-events', async (req, res) => {
     values.push(limit);
     const result = await pool.query(
       `
-        SELECT id, created_at, actor, action, target_type, target_id, target_title, details, ip, user_agent
+        SELECT id, created_at, actor, action, target_type, target_id, target_title, client_medium, details, ip, user_agent
         FROM audit_events
         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
         ORDER BY created_at DESC
@@ -978,6 +978,7 @@ app.get('/api/admin/audit-events', async (req, res) => {
         targetType: row.target_type,
         targetId: row.target_id,
         targetTitle: row.target_title,
+        clientMedium: row.client_medium || '',
         details: row.details || {},
         ip: row.ip,
         userAgent: row.user_agent

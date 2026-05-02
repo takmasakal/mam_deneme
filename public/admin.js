@@ -2027,13 +2027,18 @@ function renderAuditEvents(events = []) {
   auditEventsRows.innerHTML = events.map((event) => {
     const created = formatAdminDateTime(event.createdAt);
     const title = event.targetTitle || event.targetId || event.targetType || '-';
-    const details = event.details && typeof event.details === 'object'
+    const detailEntries = event.details && typeof event.details === 'object'
       ? Object.entries(event.details)
-        .slice(0, 4)
-        .map(([key, value]) => `${auditDetailLabel(key)}: ${auditDetailValue(key, value)}`)
-        .filter(Boolean)
-        .join(' · ')
-      : '';
+      : [];
+    const clientMedium = String(event.clientMedium || event.details?.client || '').trim();
+    const details = [
+      ...(clientMedium ? [['client', clientMedium]] : []),
+      ...detailEntries.filter(([key]) => key !== 'client')
+    ]
+      .slice(0, 4)
+      .map(([key, value]) => `${auditDetailLabel(key)}: ${auditDetailValue(key, value)}`)
+      .filter(Boolean)
+      .join(' · ');
     return `
       <div class="row audit-event-row">
         <strong>${escapeHtml(created)} · ${escapeHtml(event.actor || 'unknown')}</strong>

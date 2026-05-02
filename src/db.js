@@ -168,10 +168,25 @@ async function initDb() {
       target_type TEXT NOT NULL DEFAULT '',
       target_id TEXT NOT NULL DEFAULT '',
       target_title TEXT NOT NULL DEFAULT '',
+      client_medium TEXT NOT NULL DEFAULT '',
       details JSONB NOT NULL DEFAULT '{}'::jsonb,
       ip TEXT NOT NULL DEFAULT '',
       user_agent TEXT NOT NULL DEFAULT ''
     );
+
+    ALTER TABLE audit_events
+      ADD COLUMN IF NOT EXISTS client_medium TEXT NOT NULL DEFAULT '';
+
+    UPDATE audit_events
+    SET client_medium = COALESCE(
+      NULLIF(details->>'client', ''),
+      CASE
+        WHEN user_agent ~* '(metmam|flutter|dart|okhttp|cfnetwork|dalvik)' THEN 'mobile'
+        WHEN user_agent ~* '(mozilla|chrome|safari|firefox|edge|edg/)' THEN 'web'
+        ELSE ''
+      END
+    )
+    WHERE client_medium = '';
 
     CREATE TABLE IF NOT EXISTS learned_turkish_corrections (
       wrong_key TEXT PRIMARY KEY,
@@ -214,6 +229,7 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_audit_events_created ON audit_events(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_audit_events_action ON audit_events(action);
     CREATE INDEX IF NOT EXISTS idx_audit_events_actor ON audit_events(actor);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_client_medium ON audit_events(client_medium);
     CREATE INDEX IF NOT EXISTS idx_audit_events_target ON audit_events(target_type, target_id);
   `);
 }
