@@ -2706,7 +2706,6 @@ async function saveAssetSubtitleMetadata(assetId, row, subtitleUrl, subtitleLang
     await syncSubtitleCueIndexForAssetRow(updatedRow);
   } catch (error) {
     console.error(`Subtitle metadata saved but cue index failed for asset ${assetId}: ${error?.message || error}`);
-    throw error;
   }
   return updatedRow;
 }

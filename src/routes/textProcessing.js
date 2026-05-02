@@ -109,7 +109,8 @@ function registerTextProcessingRoutes(app, deps) {
         subtitleLabel: safeName,
         asset: mapAssetRow(updatedRow)
       });
-    } catch (_error) {
+    } catch (error) {
+      console.error(`Failed to upload subtitle for asset ${req.params.id}: ${error?.message || error}`);
       return res.status(500).json({ error: 'Failed to upload subtitle' });
     }
   });
