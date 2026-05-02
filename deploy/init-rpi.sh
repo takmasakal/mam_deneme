@@ -40,19 +40,17 @@ mkdir -p "${ROOT_DIR}/uploads" "${DEPLOY_DIR}/keycloak"
 
 REQUESTED_OFFICE_EDITOR_PROVIDER="${OFFICE_EDITOR_PROVIDER:-}"
 REQUESTED_ENABLE_ONLYOFFICE="${ENABLE_ONLYOFFICE:-}"
-
-PUBLIC_HOST="${1:-${PUBLIC_HOST:-}}"
-if [[ -z "${PUBLIC_HOST}" ]]; then
-  PUBLIC_HOST="$(detect_host)"
-fi
-if [[ -z "${PUBLIC_HOST}" ]]; then
-  echo "Could not detect PUBLIC_HOST automatically."
-  exit 1
-fi
+REQUESTED_PUBLIC_HOST="${1:-${PUBLIC_HOST:-}}"
 
 if [[ -f "${ENV_OUT}" ]]; then
   # shellcheck disable=SC1090
   source "${ENV_OUT}"
+fi
+
+PUBLIC_HOST="${REQUESTED_PUBLIC_HOST:-$(detect_host)}"
+if [[ -z "${PUBLIC_HOST}" ]]; then
+  echo "Could not detect PUBLIC_HOST automatically."
+  exit 1
 fi
 
 KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
