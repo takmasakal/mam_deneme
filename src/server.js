@@ -7200,6 +7200,7 @@ registerTextProcessingRoutes(app, {
   getLatestVideoOcrJobForAsset,
   getLatestMediaProcessingJobForAsset,
   sanitizeVideoOcrItems,
+  sanitizeSubtitleItems,
   saveAssetVideoOcrMetadata,
   publicUploadUrlToAbsolutePath,
   safeRmDir,

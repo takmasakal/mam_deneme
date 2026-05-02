@@ -24,6 +24,7 @@ function registerTextProcessingRoutes(app, deps) {
     getLatestVideoOcrJobForAsset,
     getLatestMediaProcessingJobForAsset,
     sanitizeVideoOcrItems,
+    sanitizeSubtitleItems,
     saveAssetVideoOcrMetadata,
     publicUploadUrlToAbsolutePath,
     safeRmDir,
@@ -585,7 +586,8 @@ function registerTextProcessingRoutes(app, deps) {
         subtitleLabel,
         asset: mapAssetRow(updatedRow)
       });
-    } catch (_error) {
+    } catch (error) {
+      console.error(`Failed to update subtitle metadata for asset ${req.params.id}: ${error?.message || error}`);
       return res.status(500).json({ error: 'Failed to update subtitle metadata' });
     }
   });
@@ -649,7 +651,8 @@ function registerTextProcessingRoutes(app, deps) {
         subtitleCuesCleared: !nextActive,
         asset: mapAssetRow(updatedResult.rows[0])
       });
-    } catch (_error) {
+    } catch (error) {
+      console.error(`Failed to remove subtitle for asset ${req.params.id}: ${error?.message || error}`);
       return res.status(500).json({ error: 'Failed to remove subtitle' });
     }
   });
