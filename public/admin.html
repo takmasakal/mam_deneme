@@ -5,32 +5,66 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MAM Admin</title>
     <link rel="stylesheet" href="/styles.css?v=20260424-seek-preview-1" />
-    <link rel="stylesheet" href="/admin.css?v=20260424-admin-players-1" />
+    <link rel="stylesheet" href="/admin.css?v=20260430-admin-mam-theme-1" />
   </head>
   <body>
     <main class="admin-wrap">
-      <header class="admin-header">
-        <div>
-          <h1 data-i18n="admin_title">Admin Settings</h1>
-          <p data-i18n="admin_subtitle">Workflow tracking, proxy generation, and system health.</p>
+      <aside class="admin-sidebar">
+        <div class="admin-brand">
+          <span class="admin-brand-mark">M</span>
+          <div>
+            <strong>MAM Admin</strong>
+            <small>Control Center</small>
+          </div>
         </div>
-        <div class="admin-actions">
-          <select id="languageSelectAdmin">
-            <option value="en">English</option>
-            <option value="tr">Türkçe</option>
-          </select>
-          <a href="/" class="back-link" data-i18n="back_to_mam">Back to MAM</a>
-        </div>
-      </header>
+        <nav class="admin-tabs" id="adminTabs">
+          <button type="button" class="admin-tab active" data-tab="apiHelp" data-i18n="api_help_doc_title">API Help Document</button>
+          <button type="button" class="admin-tab" data-tab="systemHealth" data-i18n="system_health">System Health</button>
+          <button type="button" class="admin-tab" data-tab="runtimeDiagnostics" data-i18n="runtime_diagnostics">Diagnostik</button>
+          <button type="button" class="admin-tab" data-tab="auditEvents" data-i18n="audit_events">İşlem Geçmişi</button>
+          <button type="button" class="admin-tab" data-tab="settings" data-i18n="settings">Settings</button>
+        </nav>
+      </aside>
 
-      <nav class="admin-tabs" id="adminTabs">
-        <button type="button" class="admin-tab active" data-tab="apiHelp" data-i18n="api_help_doc_title">API Help Document</button>
-        <button type="button" class="admin-tab" data-tab="systemHealth" data-i18n="system_health">System Health</button>
-        <button type="button" class="admin-tab" data-tab="auditEvents" data-i18n="audit_events">İşlem Geçmişi</button>
-        <button type="button" class="admin-tab" data-tab="settings" data-i18n="settings">Settings</button>
-      </nav>
+      <section class="admin-main">
+        <header class="admin-header">
+          <div>
+            <h1 data-i18n="system_overview">System Overview</h1>
+            <p data-i18n="admin_subtitle">Workflow tracking, proxy generation, and system health.</p>
+          </div>
+          <div class="admin-actions">
+            <select id="languageSelectAdmin">
+              <option value="en">English</option>
+              <option value="tr">Türkçe</option>
+            </select>
+            <a href="/" class="back-link" data-i18n="back_to_mam">Back to MAM</a>
+          </div>
+        </header>
 
-      <section class="admin-panels">
+        <section class="admin-overview">
+          <article class="overview-card">
+            <span data-i18n="overview_active_assets">Active Assets</span>
+            <strong id="overviewActiveAssets">-</strong>
+            <small id="overviewTotalAssets">-</small>
+          </article>
+          <article class="overview-card">
+            <span data-i18n="overview_system_health">System Health</span>
+            <strong id="overviewSystemHealth">-</strong>
+            <small id="overviewSystemHealthSub">-</small>
+          </article>
+          <article class="overview-card is-warning">
+            <span data-i18n="overview_open_errors">Open Errors</span>
+            <strong id="overviewOpenErrors">-</strong>
+            <small id="overviewOpenErrorsSub">-</small>
+          </article>
+          <article class="overview-card">
+            <span data-i18n="overview_active_users">Active Users</span>
+            <strong id="overviewActiveUsers">-</strong>
+            <small data-i18n="overview_recent_window">Recent window</small>
+          </article>
+        </section>
+
+        <section class="admin-panels">
         <article class="admin-card admin-panel active" data-panel="apiHelp">
           <h2 data-i18n="api_help_doc_title">API Help Document</h2>
           <div id="apiGuideDoc" class="api-guide-doc"></div>
@@ -41,6 +75,18 @@
           <div id="ffmpegHealth" class="empty" data-i18n="loading">Loading...</div>
           <div id="systemHealthRows" class="rows"></div>
           <div id="systemJobStatus" class="system-job-status"></div>
+        </article>
+
+        <article class="admin-card admin-panel" data-panel="runtimeDiagnostics">
+          <div class="admin-section-head">
+            <h2 data-i18n="runtime_diagnostics">Diagnostik</h2>
+            <button id="refreshRuntimeDiagnosticsBtn" type="button" data-i18n="refresh">Yenile</button>
+          </div>
+          <h3 data-i18n="active_users">Anlık Kullanıcılar</h3>
+          <div id="activeUsersRows" class="rows"></div>
+          <h3 data-i18n="error_logs">Hata Logları</h3>
+          <div id="runtimeErrorRows" class="rows"></div>
+          <div id="runtimeDiagnosticsMsg" class="admin-note"></div>
         </article>
 
         <article class="admin-card admin-panel" data-panel="auditEvents">
@@ -359,10 +405,11 @@
             <div id="userPermissionsMsg" class="admin-note"></div>
           </section>
         </article>
+        </section>
       </section>
     </main>
 
     <script src="/admin-records.js?v=20260424-admin-refactor-1"></script>
-    <script src="/admin.js?v=20260424-admin-players-1"></script>
+    <script src="/admin.js?v=20260430-admin-dashboard-1"></script>
   </body>
 </html>

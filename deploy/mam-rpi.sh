@@ -28,10 +28,12 @@ fi
 dc() {
   local profile_args=()
   local provider=""
+  local enable_onlyoffice=""
   if [[ -f "${ENV_FILE}" ]]; then
     provider="$(grep -E '^OFFICE_EDITOR_PROVIDER=' "${ENV_FILE}" | tail -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" | tr '[:upper:]' '[:lower:]' || true)"
+    enable_onlyoffice="$(grep -E '^ENABLE_ONLYOFFICE=' "${ENV_FILE}" | tail -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" | tr '[:upper:]' '[:lower:]' || true)"
   fi
-  if [[ "${provider}" == "onlyoffice" ]]; then
+  if [[ "${provider}" == "onlyoffice" && "${enable_onlyoffice}" == "true" ]]; then
     profile_args=(--profile onlyoffice)
   fi
   # shellcheck disable=SC2086
@@ -59,13 +61,46 @@ should_build_app() {
 }
 
 warn_office_config() {
-  local provider install_libreoffice
+  local provider install_libreoffice enable_onlyoffice
   provider="$(env_value OFFICE_EDITOR_PROVIDER | tr '[:upper:]' '[:lower:]')"
   install_libreoffice="$(env_value INSTALL_LIBREOFFICE | tr '[:upper:]' '[:lower:]')"
+  enable_onlyoffice="$(env_value ENABLE_ONLYOFFICE | tr '[:upper:]' '[:lower:]')"
+  if [[ "${provider}" == "onlyoffice" && "${enable_onlyoffice}" != "true" ]]; then
+    echo "WARN: OFFICE_EDITOR_PROVIDER=onlyoffice is ignored on Raspberry Pi unless ENABLE_ONLYOFFICE=true."
+    echo "      Run ./deploy/init-rpi.sh to rewrite ${ENV_FILE} with the Raspberry Pi default."
+  fi
   if [[ "${provider}" == "libreoffice" && "${install_libreoffice}" != "true" ]]; then
     echo "WARN: OFFICE_EDITOR_PROVIDER=libreoffice but INSTALL_LIBREOFFICE is not true."
     echo "      Set INSTALL_LIBREOFFICE=true in ${ENV_FILE}, then run ./deploy/mam-rpi.sh restart."
   fi
+}
+
+print_urls() {
+  if [[ ! -f "${ENV_FILE}" ]]; then
+    echo "Run ./deploy/mam-rpi.sh init first."
+    return
+  fi
+  # shellcheck disable=SC1090
+  source "${ENV_FILE}"
+  local provider="${OFFICE_EDITOR_PROVIDER:-libreoffice}"
+  local enable_onlyoffice="${ENABLE_ONLYOFFICE:-false}"
+  echo
+  echo "Raspberry Pi endpoints:"
+  echo "  MAM browser:      http://${PUBLIC_HOST}:3000"
+  echo "  Mobile/API:       http://${PUBLIC_HOST}:3001"
+  echo "  Keycloak:         http://${PUBLIC_HOST}:8081"
+  echo "  Elasticsearch:    http://${PUBLIC_HOST}:9200"
+  echo "  Postgres:         ${PUBLIC_HOST}:5432"
+  if [[ "${provider,,}" == "onlyoffice" && "${enable_onlyoffice,,}" == "true" ]]; then
+    echo "  OnlyOffice:       http://${PUBLIC_HOST}:8082"
+  else
+    echo "  Office provider:  ${provider} (OnlyOffice disabled)"
+  fi
+  echo
+  echo "Published Docker ports:"
+  dc ps --format "table {{.Service}}\t{{.State}}\t{{.Ports}}" || true
+  echo
+  echo "Browser login uses MAM browser URL; mobile/direct API uses Mobile/API URL."
 }
 
 init_if_needed() {
@@ -99,6 +134,7 @@ case "${cmd}" in
     else
       dc up -d
     fi
+    print_urls
     ;;
   down)
     dc down
@@ -112,6 +148,7 @@ case "${cmd}" in
     else
       dc up -d
     fi
+    print_urls
     ;;
   ps)
     dc ps
@@ -125,16 +162,7 @@ case "${cmd}" in
     fi
     ;;
   urls)
-    if [[ -f "${ENV_FILE}" ]]; then
-      # shellcheck disable=SC1090
-      source "${ENV_FILE}"
-      echo "MAM: http://${PUBLIC_HOST}:3000"
-      echo "Mobile/API: http://${PUBLIC_HOST}:3001"
-      echo "Keycloak: http://${PUBLIC_HOST}:8081"
-      echo "Browser login uses MAM URL; mobile/direct API uses Mobile/API URL."
-    else
-      echo "Run ./deploy/mam-rpi.sh init first."
-    fi
+    print_urls
     ;;
   reset)
     dc down -v --remove-orphans

@@ -64,6 +64,17 @@ const auditToInput = document.getElementById('auditToInput');
 const runAuditSearchBtn = document.getElementById('runAuditSearchBtn');
 const auditEventsRows = document.getElementById('auditEventsRows');
 const auditEventsMsg = document.getElementById('auditEventsMsg');
+const refreshRuntimeDiagnosticsBtn = document.getElementById('refreshRuntimeDiagnosticsBtn');
+const activeUsersRows = document.getElementById('activeUsersRows');
+const runtimeErrorRows = document.getElementById('runtimeErrorRows');
+const runtimeDiagnosticsMsg = document.getElementById('runtimeDiagnosticsMsg');
+const overviewActiveAssets = document.getElementById('overviewActiveAssets');
+const overviewTotalAssets = document.getElementById('overviewTotalAssets');
+const overviewSystemHealth = document.getElementById('overviewSystemHealth');
+const overviewSystemHealthSub = document.getElementById('overviewSystemHealthSub');
+const overviewOpenErrors = document.getElementById('overviewOpenErrors');
+const overviewOpenErrorsSub = document.getElementById('overviewOpenErrorsSub');
+const overviewActiveUsers = document.getElementById('overviewActiveUsers');
 
 let currentLang = localStorage.getItem(LOCAL_LANG) || 'en';
 let pollTimer = null;
@@ -84,8 +95,29 @@ let i18n = {
   en: {
     admin_title: 'Admin Settings',
     admin_subtitle: 'Workflow tracking, proxy generation, and system health.',
+    system_overview: 'System Overview',
+    overview_active_assets: 'Active Assets',
+    overview_system_health: 'System Health',
+    overview_open_errors: 'Open Errors',
+    overview_active_users: 'Active Users',
+    overview_recent_window: 'Recent window',
+    overview_total_assets: 'Total',
+    overview_uptime: 'Services online',
+    overview_failed_jobs: 'Failed jobs',
     back_to_mam: 'Back to MAM',
     system_health: 'System Health',
+    runtime_diagnostics: 'Diagnostics',
+    active_users: 'Active Users',
+    error_logs: 'Error Logs',
+    refresh: 'Refresh',
+    diagnostics_none: 'No data.',
+    diagnostics_load_failed: 'Failed to load diagnostics.',
+    diag_last_seen: 'Last seen',
+    diag_last_request: 'Last request',
+    diag_ip: 'IP',
+    diag_user_agent: 'User agent',
+    diag_error_source: 'Source',
+    diag_error_status: 'Status',
     audit_events: 'Audit Log',
     settings: 'Settings',
     loading: 'Loading...',
@@ -130,6 +162,13 @@ let i18n = {
     api_help_postman_step3: 'When token protection is ON, send either X-API-Token or Authorization: Bearer <token>.',
     api_help_postman_step4: 'Disable auto-follow redirects when testing through port 3000.',
     api_help_endpoints_title: 'Main Endpoints',
+    api_help_group_core: 'Core / Session',
+    api_help_group_assets: 'Assets / Search / Versions',
+    api_help_group_text: 'Subtitles / OCR',
+    api_help_group_pdf: 'PDF Tools',
+    api_help_group_office: 'Office Tools',
+    api_help_group_admin: 'Admin / Diagnostics',
+    api_help_group_records: 'Admin Records / Audit',
     settings_group_workflow: 'Workflow & Player',
     settings_group_security: 'Security',
     settings_group_identity: 'Token & OIDC',
@@ -341,8 +380,29 @@ let i18n = {
   tr: {
     admin_title: 'Yönetici Ayarları',
     admin_subtitle: 'İş akışı izleme, proxy üretimi ve sistem sağlığı.',
+    system_overview: 'Sistem Özeti',
+    overview_active_assets: 'Aktif Varlıklar',
+    overview_system_health: 'Sistem Sağlığı',
+    overview_open_errors: 'Açık Hatalar',
+    overview_active_users: 'Anlık Kullanıcılar',
+    overview_recent_window: 'Son pencere',
+    overview_total_assets: 'Toplam',
+    overview_uptime: 'Servis ayakta',
+    overview_failed_jobs: 'Başarısız iş',
     back_to_mam: "MAM'e Dön",
     system_health: 'Sistem Sağlığı',
+    runtime_diagnostics: 'Diagnostik',
+    active_users: 'Anlık Kullanıcılar',
+    error_logs: 'Hata Logları',
+    refresh: 'Yenile',
+    diagnostics_none: 'Kayıt yok.',
+    diagnostics_load_failed: 'Diagnostik bilgiler yüklenemedi.',
+    diag_last_seen: 'Son görülme',
+    diag_last_request: 'Son istek',
+    diag_ip: 'IP',
+    diag_user_agent: 'User agent',
+    diag_error_source: 'Kaynak',
+    diag_error_status: 'Durum',
     audit_events: 'İşlem Geçmişi',
     settings: 'Ayarlar',
     loading: 'Yükleniyor...',
@@ -387,6 +447,13 @@ let i18n = {
     api_help_postman_step3: 'Token koruması AÇIK ise X-API-Token veya Authorization: Bearer <token> gönderin.',
     api_help_postman_step4: '3000 portunu test ederken otomatik redirect takibini kapatın.',
     api_help_endpoints_title: 'Temel Endpointler',
+    api_help_group_core: 'Temel / Oturum',
+    api_help_group_assets: 'Varlıklar / Arama / Versiyonlar',
+    api_help_group_text: 'Altyazı / OCR',
+    api_help_group_pdf: 'PDF Araçları',
+    api_help_group_office: 'Office Araçları',
+    api_help_group_admin: 'Yönetim / Diagnostik',
+    api_help_group_records: 'Yönetim Kayıtları / Audit',
     settings_group_workflow: 'İş Akışı ve Oynatıcı',
     settings_group_security: 'Güvenlik',
     settings_group_identity: 'Token ve OIDC',
@@ -1092,6 +1159,8 @@ function openTextEditorModal({
 function renderWorkflowTracking(data) {
   const totals = data.totals || {};
   const proxies = data.proxies || {};
+  if (overviewActiveAssets) overviewActiveAssets.textContent = String(totals.total_active || 0);
+  if (overviewTotalAssets) overviewTotalAssets.textContent = `${t('overview_total_assets')}: ${totals.total_all || 0}`;
 
   workflowSummary.innerHTML = [
     `<div class="metric"><strong>${totals.total_all || 0}</strong><span>${t('assets_total')}</span></div>`,
@@ -1207,6 +1276,13 @@ function renderSystemHealth(data) {
   const services = data?.services || {};
   const integrity = data?.integrity || {};
   const recent = data?.recentJobs || {};
+  const serviceList = [services.app, services.postgres, services.elasticsearch, services.keycloak, services.oauth2Proxy];
+  const upServices = serviceList.filter((entry) => Boolean(entry?.ok)).length;
+  const failedJobs = Number(jobs.proxyFailed || 0) + Number(jobs.subtitleFailed || 0) + Number(jobs.ocrFailed || 0);
+  if (overviewSystemHealth) overviewSystemHealth.textContent = upServices === serviceList.length ? 'OK' : `${upServices}/${serviceList.length}`;
+  if (overviewSystemHealthSub) overviewSystemHealthSub.textContent = `${upServices}/${serviceList.length} ${t('overview_uptime')}`;
+  if (overviewOpenErrors) overviewOpenErrors.textContent = String(failedJobs);
+  if (overviewOpenErrorsSub) overviewOpenErrorsSub.textContent = `${t('overview_failed_jobs')}: ${failedJobs}`;
   const serviceBadge = (entry) => {
     const ok = Boolean(entry?.ok);
     const status = Number(entry?.status || 0);
@@ -1229,6 +1305,58 @@ function renderSystemHealth(data) {
         ${renderSystemJobGroup('health_ocr_jobs', recent.ocr || {}, 'ocr')}
       </div>
     `;
+  }
+}
+
+function renderRuntimeDiagnostics(data = {}) {
+  const users = Array.isArray(data.activeUsers) ? data.activeUsers : [];
+  const errors = Array.isArray(data.errors) ? data.errors : [];
+  if (overviewActiveUsers) overviewActiveUsers.textContent = String(users.length);
+  if (overviewOpenErrors) overviewOpenErrors.textContent = String(errors.length);
+  if (overviewOpenErrorsSub) overviewOpenErrorsSub.textContent = `${t('error_logs')}: ${errors.length}`;
+  if (activeUsersRows) {
+    activeUsersRows.innerHTML = users.length ? users.map((user) => {
+      const actor = user.displayName || user.username || user.email || user.actor || 'unknown';
+      const request = `${user.lastMethod || ''} ${user.lastPath || ''}`.trim() || '-';
+      return `
+        <div class="row runtime-row">
+          <strong>${escapeHtml(actor)}</strong>
+          <span>
+            ${escapeHtml(t('diag_last_seen'))}: ${escapeHtml(formatAdminDateTime(user.lastSeenAt))}
+            | ${escapeHtml(t('diag_last_request'))}: ${escapeHtml(request)}
+            | ${escapeHtml(t('diag_ip'))}: ${escapeHtml(user.ip || '-')}
+          </span>
+          ${user.userAgent ? `<small>${escapeHtml(t('diag_user_agent'))}: ${escapeHtml(user.userAgent)}</small>` : ''}
+        </div>
+      `;
+    }).join('') : `<div class="empty">${escapeHtml(t('diagnostics_none'))}</div>`;
+  }
+  if (runtimeErrorRows) {
+    runtimeErrorRows.innerHTML = errors.length ? errors.map((item) => {
+      const pathText = `${item.method || ''} ${item.path || ''}`.trim();
+      return `
+        <div class="row runtime-row runtime-error-row">
+          <strong>${escapeHtml(formatAdminDateTime(item.createdAt))} · ${escapeHtml(item.actor || 'system')}</strong>
+          <span>
+            ${escapeHtml(t('diag_error_source'))}: ${escapeHtml(item.source || '-')}
+            ${item.status ? ` | ${escapeHtml(t('diag_error_status'))}: ${escapeHtml(String(item.status))}` : ''}
+            ${pathText ? ` | ${escapeHtml(pathText)}` : ''}
+          </span>
+          <small>${escapeHtml(item.message || '-')}</small>
+          ${item.stack ? `<pre>${escapeHtml(item.stack)}</pre>` : ''}
+        </div>
+      `;
+    }).join('') : `<div class="empty">${escapeHtml(t('diagnostics_none'))}</div>`;
+  }
+}
+
+async function loadRuntimeDiagnostics() {
+  if (runtimeDiagnosticsMsg) runtimeDiagnosticsMsg.textContent = '';
+  try {
+    const data = await api('/api/admin/runtime-diagnostics?limit=100');
+    renderRuntimeDiagnostics(data);
+  } catch (error) {
+    if (runtimeDiagnosticsMsg) runtimeDiagnosticsMsg.textContent = error.message || t('diagnostics_load_failed');
   }
 }
 
@@ -1597,6 +1725,7 @@ function applyAdminAccessMode(me = {}) {
 
   setAdminTabVisibility('apiHelp', !isTextOnly);
   setAdminTabVisibility('systemHealth', !isTextOnly);
+  setAdminTabVisibility('runtimeDiagnostics', !isTextOnly);
   setAdminTabVisibility('auditEvents', !isTextOnly);
   setAdminTabVisibility('settings', true);
 
@@ -1650,13 +1779,140 @@ function renderApiGuide() {
   const assetsCmd = `curl -s "${directBase}/api/assets?trash=active" \\\n  -H "X-API-Token: ${tokenHeader}"`;
   const oneAssetCmd = `curl -s ${directBase}/api/assets/${sampleAssetId} \\\n  -H "X-API-Token: ${tokenHeader}"`;
   const collectionCmd = `curl -s -X POST ${directBase}/api/collections \\\n  -H "Content-Type: application/json" \\\n  -H "X-API-Token: ${tokenHeader}" \\\n  -d '{"name":"News Rundown","assetIds":["${sampleAssetId}"]}'`;
+  const endpointGroups = [
+    {
+      title: t('api_help_group_core'),
+      endpoints: [
+        'GET    /api/workflow',
+        'GET    /api/me',
+        'GET    /api/logout-url',
+        'GET    /api/ui-settings',
+        'GET    /api/collections',
+        'POST   /api/collections'
+      ]
+    },
+    {
+      title: t('api_help_group_assets'),
+      endpoints: [
+        'GET    /api/assets',
+        'GET    /api/assets/suggest',
+        'GET    /api/assets/ocr-suggest',
+        'GET    /api/assets/subtitle-suggest',
+        'POST   /api/assets',
+        'POST   /api/assets/upload',
+        'GET    /api/assets/:id',
+        'PATCH  /api/assets/:id',
+        'GET    /api/assets/:id/technical',
+        'GET    /api/assets/:id/preview-text',
+        'POST   /api/assets/:id/transition',
+        'POST   /api/assets/:id/trash',
+        'POST   /api/assets/:id/restore',
+        'DELETE /api/assets/:id',
+        'POST   /api/assets/:id/cuts',
+        'PATCH  /api/assets/:id/cuts/:cutId',
+        'DELETE /api/assets/:id/cuts/:cutId',
+        'POST   /api/assets/:id/versions',
+        'PATCH  /api/assets/:id/versions/:versionId',
+        'DELETE /api/assets/:id/versions/:versionId',
+        'POST   /api/assets/:id/ensure-proxy',
+        'POST   /api/assets/backfill-proxies'
+      ]
+    },
+    {
+      title: t('api_help_group_text'),
+      endpoints: [
+        'POST   /api/assets/:id/subtitles',
+        'PATCH  /api/assets/:id/subtitles',
+        'DELETE /api/assets/:id/subtitles',
+        'POST   /api/assets/:id/subtitles/generate',
+        'GET    /api/assets/:id/subtitles/search',
+        'GET    /api/assets/:id/subtitles/suggest',
+        'GET    /api/subtitle-jobs/:jobId',
+        'POST   /api/assets/:id/video-ocr/extract',
+        'GET    /api/assets/:id/video-ocr/latest',
+        'GET    /api/assets/:id/video-ocr/search',
+        'POST   /api/assets/:id/video-ocr/save',
+        'GET    /api/video-ocr-jobs/:jobId',
+        'GET    /api/video-ocr-jobs/:jobId/download'
+      ]
+    },
+    {
+      title: t('api_help_group_pdf'),
+      endpoints: [
+        'GET    /api/assets/:id/pdf-search',
+        'GET    /api/assets/:id/pdf-search-ocr',
+        'GET    /api/assets/:id/pdf-page-text',
+        'GET    /api/assets/:id/pdf-meta',
+        'GET    /api/assets/:id/pdf-page-image',
+        'POST   /api/assets/:id/pdf/save',
+        'POST   /api/assets/:id/pdf-restore',
+        'POST   /api/assets/:id/pdf-restore-original',
+        'GET    /api/assets/:id/pdf-original/download'
+      ]
+    },
+    {
+      title: t('api_help_group_office'),
+      endpoints: [
+        'GET    /api/assets/:id/office-config',
+        'POST   /api/assets/:id/office-callback',
+        'GET    /api/assets/:id/libreoffice-preview.pdf',
+        'POST   /api/assets/:id/office-restore',
+        'POST   /api/assets/:id/office-restore-original',
+        'GET    /api/assets/:id/office-original/download'
+      ]
+    },
+    {
+      title: t('api_help_group_admin'),
+      endpoints: [
+        'GET    /api/admin/settings',
+        'PATCH  /api/admin/settings',
+        'POST   /api/admin/api-token/rotate',
+        'GET    /api/admin/system-health',
+        'GET    /api/admin/runtime-diagnostics',
+        'GET    /api/admin/ffmpeg-health',
+        'GET    /api/admin/workflow-tracking',
+        'POST   /api/admin/search/reindex',
+        'POST   /api/admin/proxy-jobs',
+        'GET    /api/admin/proxy-jobs',
+        'GET    /api/admin/proxy-jobs/:id',
+        'GET    /api/admin/assets/suggest',
+        'POST   /api/admin/proxy-tools/run',
+        'GET    /api/admin/user-permissions',
+        'PATCH  /api/admin/user-permissions/:username'
+      ]
+    },
+    {
+      title: t('api_help_group_records'),
+      endpoints: [
+        'GET    /api/admin/audit-events',
+        'GET    /api/admin/ocr-records',
+        'PATCH  /api/admin/ocr-records',
+        'DELETE /api/admin/ocr-records',
+        'GET    /api/admin/ocr-records/content',
+        'PATCH  /api/admin/ocr-records/content',
+        'GET    /api/admin/subtitle-records',
+        'PATCH  /api/admin/subtitle-records',
+        'DELETE /api/admin/subtitle-records',
+        'GET    /api/admin/subtitle-records/content',
+        'PATCH  /api/admin/subtitle-records/content',
+        'GET    /api/admin/text-search',
+        'GET    /api/admin/turkish-corrections',
+        'POST   /api/admin/turkish-corrections',
+        'PUT    /api/admin/turkish-corrections',
+        'DELETE /api/admin/turkish-corrections'
+      ]
+    }
+  ];
+  const endpointSections = endpointGroups.map((group) => (
+    `<h4>${escapeHtml(group.title)}</h4><pre>${escapeHtml(group.endpoints.join('\n'))}</pre>`
+  )).join('');
 
   apiGuideDoc.innerHTML = [
     `<p>${escapeHtml(t('api_help_intro'))}</p>`,
     `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_auth_title'))}</h3><p>${escapeHtml(t('api_help_auth_note'))}</p><p>${escapeHtml(bearerEnabled ? t('api_help_bearer_on') : t('api_help_bearer_off'))}</p><p>${escapeHtml(tokenEnabled ? t('api_help_token_on') : t('api_help_token_off'))}</p><p>${escapeHtml(t('api_help_token_hint'))} (${escapeHtml(masked)})</p></div>`,
     `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_quick_title'))}</h3><p><strong>${escapeHtml(t('api_help_cmd_workflow'))}</strong></p><pre>${escapeHtml(workflowCmd)}</pre><p><strong>${escapeHtml(t('api_help_cmd_assets'))}</strong></p><pre>${escapeHtml(assetsCmd)}</pre><p><strong>${escapeHtml(t('api_help_cmd_asset_by_id'))}</strong></p><pre>${escapeHtml(oneAssetCmd)}</pre><p><strong>${escapeHtml(t('api_help_cmd_create_collection'))}</strong></p><pre>${escapeHtml(collectionCmd)}</pre></div>`,
     `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_postman_title'))}</h3><ul><li>${escapeHtml(t('api_help_postman_step1'))}</li><li>${escapeHtml(postmanUrlStep)}</li><li>${escapeHtml(t('api_help_postman_step3'))}</li><li>${escapeHtml(t('api_help_postman_step4'))}</li></ul></div>`,
-    `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_endpoints_title'))}</h3><pre>${escapeHtml(`GET    /api/workflow\nGET    /api/me\nGET    /api/assets\nPOST   /api/assets\nPOST   /api/assets/upload\nGET    /api/assets/:id\nPATCH  /api/assets/:id\nPOST   /api/assets/:id/transition\nPOST   /api/assets/:id/versions\nPOST   /api/assets/:id/cuts\nPATCH  /api/assets/:id/cuts/:cutId\nDELETE /api/assets/:id/cuts/:cutId\nPOST   /api/assets/:id/trash\nPOST   /api/assets/:id/restore\nDELETE /api/assets/:id\nGET    /api/collections\nPOST   /api/collections\n\nGET    /api/admin/system-health\nGET    /api/admin/ocr-records\nPATCH  /api/admin/ocr-records\nDELETE /api/admin/ocr-records\nGET    /api/admin/ocr-records/content\nPATCH  /api/admin/ocr-records/content\nGET    /api/admin/subtitle-records\nPATCH  /api/admin/subtitle-records\nDELETE /api/admin/subtitle-records\nGET    /api/admin/subtitle-records/content\nPATCH  /api/admin/subtitle-records/content\nGET    /api/admin/text-search`)}</pre></div>`
+    `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_endpoints_title'))}</h3>${endpointSections}</div>`
   ].join('');
 }
 
@@ -1805,14 +2061,16 @@ async function loadSettings() {
 }
 
 async function refreshTrackingAndHealth() {
-  const [tracking, health, systemHealth] = await Promise.all([
+  const [tracking, health, systemHealth, diagnostics] = await Promise.all([
     api('/api/admin/workflow-tracking'),
     api('/api/admin/ffmpeg-health'),
-    api('/api/admin/system-health')
+    api('/api/admin/system-health'),
+    api('/api/admin/runtime-diagnostics?limit=100').catch(() => null)
   ]);
   renderWorkflowTracking(tracking);
   renderHealth(health);
   renderSystemHealth(systemHealth);
+  if (diagnostics) renderRuntimeDiagnostics(diagnostics);
 }
 
 async function pollJob() {
@@ -2139,7 +2397,17 @@ adminTabs.forEach((btn) => {
       loadAuditEvents().catch((error) => {
         if (auditEventsMsg) auditEventsMsg.textContent = String(error.message || 'Request failed');
       });
+    } else if (target === 'runtimeDiagnostics') {
+      loadRuntimeDiagnostics().catch((error) => {
+        if (runtimeDiagnosticsMsg) runtimeDiagnosticsMsg.textContent = String(error.message || 'Request failed');
+      });
     }
+  });
+});
+
+refreshRuntimeDiagnosticsBtn?.addEventListener('click', () => {
+  loadRuntimeDiagnostics().catch((error) => {
+    if (runtimeDiagnosticsMsg) runtimeDiagnosticsMsg.textContent = String(error.message || 'Request failed');
   });
 });
 

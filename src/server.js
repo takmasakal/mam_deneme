@@ -172,6 +172,68 @@ const SYSTEM_HEALTH_CACHE_TTL_MS = Math.max(5, Number(process.env.SYSTEM_HEALTH_
 let keycloakUsersCache = { expiresAt: 0, value: null };
 const keycloakPermissionDefaultsCache = new Map();
 let systemHealthCache = { expiresAt: 0, value: null };
+const runtimeErrorLogs = [];
+const activeUserSessions = new Map();
+const MAX_RUNTIME_ERROR_LOGS = 300;
+const ACTIVE_USER_TTL_MS = Math.max(60, Number(process.env.ACTIVE_USER_TTL_SECONDS) || 900) * 1000;
+const ACTIVE_USER_TRACK_PATH_PREFIXES = ['/api/', '/admin.html'];
+const ACTIVE_USER_SKIP_PATH_PREFIXES = [
+  '/api/assets/',
+  '/uploads/',
+  '/static/',
+  '/favicon.ico'
+];
+
+function addRuntimeErrorLog(entry = {}) {
+  const item = {
+    id: nanoid(),
+    createdAt: new Date().toISOString(),
+    source: String(entry.source || 'app').slice(0, 80),
+    method: String(entry.method || '').slice(0, 12),
+    path: String(entry.path || '').slice(0, 400),
+    status: Number(entry.status || 0) || 0,
+    actor: String(entry.actor || '').slice(0, 160),
+    message: String(entry.message || '').slice(0, 1200),
+    stack: String(entry.stack || '').slice(0, 2400)
+  };
+  runtimeErrorLogs.unshift(item);
+  if (runtimeErrorLogs.length > MAX_RUNTIME_ERROR_LOGS) runtimeErrorLogs.length = MAX_RUNTIME_ERROR_LOGS;
+}
+
+function getRuntimeErrorLogs(limit = 100) {
+  return runtimeErrorLogs.slice(0, Math.max(1, Math.min(300, Number(limit) || 100)));
+}
+
+function getActiveUsers() {
+  const now = Date.now();
+  Array.from(activeUserSessions.entries()).forEach(([key, value]) => {
+    if (!value || now - Number(value.lastSeenMs || 0) > ACTIVE_USER_TTL_MS) activeUserSessions.delete(key);
+  });
+  return Array.from(activeUserSessions.values())
+    .sort((a, b) => String(b.lastSeenAt || '').localeCompare(String(a.lastSeenAt || '')))
+    .map(({ lastSeenMs, ...item }) => item);
+}
+
+function shouldTrackActiveUserRequest(req) {
+  const urlPath = String(req?.path || req?.url || '').split('?')[0];
+  if (!ACTIVE_USER_TRACK_PATH_PREFIXES.some((prefix) => urlPath === prefix || urlPath.startsWith(prefix))) return false;
+  if (ACTIVE_USER_SKIP_PATH_PREFIXES.some((prefix) => urlPath === prefix || urlPath.startsWith(prefix))) return false;
+  return true;
+}
+
+const originalConsoleError = console.error.bind(console);
+console.error = (...args) => {
+  addRuntimeErrorLog({
+    source: 'console.error',
+    message: args.map((arg) => {
+      if (arg instanceof Error) return `${arg.name}: ${arg.message}`;
+      if (typeof arg === 'string') return arg;
+      try { return JSON.stringify(arg); } catch (_error) { return String(arg); }
+    }).join(' '),
+    stack: args.find((arg) => arg instanceof Error)?.stack || ''
+  });
+  originalConsoleError(...args);
+};
 const searchService = createSearchService({
   pool,
   elasticUrl: ELASTIC_URL,
@@ -5571,6 +5633,44 @@ function generateApiToken() {
 
 app.use(maybeRequireApiToken);
 
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  const shouldTrackUser = shouldTrackActiveUserRequest(req);
+  const context = shouldTrackUser ? buildUserContextFromRequest(req) : null;
+  const actor = context
+    ? String(context.displayName || context.username || context.email || '').trim() || 'unknown'
+    : 'unknown';
+
+  if (shouldTrackUser) {
+    const key = String(context.username || context.email || actor || req.ip || req.socket?.remoteAddress || 'unknown').trim().toLowerCase();
+    activeUserSessions.set(key, {
+      username: String(context.username || '').trim(),
+      displayName: String(context.displayName || '').trim(),
+      email: String(context.email || '').trim(),
+      actor,
+      ip: String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || req.ip || '').split(',')[0].trim(),
+      userAgent: String(req.headers['user-agent'] || '').slice(0, 240),
+      lastPath: String(req.originalUrl || req.url || '').slice(0, 400),
+      lastMethod: String(req.method || ''),
+      lastSeenAt: new Date().toISOString(),
+      lastSeenMs: Date.now()
+    });
+  }
+
+  res.on('finish', () => {
+    if (res.statusCode < 500) return;
+    addRuntimeErrorLog({
+      source: 'http',
+      method: req.method,
+      path: req.originalUrl || req.url,
+      status: res.statusCode,
+      actor,
+      message: `HTTP ${res.statusCode} ${req.method} ${req.originalUrl || req.url} (${Date.now() - startedAt}ms)`
+    });
+  });
+  next();
+});
+
 function createProxyJob() {
   const id = nanoid();
   const job = {
@@ -6953,6 +7053,8 @@ registerAdminRoutes(app, {
   saveUserPermissionsSettings,
   getAdminSettings,
   saveAdminSettings,
+  getRuntimeErrorLogs,
+  getActiveUsers,
   normalizePlayerUiMode,
   normalizeSubtitleStyle,
   normalizeAuditRetentionDays,
@@ -6967,6 +7069,8 @@ registerAdminRoutes(app, {
   mapVideoOcrJobFromDbRow,
   OCR_DIR,
   UPLOADS_DIR,
+  SUBTITLES_DIR,
+  normalizeVttContent,
   resolveStoredUrl,
   pickLatestVideoOcrUrlFromDc,
   runCommandCapture,

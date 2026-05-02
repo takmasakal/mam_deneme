@@ -32,6 +32,8 @@ function registerAdminRoutes(app, deps) {
     saveUserPermissionsSettings,
     getAdminSettings,
     saveAdminSettings,
+    getRuntimeErrorLogs,
+    getActiveUsers,
     normalizePlayerUiMode,
     normalizeSubtitleStyle,
     normalizeAuditRetentionDays,
@@ -46,6 +48,8 @@ function registerAdminRoutes(app, deps) {
     mapVideoOcrJobFromDbRow,
     OCR_DIR,
     UPLOADS_DIR,
+    SUBTITLES_DIR,
+    normalizeVttContent,
     resolveStoredUrl,
     pickLatestVideoOcrUrlFromDc,
     runCommandCapture,
@@ -1088,6 +1092,18 @@ app.post('/api/admin/api-token/rotate', async (_req, res) => {
     return res.json({ apiToken: saved.apiToken });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to rotate API token' });
+  }
+});
+
+app.get('/api/admin/runtime-diagnostics', async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(300, Number(req.query.limit) || 100));
+    return res.json({
+      activeUsers: typeof getActiveUsers === 'function' ? getActiveUsers() : [],
+      errors: typeof getRuntimeErrorLogs === 'function' ? getRuntimeErrorLogs(limit) : []
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load runtime diagnostics' });
   }
 });
 
