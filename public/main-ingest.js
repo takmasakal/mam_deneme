@@ -143,7 +143,9 @@
       ingestForm?.addEventListener('submit', async (event) => {
         event.preventDefault();
         const formData = new FormData(ingestForm);
-        const mediaFile = formData.get('mediaFile');
+        const inputFile = mediaFileInput?.files?.[0];
+        const formFile = formData.get('mediaFile');
+        const mediaFile = inputFile || formFile;
         const submitBtn = ingestForm.querySelector('button[type="submit"]');
 
         if (!(mediaFile instanceof File) || !mediaFile.size) {
