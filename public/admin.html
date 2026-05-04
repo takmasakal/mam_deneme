@@ -22,6 +22,7 @@
           <button type="button" class="admin-tab" data-tab="systemHealth" data-i18n="system_health">System Health</button>
           <button type="button" class="admin-tab" data-tab="runtimeDiagnostics" data-i18n="runtime_diagnostics">Diagnostik</button>
           <button type="button" class="admin-tab" data-tab="auditEvents" data-i18n="audit_events">İşlem Geçmişi</button>
+          <button type="button" class="admin-tab" data-tab="assetRights" data-i18n="asset_rights">Asset Rights</button>
           <button type="button" class="admin-tab" data-tab="settings" data-i18n="settings">Settings</button>
         </nav>
       </aside>
@@ -128,6 +129,21 @@
           </div>
           <div id="auditEventsRows" class="rows"></div>
           <div id="auditEventsMsg" class="admin-note"></div>
+        </article>
+
+        <article class="admin-card admin-panel" data-panel="assetRights">
+          <h2 data-i18n="asset_rights">Asset Rights</h2>
+          <div class="proxy-tool-grid records-toolbar">
+            <label>
+              <span data-i18n="asset_rights_search">Asset Search</span>
+              <input id="assetRightsSearchInput" type="text" />
+            </label>
+            <div class="proxy-tool-actions">
+              <button id="assetRightsSearchBtn" type="button" data-i18n="asset_rights_load">Load</button>
+            </div>
+          </div>
+          <div id="assetRightsRows" class="rows"></div>
+          <div id="assetRightsMsg" class="admin-note"></div>
         </article>
 
         <article class="admin-card admin-panel" data-panel="settings">

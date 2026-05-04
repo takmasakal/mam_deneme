@@ -38,8 +38,21 @@ function registerTextProcessingRoutes(app, deps) {
     formatTimecode,
     normalizeOcrPreset,
     normalizeOcrEngine,
+    assetAccessService,
+    resolveEffectivePermissions,
     nanoid
   } = deps;
+
+  async function loadVisibleAssetRow(req, assetId) {
+    const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    const row = assetResult.rows[0] || null;
+    if (!row) return { status: 404, error: 'Asset not found', row: null, accessContext };
+    if (!assetAccessService.canViewAsset(row, accessContext)) {
+      return { status: 404, error: 'Asset not found', row: null, accessContext };
+    }
+    return { status: 200, row, accessContext };
+  }
 
   function paginateMatches(matches, offset, limit) {
     const safeOffset = Math.max(0, Number(offset) || 0);
@@ -66,12 +79,11 @@ function registerTextProcessingRoutes(app, deps) {
       if (!fileName || !fileData) {
         return res.status(400).json({ error: 'fileName and fileData are required' });
       }
-      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-      if (!assetResult.rowCount) {
-        return res.status(404).json({ error: 'Asset not found' });
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
       }
-  
-      const row = assetResult.rows[0];
+      const row = loaded.row;
       if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
         return res.status(400).json({ error: 'Subtitles are supported only for video assets' });
       }
@@ -117,12 +129,11 @@ function registerTextProcessingRoutes(app, deps) {
   
   app.post('/api/assets/:id/subtitles/generate', async (req, res) => {
     try {
-      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-      if (!assetResult.rowCount) {
-        return res.status(404).json({ error: 'Asset not found' });
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
       }
-  
-      const row = assetResult.rows[0];
+      const row = loaded.row;
       if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
         return res.status(400).json({ error: 'Subtitles are supported only for video assets' });
       }
@@ -168,6 +179,8 @@ function registerTextProcessingRoutes(app, deps) {
   app.get('/api/subtitle-jobs/:jobId', async (req, res) => {
     const job = subtitleJobs.get(String(req.params.jobId || '').trim());
     if (job) {
+      const loaded = await loadVisibleAssetRow(req, job.assetId);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
       return res.json({
         jobId: job.jobId,
         assetId: job.assetId,
@@ -190,7 +203,10 @@ function registerTextProcessingRoutes(app, deps) {
     try {
       const persisted = await getMediaProcessingJobById(req.params.jobId, 'subtitle');
       if (!persisted) return res.status(404).json({ error: 'Subtitle job not found' });
-      return res.json(mapSubtitleJobFromDbRow(persisted));
+      const mapped = mapSubtitleJobFromDbRow(persisted);
+      const loaded = await loadVisibleAssetRow(req, mapped.assetId);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      return res.json(mapped);
     } catch (_error) {
       return res.status(500).json({ error: 'Failed to load subtitle job' });
     }
@@ -198,11 +214,11 @@ function registerTextProcessingRoutes(app, deps) {
   
   app.post('/api/assets/:id/video-ocr/extract', async (req, res) => {
     try {
-      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-      if (!assetResult.rowCount) {
-        return res.status(404).json({ error: 'Asset not found' });
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
       }
-      const row = assetResult.rows[0];
+      const row = loaded.row;
       if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
         return res.status(400).json({ error: 'OCR extraction is supported only for video assets' });
       }
@@ -264,6 +280,8 @@ function registerTextProcessingRoutes(app, deps) {
   app.get('/api/video-ocr-jobs/:jobId', async (req, res) => {
     const job = videoOcrJobs.get(String(req.params.jobId || '').trim());
     if (job) {
+      const loaded = await loadVisibleAssetRow(req, job.assetId);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
       return res.json({
         jobId: job.jobId,
         assetId: job.assetId,
@@ -311,7 +329,10 @@ function registerTextProcessingRoutes(app, deps) {
     try {
       const persisted = await getMediaProcessingJobById(req.params.jobId, 'video_ocr');
       if (!persisted) return res.status(404).json({ error: 'Video OCR job not found' });
-      return res.json(mapVideoOcrJobFromDbRow(persisted));
+      const mapped = mapVideoOcrJobFromDbRow(persisted);
+      const loaded = await loadVisibleAssetRow(req, mapped.assetId);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      return res.json(mapped);
     } catch (_error) {
       return res.status(500).json({ error: 'Failed to load video OCR job' });
     }
@@ -377,9 +398,9 @@ function registerTextProcessingRoutes(app, deps) {
         });
       }
   
-      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-      if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
-      const row = assetResult.rows[0];
+      const loaded = await loadVisibleAssetRow(req, assetId);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      const row = loaded.row;
       const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
       const items = sanitizeVideoOcrItems(dc.videoOcrItems);
       if (!items.length) return res.status(404).json({ error: 'Video OCR job not found' });
@@ -417,9 +438,9 @@ function registerTextProcessingRoutes(app, deps) {
       if (!assetId) return res.status(400).json({ error: 'Asset id is required' });
       if (!query) return res.status(400).json({ error: 'q is required' });
 
-      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-      if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
-      const row = assetResult.rows[0];
+      const loaded = await loadVisibleAssetRow(req, assetId);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      const row = loaded.row;
       if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
         return res.status(400).json({ error: 'OCR search is supported only for video assets' });
       }
@@ -445,9 +466,9 @@ function registerTextProcessingRoutes(app, deps) {
     try {
       const assetId = String(req.params.id || '').trim();
       if (!assetId) return res.status(400).json({ error: 'Asset id is required' });
-      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-      if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
-      const row = assetResult.rows[0];
+      const loaded = await loadVisibleAssetRow(req, assetId);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      const row = loaded.row;
       if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
         return res.status(400).json({ error: 'OCR save is supported only for video assets' });
       }
@@ -497,7 +518,12 @@ function registerTextProcessingRoutes(app, deps) {
   app.get('/api/video-ocr-jobs/:jobId/download', async (req, res) => {
     const jobId = String(req.params.jobId || '').trim();
     const inMemory = videoOcrJobs.get(jobId);
-    const serve = (jobLike) => {
+    const serve = async (jobLike) => {
+      const assetId = String(jobLike.assetId || jobLike.asset_id || '').trim();
+      if (assetId) {
+        const loaded = await loadVisibleAssetRow(req, assetId);
+        if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      }
       if (String(jobLike.status || '') !== 'completed') {
         return res.status(409).json({ error: 'OCR file is not ready yet' });
       }
@@ -521,6 +547,7 @@ function registerTextProcessingRoutes(app, deps) {
       if (!row) return res.status(404).json({ error: 'Video OCR job not found' });
       const mapped = mapVideoOcrJobFromDbRow(row);
       return serve({
+        assetId: mapped.assetId,
         status: mapped.status,
         resultUrl: mapped.resultUrl,
         resultPath: '',
@@ -533,11 +560,11 @@ function registerTextProcessingRoutes(app, deps) {
   
   app.patch('/api/assets/:id/subtitles', async (req, res) => {
     try {
-      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-      if (!assetResult.rowCount) {
-        return res.status(404).json({ error: 'Asset not found' });
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
       }
-      const row = assetResult.rows[0];
+      const row = loaded.row;
       if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
         return res.status(400).json({ error: 'Subtitles are supported only for video assets' });
       }
@@ -595,11 +622,11 @@ function registerTextProcessingRoutes(app, deps) {
   
   app.delete('/api/assets/:id/subtitles', requireAssetDelete, async (req, res) => {
     try {
-      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-      if (!assetResult.rowCount) {
-        return res.status(404).json({ error: 'Asset not found' });
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
       }
-      const row = assetResult.rows[0];
+      const row = loaded.row;
       if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
         return res.status(400).json({ error: 'Subtitles are supported only for video assets' });
       }
@@ -668,9 +695,9 @@ function registerTextProcessingRoutes(app, deps) {
       if (!query) return res.status(400).json({ error: 'q is required' });
       if (query.length < 1) return res.json({ query, total: 0, matches: [], didYouMean: '', fuzzyUsed: false });
   
-      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-      if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
-      const row = assetResult.rows[0];
+      const loaded = await loadVisibleAssetRow(req, assetId);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      const row = loaded.row;
       if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
         return res.status(400).json({ error: 'Subtitle search is supported only for video assets' });
       }
@@ -707,9 +734,9 @@ function registerTextProcessingRoutes(app, deps) {
       if (!assetId) return res.status(400).json({ error: 'Asset id is required' });
       if (query.length < 2) return res.json([]);
   
-      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-      if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
-      const row = assetResult.rows[0];
+      const loaded = await loadVisibleAssetRow(req, assetId);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      const row = loaded.row;
       const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
       const subtitleUrl = String(dc.subtitleUrl || '').trim();
       if (!subtitleUrl) return res.json([]);

@@ -69,6 +69,10 @@ const auditToInput = document.getElementById('auditToInput');
 const runAuditSearchBtn = document.getElementById('runAuditSearchBtn');
 const auditEventsRows = document.getElementById('auditEventsRows');
 const auditEventsMsg = document.getElementById('auditEventsMsg');
+const assetRightsSearchInput = document.getElementById('assetRightsSearchInput');
+const assetRightsSearchBtn = document.getElementById('assetRightsSearchBtn');
+const assetRightsRows = document.getElementById('assetRightsRows');
+const assetRightsMsg = document.getElementById('assetRightsMsg');
 const refreshRuntimeDiagnosticsBtn = document.getElementById('refreshRuntimeDiagnosticsBtn');
 const activeUsersRows = document.getElementById('activeUsersRows');
 const runtimeErrorRows = document.getElementById('runtimeErrorRows');
@@ -124,6 +128,22 @@ let i18n = {
     diag_error_source: 'Source',
     diag_error_status: 'Status',
     audit_events: 'Audit Log',
+    asset_rights: 'Asset Rights',
+    asset_rights_search: 'Asset Search',
+    asset_rights_load: 'Load',
+    asset_rights_none: 'No asset found.',
+    asset_rights_saved: 'Asset rights saved.',
+    asset_rights_load_failed: 'Failed to load asset rights.',
+    asset_rights_save_failed: 'Failed to save asset rights.',
+    asset_visibility: 'Visibility',
+    visibility_private: 'Private',
+    visibility_group: 'Owner groups',
+    visibility_groups: 'Selected groups/users',
+    visibility_public: 'Public',
+    owner_groups: 'Owner groups',
+    allowed_groups: 'Allowed groups',
+    allowed_users: 'Allowed users',
+    save_visibility: 'Save',
     settings: 'Settings',
     loading: 'Loading...',
     workflow_tracking_enabled: 'Workflow tracking enabled',
@@ -428,6 +448,22 @@ let i18n = {
     diag_error_source: 'Kaynak',
     diag_error_status: 'Durum',
     audit_events: 'İşlem Geçmişi',
+    asset_rights: 'Varlık Yetkileri',
+    asset_rights_search: 'Varlık Ara',
+    asset_rights_load: 'Yükle',
+    asset_rights_none: 'Varlık bulunamadı.',
+    asset_rights_saved: 'Varlık yetkileri kaydedildi.',
+    asset_rights_load_failed: 'Varlık yetkileri yüklenemedi.',
+    asset_rights_save_failed: 'Varlık yetkileri kaydedilemedi.',
+    asset_visibility: 'Görünürlük',
+    visibility_private: 'Özel',
+    visibility_group: 'Sahip gruplar',
+    visibility_groups: 'Seçili grup/kullanıcı',
+    visibility_public: 'Herkese açık',
+    owner_groups: 'Sahip gruplar',
+    allowed_groups: 'İzinli gruplar',
+    allowed_users: 'İzinli kullanıcılar',
+    save_visibility: 'Kaydet',
     settings: 'Ayarlar',
     loading: 'Yükleniyor...',
     workflow_tracking_enabled: 'İş akışı izleme etkin',
@@ -1799,6 +1835,7 @@ function applyAdminAccessMode(me = {}) {
   setAdminTabVisibility('systemHealth', !isTextOnly);
   setAdminTabVisibility('runtimeDiagnostics', !isTextOnly);
   setAdminTabVisibility('auditEvents', !isTextOnly);
+  setAdminTabVisibility('assetRights', !isTextOnly);
   setAdminTabVisibility('settings', true);
 
   setSettingsSubtabVisibility('general', !isTextOnly);
@@ -2068,6 +2105,59 @@ function auditDetailValue(key, value) {
   if (Array.isArray(value)) return value.join(', ');
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
+}
+
+function parseAccessList(value) {
+  return String(value || '')
+    .split(/[,\n]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function renderAssetRightsRows(assets = []) {
+  if (!assetRightsRows) return;
+  const list = Array.isArray(assets) ? assets : [];
+  if (!list.length) {
+    assetRightsRows.innerHTML = `<div class="empty">${escapeHtml(t('asset_rights_none'))}</div>`;
+    return;
+  }
+  const visibilityOptions = ['private', 'group', 'groups', 'public'];
+  assetRightsRows.innerHTML = list.map((asset) => {
+    const selected = String(asset.visibility || 'public');
+    const options = visibilityOptions
+      .map((item) => `<option value="${escapeHtml(item)}" ${item === selected ? 'selected' : ''}>${escapeHtml(t(`visibility_${item}`))}</option>`)
+      .join('');
+    const ownerGroups = Array.isArray(asset.ownerGroups) ? asset.ownerGroups.join(', ') : '';
+    const allowedGroups = Array.isArray(asset.allowedGroups) ? asset.allowedGroups.join(', ') : '';
+    const allowedUsers = Array.isArray(asset.allowedUsers) ? asset.allowedUsers.join(', ') : '';
+    return `
+      <form class="row asset-rights-row" data-asset-id="${escapeHtml(asset.id || '')}">
+        <div>
+          <strong>${escapeHtml(asset.title || asset.fileName || asset.id || '')}</strong>
+          <span>${escapeHtml(asset.type || '-')} · ${escapeHtml(asset.owner || '-')} · ${escapeHtml(asset.fileName || '')}</span>
+        </div>
+        <label>${escapeHtml(t('asset_visibility'))}<select name="visibility">${options}</select></label>
+        <label>${escapeHtml(t('owner_groups'))}<input value="${escapeHtml(ownerGroups)}" disabled /></label>
+        <label>${escapeHtml(t('allowed_groups'))}<input name="allowedGroups" value="${escapeHtml(allowedGroups)}" /></label>
+        <label>${escapeHtml(t('allowed_users'))}<input name="allowedUsers" value="${escapeHtml(allowedUsers)}" /></label>
+        <button type="submit">${escapeHtml(t('save_visibility'))}</button>
+      </form>
+    `;
+  }).join('');
+}
+
+async function loadAssetRightsRows() {
+  if (!assetRightsRows) return;
+  const params = new URLSearchParams();
+  const q = String(assetRightsSearchInput?.value || '').trim();
+  if (q) params.set('q', q);
+  try {
+    const result = await api(`/api/admin/assets/access?${params.toString()}`);
+    renderAssetRightsRows(result.assets || []);
+    if (assetRightsMsg) assetRightsMsg.textContent = '';
+  } catch (error) {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || t('asset_rights_load_failed'));
+  }
 }
 
 function renderAuditEvents(events = []) {
@@ -2498,6 +2588,10 @@ adminTabs.forEach((btn) => {
       loadRuntimeDiagnostics().catch((error) => {
         if (runtimeDiagnosticsMsg) runtimeDiagnosticsMsg.textContent = String(error.message || 'Request failed');
       });
+    } else if (target === 'assetRights') {
+      loadAssetRightsRows().catch((error) => {
+        if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+      });
     }
   });
 });
@@ -2512,6 +2606,48 @@ runAuditSearchBtn?.addEventListener('click', () => {
   loadAuditEvents().catch((error) => {
     if (auditEventsMsg) auditEventsMsg.textContent = String(error.message || 'Request failed');
   });
+});
+
+assetRightsSearchBtn?.addEventListener('click', () => {
+  loadAssetRightsRows().catch((error) => {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+assetRightsSearchInput?.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  loadAssetRightsRows().catch((error) => {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+assetRightsRows?.addEventListener('submit', async (event) => {
+  const form = event.target.closest('.asset-rights-row');
+  if (!form) return;
+  event.preventDefault();
+  const assetId = String(form.dataset.assetId || '').trim();
+  if (!assetId) return;
+  const saveBtn = form.querySelector('button[type="submit"]');
+  if (saveBtn) saveBtn.disabled = true;
+  try {
+    const data = new FormData(form);
+    const payload = {
+      visibility: String(data.get('visibility') || 'public'),
+      allowedGroups: parseAccessList(data.get('allowedGroups')),
+      allowedUsers: parseAccessList(data.get('allowedUsers'))
+    };
+    await api(`/api/admin/assets/${encodeURIComponent(assetId)}/access`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload)
+    });
+    if (assetRightsMsg) assetRightsMsg.textContent = t('asset_rights_saved');
+    await loadAssetRightsRows();
+  } catch (error) {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || t('asset_rights_save_failed'));
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
 });
 
 settingsSubTabs.forEach((btn) => {

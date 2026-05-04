@@ -78,6 +78,7 @@ const DOWNLOAD_AUDIT_THROTTLE_MS = Math.max(60_000, Math.min(3_600_000, Number(p
 const recentDownloadAuditKeys = new Map();
 app.use(express.json({ limit: '300mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use('/uploads', secureUploadAssetAccess);
 app.use('/uploads', auditUploadDownloadRequest);
 app.use('/uploads', express.static(UPLOADS_DIR));
 
@@ -3613,17 +3614,55 @@ async function findAssetForPublicUploadUrl(publicUrl) {
   if (!safeUrl.startsWith('/uploads/')) return null;
   const result = await pool.query(
     `
-      SELECT id, title, file_name, media_url, proxy_url
-      FROM assets
-      WHERE media_url = $1
-         OR proxy_url = $1
-         OR CONCAT('/uploads/proxies/', proxy_url) = $1
-      ORDER BY updated_at DESC
+      SELECT *
+      FROM (
+        SELECT assets.*, 0 AS match_rank
+        FROM assets
+        WHERE media_url = $1
+           OR proxy_url = $1
+           OR thumbnail_url = $1
+           OR CONCAT('/uploads/proxies/', proxy_url) = $1
+           OR dc_metadata->>'subtitleUrl' = $1
+           OR dc_metadata->>'videoOcrUrl' = $1
+           OR EXISTS (
+             SELECT 1
+             FROM jsonb_array_elements(COALESCE(dc_metadata->'subtitleItems', '[]'::jsonb)) item
+             WHERE item->>'subtitleUrl' = $1
+           )
+           OR EXISTS (
+             SELECT 1
+             FROM jsonb_array_elements(COALESCE(dc_metadata->'videoOcrItems', '[]'::jsonb)) item
+             WHERE item->>'ocrUrl' = $1
+           )
+        UNION ALL
+        SELECT assets.*, 1 AS match_rank
+        FROM assets
+        JOIN asset_versions ON asset_versions.asset_id = assets.id
+        WHERE asset_versions.snapshot_media_url = $1
+           OR asset_versions.snapshot_thumbnail_url = $1
+      ) matched
+      ORDER BY match_rank ASC, updated_at DESC
       LIMIT 1
     `,
     [safeUrl]
   );
   return result.rows?.[0] || null;
+}
+
+async function secureUploadAssetAccess(req, res, next) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  const publicUrl = `/uploads/${String(req.path || '').replace(/^\/+/, '')}`;
+  try {
+    const row = await findAssetForPublicUploadUrl(publicUrl);
+    if (!row) return res.status(404).json({ error: 'Upload file is not attached to an accessible asset' });
+    const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+    if (!assetAccessService.canViewAsset(row, accessContext)) {
+      return res.status(404).json({ error: 'Upload file is not attached to an accessible asset' });
+    }
+    return next();
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to authorize upload file access' });
+  }
 }
 
 function auditUploadDownloadRequest(req, res, next) {
@@ -7365,6 +7404,8 @@ registerTextProcessingRoutes(app, {
   formatTimecode,
   normalizeOcrPreset,
   normalizeOcrEngine,
+  assetAccessService,
+  resolveEffectivePermissions,
   nanoid
 });
 
@@ -7501,7 +7542,8 @@ registerOfficeRoutes(app, {
   officeEditorProvider: OFFICE_EDITOR_PROVIDER,
   uploadsDir: UPLOADS_DIR,
   runCommandCapture,
-  sanitizeFileName
+  sanitizeFileName,
+  assetAccessService
 });
 
 registerPdfRoutes(app, {
@@ -7525,7 +7567,9 @@ registerPdfRoutes(app, {
   ensurePdfThumbnailForRow,
   mapAssetRow,
   findOriginalVersionSnapshot,
-  sendSnapshotDownload
+  sendSnapshotDownload,
+  assetAccessService,
+  resolveEffectivePermissions
 });
 
 loadTurkishWordSet();

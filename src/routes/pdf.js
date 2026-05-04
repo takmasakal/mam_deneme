@@ -23,17 +23,30 @@ function registerPdfRoutes(app, deps) {
     ensurePdfThumbnailForRow,
     mapAssetRow,
     findOriginalVersionSnapshot,
-    sendSnapshotDownload
+    sendSnapshotDownload,
+    assetAccessService,
+    resolveEffectivePermissions
   } = deps;
+
+  async function loadVisibleAssetRow(req, assetId) {
+    const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    const row = assetResult.rows[0] || null;
+    if (!row) return { status: 404, error: 'Asset not found', row: null, accessContext };
+    if (!assetAccessService.canViewAsset(row, accessContext)) {
+      return { status: 404, error: 'Asset not found', row: null, accessContext };
+    }
+    return { status: 200, row, accessContext };
+  }
 
 app.get('/api/assets/:id/pdf-search', async (req, res) => {
   try {
     const query = String(req.query.q || '').trim();
     if (!query) return res.status(400).json({ error: 'q is required' });
 
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-    if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
-    const row = assetResult.rows[0];
+    const loaded = await loadVisibleAssetRow(req, req.params.id);
+    if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+    const row = loaded.row;
     if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
       return res.status(400).json({ error: 'Asset is not a PDF' });
     }
@@ -88,9 +101,9 @@ app.get('/api/assets/:id/pdf-page-text', async (req, res) => {
   try {
     const requestedPage = Math.max(1, Number(req.query.page) || 1);
 
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-    if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
-    const row = assetResult.rows[0];
+    const loaded = await loadVisibleAssetRow(req, req.params.id);
+    if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+    const row = loaded.row;
     if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
       return res.status(400).json({ error: 'Asset is not a PDF' });
     }
@@ -122,9 +135,9 @@ app.get('/api/assets/:id/pdf-page-text', async (req, res) => {
 
 app.get('/api/assets/:id/pdf-meta', async (req, res) => {
   try {
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-    if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
-    const row = assetResult.rows[0];
+    const loaded = await loadVisibleAssetRow(req, req.params.id);
+    if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+    const row = loaded.row;
     if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
       return res.status(400).json({ error: 'Asset is not a PDF' });
     }
@@ -150,9 +163,9 @@ app.get('/api/assets/:id/pdf-page-image', async (req, res) => {
     const requestedPage = Math.max(1, Number(req.query.page) || 1);
     const requestedWidth = Math.max(320, Math.min(2200, Number(req.query.width) || 1200));
 
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-    if (!assetResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
-    const row = assetResult.rows[0];
+    const loaded = await loadVisibleAssetRow(req, req.params.id);
+    if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+    const row = loaded.row;
     if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
       return res.status(400).json({ error: 'Asset is not a PDF' });
     }
@@ -183,9 +196,9 @@ app.post('/api/assets/:id/pdf/save', requirePdfAdvancedTools, async (req, res) =
   try {
     const assetId = String(req.params.id || '').trim();
     if (!assetId) return res.status(400).json({ error: 'Invalid asset id' });
-    const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-    const row = rowResult.rows[0];
-    if (!row) return res.status(404).json({ error: 'Asset not found' });
+    const loaded = await loadVisibleAssetRow(req, assetId);
+    if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+    const row = loaded.row;
     if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
       return res.status(400).json({ error: 'PDF save is only supported for PDF assets' });
     }
@@ -351,9 +364,9 @@ app.post('/api/assets/:id/pdf-restore-original', requireAdminAccess, async (req,
     const assetId = String(req.params.id || '').trim();
     if (!assetId) return res.status(400).json({ error: 'assetId is required' });
 
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-    const currentRow = assetResult.rows[0];
-    if (!currentRow) return res.status(404).json({ error: 'Asset not found' });
+    const loaded = await loadVisibleAssetRow(req, assetId);
+    if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+    const currentRow = loaded.row;
     if (!isPdfCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
       return res.status(400).json({ error: 'PDF restore is only supported for PDF assets' });
     }
@@ -458,9 +471,9 @@ app.get('/api/assets/:id/pdf-original/download', requireAdminAccess, async (req,
     const assetId = String(req.params.id || '').trim();
     if (!assetId) return res.status(400).json({ error: 'assetId is required' });
 
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-    const currentRow = assetResult.rows[0];
-    if (!currentRow) return res.status(404).json({ error: 'Asset not found' });
+    const loaded = await loadVisibleAssetRow(req, assetId);
+    if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+    const currentRow = loaded.row;
     if (!isPdfCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
       return res.status(400).json({ error: 'PDF download is only supported for PDF assets' });
     }
@@ -482,9 +495,9 @@ app.post('/api/assets/:id/pdf-restore', requireAdminAccess, async (req, res) => 
     const versionId = String(req.body?.versionId || '').trim();
     if (!assetId || !versionId) return res.status(400).json({ error: 'assetId and versionId are required' });
 
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-    const currentRow = assetResult.rows[0];
-    if (!currentRow) return res.status(404).json({ error: 'Asset not found' });
+    const loaded = await loadVisibleAssetRow(req, assetId);
+    if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+    const currentRow = loaded.row;
     if (!isPdfCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
       return res.status(400).json({ error: 'PDF restore is only supported for PDF assets' });
     }

@@ -181,6 +181,85 @@ app.delete('/api/admin/group-admins/:id', async (req, res) => {
   }
 });
 
+app.get('/api/admin/assets/access', async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim().toLowerCase();
+    const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 40));
+    const values = [];
+    const where = [];
+    if (q) {
+      values.push(`%${q}%`);
+      where.push(`(LOWER(title) LIKE $${values.length} OR LOWER(file_name) LIKE $${values.length} OR LOWER(owner) LIKE $${values.length})`);
+    }
+    values.push(limit);
+    const result = await pool.query(
+      `
+        SELECT id, title, file_name, owner, type, visibility, owner_user, owner_groups, allowed_users, allowed_groups, updated_at
+        FROM assets
+        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY updated_at DESC
+        LIMIT $${values.length}
+      `,
+      values
+    );
+    return res.json({
+      assets: result.rows.map((row) => ({
+        id: row.id,
+        title: row.title || row.file_name || row.id,
+        fileName: row.file_name || '',
+        owner: row.owner || '',
+        type: row.type || '',
+        visibility: row.visibility || 'public',
+        ownerUser: row.owner_user || '',
+        ownerGroups: row.owner_groups || [],
+        allowedUsers: row.allowed_users || [],
+        allowedGroups: row.allowed_groups || [],
+        updatedAt: row.updated_at
+      }))
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load asset access rows' });
+  }
+});
+
+app.patch('/api/admin/assets/:id/access', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+    const result = await assetAccessService.updateAssetVisibility(req.params.id, req.body || {}, accessContext);
+    if (result.status !== 200) {
+      return res.status(result.status).json({ error: result.error });
+    }
+    await indexAssetToElastic(req.params.id).catch(() => {});
+    await recordAuditEvent?.(req, {
+      action: 'asset.visibility_updated',
+      targetType: 'asset',
+      targetId: result.row.id,
+      targetTitle: result.row.title,
+      details: {
+        source: 'admin_rights_panel',
+        visibility: result.row.visibility,
+        allowedUsers: result.row.allowed_users || [],
+        allowedGroups: result.row.allowed_groups || []
+      }
+    });
+    return res.json({
+      asset: {
+        id: result.row.id,
+        title: result.row.title || result.row.file_name || result.row.id,
+        visibility: result.row.visibility || 'public',
+        ownerUser: result.row.owner_user || '',
+        ownerGroups: result.row.owner_groups || [],
+        allowedUsers: result.row.allowed_users || [],
+        allowedGroups: result.row.allowed_groups || []
+      }
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to update asset access' });
+  }
+});
+
 app.get('/api/admin/turkish-corrections', async (_req, res) => {
   try {
     await reloadLearnedTurkishCorrectionsFromDb();
