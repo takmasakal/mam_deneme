@@ -726,7 +726,10 @@ function registerAssetRoutes(app, deps) {
       return res.status(400).json({ error: 'Could not decode or save file' });
     }
     if (!buffer || !buffer.length) {
-      return res.status(400).json({ error: 'Decoded upload content is empty' });
+      return res.status(400).json({
+        error: 'Uploaded file is empty',
+        code: 'empty_upload_file'
+      });
     }
   
     const duplicateAsset = await findDuplicateAssetByHash(fileHash);

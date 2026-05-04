@@ -150,8 +150,12 @@
         const mediaFile = inputFile || formFile;
         const submitBtn = ingestForm.querySelector('button[type="submit"]');
 
-        if (!(mediaFile instanceof File) || !mediaFile.size) {
+        if (!(mediaFile instanceof File)) {
           alert(t('select_media_first'));
+          return;
+        }
+        if (!mediaFile.size) {
+          alert(t('upload_empty_file'));
           return;
         }
 
