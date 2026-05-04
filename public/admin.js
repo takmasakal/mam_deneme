@@ -41,6 +41,11 @@ const settingsSubTabs = Array.from(document.querySelectorAll('.settings-subtab')
 const settingsSubPanels = Array.from(document.querySelectorAll('.settings-subpanel'));
 const userPermissionsRows = document.getElementById('userPermissionsRows');
 const userPermissionsMsg = document.getElementById('userPermissionsMsg');
+const groupAdminGroupInput = document.getElementById('groupAdminGroupInput');
+const groupAdminUserInput = document.getElementById('groupAdminUserInput');
+const addGroupAdminBtn = document.getElementById('addGroupAdminBtn');
+const groupAdminsRows = document.getElementById('groupAdminsRows');
+const groupAdminsMsg = document.getElementById('groupAdminsMsg');
 const ocrAdminSearchInput = document.getElementById('ocrAdminSearchInput');
 const ocrDeleteFileCheck = document.getElementById('ocrDeleteFileCheck');
 const ocrRecordsRows = document.getElementById('ocrRecordsRows');
@@ -315,6 +320,15 @@ let i18n = {
     perm_pdf_advanced: 'PDF advanced tools',
     perm_text_admin: 'OCR / subtitle admin',
     user_permissions_saved: 'User permissions saved.',
+    group_admins: 'Group Admins',
+    group_name: 'Group',
+    username: 'User',
+    add_group_admin: 'Add',
+    group_admin_none: 'No group admin defined.',
+    group_admin_saved: 'Group admin saved.',
+    group_admin_load_failed: 'Failed to load group admins.',
+    group_admin_save_failed: 'Failed to save group admin.',
+    group_admin_delete_failed: 'Failed to delete group admin.',
     access_denied: 'Access denied.',
     ocr_records: 'OCR Records',
     ocr_search: 'Search OCR',
@@ -610,6 +624,15 @@ let i18n = {
     perm_pdf_advanced: 'PDF gelişmiş araçlar',
     perm_text_admin: 'OCR / altyazı yöneticisi',
     user_permissions_saved: 'Kullanıcı yetkileri kaydedildi.',
+    group_admins: 'Grup Yöneticileri',
+    group_name: 'Grup',
+    username: 'Kullanıcı',
+    add_group_admin: 'Ekle',
+    group_admin_none: 'Grup yöneticisi tanımlı değil.',
+    group_admin_saved: 'Grup yöneticisi kaydedildi.',
+    group_admin_load_failed: 'Grup yöneticileri yüklenemedi.',
+    group_admin_save_failed: 'Grup yöneticisi kaydedilemedi.',
+    group_admin_delete_failed: 'Grup yöneticisi silinemedi.',
     access_denied: 'Erişim engellendi.',
     ocr_records: 'OCR Kayıtları',
     ocr_search: 'OCR Ara',
@@ -1443,6 +1466,7 @@ async function loadSettingsSubtabData(tabName) {
   }
   if (tab === 'users') {
     await loadUserPermissions();
+    await loadGroupAdmins();
   }
 }
 
@@ -1707,6 +1731,34 @@ const adminRecordsModule = window.createAdminRecordsModule({
 
 async function loadUserPermissions() {
   return adminRecordsModule.loadUserPermissions();
+}
+
+function renderGroupAdmins(rows = []) {
+  if (!groupAdminsRows) return;
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) {
+    groupAdminsRows.innerHTML = `<div class="empty">${escapeHtml(t('group_admin_none'))}</div>`;
+    return;
+  }
+  groupAdminsRows.innerHTML = list.map((row) => `
+    <div class="row" data-group-admin-id="${escapeHtml(row.id || '')}">
+      <strong>${escapeHtml(row.groupName || '')}</strong>
+      <span>${escapeHtml(row.username || '')}</span>
+      <span>${escapeHtml(formatAdminDateTime(row.createdAt))}</span>
+      <button type="button" class="danger deleteGroupAdminBtn" data-id="${escapeHtml(row.id || '')}">${escapeHtml(t('delete'))}</button>
+    </div>
+  `).join('');
+}
+
+async function loadGroupAdmins() {
+  if (!groupAdminsRows) return;
+  try {
+    const result = await api('/api/admin/group-admins');
+    renderGroupAdmins(result.groupAdmins || []);
+    if (groupAdminsMsg) groupAdminsMsg.textContent = '';
+  } catch (error) {
+    if (groupAdminsMsg) groupAdminsMsg.textContent = String(error.message || t('group_admin_load_failed'));
+  }
 }
 
 async function loadOcrRecords() {
@@ -2479,12 +2531,46 @@ languageSelect?.addEventListener('change', async (event) => {
   if (!currentAdminProfile?.canAccessTextAdmin || currentAdminProfile?.canAccessAdmin || currentAdminProfile?.isAdmin) {
     await refreshTrackingAndHealth();
     await loadUserPermissions();
+    await loadGroupAdmins();
   }
   await loadOcrRecords();
   await loadSubtitleRecords();
   if (activeJobId) {
     const job = await api(`/api/admin/proxy-jobs/${activeJobId}`);
     renderProxyJob(job);
+  }
+});
+
+addGroupAdminBtn?.addEventListener('click', async () => {
+  const groupName = String(groupAdminGroupInput?.value || '').trim();
+  const username = String(groupAdminUserInput?.value || '').trim();
+  if (!groupName || !username) {
+    if (groupAdminsMsg) groupAdminsMsg.textContent = `${t('group_name')} / ${t('username')}`;
+    return;
+  }
+  try {
+    await api('/api/admin/group-admins', {
+      method: 'POST',
+      body: JSON.stringify({ groupName, username })
+    });
+    if (groupAdminUserInput) groupAdminUserInput.value = '';
+    if (groupAdminsMsg) groupAdminsMsg.textContent = t('group_admin_saved');
+    await loadGroupAdmins();
+  } catch (error) {
+    if (groupAdminsMsg) groupAdminsMsg.textContent = String(error.message || t('group_admin_save_failed'));
+  }
+});
+
+groupAdminsRows?.addEventListener('click', async (event) => {
+  const btn = event.target.closest('.deleteGroupAdminBtn');
+  if (!btn) return;
+  const id = String(btn.dataset.id || '').trim();
+  if (!id) return;
+  try {
+    await api(`/api/admin/group-admins/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await loadGroupAdmins();
+  } catch (error) {
+    if (groupAdminsMsg) groupAdminsMsg.textContent = String(error.message || t('group_admin_delete_failed'));
   }
 });
 
@@ -2519,6 +2605,7 @@ document.addEventListener('keydown', onLanguageShortcut);
       await loadSettings();
       await refreshTrackingAndHealth();
       await loadUserPermissions();
+      await loadGroupAdmins();
     }
     await loadOcrRecords();
     await loadSubtitleRecords();

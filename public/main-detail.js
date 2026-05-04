@@ -151,6 +151,25 @@
         ? ''
         : `<div class="asset-meta metadata-lock-note">${escapeHtml(t('metadata_edit_locked'))}</div>`;
       const metadataFieldsetOpen = canEditMetadata ? '<fieldset class="metadata-fieldset">' : '<fieldset class="metadata-fieldset" disabled>';
+      const accessListText = (values) => (Array.isArray(values) ? values : [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+        .join(', ');
+      const visibilityOptions = ['private', 'group', 'groups', 'public']
+        .map((visibility) => `<option value="${escapeHtml(visibility)}" ${visibility === String(asset.visibility || 'public') ? 'selected' : ''}>${escapeHtml(t(`visibility_${visibility}`))}</option>`)
+        .join('');
+      const visibilitySection = asset.canManageVisibility ? `
+        <form id="assetVisibilityForm" class="inline-grid">
+          <h4>${escapeHtml(t('asset_visibility'))}</h4>
+          <div class="dc-grid">
+            <label>${escapeHtml(t('asset_visibility'))}<select name="visibility">${visibilityOptions}</select></label>
+            <label>${escapeHtml(t('owner_groups'))}<input value="${escapeHtml(accessListText(asset.ownerGroups))}" disabled /></label>
+            <label>${escapeHtml(t('allowed_groups'))}<input name="allowedGroups" value="${escapeHtml(accessListText(asset.allowedGroups))}" placeholder="group-a, group-b" /></label>
+            <label>${escapeHtml(t('allowed_users'))}<input name="allowedUsers" value="${escapeHtml(accessListText(asset.allowedUsers))}" placeholder="user-a, user-b" /></label>
+          </div>
+          <button type="submit">${escapeHtml(t('save_visibility'))}</button>
+        </form>
+      ` : '';
 
       const metadataTopSection = `
         <h3>${highlightMatch(asset.title, currentSearchHighlightQuery(), searchHighlightClass)}</h3>
@@ -203,6 +222,8 @@
             <button type="submit">${t('save_metadata')}</button>
           </fieldset>
         </form>
+
+        ${visibilitySection}
 
         <form id="transitionForm" class="inline-grid">
           <h4>${t('workflow_transition')}</h4>

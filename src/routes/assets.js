@@ -68,9 +68,35 @@ function registerAssetRoutes(app, deps) {
     buildVersionSnapshotFromRow,
     canCreateVersionForAsset,
     canManageVersionRow,
+    assetAccessService,
     recordAuditEvent,
     nanoid
   } = deps;
+
+  async function resolveAssetAccessContext(req) {
+    return assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+  }
+
+  function appendAssetAccessWhere(where, values, context, alias = 'assets') {
+    assetAccessService.appendAssetAccessWhere(where, values, context, alias);
+  }
+
+  async function loadVisibleAssetRow(req, assetId) {
+    const accessContext = await resolveAssetAccessContext(req);
+    const result = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    const row = result.rows[0] || null;
+    if (!row) return { status: 404, error: 'Asset not found', accessContext, row: null };
+    if (!assetAccessService.canViewAsset(row, accessContext)) {
+      return { status: 404, error: 'Asset not found', accessContext, row: null };
+    }
+    return { status: 200, accessContext, row };
+  }
+
+  function mapAssetRowForUser(row, accessContext) {
+    const mapped = mapAssetRow(row);
+    mapped.canManageVisibility = assetAccessService.canManageAssetVisibility(row, accessContext);
+    return mapped;
+  }
 
   app.get('/api/assets', async (req, res) => {
     try {
@@ -104,6 +130,7 @@ function registerAssetRoutes(app, deps) {
         ocrQ: { didYouMean: '', fuzzyUsed: false, highlightQuery: ocrQ },
         subtitleQ: { didYouMean: '', fuzzyUsed: false, highlightQuery: subtitleQ }
       };
+      const accessContext = await resolveAssetAccessContext(req);
   
       if (trash === 'trash') {
         baseWhere.push('deleted_at IS NOT NULL');
@@ -147,6 +174,7 @@ function registerAssetRoutes(app, deps) {
         baseValues.push(status.toLowerCase());
         baseWhere.push(`LOWER(status) = $${baseValues.length}`);
       }
+      appendAssetAccessWhere(baseWhere, baseValues, accessContext, 'assets');
   
       const buildAssetTextWhere = (parsedQuery) => {
         const clauses = [];
@@ -452,7 +480,7 @@ function registerAssetRoutes(app, deps) {
         hydratedRows.push(await ensureDocumentThumbnailForRow(withPdfThumb));
       }
       res.json({
-        assets: hydratedRows.map(mapAssetRow),
+        assets: hydratedRows.map((row) => mapAssetRowForUser(row, accessContext)),
         searchMeta,
         pagination: {
           total,
@@ -467,6 +495,7 @@ function registerAssetRoutes(app, deps) {
   
   app.get('/api/assets/suggest', async (req, res) => {
     try {
+      const accessContext = await resolveAssetAccessContext(req);
       const suggestions = await queryAssetSuggestions({
         q: req.query.q,
         limit: req.query.limit,
@@ -479,7 +508,14 @@ function registerAssetRoutes(app, deps) {
         uploadDateFrom: req.query.uploadDateFrom,
         uploadDateTo: req.query.uploadDateTo
       });
-      return res.json(suggestions);
+      const visible = [];
+      for (const suggestion of suggestions) {
+        const asset = await loadVisibleAssetRow(req, suggestion.id);
+        if (asset.status === 200 && assetAccessService.canViewAsset(asset.row, accessContext)) {
+          visible.push(suggestion);
+        }
+      }
+      return res.json(visible);
     } catch (_error) {
       return res.status(500).json({ error: 'Failed to suggest assets' });
     }
@@ -546,6 +582,8 @@ function registerAssetRoutes(app, deps) {
         values.push(dateRange.to);
         where.push(`created_at <= $${values.length}`);
       }
+      const accessContext = await resolveAssetAccessContext(req);
+      appendAssetAccessWhere(where, values, accessContext, 'assets');
   
       const result = await pool.query(
         `
@@ -627,6 +665,8 @@ function registerAssetRoutes(app, deps) {
         values.push(status);
         where.push(`LOWER(status) = $${values.length}`);
       }
+      const accessContext = await resolveAssetAccessContext(req);
+      appendAssetAccessWhere(where, values, accessContext, 'assets');
   
       const result = await pool.query(
         `
@@ -690,7 +730,8 @@ function registerAssetRoutes(app, deps) {
       const owner = String(context?.displayName || context?.username || context?.email || '').trim() || requestedOwner || 'Unknown';
       const payload = {
         ...(req.body && typeof req.body === 'object' ? req.body : {}),
-        owner
+        owner,
+        ...assetAccessService.buildNewAssetAccess(req.body || {}, context)
       };
       const created = await createAssetRecord(payload);
       await recordAuditEvent?.(req, {
@@ -890,6 +931,7 @@ function registerAssetRoutes(app, deps) {
     const payload = {
       ...metadata,
       owner,
+      ...assetAccessService.buildNewAssetAccess(metadata, context),
       fileName: safeName,
       mimeType: String(mimeType || ''),
       mediaUrl: persistOriginalMedia ? mediaUrl : '',
@@ -936,10 +978,11 @@ function registerAssetRoutes(app, deps) {
   
   app.get('/api/assets/:id', async (req, res) => {
     try {
-      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-      if (!assetResult.rowCount) {
-        return res.status(404).json({ error: 'Asset not found' });
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
       }
+      const row = loaded.row;
   
       const versionsResult = await pool.query(
         'SELECT * FROM asset_versions WHERE asset_id = $1 ORDER BY created_at DESC',
@@ -950,18 +993,18 @@ function registerAssetRoutes(app, deps) {
         [req.params.id]
       );
   
-      const asset = mapAssetRow(assetResult.rows[0]);
+      const asset = mapAssetRowForUser(row, loaded.accessContext);
       const audioCandidate = isVideoCandidate({
-        mimeType: assetResult.rows[0].mime_type,
-        fileName: assetResult.rows[0].file_name,
-        declaredType: assetResult.rows[0].type
-      }) || String(assetResult.rows[0].mime_type || '').toLowerCase().startsWith('audio/');
+        mimeType: row.mime_type,
+        fileName: row.file_name,
+        declaredType: row.type
+      }) || String(row.mime_type || '').toLowerCase().startsWith('audio/');
       if (audioCandidate && Number(asset.audioChannels || 0) <= 0) {
-        const playbackPath = resolvePlaybackInputPath(assetResult.rows[0]);
+        const playbackPath = resolvePlaybackInputPath(row);
         asset.audioChannels = await getMediaAudioChannelCount(playbackPath);
       }
       if (audioCandidate) {
-        const playbackPath = resolvePlaybackInputPath(assetResult.rows[0]);
+        const playbackPath = resolvePlaybackInputPath(row);
         asset.audioStreamOptions = await getMediaAudioStreamOptions(playbackPath);
       }
       asset.versions = versionsResult.rows.map(mapVersionRow);
@@ -974,11 +1017,11 @@ function registerAssetRoutes(app, deps) {
   
   app.get('/api/assets/:id/technical', async (req, res) => {
     try {
-      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-      if (!assetResult.rowCount) {
-        return res.status(404).json({ error: 'Asset not found' });
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
       }
-      const row = assetResult.rows[0];
+      const row = loaded.row;
   
       const sourcePath = (() => {
         let p = String(row.source_path || '').trim();
@@ -1013,6 +1056,31 @@ function registerAssetRoutes(app, deps) {
     }
   });
 
+  app.patch('/api/assets/:id/visibility', async (req, res) => {
+    try {
+      const accessContext = await resolveAssetAccessContext(req);
+      const result = await assetAccessService.updateAssetVisibility(req.params.id, req.body || {}, accessContext);
+      if (result.status !== 200) {
+        return res.status(result.status).json({ error: result.error });
+      }
+      await indexAssetToElastic(req.params.id).catch(() => {});
+      await recordAuditEvent?.(req, {
+        action: 'asset.visibility_updated',
+        targetType: 'asset',
+        targetId: result.row.id,
+        targetTitle: result.row.title,
+        details: {
+          visibility: result.row.visibility,
+          allowedUsers: result.row.allowed_users || [],
+          allowedGroups: result.row.allowed_groups || []
+        }
+      });
+      return res.json(mapAssetRowForUser(result.row, accessContext));
+    } catch (_error) {
+      return res.status(500).json({ error: 'Failed to update asset visibility' });
+    }
+  });
+
   app.post('/api/assets/:id/cuts', async (req, res) => {
     const inPoint = Number(req.body.inPointSeconds);
     const outPoint = Number(req.body.outPointSeconds);
@@ -1022,9 +1090,9 @@ function registerAssetRoutes(app, deps) {
     }
 
     try {
-      const exists = await pool.query('SELECT id FROM assets WHERE id = $1', [req.params.id]);
-      if (!exists.rowCount) {
-        return res.status(404).json({ error: 'Asset not found' });
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
       }
 
       const now = new Date().toISOString();
@@ -1054,6 +1122,10 @@ function registerAssetRoutes(app, deps) {
 
   app.delete('/api/assets/:id/cuts/:cutId', requireAssetDelete, async (req, res) => {
     try {
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
+      }
       const result = await pool.query(
         'DELETE FROM asset_cuts WHERE cut_id = $1 AND asset_id = $2 RETURNING cut_id',
         [req.params.cutId, req.params.id]
@@ -1091,6 +1163,10 @@ function registerAssetRoutes(app, deps) {
     }
 
     try {
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
+      }
       const existing = await pool.query(
         'SELECT * FROM asset_cuts WHERE cut_id = $1 AND asset_id = $2',
         [req.params.cutId, req.params.id]
@@ -1128,6 +1204,10 @@ function registerAssetRoutes(app, deps) {
 
   app.post('/api/assets/:id/trash', requireAssetDelete, async (req, res) => {
     try {
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
+      }
       const now = new Date().toISOString();
       const result = await pool.query(
         'UPDATE assets SET deleted_at = $2, updated_at = $2 WHERE id = $1 RETURNING *',
@@ -1144,7 +1224,7 @@ function registerAssetRoutes(app, deps) {
         targetTitle: result.rows[0].title,
         details: {}
       });
-      return res.json(mapAssetRow(result.rows[0]));
+      return res.json(mapAssetRowForUser(result.rows[0], loaded.accessContext));
     } catch (_error) {
       return res.status(500).json({ error: 'Failed to move asset to trash' });
     }
@@ -1152,6 +1232,10 @@ function registerAssetRoutes(app, deps) {
 
   app.post('/api/assets/:id/restore', async (req, res) => {
     try {
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
+      }
       const now = new Date().toISOString();
       const result = await pool.query(
         'UPDATE assets SET deleted_at = NULL, updated_at = $2 WHERE id = $1 RETURNING *',
@@ -1168,7 +1252,7 @@ function registerAssetRoutes(app, deps) {
         targetTitle: result.rows[0].title,
         details: {}
       });
-      return res.json(mapAssetRow(result.rows[0]));
+      return res.json(mapAssetRowForUser(result.rows[0], loaded.accessContext));
     } catch (_error) {
       return res.status(500).json({ error: 'Failed to restore asset' });
     }
@@ -1176,10 +1260,11 @@ function registerAssetRoutes(app, deps) {
 
   app.delete('/api/assets/:id', requireAssetDelete, async (req, res) => {
     try {
-      const existing = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-      if (!existing.rowCount) {
-        return res.status(404).json({ error: 'Asset not found' });
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
       }
+      const existing = { rows: [loaded.row], rowCount: 1 };
       const versionRows = (await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1', [req.params.id])).rows;
       const cleanupTargets = collectAssetCleanupPaths(existing.rows[0], versionRows);
       await pool.query('DELETE FROM assets WHERE id = $1 RETURNING id', [req.params.id]);
@@ -1202,12 +1287,12 @@ function registerAssetRoutes(app, deps) {
   app.patch('/api/assets/:id', requireMetadataEdit, async (req, res) => {
     try {
       const body = req.body && typeof req.body === 'object' ? req.body : {};
-      const existing = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-      if (!existing.rowCount) {
-        return res.status(404).json({ error: 'Asset not found' });
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
       }
 
-      const row = existing.rows[0];
+      const row = loaded.row;
       const incomingDcMetadata = sanitizeDcMetadata(body.dcMetadata);
       const parsedDuration = Number(body.durationSeconds);
       const updated = {
@@ -1282,7 +1367,7 @@ function registerAssetRoutes(app, deps) {
           fields: Object.keys(body).filter((key) => !['fileData'].includes(key)).slice(0, 40)
         }
       });
-      res.json(mapAssetRow(result.rows[0]));
+      res.json(mapAssetRowForUser(result.rows[0], loaded.accessContext));
     } catch (_error) {
       res.status(500).json({ error: 'Failed to update asset' });
     }
@@ -1292,11 +1377,11 @@ function registerAssetRoutes(app, deps) {
     try {
       const effective = await resolveEffectivePermissions(req);
       req.userPermissions = effective;
-      const exists = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-      const row = exists.rows[0];
-      if (!row) {
-        return res.status(404).json({ error: 'Asset not found' });
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
       }
+      const row = loaded.row;
       if (!canCreateVersionForAsset(req.userPermissions, row)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
@@ -1345,9 +1430,9 @@ function registerAssetRoutes(app, deps) {
       const assetId = String(req.params.id || '').trim();
       const versionId = String(req.params.versionId || '').trim();
       if (!assetId || !versionId) return res.status(400).json({ error: 'assetId and versionId are required' });
-      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-      const assetRow = assetResult.rows[0];
-      if (!assetRow) return res.status(404).json({ error: 'Asset not found' });
+      const loaded = await loadVisibleAssetRow(req, assetId);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      const assetRow = loaded.row;
       const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
       const row = versionResult.rows[0];
       if (!row) return res.status(404).json({ error: 'Version not found' });
@@ -1371,9 +1456,9 @@ function registerAssetRoutes(app, deps) {
       const assetId = String(req.params.id || '').trim();
       const versionId = String(req.params.versionId || '').trim();
       if (!assetId || !versionId) return res.status(400).json({ error: 'assetId and versionId are required' });
-      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-      const assetRow = assetResult.rows[0];
-      if (!assetRow) return res.status(404).json({ error: 'Asset not found' });
+      const loaded = await loadVisibleAssetRow(req, assetId);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      const assetRow = loaded.row;
 
       const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
       const row = versionResult.rows[0];
@@ -1410,12 +1495,12 @@ function registerAssetRoutes(app, deps) {
     }
 
     try {
-      const current = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-      if (!current.rowCount) {
-        return res.status(404).json({ error: 'Asset not found' });
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
       }
 
-      const currentIndex = WORKFLOW.indexOf(current.rows[0].status);
+      const currentIndex = WORKFLOW.indexOf(loaded.row.status);
       const nextIndex = WORKFLOW.indexOf(nextStatus);
 
       if (nextIndex < currentIndex) {
@@ -1429,7 +1514,7 @@ function registerAssetRoutes(app, deps) {
       );
 
       await indexAssetToElastic(req.params.id).catch(() => {});
-      res.json(mapAssetRow(result.rows[0]));
+      res.json(mapAssetRowForUser(result.rows[0], loaded.accessContext));
     } catch (_error) {
       res.status(500).json({ error: 'Failed to transition asset status' });
     }

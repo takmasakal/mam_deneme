@@ -26,6 +26,11 @@ async function initDb() {
       dc_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
       file_hash TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL,
+      visibility TEXT NOT NULL DEFAULT 'public',
+      owner_user TEXT NOT NULL DEFAULT '',
+      owner_groups TEXT[] NOT NULL DEFAULT '{}',
+      allowed_users TEXT[] NOT NULL DEFAULT '{}',
+      allowed_groups TEXT[] NOT NULL DEFAULT '{}',
       deleted_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL
@@ -42,6 +47,33 @@ async function initDb() {
 
     ALTER TABLE assets
     ADD COLUMN IF NOT EXISTS file_hash TEXT NOT NULL DEFAULT '';
+
+    ALTER TABLE assets
+    ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'public';
+
+    ALTER TABLE assets
+    ADD COLUMN IF NOT EXISTS owner_user TEXT NOT NULL DEFAULT '';
+
+    ALTER TABLE assets
+    ADD COLUMN IF NOT EXISTS owner_groups TEXT[] NOT NULL DEFAULT '{}';
+
+    ALTER TABLE assets
+    ADD COLUMN IF NOT EXISTS allowed_users TEXT[] NOT NULL DEFAULT '{}';
+
+    ALTER TABLE assets
+    ADD COLUMN IF NOT EXISTS allowed_groups TEXT[] NOT NULL DEFAULT '{}';
+
+    UPDATE assets
+    SET visibility = 'public'
+    WHERE visibility = '';
+
+    CREATE TABLE IF NOT EXISTS group_admins (
+      id TEXT PRIMARY KEY,
+      group_name TEXT NOT NULL,
+      username TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL,
+      created_by TEXT NOT NULL DEFAULT ''
+    );
 
     CREATE TABLE IF NOT EXISTS asset_versions (
       version_id TEXT PRIMARY KEY,
@@ -200,6 +232,11 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_assets_deleted_updated ON assets(deleted_at, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_assets_status ON assets(status);
     CREATE INDEX IF NOT EXISTS idx_assets_type ON assets(type);
+    CREATE INDEX IF NOT EXISTS idx_assets_visibility ON assets(visibility);
+    CREATE INDEX IF NOT EXISTS idx_assets_owner_user ON assets(owner_user);
+    CREATE INDEX IF NOT EXISTS idx_assets_owner_groups_gin ON assets USING GIN(owner_groups);
+    CREATE INDEX IF NOT EXISTS idx_assets_allowed_users_gin ON assets USING GIN(allowed_users);
+    CREATE INDEX IF NOT EXISTS idx_assets_allowed_groups_gin ON assets USING GIN(allowed_groups);
     CREATE INDEX IF NOT EXISTS idx_assets_tags_gin ON assets USING GIN(tags);
     CREATE INDEX IF NOT EXISTS idx_assets_file_hash ON assets(file_hash);
     CREATE INDEX IF NOT EXISTS idx_assets_title_trgm ON assets USING GIN (LOWER(title) gin_trgm_ops);
@@ -225,6 +262,8 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_ocr_segments_norm_trgm ON asset_ocr_segments USING GIN (norm_text gin_trgm_ops);
     CREATE INDEX IF NOT EXISTS idx_media_jobs_asset_type_updated ON media_processing_jobs(asset_id, job_type, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_media_jobs_status ON media_processing_jobs(status);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_group_admins_group_user ON group_admins(group_name, username);
+    CREATE INDEX IF NOT EXISTS idx_group_admins_username ON group_admins(username);
     CREATE INDEX IF NOT EXISTS idx_learned_turkish_corrections_updated ON learned_turkish_corrections(updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_audit_events_created ON audit_events(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_audit_events_action ON audit_events(action);

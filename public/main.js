@@ -361,6 +361,16 @@ let i18n = {
     save_metadata: 'Save Metadata',
     metadata_save_failed: 'Metadata save failed.',
     metadata_edit_locked: 'You do not have permission to edit metadata.',
+    asset_visibility: 'Asset visibility',
+    visibility_private: 'Private',
+    visibility_group: 'Owner groups',
+    visibility_groups: 'Selected groups/users',
+    visibility_public: 'Public',
+    owner_groups: 'Owner groups',
+    allowed_groups: 'Allowed groups',
+    allowed_users: 'Allowed users',
+    save_visibility: 'Save visibility',
+    visibility_save_failed: 'Failed to save asset visibility.',
     dublin_core: 'Dublin Core Metadata',
     dc_title: 'DC Title',
     dc_creator: 'DC Creator',
@@ -680,6 +690,16 @@ let i18n = {
     save_metadata: 'Metadata Kaydet',
     metadata_save_failed: 'Metadata kaydetme basarisiz.',
     metadata_edit_locked: 'Metadata düzenleme yetkiniz yok.',
+    asset_visibility: 'Varlık görünürlüğü',
+    visibility_private: 'Özel',
+    visibility_group: 'Yükleyen grup',
+    visibility_groups: 'Seçili grup/kullanıcı',
+    visibility_public: 'Herkese açık',
+    owner_groups: 'Sahip gruplar',
+    allowed_groups: 'İzinli gruplar',
+    allowed_users: 'İzinli kullanıcılar',
+    save_visibility: 'Görünürlüğü kaydet',
+    visibility_save_failed: 'Varlık görünürlüğü kaydedilemedi.',
     dublin_core: 'Dublin Core Metadata',
     dc_title: 'DC Baslik',
     dc_creator: 'DC Olusturan',
@@ -2094,6 +2114,30 @@ async function openAsset(id, workflow, options = {}) {
       await openAsset(id, workflow);
     } catch (error) {
       alert(String(error?.message || t('metadata_save_failed')));
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+    }
+  });
+
+  const assetVisibilityForm = document.getElementById('assetVisibilityForm');
+  assetVisibilityForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const formEl = event.target;
+    const saveBtn = formEl.querySelector('button[type="submit"]');
+    const parseList = (value) => String(value || '')
+      .split(/[,\n]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+      const payload = serializeForm(formEl);
+      payload.allowedGroups = parseList(payload.allowedGroups);
+      payload.allowedUsers = parseList(payload.allowedUsers);
+      await api(`/api/assets/${id}/visibility`, { method: 'PATCH', body: JSON.stringify(payload) });
+      await loadAssets();
+      await openAsset(id, workflow);
+    } catch (error) {
+      alert(String(error?.message || t('visibility_save_failed')));
     } finally {
       if (saveBtn) saveBtn.disabled = false;
     }

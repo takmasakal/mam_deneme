@@ -19,6 +19,7 @@ const {
 const { createOfficeService } = require('./services/officeService');
 const { createSearchService } = require('./services/searchService');
 const { createAssetDeletionService } = require('./services/assetDeletionService');
+const { createAssetAccessService } = require('./services/assetAccessService');
 const {
   normalizeOcrText,
   normalizeOcrLine,
@@ -4190,6 +4191,11 @@ function mapAssetRow(row) {
     thumbnailUrl,
     fileName: row.file_name,
     mimeType: row.mime_type,
+    visibility: row.visibility || 'public',
+    ownerUser: row.owner_user || '',
+    ownerGroups: row.owner_groups || [],
+    allowedUsers: row.allowed_users || [],
+    allowedGroups: row.allowed_groups || [],
     dcMetadata,
     audioChannels: Number(dcMetadata.audioChannels) || 0,
     subtitleUrl: String(dcMetadata.subtitleUrl || '').trim(),
@@ -4273,6 +4279,11 @@ async function createAssetRecord(input) {
     fileName: input.fileName?.trim() || '',
     mimeType: input.mimeType?.trim() || '',
     fileHash: input.fileHash?.trim().toLowerCase() || '',
+    visibility: assetAccessService.normalizeVisibility(input.visibility, 'public'),
+    ownerUser: assetAccessService.normalizeAccessName(input.ownerUser || input.owner_user || ''),
+    ownerGroups: assetAccessService.normalizeAccessList(input.ownerGroups || input.owner_groups || []),
+    allowedUsers: assetAccessService.normalizeAccessList(input.allowedUsers || input.allowed_users || []),
+    allowedGroups: assetAccessService.normalizeAccessList(input.allowedGroups || input.allowed_groups || []),
     dcMetadata: {
       ...buildDefaultDcMetadata(input),
       ...sanitizeDcMetadata(input.dcMetadata)
@@ -4305,11 +4316,13 @@ async function createAssetRecord(input) {
       `
         INSERT INTO assets (
           id, title, description, type, tags, owner, duration_seconds, source_path,
-          media_url, proxy_url, proxy_status, thumbnail_url, file_name, mime_type, dc_metadata, file_hash, status, created_at, updated_at
+          media_url, proxy_url, proxy_status, thumbnail_url, file_name, mime_type, dc_metadata, file_hash,
+          visibility, owner_user, owner_groups, allowed_users, allowed_groups,
+          status, created_at, updated_at
           , deleted_at
         ) VALUES (
           $1,$2,$3,$4,$5,$6,$7,$8,
-          $9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
+          $9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25
         )
       `,
       [
@@ -4329,6 +4342,11 @@ async function createAssetRecord(input) {
         asset.mimeType,
         JSON.stringify(asset.dcMetadata),
         asset.fileHash,
+        asset.visibility,
+        asset.ownerUser,
+        asset.ownerGroups,
+        asset.allowedUsers,
+        asset.allowedGroups,
         asset.status,
         asset.createdAt,
         asset.updatedAt,
@@ -6420,6 +6438,8 @@ const officeService = createOfficeService({
   sanitizeOnlyOfficeUserId
 });
 
+const assetAccessService = createAssetAccessService({ pool });
+
 function buildUserContextFromRequest(req) {
   const usernameRaw =
     getHeaderString(req, 'x-forwarded-user') ||
@@ -6466,6 +6486,8 @@ function buildUserContextFromRequest(req) {
     username,
     displayName,
     email: effectiveEmail || '',
+    groups,
+    roles: allRoles,
     baseIsAdmin: resolved.permissionKeys.includes('admin.access'),
     basePermissionKeys: resolved.permissionKeys,
     baseIsSuperAdmin: resolved.isSuperAdmin
@@ -6649,6 +6671,10 @@ app.get('/api/me', async (req, res) => {
       username: effective.username,
       displayName: effective.displayName,
       email: effective.email || '',
+      groups: effective.groups || [],
+      roles: effective.roles || [],
+      groupAdminGroups: await assetAccessService.getGroupAdminGroupsForUser(effective).catch(() => []),
+      isSuperAdmin: Boolean(effective.baseIsSuperAdmin),
       isAdmin: effective.isAdmin,
       canAccessAdmin: effective.canAccessAdmin,
       canAccessTextAdmin: effective.canAccessTextAdmin,
@@ -6765,6 +6791,17 @@ function mapAssetSuggestionRow(row) {
     inTrash: Boolean(row.deleted_at),
     updatedAt: row.updated_at
   };
+}
+
+async function loadVisibleAssetRowForRequest(req, assetId) {
+  const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+  const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+  const row = assetResult.rows[0] || null;
+  if (!row) return { status: 404, error: 'Asset not found', row: null, accessContext };
+  if (!assetAccessService.canViewAsset(row, accessContext)) {
+    return { status: 404, error: 'Asset not found', row: null, accessContext };
+  }
+  return { status: 200, row, accessContext };
 }
 
 function buildAssetOrderClause({ hasRelevance, sortBy, rankedParamAlias }) {
@@ -6965,12 +7002,12 @@ async function queryAssetSuggestions(options = {}) {
 
 app.get('/api/assets/:id/preview-text', async (req, res) => {
   try {
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-    if (!assetResult.rowCount) {
-      return res.status(404).json({ error: 'Asset not found' });
+    const loaded = await loadVisibleAssetRowForRequest(req, req.params.id);
+    if (loaded.status !== 200) {
+      return res.status(loaded.status).json({ error: loaded.error });
     }
 
-    const row = assetResult.rows[0];
+    const row = loaded.row;
     let inputPath = row.source_path;
     if (!inputPath || !fs.existsSync(inputPath)) {
       const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
@@ -6993,12 +7030,12 @@ app.get('/api/assets/:id/preview-text', async (req, res) => {
 
 app.post('/api/assets/:id/ensure-proxy', async (req, res) => {
   try {
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-    if (!assetResult.rowCount) {
-      return res.status(404).json({ error: 'Asset not found' });
+    const loaded = await loadVisibleAssetRowForRequest(req, req.params.id);
+    if (loaded.status !== 200) {
+      return res.status(loaded.status).json({ error: loaded.error });
     }
 
-    const row = await ensureVideoProxyAndThumbnail(assetResult.rows[0], {
+    const row = await ensureVideoProxyAndThumbnail(loaded.row, {
       forceProxy: Boolean(req.body?.force)
     });
     return res.json(mapAssetRow(row));
@@ -7286,6 +7323,7 @@ registerAdminRoutes(app, {
   syncSubtitleCueIndexForAssetRow,
   formatTimecode,
   getAssetFamily,
+  assetAccessService,
   recordAuditEvent,
   nanoid,
   removeAssetFromElastic
@@ -7392,10 +7430,11 @@ registerAssetRoutes(app, {
   probeMediaTechnicalInfo,
   publicUploadUrlToAbsolutePath,
   resolveStoredUrl,
-  buildVersionSnapshotFromRow,
-  canCreateVersionForAsset,
-  canManageVersionRow,
-  mapVersionRow,
+    buildVersionSnapshotFromRow,
+    canCreateVersionForAsset,
+    canManageVersionRow,
+    assetAccessService,
+    mapVersionRow,
   recordAuditEvent,
   nanoid
 });

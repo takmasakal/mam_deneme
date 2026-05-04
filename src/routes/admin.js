@@ -89,11 +89,97 @@ function registerAdminRoutes(app, deps) {
     syncSubtitleCueIndexForAssetRow,
     formatTimecode,
     getAssetFamily,
+    assetAccessService,
     nanoid: providedNanoid,
     removeAssetFromElastic
   } = deps;
   const resolvedNanoid = typeof providedNanoid === 'function' ? providedNanoid : nanoid;
 app.use('/api/admin', requireScopedAdminAccess);
+
+async function requireSuperAdminRequest(req, res) {
+  const effective = await resolveEffectivePermissions(req);
+  if (!effective?.baseIsSuperAdmin) {
+    res.status(403).json({ error: 'Super admin permission is required' });
+    return null;
+  }
+  return effective;
+}
+
+app.get('/api/admin/group-admins', async (_req, res) => {
+  try {
+    const result = await pool.query(
+      `
+        SELECT id, group_name, username, created_at, created_by
+        FROM group_admins
+        ORDER BY group_name ASC, username ASC
+      `
+    );
+    return res.json({
+      groupAdmins: result.rows.map((row) => ({
+        id: row.id,
+        groupName: row.group_name,
+        username: row.username,
+        createdAt: row.created_at,
+        createdBy: row.created_by || ''
+      }))
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load group admins' });
+  }
+});
+
+app.post('/api/admin/group-admins', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const groupName = assetAccessService.normalizeAccessName(req.body?.groupName || req.body?.group || '');
+    const username = assetAccessService.normalizeAccessName(req.body?.username || req.body?.user || '');
+    if (!groupName || !username) {
+      return res.status(400).json({ error: 'groupName and username are required' });
+    }
+    const now = new Date().toISOString();
+    const createdBy = String(effective.username || effective.displayName || '').trim();
+    const result = await pool.query(
+      `
+        INSERT INTO group_admins (id, group_name, username, created_at, created_by)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (group_name, username)
+        DO UPDATE SET created_by = EXCLUDED.created_by
+        RETURNING *
+      `,
+      [resolvedNanoid(), groupName, username, now, createdBy]
+    );
+    await recordAuditEvent?.(req, {
+      action: 'group_admin.saved',
+      targetType: 'group_admin',
+      targetId: result.rows[0].id,
+      targetTitle: `${groupName}:${username}`,
+      details: { groupName, username }
+    });
+    return res.status(201).json({ groupAdmin: result.rows[0] });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to save group admin' });
+  }
+});
+
+app.delete('/api/admin/group-admins/:id', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const result = await pool.query('DELETE FROM group_admins WHERE id = $1 RETURNING *', [req.params.id]);
+    if (!result.rowCount) return res.status(404).json({ error: 'Group admin not found' });
+    await recordAuditEvent?.(req, {
+      action: 'group_admin.deleted',
+      targetType: 'group_admin',
+      targetId: result.rows[0].id,
+      targetTitle: `${result.rows[0].group_name}:${result.rows[0].username}`,
+      details: { groupName: result.rows[0].group_name, username: result.rows[0].username }
+    });
+    return res.status(204).send();
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to delete group admin' });
+  }
+});
 
 app.get('/api/admin/turkish-corrections', async (_req, res) => {
   try {
