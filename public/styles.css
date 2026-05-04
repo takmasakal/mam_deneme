@@ -4,3 +4,35 @@
 @import url('/styles/main-04.css?v=20260425-refactor-1');
 @import url('/styles/main-05.css?v=20260425-refactor-1');
 @import url('/styles/main-06.css?v=20260425-refactor-1');
+
+.image-viewer-resizable {
+  position: relative;
+  overflow: hidden;
+}
+
+.image-fullscreen-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(12, 15, 22, 0.72);
+  color: #f3f6ff;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+
+.image-fullscreen-btn:hover {
+  background: rgba(33, 40, 54, 0.9);
+}
+
+.mam-fs-root:fullscreen .image-fullscreen-btn,
+.mam-fs-root:-webkit-full-screen .image-fullscreen-btn {
+  top: 18px;
+  right: 18px;
+}

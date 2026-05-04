@@ -541,6 +541,7 @@ let i18n = {
     pin_video: 'Pin video',
     unpin_video: 'Unpin video',
     close: 'Close',
+    fullscreen_image: 'Full screen',
     fullscreen_overlay_settings: 'Overlay Settings',
     fullscreen_overlay_show_controls: 'Show controls',
     fullscreen_overlay_show_timecode: 'Show timecode',
@@ -859,6 +860,7 @@ let i18n = {
     pin_video: 'Videoyu sabitle',
     unpin_video: 'Video sabitlemeyi kaldır',
     close: 'Kapat',
+    fullscreen_image: 'Tam ekran',
     fullscreen_overlay_settings: 'Overlay Ayarları',
     fullscreen_overlay_show_controls: 'Kontrolleri göster',
     fullscreen_overlay_show_timecode: 'Timecode göster',
@@ -2059,6 +2061,11 @@ async function openAsset(id, workflow, options = {}) {
   if (focusCutId) {
     focusCutRowInDetail(assetDetail, focusCutId);
   }
+  const imageFullscreenBtn = document.getElementById('imageFullscreenBtn');
+  imageFullscreenBtn?.addEventListener('click', async () => {
+    const target = document.getElementById('imageViewerFullscreenTarget') || imageFullscreenBtn.closest('.viewer-resizable');
+    await toggleFullscreenForElement(target);
+  });
   loadAssetTechnicalInfo(asset).catch(() => {});
   const ensureProxyBtn = document.getElementById('ensureProxyBtn');
   ensureProxyBtn?.addEventListener('click', async () => {
