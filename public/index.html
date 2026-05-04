@@ -81,8 +81,8 @@
               <option value="Other" data-i18n="type_other">Other</option>
             </select>
             <div class="file-picker">
-              <input id="mediaFileInput" name="mediaFile" type="file" hidden accept="video/*,audio/*,image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,.csv,.sql,.py,.js,.ts,.tsx,.jsx,.json,.md,.xml,.yaml,.yml,.log,.ini,.cfg,.conf,.sh,.bash,.zsh,.java,.c,.cpp,.h,.hpp,.go,.rs,.rb,.php,.swift,.kt" required />
-              <button type="button" id="mediaFileBtn" class="file-picker-btn" data-i18n="choose_file">Dosya Seç</button>
+              <input id="mediaFileInput" name="mediaFile" type="file" class="file-picker-input" accept="video/*,audio/*,image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,.csv,.sql,.py,.js,.ts,.tsx,.jsx,.json,.md,.xml,.yaml,.yml,.log,.ini,.cfg,.conf,.sh,.bash,.zsh,.java,.c,.cpp,.h,.hpp,.go,.rs,.rb,.php,.swift,.kt" required />
+              <label for="mediaFileInput" id="mediaFileBtn" class="file-picker-btn" data-i18n="choose_file">Dosya Seç</label>
               <span id="mediaFileName" class="file-picker-name"></span>
             </div>
             <input name="tags" data-i18n-placeholder="ph_tags" placeholder="Tags (comma separated)" />
@@ -145,7 +145,7 @@
     <script src="/main-dialogs.js?v=20260424-main-refactor-9"></script>
     <script src="/main-detail.js?v=20260424-main-refactor-2"></script>
     <script src="/main-common.js?v=20260424-main-refactor-13"></script>
-    <script src="/main-ingest.js?v=20260424-main-refactor-13"></script>
+    <script src="/main-ingest.js?v=20260504-upload-file-input-1"></script>
     <script src="/main-document-preview.js?v=20260424-main-refactor-7"></script>
     <script src="/main-media-viewer.js?v=20260424-main-refactor-11"></script>
     <script src="/main-player-ui.js?v=20260424-seek-preview-1"></script>

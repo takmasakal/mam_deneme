@@ -131,9 +131,11 @@
     }
 
     function initIngestHandlers() {
-      mediaFileBtn?.addEventListener('click', () => {
-        mediaFileInput?.click();
-      });
+      if (mediaFileBtn && String(mediaFileBtn.tagName || '').toLowerCase() !== 'label') {
+        mediaFileBtn.addEventListener('click', () => {
+          mediaFileInput?.click();
+        });
+      }
 
       mediaFileInput?.addEventListener('change', (event) => {
         const file = event.target.files?.[0];
