@@ -1054,3 +1054,201 @@ eklenmelidir.
 - LDAP grupları Keycloak rolleriyle eşlenmelidir.
 - Direct app portları dışarı açılmamalıdır.
 - Backup ve güncelleme prosedürü kurulumun parçası olmalıdır.
+
+---
+
+## 20. HTTPS Reverse Proxy Branch Akışı
+
+Bu bölüm `takmasakal/kaisha-reverse-proxy` branch'i için eklenmiştir. Amaç, şirket server'ında dış dünyaya sadece `80/443` açmak ve tüm MAM servislerini HTTPS arkasından yayınlamaktır.
+
+### 20.1. Public adresler
+
+Önerilen ayrı subdomain modeli:
+
+```text
+https://mam.company.local
+https://auth.company.local
+https://office.company.local
+```
+
+DNS tarafında üç kayıt da aynı server IP'sine gitmelidir.
+
+### 20.2. Sertifika dosyaları
+
+Kurum sertifikalarını şu dizine koyun:
+
+```text
+deploy/certs/mam.fullchain.pem
+deploy/certs/mam.privkey.pem
+deploy/certs/auth.fullchain.pem
+deploy/certs/auth.privkey.pem
+deploy/certs/office.fullchain.pem
+deploy/certs/office.privkey.pem
+```
+
+Wildcard sertifika varsa aynı `fullchain/key` çifti üç isimle kopyalanabilir. Private key dosyaları git'e alınmaz.
+
+### 20.3. İlk hazırlık
+
+```bash
+./deploy/mam-kaisha.sh init mam.company.local auth.company.local office.company.local
+```
+
+Bu komut şunu oluşturur:
+
+```text
+deploy/.env.kaisha
+```
+
+Önemli değerler:
+
+```bash
+PUBLIC_MAM_URL=https://mam.company.local
+PUBLIC_KEYCLOAK_URL=https://auth.company.local
+PUBLIC_OFFICE_URL=https://office.company.local
+OFFICE_EDITOR_PROVIDER=onlyoffice
+ONLYOFFICE_PUBLIC_URL=https://office.company.local
+```
+
+### 20.4. Başlatma
+
+```bash
+./deploy/mam-kaisha.sh up
+```
+
+Manuel karşılığı:
+
+```bash
+docker compose --env-file deploy/.env.kaisha \
+  -f docker-compose.yml \
+  -f docker-compose.kaisha-proxy.yml \
+  up -d
+```
+
+### 20.5. Dışa açık portlar
+
+Şirket kurulumunda dışarı sadece Nginx açılır:
+
+```text
+80/tcp
+443/tcp
+```
+
+Aşağıdaki portlar dışa açılmaz:
+
+```text
+3000
+3001
+5432
+8081
+8082
+9200
+```
+
+`docker-compose.kaisha-proxy.yml` bu servislerin host port publish ayarlarını kaldırır ve trafiği Nginx üzerinden yönlendirir.
+
+### 20.6. Nginx routing
+
+Config dosyası:
+
+```text
+deploy/nginx/mam-https.conf
+```
+
+Routing:
+
+```text
+mam.company.local    -> oauth2-proxy:4180 -> app:3000
+auth.company.local   -> keycloak:8080
+office.company.local -> onlyoffice:80
+```
+
+### 20.7. Keycloak client ayarları
+
+`mam` realmindeki `mam-web` client için:
+
+```text
+Valid redirect URIs:
+https://mam.company.local/oauth2/callback
+
+Valid post logout redirect URIs:
+https://mam.company.local/*
+
+Web origins:
+https://mam.company.local
+```
+
+Mobil client için:
+
+```text
+Client ID: metmam-mobile
+Redirect URI: com.example.metmam:/oauth2redirect
+```
+
+Mobil app ayarları:
+
+```text
+Host/IP:      https://mam.company.local
+API base URL: https://mam.company.local
+OIDC issuer:  https://auth.company.local/realms/mam
+```
+
+### 20.8. Postman/API kullanımı
+
+API de aynı web adresinden çalışır. Cookie kopyalamaya gerek yoktur:
+
+```http
+GET https://mam.company.local/api/assets?q=istanbul
+X-API-Token: <token>
+```
+
+Token yönetimi:
+
+```text
+Yönetim > Ayarlar > Token & OIDC > API Token
+```
+
+### 20.9. OnlyOffice offline çalışma
+
+OnlyOffice dış internete ihtiyaç duymadan çalışır. Gerekli image ilk kurulumda veya offline image transfer ile yüklenmelidir:
+
+```bash
+docker save -o mam-office-images.tar onlyoffice/documentserver:8.3
+docker load -i mam-office-images.tar
+```
+
+Runtime sırasında editor scriptleri şu public adresten gelir:
+
+```text
+https://office.company.local/web-apps/apps/api/documents/api.js
+```
+
+MAM app iç iletişimde şunu kullanır:
+
+```bash
+ONLYOFFICE_INTERNAL_URL=http://onlyoffice
+APP_INTERNAL_URL=http://app:3000
+```
+
+### 20.10. Diagnostik
+
+```bash
+./deploy/mam-kaisha.sh ps
+./deploy/mam-kaisha.sh logs nginx oauth2-proxy keycloak onlyoffice app
+curl -vk https://mam.company.local/api/me
+curl -vk https://office.company.local/web-apps/apps/api/documents/api.js
+curl -vk https://auth.company.local/realms/mam/.well-known/openid-configuration
+```
+
+Tokensız `/api/me` cevabı HTML değil, JSON olmalıdır:
+
+```json
+{"error":"Missing API token"}
+```
+
+Token ile:
+
+```bash
+curl -sS https://mam.company.local/api/assets?q=istanbul \
+  -H "X-API-Token: <token>"
+```

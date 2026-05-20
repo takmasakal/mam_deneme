@@ -1,0 +1,49 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: mam-nginx
+    depends_on:
+      oauth2-proxy:
+        condition: service_started
+      keycloak:
+        condition: service_started
+      onlyoffice:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/mam-https.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/certs:/etc/nginx/certs:ro
+    restart: unless-stopped
+
+  oauth2-proxy:
+    environment:
+      OAUTH2_PROXY_OIDC_ISSUER_URL: ${PUBLIC_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM:-mam}
+      OAUTH2_PROXY_LOGIN_URL: ${PUBLIC_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM:-mam}/protocol/openid-connect/auth
+      OAUTH2_PROXY_REDIRECT_URL: ${PUBLIC_MAM_URL}/oauth2/callback
+      OAUTH2_PROXY_BACKEND_LOGOUT_URL: http://keycloak:8080/realms/${KEYCLOAK_REALM:-mam}/protocol/openid-connect/logout?id_token_hint={id_token}&post_logout_redirect_uri=${PUBLIC_MAM_URL_ENCODED}%2Foauth2%2Fstart%3Frd%3D%252F
+      OAUTH2_PROXY_COOKIE_SECURE: "true"
+      OAUTH2_PROXY_COOKIE_SAMESITE: lax
+      OAUTH2_PROXY_WHITELIST_DOMAINS: ${OAUTH2_PROXY_WHITELIST_DOMAINS:-.company.local}
+    ports: !reset []
+
+  keycloak:
+    environment:
+      KC_HOSTNAME: ${PUBLIC_KEYCLOAK_HOST}
+      KC_HOSTNAME_STRICT: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_ENABLED: "true"
+    ports: !reset []
+
+  onlyoffice:
+    ports: !reset []
+
+  postgres:
+    ports: !reset []
+
+  keycloak-postgres:
+    ports: !reset []
+
+  elasticsearch:
+    ports: !reset []

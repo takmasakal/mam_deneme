@@ -30,3 +30,7 @@ yarn-error.log*
 .DS_Store
 .vscode/
 .idea/
+deploy/.env.kaisha
+deploy/certs/*.pem
+deploy/certs/*.key
+deploy/certs/*.crt
