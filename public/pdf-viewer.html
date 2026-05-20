@@ -722,6 +722,55 @@
         }
       };
 
+      let pdfEditLockActive = false;
+      let pdfEditLockRefreshTimer = null;
+
+      const releasePdfEditLock = () => {
+        if (!pdfEditLockActive || !assetId) return;
+        pdfEditLockActive = false;
+        if (pdfEditLockRefreshTimer) {
+          clearInterval(pdfEditLockRefreshTimer);
+          pdfEditLockRefreshTimer = null;
+        }
+        try {
+          fetch(`/api/assets/${encodeURIComponent(assetId)}/edit-lock`, {
+            method: 'DELETE',
+            credentials: 'include',
+            keepalive: true
+          }).catch(() => {});
+        } catch (_error) {}
+      };
+
+      const acquirePdfEditLock = async () => {
+        if (!assetId) return true;
+        const response = await fetch(`/api/assets/${encodeURIComponent(assetId)}/edit-lock`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ purpose: 'pdf' })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const fallback = uiLang === 'tr'
+            ? 'Bu varlık başka bir kullanıcı tarafından düzenleniyor.'
+            : 'This asset is being edited by another user.';
+          throw new Error(String(payload?.error || fallback));
+        }
+        pdfEditLockActive = true;
+        if (pdfEditLockRefreshTimer) clearInterval(pdfEditLockRefreshTimer);
+        pdfEditLockRefreshTimer = setInterval(() => {
+          fetch(`/api/assets/${encodeURIComponent(assetId)}/edit-lock/refresh`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ purpose: 'pdf' })
+          }).catch(() => {});
+        }, 60000);
+        return true;
+      };
+
+      window.addEventListener('beforeunload', releasePdfEditLock);
+
       const taskToPromise = (task) => {
         if (!task) return Promise.reject(new Error('Task is not available'));
         if (typeof task.toPromise === 'function') return task.toPromise();
@@ -1227,6 +1276,14 @@
             EmbedPDF = mod?.default || mod;
           }
           if (!EmbedPDF || typeof EmbedPDF.init !== 'function') return false;
+          if (canUsePdfAdvancedTools) {
+            try {
+              await acquirePdfEditLock();
+            } catch (error) {
+              showError(error?.message || (uiLang === 'tr' ? 'PDF düzenleme kilidi alınamadı.' : 'PDF edit lock could not be acquired.'));
+              return true;
+            }
+          }
           topBar.style.display = 'none';
           textPreview.style.display = 'none';
           viewerContainer.style.display = 'none';

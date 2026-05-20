@@ -68,6 +68,7 @@ function registerAssetRoutes(app, deps) {
     canCreateVersionForAsset,
     canManageVersionRow,
     assetAccessService,
+    assetEditLockService,
     recordAuditEvent,
     nanoid
   } = deps;
@@ -97,6 +98,16 @@ function registerAssetRoutes(app, deps) {
     mapped.canEditAsset = assetAccessService.canEditAsset(row, accessContext);
     mapped.canDeleteAsset = assetAccessService.canDeleteAsset(row, accessContext);
     return mapped;
+  }
+
+  async function rejectIfForeignEditLock(req, res, assetId) {
+    if (!assetEditLockService) return false;
+    const lockResult = await assetEditLockService.assertWritable(req, assetId);
+    if (!lockResult.ok) {
+      assetEditLockService.sendLocked(res, lockResult);
+      return true;
+    }
+    return false;
   }
 
   function getUploadFileCategory({ mimeType = '', fileName = '' } = {}) {
@@ -129,6 +140,49 @@ function registerAssetRoutes(app, deps) {
       code: 'asset_type_file_mismatch'
     };
   }
+
+  app.post('/api/assets/:id/edit-lock', async (req, res) => {
+    try {
+      if (!assetEditLockService) return res.status(503).json({ error: 'Edit lock service is not available' });
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      if (!assetAccessService.canEditAsset(loaded.row, loaded.accessContext)) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      const result = await assetEditLockService.acquire(req, req.params.id, req.body?.purpose || 'edit');
+      if (!result.ok) return assetEditLockService.sendLocked(res, result);
+      return res.json({ locked: true, lock: result.lock });
+    } catch (_error) {
+      return res.status(500).json({ error: 'Failed to acquire edit lock' });
+    }
+  });
+
+  app.post('/api/assets/:id/edit-lock/refresh', async (req, res) => {
+    try {
+      if (!assetEditLockService) return res.status(503).json({ error: 'Edit lock service is not available' });
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      if (!assetAccessService.canEditAsset(loaded.row, loaded.accessContext)) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      const result = await assetEditLockService.refresh(req, req.params.id);
+      if (!result.ok) return assetEditLockService.sendLocked(res, result);
+      return res.json({ locked: true, lock: result.lock });
+    } catch (_error) {
+      return res.status(500).json({ error: 'Failed to refresh edit lock' });
+    }
+  });
+
+  app.delete('/api/assets/:id/edit-lock', async (req, res) => {
+    try {
+      if (!assetEditLockService) return res.status(503).json({ error: 'Edit lock service is not available' });
+      const result = await assetEditLockService.release(req, req.params.id);
+      if (!result.ok) return res.status(Number(result.status || 403)).json({ error: result.error, lock: result.lock || null });
+      return res.json({ released: Boolean(result.released) });
+    } catch (_error) {
+      return res.status(500).json({ error: 'Failed to release edit lock' });
+    }
+  });
 
   app.get('/api/assets', async (req, res) => {
     try {
@@ -1372,6 +1426,7 @@ function registerAssetRoutes(app, deps) {
       if (!assetAccessService.canEditAsset(loaded.row, loaded.accessContext)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
+      if (await rejectIfForeignEditLock(req, res, req.params.id)) return undefined;
 
       const row = loaded.row;
       const incomingDcMetadata = sanitizeDcMetadata(body.dcMetadata);
@@ -1466,6 +1521,7 @@ function registerAssetRoutes(app, deps) {
       if (!assetAccessService.canEditAsset(row, loaded.accessContext) && !canCreateVersionForAsset(req.userPermissions, row)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
+      if (await rejectIfForeignEditLock(req, res, req.params.id)) return undefined;
 
       const countResult = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [req.params.id]);
       const count = countResult.rows[0].c;
@@ -1558,6 +1614,7 @@ function registerAssetRoutes(app, deps) {
       if (!assetAccessService.canEditAsset(assetRow, loaded.accessContext) && !canManageVersionRow(req.userPermissions, assetRow, row)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
+      if (await rejectIfForeignEditLock(req, res, assetId)) return undefined;
       if (String(row.action_type || '').trim().toLowerCase() === 'pdf_original') {
         return res.status(400).json({ error: 'Protected version cannot be deleted' });
       }
@@ -1585,6 +1642,7 @@ function registerAssetRoutes(app, deps) {
       if (!assetAccessService.canEditAsset(assetRow, loaded.accessContext) && !canManageVersionRow(req.userPermissions, assetRow, row)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
+      if (await rejectIfForeignEditLock(req, res, assetId)) return undefined;
 
       const nextLabel = String(req.body?.label || '').trim();
       const nextNote = String(req.body?.note || '').trim();

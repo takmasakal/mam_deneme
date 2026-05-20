@@ -91,6 +91,7 @@ function registerAdminRoutes(app, deps) {
     formatTimecode,
     getAssetFamily,
     assetAccessService,
+    assetEditLockService,
     nanoid: providedNanoid,
     removeAssetFromElastic
   } = deps;
@@ -1912,8 +1913,8 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
     const assetName = String(req.body?.assetName || '').trim();
     const mode = String(req.body?.mode || '').trim().toLowerCase();
     if (!assetName) return res.status(400).json({ error: 'assetName is required' });
-    if (!['thumbnail', 'preview', 'proxy', 'replace_asset', 'replace_pdf', 'delete_asset'].includes(mode)) {
-      return res.status(400).json({ error: 'mode must be one of: thumbnail, preview, proxy, replace_asset, replace_pdf, delete_asset' });
+    if (!['thumbnail', 'document_thumbnail', 'preview', 'proxy', 'replace_asset', 'replace_pdf', 'delete_asset'].includes(mode)) {
+      return res.status(400).json({ error: 'mode must be one of: thumbnail, document_thumbnail, preview, proxy, replace_asset, replace_pdf, delete_asset' });
     }
 
     const like = `%${assetName}%`;
@@ -1937,6 +1938,10 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
 
     let row = match.rows[0];
     let info = {};
+    if (assetEditLockService) {
+      const lockResult = await assetEditLockService.assertWritable(req, row.id);
+      if (!lockResult.ok) return assetEditLockService.sendLocked(res, lockResult);
+    }
 
     if (mode === 'delete_asset') {
       const actor = String(req.userPermissions?.displayName || req.userPermissions?.username || 'admin').trim() || 'admin';
@@ -2085,6 +2090,20 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
       info = {
         thumbnailUrl: result.thumbnailUrl,
         timecode: result.timecodeSeconds == null ? '' : formatTimecode(result.timecodeSeconds)
+      };
+    } else if (mode === 'document_thumbnail') {
+      if (!isDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+        return res.status(400).json({ error: 'Document thumbnail generation is supported only for document assets' });
+      }
+      const inputPath = resolveAssetInputPath(row);
+      if (!inputPath || !fs.existsSync(inputPath)) return res.status(404).json({ error: 'Source file not found' });
+      if (isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+        row = await ensurePdfThumbnailForRow(row);
+      } else {
+        row = await ensureDocumentThumbnailForRow(row);
+      }
+      info = {
+        thumbnailUrl: resolveStoredUrl(row.thumbnail_url, 'thumbnails')
       };
     } else if (mode === 'preview') {
       if (!isDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {

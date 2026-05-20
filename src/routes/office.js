@@ -19,6 +19,7 @@ function registerOfficeRoutes(app, deps) {
     runCommandCapture,
     sanitizeFileName,
     assetAccessService,
+    assetEditLockService,
     resolveEffectivePermissions
   } = deps;
 
@@ -86,7 +87,12 @@ function registerOfficeRoutes(app, deps) {
         return res.status(loaded.status).json({ error: loaded.error });
       }
       const row = loaded.row;
-      const effective = assetAccessService.canEditAsset(row, loaded.accessContext)
+      const canEditAsset = assetAccessService.canEditAsset(row, loaded.accessContext);
+      if (canEditAsset && assetEditLockService) {
+        const lockResult = await assetEditLockService.acquire(req, req.params.id, 'office');
+        if (!lockResult.ok) return assetEditLockService.sendLocked(res, lockResult);
+      }
+      const effective = canEditAsset
         ? { ...loaded.accessContext, canEditOffice: true }
         : loaded.accessContext;
       const payload = await officeService.buildOnlyOfficeConfig({
@@ -94,6 +100,14 @@ function registerOfficeRoutes(app, deps) {
         effective,
         lang: req.query.lang
       });
+      if (canEditAsset && assetEditLockService) {
+        const activeLock = await assetEditLockService.getActiveLock(req.params.id);
+        payload.editLock = activeLock ? {
+          lockedBy: String(activeLock.locked_by || ''),
+          lockedByName: String(activeLock.locked_by_name || ''),
+          expiresAt: activeLock.expires_at
+        } : null;
+      }
       return res.json(payload);
     } catch (error) {
       if (Number(error?.statusCode || 0) >= 400 && Number(error?.statusCode || 0) < 500) {
@@ -139,6 +153,9 @@ function registerOfficeRoutes(app, deps) {
       const assetId = String(req.params.id || '').trim();
       if (!assetId) return res.json({ error: 0 });
       const result = await officeService.saveOnlyofficeCallbackVersion(assetId, req.body || {});
+      if ([2, 4].includes(Number(req.body?.status || 0))) {
+        await assetEditLockService?.releaseAsset(assetId).catch(() => {});
+      }
       console.log(JSON.stringify({
         event: 'onlyoffice-callback',
         assetId,
@@ -202,6 +219,10 @@ function registerOfficeRoutes(app, deps) {
       const currentRow = loaded.row;
       if (!assetAccessService.canEditAsset(currentRow, loaded.accessContext)) {
         return res.status(403).json({ error: 'Forbidden' });
+      }
+      if (assetEditLockService) {
+        const lockResult = await assetEditLockService.assertWritable(req, assetId);
+        if (!lockResult.ok) return assetEditLockService.sendLocked(res, lockResult);
       }
       if (!isOfficeDocumentCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
         return res.status(400).json({ error: 'Office restore is only supported for Office assets' });
@@ -313,6 +334,10 @@ function registerOfficeRoutes(app, deps) {
       const currentRow = loaded.row;
       if (!assetAccessService.canEditAsset(currentRow, loaded.accessContext)) {
         return res.status(403).json({ error: 'Forbidden' });
+      }
+      if (assetEditLockService) {
+        const lockResult = await assetEditLockService.assertWritable(req, assetId);
+        if (!lockResult.ok) return assetEditLockService.sendLocked(res, lockResult);
       }
       if (!isOfficeDocumentCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
         return res.status(400).json({ error: 'Office restore is only supported for Office assets' });

@@ -52,6 +52,8 @@
     const lang = String(params.get('lang') || 'tr').trim().toLowerCase();
     const errorBox = document.getElementById('errorBox');
     const officeEditor = document.getElementById('officeEditor');
+    let editLockActive = false;
+    let editLockRefreshTimer = null;
 
     function showError(message) {
       if (errorBox) {
@@ -59,6 +61,37 @@
         errorBox.textContent = String(message || 'Viewer failed');
       }
     }
+
+    function releaseEditLock() {
+      if (!editLockActive || !assetId) return;
+      editLockActive = false;
+      if (editLockRefreshTimer) {
+        clearInterval(editLockRefreshTimer);
+        editLockRefreshTimer = null;
+      }
+      try {
+        fetch(`/api/assets/${encodeURIComponent(assetId)}/edit-lock`, {
+          method: 'DELETE',
+          credentials: 'same-origin',
+          keepalive: true
+        }).catch(() => {});
+      } catch (_error) {}
+    }
+
+    function startEditLockRefresh() {
+      if (!assetId || editLockRefreshTimer) return;
+      editLockActive = true;
+      editLockRefreshTimer = setInterval(() => {
+        fetch(`/api/assets/${encodeURIComponent(assetId)}/edit-lock/refresh`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ purpose: 'office' })
+        }).catch(() => {});
+      }, 60000);
+    }
+
+    window.addEventListener('beforeunload', releaseEditLock);
 
     async function boot() {
       if (!assetId) {
@@ -74,6 +107,7 @@
         if (!configRes.ok) {
           throw new Error(String(payload.error || 'ONLYOFFICE config could not be loaded.'));
         }
+        if (payload?.editLock) startEditLockRefresh();
         const script = document.createElement('script');
         script.src = `${String(payload.onlyofficeUrl || '').replace(/\/+$/, '')}/web-apps/apps/api/documents/api.js`;
         script.onload = () => {

@@ -262,6 +262,17 @@ async function initDb() {
       finished_at TIMESTAMPTZ
     );
 
+    CREATE TABLE IF NOT EXISTS asset_edit_locks (
+      asset_id TEXT PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+      lock_id TEXT NOT NULL,
+      locked_by TEXT NOT NULL DEFAULT '',
+      locked_by_name TEXT NOT NULL DEFAULT '',
+      purpose TEXT NOT NULL DEFAULT 'edit',
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS admin_settings (
       key TEXT PRIMARY KEY,
       value JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -338,6 +349,8 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_ocr_segments_norm_trgm ON asset_ocr_segments USING GIN (norm_text gin_trgm_ops);
     CREATE INDEX IF NOT EXISTS idx_media_jobs_asset_type_updated ON media_processing_jobs(asset_id, job_type, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_media_jobs_status ON media_processing_jobs(status);
+    CREATE INDEX IF NOT EXISTS idx_asset_edit_locks_expires ON asset_edit_locks(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_asset_edit_locks_locked_by ON asset_edit_locks(locked_by);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_group_admins_group_user ON group_admins(group_name, username);
     CREATE INDEX IF NOT EXISTS idx_group_admins_username ON group_admins(username);
     CREATE INDEX IF NOT EXISTS idx_asset_type_access_visibility ON asset_type_access(visibility);

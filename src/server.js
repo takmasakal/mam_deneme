@@ -20,6 +20,7 @@ const { createOfficeService } = require('./services/officeService');
 const { createSearchService } = require('./services/searchService');
 const { createAssetDeletionService } = require('./services/assetDeletionService');
 const { createAssetAccessService } = require('./services/assetAccessService');
+const { createAssetEditLockService } = require('./services/assetEditLockService');
 const {
   normalizeOcrText,
   normalizeOcrLine,
@@ -3367,6 +3368,15 @@ const TEXT_DOC_EXTENSIONS = new Set([
   'conf', 'sh', 'bash', 'zsh'
 ]);
 
+const ARCHIVE_EXTENSIONS = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz', 'zst', 'iso']);
+const ARCHIVE_MIME_PARTS = ['zip', 'rar', 'x-7z', 'x-tar', 'gzip', 'x-gzip', 'bzip2', 'x-xz', 'zstd'];
+
+function isArchiveCandidate({ mimeType, fileName }) {
+  const mime = String(mimeType || '').toLowerCase();
+  const ext = getFileExtension(fileName);
+  return ARCHIVE_EXTENSIONS.has(ext) || ARCHIVE_MIME_PARTS.some((part) => mime.includes(part));
+}
+
 function isTextDocumentCandidate({ mimeType, fileName }) {
   const mime = String(mimeType || '').toLowerCase();
   if (mime.startsWith('text/')) return true;
@@ -3375,6 +3385,7 @@ function isTextDocumentCandidate({ mimeType, fileName }) {
 
 function isDocumentCandidate({ mimeType, fileName, declaredType }) {
   const type = String(declaredType || '').trim().toLowerCase();
+  if (isArchiveCandidate({ mimeType, fileName })) return false;
   if (type === 'document') return true;
   if (type === 'video' || type === 'audio' || type === 'photo' || type === 'image') return false;
 
@@ -6666,6 +6677,10 @@ const officeService = createOfficeService({
 });
 
 const assetAccessService = createAssetAccessService({ pool });
+const assetEditLockService = createAssetEditLockService({
+  pool,
+  ttlSeconds: Number(process.env.ASSET_EDIT_LOCK_TTL_SECONDS || 900)
+});
 
 function buildUserContextFromRequest(req) {
   const usernameRaw =
@@ -7712,6 +7727,7 @@ registerAdminRoutes(app, {
   formatTimecode,
   getAssetFamily,
   assetAccessService,
+  assetEditLockService,
   recordAuditEvent,
   nanoid,
   removeAssetFromElastic
@@ -7824,6 +7840,7 @@ registerAssetRoutes(app, {
     canCreateVersionForAsset,
     canManageVersionRow,
     assetAccessService,
+    assetEditLockService,
     mapVersionRow,
   recordAuditEvent,
   nanoid
@@ -7892,7 +7909,8 @@ registerOfficeRoutes(app, {
   uploadsDir: UPLOADS_DIR,
   runCommandCapture,
   sanitizeFileName,
-  assetAccessService
+  assetAccessService,
+  assetEditLockService
 });
 
 registerPdfRoutes(app, {
@@ -7918,6 +7936,7 @@ registerPdfRoutes(app, {
   findOriginalVersionSnapshot,
   sendSnapshotDownload,
   assetAccessService,
+  assetEditLockService,
   resolveEffectivePermissions
 });
 

@@ -25,6 +25,7 @@ function registerPdfRoutes(app, deps) {
     findOriginalVersionSnapshot,
     sendSnapshotDownload,
     assetAccessService,
+    assetEditLockService,
     resolveEffectivePermissions
   } = deps;
 
@@ -202,6 +203,10 @@ app.post('/api/assets/:id/pdf/save', requirePdfAdvancedTools, async (req, res) =
     if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
       return res.status(400).json({ error: 'PDF save is only supported for PDF assets' });
     }
+    if (assetEditLockService) {
+      const lockResult = await assetEditLockService.assertWritable(req, assetId);
+      if (!lockResult.ok) return assetEditLockService.sendLocked(res, lockResult);
+    }
 
     const rawBase64 = String(req.body?.pdfBase64 || '').trim();
     if (!rawBase64) return res.status(400).json({ error: 'pdfBase64 is required' });
@@ -370,6 +375,10 @@ app.post('/api/assets/:id/pdf-restore-original', requireAdminAccess, async (req,
     if (!isPdfCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
       return res.status(400).json({ error: 'PDF restore is only supported for PDF assets' });
     }
+    if (assetEditLockService) {
+      const lockResult = await assetEditLockService.assertWritable(req, assetId);
+      if (!lockResult.ok) return assetEditLockService.sendLocked(res, lockResult);
+    }
 
     let targetResult = await pool.query(
       `SELECT * FROM asset_versions WHERE asset_id = $1 AND action_type = 'pdf_original' ORDER BY created_at ASC LIMIT 1`,
@@ -500,6 +509,10 @@ app.post('/api/assets/:id/pdf-restore', requireAdminAccess, async (req, res) => 
     const currentRow = loaded.row;
     if (!isPdfCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
       return res.status(400).json({ error: 'PDF restore is only supported for PDF assets' });
+    }
+    if (assetEditLockService) {
+      const lockResult = await assetEditLockService.assertWritable(req, assetId);
+      if (!lockResult.ok) return assetEditLockService.sendLocked(res, lockResult);
     }
 
     const versionResult = await pool.query(
