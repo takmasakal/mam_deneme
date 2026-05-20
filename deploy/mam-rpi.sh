@@ -49,17 +49,6 @@ env_value() {
   grep -E "^${key}=" "${ENV_FILE}" | tail -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true
 }
 
-should_build_app() {
-  local provider install_libreoffice build_local
-  build_local="$(env_value MAM_BUILD_LOCAL | tr '[:upper:]' '[:lower:]')"
-  if [[ -z "${build_local}" || "${build_local}" == "true" || "${build_local}" == "1" || "${build_local}" == "yes" ]]; then
-    return 0
-  fi
-  provider="$(env_value OFFICE_EDITOR_PROVIDER | tr '[:upper:]' '[:lower:]')"
-  install_libreoffice="$(env_value INSTALL_LIBREOFFICE | tr '[:upper:]' '[:lower:]')"
-  [[ "${provider}" == "libreoffice" || "${install_libreoffice}" == "true" ]]
-}
-
 warn_office_config() {
   local provider install_libreoffice enable_onlyoffice
   provider="$(env_value OFFICE_EDITOR_PROVIDER | tr '[:upper:]' '[:lower:]')"
@@ -114,6 +103,7 @@ usage() {
   cat <<'EOF'
 Usage:
   ./deploy/mam-rpi.sh init [HOST]
+  ./deploy/mam-rpi.sh build [HOST]
   ./deploy/mam-rpi.sh up [HOST]
   ./deploy/mam-rpi.sh down
   ./deploy/mam-rpi.sh restart [HOST]
@@ -129,14 +119,15 @@ case "${cmd}" in
   init)
     init_if_needed "${2:-}"
     ;;
+  build)
+    init_if_needed "${2:-}"
+    warn_office_config
+    dc build app oauth2-proxy
+    ;;
   up)
     init_if_needed "${2:-}"
     warn_office_config
-    if should_build_app; then
-      dc up -d --build
-    else
-      dc up -d
-    fi
+    dc up -d
     print_urls
     ;;
   down)
@@ -146,11 +137,7 @@ case "${cmd}" in
     init_if_needed "${2:-}"
     warn_office_config
     dc down
-    if should_build_app; then
-      dc up -d --build
-    else
-      dc up -d
-    fi
+    dc up -d
     print_urls
     ;;
   ps)

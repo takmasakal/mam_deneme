@@ -57,15 +57,16 @@ A lightweight Media Asset Management starter app.
    `http://localhost:3000`
 
 `up_latest_main.sh` behavior:
-- Fetches the latest `main` branch before building.
+- Fetches the latest `main` branch before starting.
 - Prevents rebuilding an older checked-out revision by mistake.
 - Ensures the external PostgreSQL volume `codex_deneme_pg_data` exists.
-- Then runs `docker compose up -d --build`.
+- Then starts the existing stack.
 
 First-time manual alternative:
 ```bash
 docker volume create codex_deneme_pg_data || true
-docker compose up -d --build
+docker compose build app oauth2-proxy
+docker compose up -d
 ```
 
 `up-fast.sh` behavior:
@@ -93,11 +94,11 @@ Office editor mode:
   LibreOffice mode keeps the original Office file unchanged and generates a cached PDF preview under `uploads/previews/libreoffice`.
 - Start normally with:
   ```bash
-  docker compose up -d --build
+  docker compose up -d
   ```
 - To return to lightweight mode:
   ```bash
-  OFFICE_EDITOR_PROVIDER=none docker compose up -d --build
+  OFFICE_EDITOR_PROVIDER=none docker compose up -d
   docker compose stop onlyoffice
   ```
 
@@ -135,14 +136,20 @@ Image build context excludes local media/metadata paths via `.dockerignore` (`up
    ```
 
 ## Quick Start (Docker + Keycloak)
+Security note:
+- Default passwords are not stored in Compose or `.env` files anymore.
+- Run `./deploy/init.sh` first; generated secrets are stored under `deploy/secrets/`.
+- See [Docker secrets documentation](docs/docker-secrets.md).
+
 ### EN
 1. Start full stack:
    ```bash
-   ./scripts/up_latest_main.sh
+   ./deploy/init.sh localhost
+   docker compose up -d
    ```
 2. Open MAM login: `http://localhost:3000`
 3. Open Keycloak admin: `http://localhost:8081`
-4. Login to Keycloak admin (default): `admin / admin`
+4. Login to Keycloak admin with username from `deploy/.env.easy` and password from `deploy/secrets/keycloak_admin_password`.
 5. In Keycloak, create/select realm `mam`, then create user and set password:
    - Users -> Add user
    - Credentials -> Set password (`Temporary = OFF`)
@@ -157,11 +164,12 @@ Image build context excludes local media/metadata paths via `.dockerignore` (`up
 ### TR
 1. Tüm servisi başlat:
    ```bash
-   ./scripts/up_latest_main.sh
+   ./deploy/init.sh localhost
+   docker compose up -d
    ```
 2. MAM giriş sayfasını aç: `http://localhost:3000`
 3. Keycloak admin panelini aç: `http://localhost:8081`
-4. Varsayılan admin ile giriş yap: `admin / admin`
+4. Keycloak admin kullanıcı adı `deploy/.env.easy`, parola ise `deploy/secrets/keycloak_admin_password` içinden alınır.
 5. Keycloak'ta `mam` realm'ini seç/oluştur, kullanıcı oluştur ve şifre ver:
    - Users -> Add user
    - Credentials -> Şifre belirle (`Temporary = OFF`)
@@ -176,7 +184,7 @@ Image build context excludes local media/metadata paths via `.dockerignore` (`up
 ## One-Command VM Setup (Turnkey)
 Use this when you want a ready stack (app + postgres + elasticsearch + keycloak + oauth2-proxy) with minimal manual Keycloak work.
 
-1. Prepare generated env + realm import (IP/domain optional):
+1. Prepare generated non-secret env + Docker secrets (IP/domain optional):
    ```bash
    ./deploy/init.sh
    ```
@@ -186,19 +194,21 @@ Use this when you want a ready stack (app + postgres + elasticsearch + keycloak 
    ```
 2. Start turnkey stack:
    ```bash
-   docker compose --env-file deploy/.env.easy -f docker-compose.easy.yml up -d
+   docker compose up -d
    ```
 3. Open:
    - MAM login: `http://<detected-host>:3000`
    - Keycloak admin: `http://<detected-host>:8081`
 
 Generated default users in realm `mam`:
-- `mamadmin / mamadmin` (roles: `mam-admin-access`, `mam-asset-delete`)
-- `mamuser / mamuser`
+- `mamadmin` password: `deploy/secrets/mam_admin_password` (roles: `mam-admin-access`, `mam-asset-delete`)
+- `mamuser` password: `deploy/secrets/mam_user_password`
+- `yazici` password: `deploy/secrets/mam_text_admin_password` (role: `mam-text-admin`)
 
 Note:
-- Keycloak admin console account comes from `deploy/.env.easy` (`KEYCLOAK_ADMIN`, `KEYCLOAK_ADMIN_PASSWORD`).
-- If you re-run `./deploy/init.sh`, it regenerates the realm import and `.env.easy`.
+- Keycloak admin console username comes from `deploy/.env.easy` (`KEYCLOAK_ADMIN`); password comes from `deploy/secrets/keycloak_admin_password`.
+- If you re-run `./deploy/init.sh`, weak/default secrets are rotated and `.env.easy` is rewritten without passwords.
+- Full secret procedure: [docs/docker-secrets.md](docs/docker-secrets.md).
 
 ## Login + LDAP (Keycloak)
 Keycloak is a good fit here because it gives you:
@@ -217,15 +227,16 @@ This Compose setup uses:
    ```
 2. Open Keycloak admin:
    - `http://localhost:8081`
-   - default admin: `admin / admin` (change in compose env vars for production)
+   - username: `KEYCLOAK_ADMIN` from `deploy/.env.easy`
+   - password: `deploy/secrets/keycloak_admin_password`
 3. Create realm: `mam`
 4. Create client: `mam-web`
    - Protocol: `openid-connect`
    - Client authentication: `ON` (confidential client)
    - Valid redirect URI: `http://localhost:3000/oauth2/callback`
    - Web origins: `http://localhost:3000`
-5. Copy generated client secret and set in compose env:
-   - `OAUTH2_PROXY_CLIENT_SECRET`
+5. Copy generated client secret into the Docker secret file if doing manual setup:
+   - `deploy/secrets/oauth2_proxy_client_secret`
 6. Add LDAP user federation in Keycloak:
    - Realm `mam` -> User federation -> Add provider `ldap`
    - Enter your LDAP server URL, bind DN/password, user DN, and mapper settings
@@ -323,4 +334,4 @@ To avoid accidentally building an older Git checkout, use:
 ./scripts/up_latest_main.sh
 ```
 
-This script fetches `origin/main`, fast-forwards the local `main` checkout, then runs `docker compose up -d --build`.
+This script fetches `origin/main`, fast-forwards the local `main` checkout, then starts the existing stack.

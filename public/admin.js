@@ -37,8 +37,10 @@ const proxyToolMsg = document.getElementById('proxyToolMsg');
 const languageSelect = document.getElementById('languageSelectAdmin');
 const adminTabs = Array.from(document.querySelectorAll('.admin-tab'));
 const adminPanels = Array.from(document.querySelectorAll('.admin-panel'));
+const overviewCards = Array.from(document.querySelectorAll('[data-overview-target]'));
 const settingsSubTabs = Array.from(document.querySelectorAll('.settings-subtab'));
 const settingsSubPanels = Array.from(document.querySelectorAll('.settings-subpanel'));
+const userPermissionsSearchInput = document.getElementById('userPermissionsSearchInput');
 const userPermissionsRows = document.getElementById('userPermissionsRows');
 const userPermissionsMsg = document.getElementById('userPermissionsMsg');
 const groupAdminGroupInput = document.getElementById('groupAdminGroupInput');
@@ -46,6 +48,13 @@ const groupAdminUserInput = document.getElementById('groupAdminUserInput');
 const addGroupAdminBtn = document.getElementById('addGroupAdminBtn');
 const groupAdminsRows = document.getElementById('groupAdminsRows');
 const groupAdminsMsg = document.getElementById('groupAdminsMsg');
+const refreshIdentityOverviewBtn = document.getElementById('refreshIdentityOverviewBtn');
+const identityOverviewSummary = document.getElementById('identityOverviewSummary');
+const identityGroupsRows = document.getElementById('identityGroupsRows');
+const identityUsersRows = document.getElementById('identityUsersRows');
+const identityMamGroupsRows = document.getElementById('identityMamGroupsRows');
+const identityGroupOptions = document.getElementById('identityGroupOptions');
+const identityUserOptions = document.getElementById('identityUserOptions');
 const ocrAdminSearchInput = document.getElementById('ocrAdminSearchInput');
 const ocrDeleteFileCheck = document.getElementById('ocrDeleteFileCheck');
 const ocrRecordsRows = document.getElementById('ocrRecordsRows');
@@ -67,13 +76,23 @@ const auditTargetSuggestList = document.getElementById('auditTargetSuggestList')
 const auditFromInput = document.getElementById('auditFromInput');
 const auditToInput = document.getElementById('auditToInput');
 const runAuditSearchBtn = document.getElementById('runAuditSearchBtn');
+const exportAuditEventsBtn = document.getElementById('exportAuditEventsBtn');
 const auditEventsRows = document.getElementById('auditEventsRows');
 const auditEventsMsg = document.getElementById('auditEventsMsg');
 const assetRightsSearchInput = document.getElementById('assetRightsSearchInput');
+const assetRightsSuggestList = document.getElementById('assetRightsSuggestList');
+const assetRightsTypeFilters = Array.from(document.querySelectorAll('input[name="assetRightsType"]'));
+const assetRightsVisibilityFilter = document.getElementById('assetRightsVisibilityFilter');
 const assetRightsSearchBtn = document.getElementById('assetRightsSearchBtn');
 const assetRightsRows = document.getElementById('assetRightsRows');
 const assetRightsMsg = document.getElementById('assetRightsMsg');
+const assetRightsPageSize = document.getElementById('assetRightsPageSize');
+const assetRightsPrevPage = document.getElementById('assetRightsPrevPage');
+const assetRightsNextPage = document.getElementById('assetRightsNextPage');
+const assetRightsPageInfo = document.getElementById('assetRightsPageInfo');
 const refreshRuntimeDiagnosticsBtn = document.getElementById('refreshRuntimeDiagnosticsBtn');
+const activeUsersSectionTitle = document.getElementById('activeUsersSectionTitle');
+const runtimeErrorsSectionTitle = document.getElementById('runtimeErrorsSectionTitle');
 const activeUsersRows = document.getElementById('activeUsersRows');
 const runtimeErrorRows = document.getElementById('runtimeErrorRows');
 const runtimeDiagnosticsMsg = document.getElementById('runtimeDiagnosticsMsg');
@@ -84,6 +103,7 @@ const overviewSystemHealthSub = document.getElementById('overviewSystemHealthSub
 const overviewOpenErrors = document.getElementById('overviewOpenErrors');
 const overviewOpenErrorsSub = document.getElementById('overviewOpenErrorsSub');
 const overviewActiveUsers = document.getElementById('overviewActiveUsers');
+const accessScopeModule = window.createMainAccessScopeModule();
 
 let currentLang = localStorage.getItem(LOCAL_LANG) || 'en';
 let pollTimer = null;
@@ -98,6 +118,22 @@ let auditSuggestReqSeq = 0;
 let auditSuggestItems = [];
 let auditSuggestActiveIndex = -1;
 let auditSuggestHideTimer = null;
+let assetRightsSuggestTimer = null;
+let assetRightsSuggestReqSeq = 0;
+let assetRightsSuggestItems = [];
+let assetRightsSuggestActiveIndex = -1;
+let assetRightsSuggestHideTimer = null;
+let assetRightsGroupSuggestEl = null;
+let assetRightsGroupSuggestInput = null;
+let assetRightsGroupSuggestItems = [];
+let assetRightsGroupSuggestActiveIndex = -1;
+let assetRightsGroupSuggestHideTimer = null;
+let assetRightsGroupNamesCache = null;
+let lastAssetRightsAssets = [];
+let lastAssetRightsTypes = [];
+let assetRightsMode = 'asset';
+let assetRightsPage = 1;
+let assetRightsPagination = { page: 1, limit: 20, total: 0, totalPages: 1 };
 let currentAdminProfile = null;
 
 let i18n = {
@@ -135,6 +171,17 @@ let i18n = {
     asset_rights_saved: 'Asset rights saved.',
     asset_rights_load_failed: 'Failed to load asset rights.',
     asset_rights_save_failed: 'Failed to save asset rights.',
+    asset_rights_asset_col: 'Asset',
+    asset_rights_mode_asset: 'Asset',
+    asset_rights_mode_type: 'Type',
+    asset_rights_type_filter: 'Type',
+    asset_type_video: 'Video',
+    asset_type_audio: 'Audio',
+    asset_type_photo: 'Photo',
+    asset_type_document: 'Doc',
+    asset_type_other: 'Other',
+    asset_rights_visibility_filter: 'Visibility',
+    asset_rights_visibility_all: 'All',
     asset_visibility: 'Visibility',
     visibility_private: 'Private',
     visibility_group: 'Owner groups',
@@ -143,7 +190,25 @@ let i18n = {
     owner_groups: 'Owner groups',
     allowed_groups: 'Allowed groups',
     allowed_users: 'Allowed users',
+    denied_groups: 'Denied groups',
+    denied_users: 'Denied users',
+    edit_allowed_groups: 'Editable groups',
+    edit_allowed_users: 'Editable users',
+    edit_denied_groups: 'Edit denied groups',
+    edit_denied_users: 'Edit denied users',
     save_visibility: 'Save',
+    identity_overview: 'Identity Overview',
+    identity_keycloak_groups: 'Keycloak Groups',
+    identity_keycloak_users: 'Keycloak Users',
+    identity_mam_only_groups: 'MAM-only Groups',
+    identity_source: 'Source',
+    identity_no_groups: 'No groups found.',
+    identity_no_users: 'No users found.',
+    identity_no_mam_groups: 'No MAM-only groups.',
+    identity_load_failed: 'Failed to load identity overview.',
+    identity_user_count: 'Users',
+    identity_group_count: 'Groups',
+    identity_mam_group_count: 'MAM groups',
     settings: 'Settings',
     loading: 'Loading...',
     workflow_tracking_enabled: 'Workflow tracking enabled',
@@ -166,11 +231,11 @@ let i18n = {
     token_rotated: 'API token rotated.',
     token_copied: 'API token copied.',
     api_test_title: 'Postman Test',
-    api_test_note: 'Headers: X-API-Token or Authorization: Bearer <token>',
+    api_test_note: 'Header: X-API-Token or X-MAM-API-Token',
     api_help_doc_title: 'API Help Document',
     api_help_intro: 'Use this page to test MAM APIs quickly from Postman or cURL.',
     api_help_auth_title: 'Authentication Rules',
-    api_help_auth_note: 'UI traffic on port 3000 is handled by SSO proxy. Token tests should use port 3001 direct API.',
+    api_help_auth_note: 'Use the same web address for API calls. Browser users authenticate with SSO; API clients use a token header.',
     api_help_bearer_on: 'OIDC Bearer JWT validation is ON.',
     api_help_bearer_off: 'OIDC Bearer JWT validation is OFF.',
     api_help_token_on: 'API token protection is currently ON.',
@@ -183,9 +248,9 @@ let i18n = {
     api_help_cmd_create_collection: 'Create a collection',
     api_help_postman_title: 'Postman Setup',
     api_help_postman_step1: 'Method: GET',
-    api_help_postman_step2: 'URL: {{baseUrl}}/api/workflow (recommended baseUrl: http://localhost:3001)',
-    api_help_postman_step3: 'When token protection is ON, send either X-API-Token or Authorization: Bearer <token>.',
-    api_help_postman_step4: 'Disable auto-follow redirects when testing through port 3000.',
+    api_help_postman_step2: 'URL: {{baseUrl}}/api/assets?q=istanbul',
+    api_help_postman_step3: 'Headers: X-API-Token: <token> or X-MAM-API-Token: <token>.',
+    api_help_postman_step4: 'A valid token returns JSON; missing or invalid tokens return 401 JSON.',
     api_help_endpoints_title: 'Main Endpoints',
     api_help_group_core: 'Core / Session',
     api_help_group_assets: 'Assets / Search / Versions',
@@ -207,6 +272,8 @@ let i18n = {
     audit_filter_from: 'From',
     audit_filter_to: 'To',
     audit_filter_run: 'Filter',
+    audit_export_excel: 'Export to Excel',
+    audit_export_failed: 'Failed to export audit events.',
     audit_none: 'No audit event found.',
     audit_load_failed: 'Failed to load audit events.',
     audit_action_asset_uploaded: 'Asset uploaded',
@@ -333,6 +400,10 @@ let i18n = {
     health_job_status_completed: 'Completed',
     health_job_status_failed: 'Failed',
     user_settings: 'User Settings',
+    user_search: 'User Search',
+    user_search_ph: 'Search user...',
+    user_search_no_match: 'No matching user found.',
+    user_permissions_empty: 'No user found.',
     perm_admin_access: 'Admin page access',
     perm_metadata_edit: 'Metadata edit',
     perm_office_edit: 'Office edit',
@@ -340,6 +411,10 @@ let i18n = {
     perm_pdf_advanced: 'PDF advanced tools',
     perm_text_admin: 'OCR / subtitle admin',
     user_permissions_saved: 'User permissions saved.',
+    page_size: 'Page size',
+    prev_page: 'Prev',
+    next_page: 'Next',
+    page_info: 'Page {page} / {pages} ({total})',
     group_admins: 'Group Admins',
     group_name: 'Group',
     username: 'User',
@@ -455,6 +530,17 @@ let i18n = {
     asset_rights_saved: 'Varlık yetkileri kaydedildi.',
     asset_rights_load_failed: 'Varlık yetkileri yüklenemedi.',
     asset_rights_save_failed: 'Varlık yetkileri kaydedilemedi.',
+    asset_rights_asset_col: 'Varlık',
+    asset_rights_mode_asset: 'Varlık',
+    asset_rights_mode_type: 'Tür',
+    asset_rights_type_filter: 'Tür',
+    asset_type_video: 'Video',
+    asset_type_audio: 'Ses',
+    asset_type_photo: 'Görsel',
+    asset_type_document: 'Doc',
+    asset_type_other: 'Diğer',
+    asset_rights_visibility_filter: 'Görünürlük',
+    asset_rights_visibility_all: 'Tümü',
     asset_visibility: 'Görünürlük',
     visibility_private: 'Özel',
     visibility_group: 'Sahip gruplar',
@@ -463,7 +549,25 @@ let i18n = {
     owner_groups: 'Sahip gruplar',
     allowed_groups: 'İzinli gruplar',
     allowed_users: 'İzinli kullanıcılar',
+    denied_groups: 'Göremeyen gruplar',
+    denied_users: 'Göremeyen kullanıcılar',
+    edit_allowed_groups: 'Değiştirebilen gruplar',
+    edit_allowed_users: 'Değiştirebilen kullanıcılar',
+    edit_denied_groups: 'Değiştiremeyen gruplar',
+    edit_denied_users: 'Değiştiremeyen kullanıcılar',
     save_visibility: 'Kaydet',
+    identity_overview: 'Kimlik Özeti',
+    identity_keycloak_groups: 'Keycloak Grupları',
+    identity_keycloak_users: 'Keycloak Kullanıcıları',
+    identity_mam_only_groups: 'Sadece MAM Grupları',
+    identity_source: 'Kaynak',
+    identity_no_groups: 'Grup bulunamadı.',
+    identity_no_users: 'Kullanıcı bulunamadı.',
+    identity_no_mam_groups: 'Sadece MAM tarafında grup yok.',
+    identity_load_failed: 'Kimlik özeti yüklenemedi.',
+    identity_user_count: 'Kullanıcı',
+    identity_group_count: 'Grup',
+    identity_mam_group_count: 'MAM grubu',
     settings: 'Ayarlar',
     loading: 'Yükleniyor...',
     workflow_tracking_enabled: 'İş akışı izleme etkin',
@@ -486,11 +590,11 @@ let i18n = {
     token_rotated: 'API token yenilendi.',
     token_copied: 'API token kopyalandı.',
     api_test_title: 'Postman Testi',
-    api_test_note: 'Header: X-API-Token veya Authorization: Bearer <token>',
+    api_test_note: 'Header: X-API-Token veya X-MAM-API-Token',
     api_help_doc_title: 'API Yardım Dokümanı',
     api_help_intro: 'MAM APIlerini Postman veya cURL ile hızlı test etmek için bu bölümü kullanın.',
     api_help_auth_title: 'Kimlik Doğrulama Kuralları',
-    api_help_auth_note: '3000 portundaki UI trafiği SSO proxy üzerinden çalışır. Token testleri için 3001 direkt API kullanın.',
+    api_help_auth_note: 'API çağrıları için aynı web adresini kullanın. Tarayıcı kullanıcıları SSO ile, API istemcileri token header ile doğrulanır.',
     api_help_bearer_on: 'OIDC Bearer JWT doğrulaması AÇIK.',
     api_help_bearer_off: 'OIDC Bearer JWT doğrulaması KAPALI.',
     api_help_token_on: 'API token koruması şu anda AÇIK.',
@@ -503,9 +607,9 @@ let i18n = {
     api_help_cmd_create_collection: 'Koleksiyon oluştur',
     api_help_postman_title: 'Postman Kurulumu',
     api_help_postman_step1: 'Method: GET',
-    api_help_postman_step2: 'URL: {{baseUrl}}/api/workflow (önerilen baseUrl: http://localhost:3001)',
-    api_help_postman_step3: 'Token koruması AÇIK ise X-API-Token veya Authorization: Bearer <token> gönderin.',
-    api_help_postman_step4: '3000 portunu test ederken otomatik redirect takibini kapatın.',
+    api_help_postman_step2: 'URL: {{baseUrl}}/api/assets?q=istanbul',
+    api_help_postman_step3: 'Headers: X-API-Token: <token> veya X-MAM-API-Token: <token>.',
+    api_help_postman_step4: 'Geçerli token JSON döndürür; eksik veya hatalı token 401 JSON döndürür.',
     api_help_endpoints_title: 'Temel Endpointler',
     api_help_group_core: 'Temel / Oturum',
     api_help_group_assets: 'Varlıklar / Arama / Versiyonlar',
@@ -527,6 +631,8 @@ let i18n = {
     audit_filter_from: 'Başlangıç',
     audit_filter_to: 'Bitiş',
     audit_filter_run: 'Filtrele',
+    audit_export_excel: "Excel'e aktar",
+    audit_export_failed: 'İşlem geçmişi dışa aktarılamadı.',
     audit_none: 'İşlem kaydı bulunamadı.',
     audit_load_failed: 'İşlem geçmişi yüklenemedi.',
     audit_action_asset_uploaded: 'Varlık yüklendi',
@@ -653,6 +759,10 @@ let i18n = {
     health_job_status_completed: 'Tamamlandı',
     health_job_status_failed: 'Hatalı',
     user_settings: 'Kullanıcı Ayarları',
+    user_search: 'Kullanıcı Ara',
+    user_search_ph: 'Kullanıcı ara...',
+    user_search_no_match: 'Eşleşen kullanıcı bulunamadı.',
+    user_permissions_empty: 'Kullanıcı bulunamadı.',
     perm_admin_access: 'Yönetim sayfasına erişim',
     perm_metadata_edit: 'Metadata düzenleme',
     perm_office_edit: 'Office düzenleme',
@@ -660,6 +770,10 @@ let i18n = {
     perm_pdf_advanced: 'PDF gelişmiş araçlar',
     perm_text_admin: 'OCR / altyazı yöneticisi',
     user_permissions_saved: 'Kullanıcı yetkileri kaydedildi.',
+    page_size: 'Sayfa boyutu',
+    prev_page: 'Önceki',
+    next_page: 'Sonraki',
+    page_info: 'Sayfa {page} / {pages} ({total})',
     group_admins: 'Grup Yöneticileri',
     group_name: 'Grup',
     username: 'Kullanıcı',
@@ -772,6 +886,11 @@ function t(key) {
   return i18n[currentLang]?.[key] || i18n.en[key] || key;
 }
 
+function tForLang(key, lang) {
+  const normalized = lang === 'tr' ? 'tr' : 'en';
+  return i18n[normalized]?.[key] || i18n.en[key] || key;
+}
+
 function applyI18n() {
   document.title = t('admin_title');
   document.querySelectorAll('[data-i18n]').forEach((el) => {
@@ -784,6 +903,7 @@ function applyI18n() {
   });
   renderApiHelp();
   renderApiGuide();
+  syncAssetRightsTableLanguage();
 }
 
 function row(label, value) {
@@ -1355,7 +1475,14 @@ function renderSystemHealth(data) {
   const services = data?.services || {};
   const integrity = data?.integrity || {};
   const recent = data?.recentJobs || {};
-  const serviceList = [services.app, services.postgres, services.elasticsearch, services.keycloak, services.oauth2Proxy];
+  const serviceEntries = [
+    ['health_service_app', services.app],
+    ['health_service_postgres', services.postgres],
+    ['health_service_elastic', services.elasticsearch],
+    ['health_service_keycloak', services.keycloak],
+    ['health_service_oauth2_proxy', services.oauth2Proxy]
+  ];
+  const serviceList = serviceEntries.map(([, entry]) => entry);
   const upServices = serviceList.filter((entry) => Boolean(entry?.ok)).length;
   const failedJobs = Number(jobs.proxyFailed || 0) + Number(jobs.subtitleFailed || 0) + Number(jobs.ocrFailed || 0);
   if (overviewSystemHealth) overviewSystemHealth.textContent = upServices === serviceList.length ? 'OK' : `${upServices}/${serviceList.length}`;
@@ -1370,9 +1497,15 @@ function renderSystemHealth(data) {
     const suffix = status > 0 ? ` (${status})` : '';
     return `<span class="${cls}">${escapeHtml(label)}${escapeHtml(suffix)}</span>`;
   };
+  const serviceCards = serviceEntries.map(([labelKey, entry]) => `
+    <div class="health-service-card ${entry?.ok ? 'is-up' : 'is-down'}">
+      <strong>${escapeHtml(t(labelKey))}</strong>
+      ${serviceBadge(entry)}
+    </div>
+  `).join('');
   systemHealthRows.innerHTML = [
     `<div class="row"><strong>${escapeHtml(t('health_disk'))}</strong><span>${escapeHtml(t('health_uploads_size'))}: ${escapeHtml(humanBytes(disk.uploadsBytes))} | ${escapeHtml(t('health_uploads_files'))}: ${escapeHtml(String(disk.uploadsFiles || 0))} | ${escapeHtml(t('health_fs_free'))}: ${escapeHtml(humanBytes(disk.fsFreeBytes))} / ${escapeHtml(t('health_fs_total'))}: ${escapeHtml(humanBytes(disk.fsTotalBytes))}</span></div>`,
-    `<div class="row"><strong>${escapeHtml(t('health_services'))}</strong><span>${escapeHtml(t('health_service_app'))}: ${serviceBadge(services.app)} | ${escapeHtml(t('health_service_postgres'))}: ${serviceBadge(services.postgres)} | ${escapeHtml(t('health_service_elastic'))}: ${serviceBadge(services.elasticsearch)} | ${escapeHtml(t('health_service_keycloak'))}: ${serviceBadge(services.keycloak)} | ${escapeHtml(t('health_service_oauth2_proxy'))}: ${serviceBadge(services.oauth2Proxy)}</span></div>`,
+    `<div class="row health-services-row" data-health-section="services"><strong>${escapeHtml(t('health_services'))}</strong><div class="health-service-list">${serviceCards}</div></div>`,
     `<div class="row"><strong>${escapeHtml(t('health_jobs'))}</strong><span>${escapeHtml(t('health_proxy_running'))}: ${escapeHtml(String(jobs.proxyRunning || 0))} | ${escapeHtml(t('health_subtitle_running'))}: ${escapeHtml(String(jobs.subtitleRunning || 0))} | ${escapeHtml(t('health_ocr_running'))}: ${escapeHtml(String(jobs.ocrRunning || 0))} | ${escapeHtml(t('health_proxy_failed'))}: ${escapeHtml(String(jobs.proxyFailed || 0))} | ${escapeHtml(t('health_subtitle_failed'))}: ${escapeHtml(String(jobs.subtitleFailed || 0))} | ${escapeHtml(t('health_ocr_failed'))}: ${escapeHtml(String(jobs.ocrFailed || 0))}</span></div>`,
     `<div class="row"><strong>${escapeHtml(t('health_integrity'))}</strong><span>${escapeHtml(t('health_missing_proxy'))}: ${escapeHtml(String(integrity.missingProxy || 0))} | ${escapeHtml(t('health_missing_thumbnail'))}: ${escapeHtml(String(integrity.missingThumbnail || 0))} | ${escapeHtml(t('health_missing_subtitle'))}: ${escapeHtml(String(integrity.missingSubtitle || 0))} | ${escapeHtml(t('health_missing_ocr'))}: ${escapeHtml(String(integrity.missingOcr || 0))}</span></div>`
   ].join('');
@@ -1472,6 +1605,32 @@ function switchTab(tabName) {
   });
 }
 
+async function openRuntimeDiagnosticsFocus(target) {
+  hideProxySuggestions();
+  hideAuditSuggestions();
+  switchTab('runtimeDiagnostics');
+  await loadRuntimeDiagnostics();
+  const focusEl = target === 'active-users' ? activeUsersSectionTitle : runtimeErrorsSectionTitle;
+  if (focusEl) {
+    focusEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    focusEl.classList.add('admin-section-flash');
+    setTimeout(() => focusEl.classList.remove('admin-section-flash'), 900);
+  }
+}
+
+async function openSystemHealthFocus() {
+  hideProxySuggestions();
+  hideAuditSuggestions();
+  switchTab('systemHealth');
+  await refreshTrackingAndHealth();
+  const focusEl = systemHealthRows?.querySelector('[data-health-section="services"]') || systemHealthRows;
+  if (focusEl) {
+    focusEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    focusEl.classList.add('admin-section-flash');
+    setTimeout(() => focusEl.classList.remove('admin-section-flash'), 900);
+  }
+}
+
 function switchSettingsSubtab(tabName) {
   const target = String(tabName || 'general');
   settingsSubTabs.forEach((btn) => {
@@ -1502,6 +1661,7 @@ async function loadSettingsSubtabData(tabName) {
   }
   if (tab === 'users') {
     await loadUserPermissions();
+    await loadIdentityOverview();
     await loadGroupAdmins();
   }
 }
@@ -1741,14 +1901,266 @@ function queueAuditSuggestionRequest() {
   }, 180);
 }
 
+function hideAssetRightsSuggestions() {
+  if (!assetRightsSuggestList) return;
+  assetRightsSuggestList.classList.add('hidden');
+  assetRightsSuggestList.innerHTML = '';
+  assetRightsSuggestItems = [];
+  assetRightsSuggestActiveIndex = -1;
+}
+
+function setAssetRightsSuggestActive(index) {
+  if (!assetRightsSuggestList) return;
+  const buttons = Array.from(assetRightsSuggestList.querySelectorAll('.proxy-suggest-item'));
+  if (!buttons.length) {
+    assetRightsSuggestActiveIndex = -1;
+    return;
+  }
+  const safeIndex = Math.max(0, Math.min(buttons.length - 1, index));
+  assetRightsSuggestActiveIndex = safeIndex;
+  buttons.forEach((btn, idx) => {
+    btn.classList.toggle('active', idx === safeIndex);
+  });
+}
+
+function applyAssetRightsSuggestion(item) {
+  if (!item || !assetRightsSearchInput) return;
+  const title = String(item.title || '').trim();
+  const fileName = String(item.fileName || '').trim();
+  assetRightsSearchInput.value = title || fileName;
+  hideAssetRightsSuggestions();
+  assetRightsPage = 1;
+  loadAssetRightsRows().catch((error) => {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+}
+
+function renderAssetRightsSuggestions(items, query) {
+  if (!assetRightsSuggestList) return;
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {
+    hideAssetRightsSuggestions();
+    return;
+  }
+  assetRightsSuggestItems = list;
+  assetRightsSuggestActiveIndex = -1;
+  assetRightsSuggestList.innerHTML = list.map((item, index) => {
+    const title = String(item.title || item.fileName || item.id || '');
+    const fileName = String(item.fileName || '');
+    const type = String(item.type || '-');
+    const trashState = item.inTrash ? 'trash' : 'active';
+    return `
+      <button type="button" class="proxy-suggest-item" data-index="${index}">
+        <strong>${highlightSuggestion(title, query)}</strong>
+        <span>${escapeHtml(type)} | ${escapeHtml(fileName || '-')} | ${escapeHtml(trashState)}</span>
+      </button>
+    `;
+  }).join('');
+  assetRightsSuggestList.classList.remove('hidden');
+}
+
+async function requestAssetRightsSuggestions() {
+  const query = String(assetRightsSearchInput?.value || '').trim();
+  if (query.length < 2) {
+    hideAssetRightsSuggestions();
+    return;
+  }
+  const reqId = ++assetRightsSuggestReqSeq;
+  const params = new URLSearchParams({ q: query, limit: '8' });
+  try {
+    const result = await api(`/api/admin/assets/suggest?${params.toString()}`);
+    if (reqId !== assetRightsSuggestReqSeq) return;
+    renderAssetRightsSuggestions(result, query);
+  } catch (_error) {
+    if (reqId !== assetRightsSuggestReqSeq) return;
+    hideAssetRightsSuggestions();
+  }
+}
+
+function queueAssetRightsSuggestionRequest() {
+  if (assetRightsSuggestTimer) clearTimeout(assetRightsSuggestTimer);
+  assetRightsSuggestTimer = setTimeout(() => {
+    requestAssetRightsSuggestions().catch(() => {});
+  }, 180);
+}
+
+function normalizeGroupSuggestionName(value) {
+  return String(value || '').trim().replace(/^\/+/, '');
+}
+
+function addGroupSuggestionName(names, value) {
+  const name = normalizeGroupSuggestionName(value);
+  if (name) names.add(name);
+}
+
+function collectIdentityGroupNames(result = {}) {
+  const names = new Set();
+  (Array.isArray(result.groups) ? result.groups : []).forEach((group) => {
+    addGroupSuggestionName(names, group.path || group.name);
+  });
+  (Array.isArray(result.mamGroups) ? result.mamGroups : []).forEach((group) => {
+    addGroupSuggestionName(names, group);
+  });
+  (Array.isArray(result.mamOnlyGroups) ? result.mamOnlyGroups : []).forEach((group) => {
+    addGroupSuggestionName(names, group);
+  });
+  (Array.isArray(result.groupAdmins) ? result.groupAdmins : []).forEach((item) => {
+    addGroupSuggestionName(names, item.groupName || item.group);
+  });
+  return Array.from(names).sort((a, b) => a.localeCompare(b));
+}
+
+async function loadAssetRightsGroupNames() {
+  if (Array.isArray(assetRightsGroupNamesCache)) return assetRightsGroupNamesCache;
+  const result = await api('/api/admin/identity/overview');
+  assetRightsGroupNamesCache = collectIdentityGroupNames(result);
+  return assetRightsGroupNamesCache;
+}
+
+function ensureAssetRightsGroupSuggestEl() {
+  if (assetRightsGroupSuggestEl) return assetRightsGroupSuggestEl;
+  assetRightsGroupSuggestEl = document.createElement('div');
+  assetRightsGroupSuggestEl.id = 'assetRightsGroupSuggestList';
+  assetRightsGroupSuggestEl.className = 'proxy-suggest asset-rights-group-suggest hidden';
+  document.body.appendChild(assetRightsGroupSuggestEl);
+  assetRightsGroupSuggestEl.addEventListener('mousedown', (event) => {
+    event.preventDefault();
+  });
+  assetRightsGroupSuggestEl.addEventListener('click', (event) => {
+    const button = event.target.closest('.proxy-suggest-item');
+    if (!button) return;
+    const index = Number(button.dataset.index);
+    if (!Number.isFinite(index) || index < 0 || index >= assetRightsGroupSuggestItems.length) return;
+    applyAssetRightsGroupSuggestion(assetRightsGroupSuggestItems[index]);
+  });
+  return assetRightsGroupSuggestEl;
+}
+
+function getAssetRightsGroupToken(input) {
+  const value = String(input?.value || '');
+  const cursor = typeof input?.selectionStart === 'number' ? input.selectionStart : value.length;
+  const beforeCursor = value.slice(0, cursor);
+  const tokenStart = beforeCursor.lastIndexOf(',') + 1;
+  const raw = beforeCursor.slice(tokenStart);
+  const leadingSpaces = raw.match(/^\s*/)?.[0]?.length || 0;
+  return {
+    value,
+    cursor,
+    tokenStart: tokenStart + leadingSpaces,
+    tokenEnd: cursor,
+    query: raw.trim()
+  };
+}
+
+function positionAssetRightsGroupSuggestions(input) {
+  const el = ensureAssetRightsGroupSuggestEl();
+  const rect = input.getBoundingClientRect();
+  const width = Math.max(220, Math.min(340, rect.width));
+  const maxTop = Math.max(8, window.innerHeight - 260);
+  el.style.width = `${width}px`;
+  el.style.left = `${Math.max(8, Math.min(window.innerWidth - width - 8, rect.left))}px`;
+  el.style.top = `${Math.max(8, Math.min(maxTop, rect.bottom + 4))}px`;
+}
+
+function hideAssetRightsGroupSuggestions() {
+  if (!assetRightsGroupSuggestEl) return;
+  assetRightsGroupSuggestEl.classList.add('hidden');
+  assetRightsGroupSuggestEl.innerHTML = '';
+  assetRightsGroupSuggestInput = null;
+  assetRightsGroupSuggestItems = [];
+  assetRightsGroupSuggestActiveIndex = -1;
+}
+
+function setAssetRightsGroupSuggestActive(index) {
+  const el = ensureAssetRightsGroupSuggestEl();
+  const buttons = Array.from(el.querySelectorAll('.proxy-suggest-item'));
+  if (!buttons.length) {
+    assetRightsGroupSuggestActiveIndex = -1;
+    return;
+  }
+  const safeIndex = Math.max(0, Math.min(buttons.length - 1, index));
+  assetRightsGroupSuggestActiveIndex = safeIndex;
+  buttons.forEach((btn, idx) => {
+    btn.classList.toggle('active', idx === safeIndex);
+  });
+}
+
+function renderAssetRightsGroupSuggestions(input, groups, query) {
+  const el = ensureAssetRightsGroupSuggestEl();
+  const list = Array.isArray(groups) ? groups : [];
+  if (!list.length) {
+    hideAssetRightsGroupSuggestions();
+    return;
+  }
+  assetRightsGroupSuggestInput = input;
+  assetRightsGroupSuggestItems = list;
+  assetRightsGroupSuggestActiveIndex = -1;
+  el.innerHTML = list.map((name, index) => `
+    <button type="button" class="proxy-suggest-item" data-index="${index}">
+      <strong>${highlightSuggestion(name, query)}</strong>
+    </button>
+  `).join('');
+  positionAssetRightsGroupSuggestions(input);
+  el.classList.remove('hidden');
+}
+
+async function requestAssetRightsGroupSuggestions(input) {
+  if (!input || input.disabled || input.readOnly) {
+    hideAssetRightsGroupSuggestions();
+    return;
+  }
+  const token = getAssetRightsGroupToken(input);
+  if (token.query.length < 2) {
+    hideAssetRightsGroupSuggestions();
+    return;
+  }
+  try {
+    const groups = await loadAssetRightsGroupNames();
+    const needle = token.query.toLocaleLowerCase('tr');
+    const selected = new Set(String(input.value || '')
+      .split(',')
+      .map((item) => normalizeGroupSuggestionName(item).toLocaleLowerCase('tr'))
+      .filter(Boolean));
+    selected.delete(needle);
+    const matches = groups
+      .filter((name) => name.toLocaleLowerCase('tr').includes(needle))
+      .filter((name) => !selected.has(name.toLocaleLowerCase('tr')))
+      .slice(0, 8);
+    renderAssetRightsGroupSuggestions(input, matches, token.query);
+  } catch (_error) {
+    hideAssetRightsGroupSuggestions();
+  }
+}
+
+function applyAssetRightsGroupSuggestion(name) {
+  const input = assetRightsGroupSuggestInput;
+  if (!input) return;
+  const value = String(input.value || '');
+  const cursor = typeof input.selectionStart === 'number' ? input.selectionStart : value.length;
+  const parts = value.split(',');
+  let tokenIndex = value.slice(0, cursor).split(',').length - 1;
+  tokenIndex = Math.max(0, Math.min(parts.length - 1, tokenIndex));
+  parts[tokenIndex] = ` ${normalizeGroupSuggestionName(name)}`;
+  input.value = parts.map((part, index) => index === 0 ? part.trim() : part.trim()).filter(Boolean).join(', ');
+  const nextCursor = input.value.length;
+  input.focus();
+  input.setSelectionRange(nextCursor, nextCursor);
+  hideAssetRightsGroupSuggestions();
+}
+
 const adminRecordsModule = window.createAdminRecordsModule({
   api,
   t,
   escapeHtml,
   highlightSuggestion,
   openTextEditorModal,
+  userPermissionsSearchInput,
   userPermissionsRows,
   userPermissionsMsg,
+  userPermissionsPageSize: document.getElementById('userPermissionsPageSize'),
+  userPermissionsPrevPage: document.getElementById('userPermissionsPrevPage'),
+  userPermissionsNextPage: document.getElementById('userPermissionsNextPage'),
+  userPermissionsPageInfo: document.getElementById('userPermissionsPageInfo'),
   ocrAdminSearchInput,
   ocrDeleteFileCheck,
   ocrRecordsRows,
@@ -1797,6 +2209,82 @@ async function loadGroupAdmins() {
   }
 }
 
+function renderIdentityOverview(payload = {}) {
+  const groups = Array.isArray(payload.groups) ? payload.groups : [];
+  const users = Array.isArray(payload.users) ? payload.users : [];
+  const mamOnlyGroups = Array.isArray(payload.mamOnlyGroups) ? payload.mamOnlyGroups : [];
+  const mamGroups = Array.isArray(payload.mamGroups) ? payload.mamGroups : [];
+  assetRightsGroupNamesCache = collectIdentityGroupNames(payload);
+
+  if (identityOverviewSummary) {
+    identityOverviewSummary.innerHTML = [
+      `<div class="metric"><strong>${escapeHtml(String(users.length))}</strong><span>${escapeHtml(t('identity_user_count'))}</span></div>`,
+      `<div class="metric"><strong>${escapeHtml(String(groups.length))}</strong><span>${escapeHtml(t('identity_group_count'))}</span></div>`,
+      `<div class="metric"><strong>${escapeHtml(String(mamGroups.length))}</strong><span>${escapeHtml(t('identity_mam_group_count'))}</span></div>`,
+      `<div class="metric"><strong>${escapeHtml(String(payload.source || '-'))}</strong><span>${escapeHtml(t('identity_source'))}</span></div>`
+    ].join('');
+  }
+
+  if (identityGroupsRows) {
+    identityGroupsRows.innerHTML = groups.length
+      ? groups.map((group) => `
+        <div class="row compact-row">
+          <strong>${escapeHtml(group.path || group.name || '-')}</strong>
+          <span>${escapeHtml(group.realm || '-')}</span>
+        </div>
+      `).join('')
+      : `<div class="empty">${escapeHtml(t('identity_no_groups'))}</div>`;
+  }
+
+  if (identityUsersRows) {
+    identityUsersRows.innerHTML = users.length
+      ? users.map((user) => {
+        const label = [user.displayName, user.email].map((item) => String(item || '').trim()).filter(Boolean).join(' · ');
+        const perms = Array.isArray(user.permissionKeys) && user.permissionKeys.length ? user.permissionKeys.join(', ') : '-';
+        return `
+          <div class="row compact-row">
+            <strong>${escapeHtml(user.username || '-')}</strong>
+            <span>${escapeHtml(label || user.realm || '-')}</span>
+            <small>${escapeHtml(perms)}</small>
+          </div>
+        `;
+      }).join('')
+      : `<div class="empty">${escapeHtml(t('identity_no_users'))}</div>`;
+  }
+
+  if (identityMamGroupsRows) {
+    identityMamGroupsRows.innerHTML = mamOnlyGroups.length
+      ? mamOnlyGroups.map((group) => `<div class="row compact-row"><strong>${escapeHtml(group)}</strong><span>MAM DB</span></div>`).join('')
+      : `<div class="empty">${escapeHtml(t('identity_no_mam_groups'))}</div>`;
+  }
+
+  if (identityGroupOptions) {
+    identityGroupOptions.innerHTML = assetRightsGroupNamesCache
+      .map((name) => `<option value="${escapeHtml(name)}"></option>`)
+      .join('');
+  }
+
+  if (identityUserOptions) {
+    identityUserOptions.innerHTML = users
+      .map((user) => String(user.username || '').trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+      .map((username) => `<option value="${escapeHtml(username)}"></option>`)
+      .join('');
+  }
+}
+
+async function loadIdentityOverview() {
+  if (!identityOverviewSummary && !identityGroupsRows && !identityUsersRows) return;
+  try {
+    const result = await api('/api/admin/identity/overview');
+    renderIdentityOverview(result);
+    if (groupAdminsMsg) groupAdminsMsg.textContent = '';
+  } catch (error) {
+    if (groupAdminsMsg) groupAdminsMsg.textContent = String(error.message || t('identity_load_failed'));
+  }
+}
+
 async function loadOcrRecords() {
   return adminRecordsModule.loadOcrRecords();
 }
@@ -1811,53 +2299,25 @@ async function runCombinedSearch() {
 
 adminRecordsModule.init();
 
-function setAdminTabVisibility(tabName, visible) {
-  const tab = adminTabs.find((item) => item.dataset.tab === tabName);
-  const panel = adminPanels.find((item) => item.dataset.panel === tabName);
-  if (tab) tab.classList.toggle('hidden', !visible);
-  if (panel) panel.classList.toggle('hidden', !visible);
-}
-
-function setSettingsSubtabVisibility(tabName, visible) {
-  const tab = settingsSubTabs.find((item) => item.dataset.settingsTab === tabName);
-  const panel = settingsSubPanels.find((item) => item.dataset.settingsPanel === tabName);
-  if (tab) tab.classList.toggle('hidden', !visible);
-  if (panel) panel.classList.toggle('hidden', !visible);
-}
-
 function applyAdminAccessMode(me = {}) {
   currentAdminProfile = me && typeof me === 'object' ? me : {};
-  const canAccessAdmin = Boolean(currentAdminProfile.canAccessAdmin || currentAdminProfile.isAdmin);
-  const canAccessTextAdmin = Boolean(currentAdminProfile.canAccessTextAdmin || canAccessAdmin);
-  const isTextOnly = canAccessTextAdmin && !canAccessAdmin;
-
-  setAdminTabVisibility('apiHelp', !isTextOnly);
-  setAdminTabVisibility('systemHealth', !isTextOnly);
-  setAdminTabVisibility('runtimeDiagnostics', !isTextOnly);
-  setAdminTabVisibility('auditEvents', !isTextOnly);
-  setAdminTabVisibility('assetRights', !isTextOnly);
-  setAdminTabVisibility('settings', true);
-
-  setSettingsSubtabVisibility('general', !isTextOnly);
-  setSettingsSubtabVisibility('workflow', !isTextOnly);
-  setSettingsSubtabVisibility('proxy', !isTextOnly);
-  setSettingsSubtabVisibility('ocr', true);
-  setSettingsSubtabVisibility('subtitle', true);
-  setSettingsSubtabVisibility('users', !isTextOnly);
-
-  if (settingsForm) settingsForm.classList.toggle('hidden', isTextOnly);
-  if (settingsMsg) settingsMsg.classList.toggle('hidden', isTextOnly);
-  if (ocrSettingsForm) ocrSettingsForm.classList.toggle('hidden', isTextOnly);
-  if (ocrSettingsMsg) ocrSettingsMsg.classList.toggle('hidden', isTextOnly);
-  if (subtitleSettingsForm) subtitleSettingsForm.classList.toggle('hidden', false);
-  if (subtitleSettingsMsg) subtitleSettingsMsg.classList.toggle('hidden', false);
-
-  if (isTextOnly) {
-    switchTab('settings');
-    switchSettingsSubtab('ocr');
-  }
-
-  return { canAccessAdmin, canAccessTextAdmin, isTextOnly };
+  return accessScopeModule.applyAdminAccessMode({
+    profile: currentAdminProfile,
+    adminTabs,
+    adminPanels,
+    settingsSubTabs,
+    settingsSubPanels,
+    elements: {
+      settingsForm,
+      settingsMsg,
+      ocrSettingsForm,
+      ocrSettingsMsg,
+      subtitleSettingsForm,
+      subtitleSettingsMsg
+    },
+    switchTab,
+    switchSettingsSubtab
+  });
 }
 
 function renderApiHelp() {
@@ -1879,15 +2339,15 @@ function renderApiGuide() {
   const tokenEnabled = Boolean(settingsForm?.elements?.apiTokenEnabled?.checked);
   const bearerEnabled = Boolean(settingsForm?.elements?.oidcBearerEnabled?.checked);
   const browserBase = window.location.origin;
-  const directBase = browserBase.includes(':3000') ? browserBase.replace(':3000', ':3001') : browserBase;
+  const apiBase = browserBase;
   const sampleAssetId = '<asset-id>';
   const tokenHeader = token || '<api-token>';
-  const postmanUrlStep = t('api_help_postman_step2').replace('{{baseUrl}}', directBase);
+  const postmanUrlStep = t('api_help_postman_step2').replace('{{baseUrl}}', apiBase);
 
-  const workflowCmd = `curl -s ${directBase}/api/workflow \\\n  -H "X-API-Token: ${tokenHeader}"`;
-  const assetsCmd = `curl -s "${directBase}/api/assets?trash=active" \\\n  -H "X-API-Token: ${tokenHeader}"`;
-  const oneAssetCmd = `curl -s ${directBase}/api/assets/${sampleAssetId} \\\n  -H "X-API-Token: ${tokenHeader}"`;
-  const collectionCmd = `curl -s -X POST ${directBase}/api/collections \\\n  -H "Content-Type: application/json" \\\n  -H "X-API-Token: ${tokenHeader}" \\\n  -d '{"name":"News Rundown","assetIds":["${sampleAssetId}"]}'`;
+  const workflowCmd = `curl -s ${apiBase}/api/workflow \\\n  -H "X-API-Token: ${tokenHeader}"`;
+  const assetsCmd = `curl -s "${apiBase}/api/assets?q=istanbul" \\\n  -H "X-API-Token: ${tokenHeader}"`;
+  const oneAssetCmd = `curl -s ${apiBase}/api/assets/${sampleAssetId} \\\n  -H "X-API-Token: ${tokenHeader}"`;
+  const collectionCmd = `curl -s -X POST ${apiBase}/api/collections \\\n  -H "Content-Type: application/json" \\\n  -H "X-API-Token: ${tokenHeader}" \\\n  -d '{"name":"News Rundown","assetIds":["${sampleAssetId}"]}'`;
   const endpointGroups = [
     {
       title: t('api_help_group_core'),
@@ -2114,46 +2574,291 @@ function parseAccessList(value) {
     .filter(Boolean);
 }
 
+const ASSET_RIGHTS_TABLE_LABELS = {
+  en: {
+    asset: 'Asset',
+    type: 'Type',
+    modeAsset: 'Asset',
+    modeType: 'Type',
+    visibility: 'Visibility',
+    ownerGroups: 'Owner groups',
+    allowedGroups: 'Allowed groups',
+    allowedUsers: 'Allowed users',
+    deniedGroups: 'Denied groups',
+    deniedUsers: 'Denied users',
+    editAllowedGroups: 'Editable groups',
+    editAllowedUsers: 'Editable users',
+    editDeniedGroups: 'Edit denied groups',
+    editDeniedUsers: 'Edit denied users',
+    empty: 'No asset found.',
+    save: 'Save',
+    visibilityPrivate: 'Private',
+    visibilityGroup: 'Owner groups',
+    visibilityGroups: 'Selected groups/users',
+    visibilityPublic: 'Public'
+  },
+  tr: {
+    asset: 'Varlık',
+    type: 'Tür',
+    modeAsset: 'Varlık',
+    modeType: 'Tür',
+    visibility: 'Görünürlük',
+    ownerGroups: 'Sahip gruplar',
+    allowedGroups: 'İzinli gruplar',
+    allowedUsers: 'İzinli kullanıcılar',
+    deniedGroups: 'Göremeyen gruplar',
+    deniedUsers: 'Göremeyen kullanıcılar',
+    editAllowedGroups: 'Değiştirebilen gruplar',
+    editAllowedUsers: 'Değiştirebilen kullanıcılar',
+    editDeniedGroups: 'Değiştiremeyen gruplar',
+    editDeniedUsers: 'Değiştiremeyen kullanıcılar',
+    empty: 'Varlık bulunamadı.',
+    save: 'Kaydet',
+    visibilityPrivate: 'Özel',
+    visibilityGroup: 'Sahip gruplar',
+    visibilityGroups: 'Seçili grup/kullanıcı',
+    visibilityPublic: 'Herkese açık'
+  }
+};
+
+function getActiveAdminLanguage() {
+  if (languageSelect?.value === 'tr') return 'tr';
+  if (languageSelect?.value === 'en') return 'en';
+  return currentLang === 'tr' ? 'tr' : 'en';
+}
+
+function getAssetRightsTableLabels() {
+  return ASSET_RIGHTS_TABLE_LABELS[getActiveAdminLanguage()];
+}
+
+function getAssetRightsLabel(key) {
+  return getAssetRightsTableLabels()[key] || key;
+}
+
+function getAssetTypeGroupLabel(typeGroup) {
+  const key = String(typeGroup || '').trim().toLowerCase();
+  const map = {
+    video: t('asset_type_video'),
+    audio: t('asset_type_audio'),
+    photo: t('asset_type_photo'),
+    document: t('asset_type_document'),
+    other: t('asset_type_other')
+  };
+  return map[key] || key || '-';
+}
+
+function renderAssetRightsModeSelect(labels) {
+  const mode = assetRightsMode === 'type' ? 'type' : 'asset';
+  return `
+    <label class="asset-rights-mode-switch">
+      <span data-asset-rights-label="${mode === 'type' ? 'type' : 'asset'}">${escapeHtml(mode === 'type' ? labels.type : labels.asset)}</span>
+      <select id="assetRightsModeSelect">
+        <option value="asset" ${mode === 'asset' ? 'selected' : ''}>${escapeHtml(labels.modeAsset)}</option>
+        <option value="type" ${mode === 'type' ? 'selected' : ''}>${escapeHtml(labels.modeType)}</option>
+      </select>
+    </label>
+  `;
+}
+
+function updateAssetRightsTableLanguage() {
+  if (!assetRightsRows) return;
+  const labels = getAssetRightsTableLabels();
+  assetRightsRows.querySelectorAll('[data-asset-rights-label]').forEach((el) => {
+    const key = el.getAttribute('data-asset-rights-label') || '';
+    const value = labels[key];
+    if (value) el.textContent = value;
+  });
+  assetRightsRows.querySelectorAll('[data-asset-rights-cell-label]').forEach((el) => {
+    const key = el.getAttribute('data-asset-rights-cell-label') || '';
+    const value = labels[key];
+    if (value) el.setAttribute('data-label', value);
+  });
+  assetRightsRows.querySelectorAll('select[name="visibility"] option').forEach((option) => {
+    const map = {
+      private: 'visibilityPrivate',
+      group: 'visibilityGroup',
+      groups: 'visibilityGroups',
+      public: 'visibilityPublic'
+    };
+    const key = map[String(option.value || '')];
+    if (key && labels[key]) option.textContent = labels[key];
+  });
+  assetRightsRows.querySelectorAll('#assetRightsModeSelect option').forEach((option) => {
+    if (option.value === 'asset') option.textContent = labels.modeAsset;
+    if (option.value === 'type') option.textContent = labels.modeType;
+  });
+  assetRightsRows.querySelectorAll('[data-asset-rights-type-label]').forEach((el) => {
+    el.textContent = getAssetTypeGroupLabel(el.getAttribute('data-asset-rights-type-label'));
+  });
+  const empty = assetRightsRows.querySelector('[data-asset-rights-empty="true"]');
+  if (empty) empty.textContent = labels.empty;
+}
+
+function syncAssetRightsTableLanguage() {
+  updateAssetRightsTableLanguage();
+  requestAnimationFrame(() => updateAssetRightsTableLanguage());
+  setTimeout(() => updateAssetRightsTableLanguage(), 0);
+}
+
 function renderAssetRightsRows(assets = []) {
   if (!assetRightsRows) return;
+  const labels = getAssetRightsTableLabels();
   const list = Array.isArray(assets) ? assets : [];
   if (!list.length) {
-    assetRightsRows.innerHTML = `<div class="empty">${escapeHtml(t('asset_rights_none'))}</div>`;
+    assetRightsRows.innerHTML = `<div class="empty" data-asset-rights-empty="true">${escapeHtml(labels.empty)}</div>`;
     return;
   }
+
   const visibilityOptions = ['private', 'group', 'groups', 'public'];
-  assetRightsRows.innerHTML = list.map((asset) => {
+  const visibilityLabels = {
+    private: labels.visibilityPrivate,
+    group: labels.visibilityGroup,
+    groups: labels.visibilityGroups,
+    public: labels.visibilityPublic
+  };
+  const header = `
+    <div class="asset-rights-table-head" aria-hidden="true">
+      ${renderAssetRightsModeSelect(labels)}
+      <span data-asset-rights-label="visibility">${escapeHtml(labels.visibility)}</span>
+      <span data-asset-rights-label="ownerGroups">${escapeHtml(labels.ownerGroups)}</span>
+      <span data-asset-rights-label="allowedGroups">${escapeHtml(labels.allowedGroups)}</span>
+      <span data-asset-rights-label="allowedUsers">${escapeHtml(labels.allowedUsers)}</span>
+      <span data-asset-rights-label="deniedGroups">${escapeHtml(labels.deniedGroups)}</span>
+      <span data-asset-rights-label="deniedUsers">${escapeHtml(labels.deniedUsers)}</span>
+      <span data-asset-rights-label="editAllowedGroups">${escapeHtml(labels.editAllowedGroups)}</span>
+      <span data-asset-rights-label="editAllowedUsers">${escapeHtml(labels.editAllowedUsers)}</span>
+      <span data-asset-rights-label="editDeniedGroups">${escapeHtml(labels.editDeniedGroups)}</span>
+      <span data-asset-rights-label="editDeniedUsers">${escapeHtml(labels.editDeniedUsers)}</span>
+      <span></span>
+    </div>
+  `;
+
+  const rows = list.map((asset) => {
+    const isTypeMode = assetRightsMode === 'type';
     const selected = String(asset.visibility || 'public');
     const options = visibilityOptions
-      .map((item) => `<option value="${escapeHtml(item)}" ${item === selected ? 'selected' : ''}>${escapeHtml(t(`visibility_${item}`))}</option>`)
+      .map((item) => `<option value="${escapeHtml(item)}" ${item === selected ? 'selected' : ''}>${escapeHtml(visibilityLabels[item] || item)}</option>`)
       .join('');
     const ownerGroups = Array.isArray(asset.ownerGroups) ? asset.ownerGroups.join(', ') : '';
     const allowedGroups = Array.isArray(asset.allowedGroups) ? asset.allowedGroups.join(', ') : '';
     const allowedUsers = Array.isArray(asset.allowedUsers) ? asset.allowedUsers.join(', ') : '';
+    const deniedGroups = Array.isArray(asset.deniedGroups) ? asset.deniedGroups.join(', ') : '';
+    const deniedUsers = Array.isArray(asset.deniedUsers) ? asset.deniedUsers.join(', ') : '';
+    const editAllowedGroups = Array.isArray(asset.editAllowedGroups) ? asset.editAllowedGroups.join(', ') : '';
+    const editAllowedUsers = Array.isArray(asset.editAllowedUsers) ? asset.editAllowedUsers.join(', ') : '';
+    const editDeniedGroups = Array.isArray(asset.editDeniedGroups) ? asset.editDeniedGroups.join(', ') : '';
+    const editDeniedUsers = Array.isArray(asset.editDeniedUsers) ? asset.editDeniedUsers.join(', ') : '';
+    const title = isTypeMode ? getAssetTypeGroupLabel(asset.typeGroup) : (asset.title || asset.id || '');
+    const meta = isTypeMode ? labels.type : [asset.type || '-', asset.owner || '-'].filter(Boolean).join(' · ');
+    const ownerGroupInput = isTypeMode
+      ? `<input name="ownerGroups" value="${escapeHtml(ownerGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />`
+      : `<input value="${escapeHtml(ownerGroups)}" disabled />`;
+
     return `
-      <form class="row asset-rights-row" data-asset-id="${escapeHtml(asset.id || '')}">
-        <div>
-          <strong>${escapeHtml(asset.title || asset.fileName || asset.id || '')}</strong>
-          <span>${escapeHtml(asset.type || '-')} · ${escapeHtml(asset.owner || '-')} · ${escapeHtml(asset.fileName || '')}</span>
+      <form class="asset-rights-row" data-access-mode="${escapeHtml(assetRightsMode)}" data-asset-id="${escapeHtml(asset.id || '')}" data-type-group="${escapeHtml(asset.typeGroup || '')}">
+        <div class="asset-rights-asset" data-asset-rights-cell-label="${isTypeMode ? 'type' : 'asset'}" data-label="${escapeHtml(isTypeMode ? labels.type : labels.asset)}">
+          <strong ${isTypeMode ? `data-asset-rights-type-label="${escapeHtml(asset.typeGroup || '')}"` : ''}>${escapeHtml(title)}</strong>
+          <span>${escapeHtml(meta)}</span>
         </div>
-        <label>${escapeHtml(t('asset_visibility'))}<select name="visibility">${options}</select></label>
-        <label>${escapeHtml(t('owner_groups'))}<input value="${escapeHtml(ownerGroups)}" disabled /></label>
-        <label>${escapeHtml(t('allowed_groups'))}<input name="allowedGroups" value="${escapeHtml(allowedGroups)}" /></label>
-        <label>${escapeHtml(t('allowed_users'))}<input name="allowedUsers" value="${escapeHtml(allowedUsers)}" /></label>
-        <button type="submit">${escapeHtml(t('save_visibility'))}</button>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="visibility" data-label="${escapeHtml(labels.visibility)}">
+          <span data-asset-rights-label="visibility">${escapeHtml(labels.visibility)}</span>
+          <select name="visibility">${options}</select>
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="ownerGroups" data-label="${escapeHtml(labels.ownerGroups)}">
+          <span data-asset-rights-label="ownerGroups">${escapeHtml(labels.ownerGroups)}</span>
+          ${ownerGroupInput}
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="allowedGroups" data-label="${escapeHtml(labels.allowedGroups)}">
+          <span data-asset-rights-label="allowedGroups">${escapeHtml(labels.allowedGroups)}</span>
+          <input name="allowedGroups" value="${escapeHtml(allowedGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="allowedUsers" data-label="${escapeHtml(labels.allowedUsers)}">
+          <span data-asset-rights-label="allowedUsers">${escapeHtml(labels.allowedUsers)}</span>
+          <input name="allowedUsers" value="${escapeHtml(allowedUsers)}" placeholder="user@example.com" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="deniedGroups" data-label="${escapeHtml(labels.deniedGroups)}">
+          <span data-asset-rights-label="deniedGroups">${escapeHtml(labels.deniedGroups)}</span>
+          <input name="deniedGroups" value="${escapeHtml(deniedGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="deniedUsers" data-label="${escapeHtml(labels.deniedUsers)}">
+          <span data-asset-rights-label="deniedUsers">${escapeHtml(labels.deniedUsers)}</span>
+          <input name="deniedUsers" value="${escapeHtml(deniedUsers)}" placeholder="user@example.com" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="editAllowedGroups" data-label="${escapeHtml(labels.editAllowedGroups)}">
+          <span data-asset-rights-label="editAllowedGroups">${escapeHtml(labels.editAllowedGroups)}</span>
+          <input name="editAllowedGroups" value="${escapeHtml(editAllowedGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="editAllowedUsers" data-label="${escapeHtml(labels.editAllowedUsers)}">
+          <span data-asset-rights-label="editAllowedUsers">${escapeHtml(labels.editAllowedUsers)}</span>
+          <input name="editAllowedUsers" value="${escapeHtml(editAllowedUsers)}" placeholder="user@example.com" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="editDeniedGroups" data-label="${escapeHtml(labels.editDeniedGroups)}">
+          <span data-asset-rights-label="editDeniedGroups">${escapeHtml(labels.editDeniedGroups)}</span>
+          <input name="editDeniedGroups" value="${escapeHtml(editDeniedGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="editDeniedUsers" data-label="${escapeHtml(labels.editDeniedUsers)}">
+          <span data-asset-rights-label="editDeniedUsers">${escapeHtml(labels.editDeniedUsers)}</span>
+          <input name="editDeniedUsers" value="${escapeHtml(editDeniedUsers)}" placeholder="user@example.com" />
+        </label>
+        <div class="asset-rights-actions">
+          <button type="submit" data-asset-rights-label="save">${escapeHtml(labels.save)}</button>
+        </div>
       </form>
     `;
   }).join('');
+
+  assetRightsRows.innerHTML = `<div class="asset-rights-table">${header}${rows}</div>`;
+  syncAssetRightsTableLanguage();
+}
+
+function renderAssetRightsPager() {
+  const total = Number(assetRightsPagination.total || 0);
+  const page = Math.max(1, Number(assetRightsPagination.page || 1));
+  const totalPages = Math.max(1, Number(assetRightsPagination.totalPages || 1));
+  if (assetRightsPageInfo) {
+    assetRightsPageInfo.textContent = t('page_info')
+      .replace('{page}', String(page))
+      .replace('{pages}', String(totalPages))
+      .replace('{total}', String(total));
+  }
+  if (assetRightsPrevPage) assetRightsPrevPage.disabled = page <= 1;
+  if (assetRightsNextPage) assetRightsNextPage.disabled = page >= totalPages;
 }
 
 async function loadAssetRightsRows() {
   if (!assetRightsRows) return;
+  if (assetRightsMode === 'type') {
+    try {
+      const result = await api('/api/admin/asset-types/access');
+      lastAssetRightsTypes = Array.isArray(result.types) ? result.types : [];
+      assetRightsPagination = result.pagination || { page: 1, limit: 5, total: lastAssetRightsTypes.length, totalPages: 1 };
+      assetRightsPage = 1;
+      renderAssetRightsRows(lastAssetRightsTypes);
+      renderAssetRightsPager();
+      if (assetRightsMsg) assetRightsMsg.textContent = '';
+    } catch (error) {
+      if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || t('asset_rights_load_failed'));
+    }
+    return;
+  }
   const params = new URLSearchParams();
   const q = String(assetRightsSearchInput?.value || '').trim();
   if (q) params.set('q', q);
+  assetRightsTypeFilters
+    .filter((item) => item.checked)
+    .forEach((item) => params.append('typeGroup', String(item.value || '').trim()));
+  const visibility = String(assetRightsVisibilityFilter?.value || '').trim();
+  if (visibility) params.set('visibility', visibility);
+  const limit = Number(assetRightsPageSize?.value || 20) === 50 ? 50 : 20;
+  params.set('limit', String(limit));
+  params.set('page', String(Math.max(1, assetRightsPage)));
   try {
     const result = await api(`/api/admin/assets/access?${params.toString()}`);
-    renderAssetRightsRows(result.assets || []);
+    lastAssetRightsAssets = Array.isArray(result.assets) ? result.assets : [];
+    assetRightsPagination = result.pagination || { page: assetRightsPage, limit, total: lastAssetRightsAssets.length, totalPages: 1 };
+    assetRightsPage = Number(assetRightsPagination.page || assetRightsPage);
+    renderAssetRightsRows(lastAssetRightsAssets);
+    renderAssetRightsPager();
     if (assetRightsMsg) assetRightsMsg.textContent = '';
   } catch (error) {
     if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || t('asset_rights_load_failed'));
@@ -2191,10 +2896,8 @@ function renderAuditEvents(events = []) {
   }).join('');
 }
 
-async function loadAuditEvents() {
-  if (!auditEventsRows) return;
-  if (auditEventsMsg) auditEventsMsg.textContent = '';
-  const params = new URLSearchParams({ limit: '100' });
+function buildAuditEventParams(limit = '100') {
+  const params = new URLSearchParams({ limit: String(limit) });
   const actor = String(auditActorInput?.value || '').trim();
   const action = String(auditActionSelect?.value || '').trim();
   const target = String(auditTargetInput?.value || '').trim();
@@ -2205,11 +2908,47 @@ async function loadAuditEvents() {
   if (target) params.set('target', target);
   if (from) params.set('from', from);
   if (to) params.set('to', to);
+  return params;
+}
+
+async function loadAuditEvents() {
+  if (!auditEventsRows) return;
+  if (auditEventsMsg) auditEventsMsg.textContent = '';
+  const params = buildAuditEventParams('100');
   try {
     const data = await api(`/api/admin/audit-events?${params.toString()}`);
     renderAuditEvents(Array.isArray(data.events) ? data.events : []);
   } catch (error) {
     if (auditEventsMsg) auditEventsMsg.textContent = error.message || t('audit_load_failed');
+  }
+}
+
+async function exportAuditEvents() {
+  if (auditEventsMsg) auditEventsMsg.textContent = '';
+  if (exportAuditEventsBtn) exportAuditEventsBtn.disabled = true;
+  const params = buildAuditEventParams('5000');
+  try {
+    const response = await fetch(`/api/admin/audit-events/export?${params.toString()}`);
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.error || t('audit_export_failed'));
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get('content-disposition') || '';
+    const match = disposition.match(/filename="?([^"]+)"?/i);
+    const filename = match?.[1] || `audit-events-${new Date().toISOString().slice(0, 10)}.csv`;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    if (auditEventsMsg) auditEventsMsg.textContent = error.message || t('audit_export_failed');
+  } finally {
+    if (exportAuditEventsBtn) exportAuditEventsBtn.disabled = false;
   }
 }
 
@@ -2573,6 +3312,7 @@ adminTabs.forEach((btn) => {
   btn.addEventListener('click', () => {
     hideProxySuggestions();
     hideAuditSuggestions();
+    hideAssetRightsSuggestions();
     const target = btn.dataset.tab || 'apiHelp';
     switchTab(target);
     if (target === 'settings') {
@@ -2596,6 +3336,28 @@ adminTabs.forEach((btn) => {
   });
 });
 
+overviewCards.forEach((card) => {
+  const open = () => {
+    const target = String(card.dataset.overviewTarget || '').trim();
+    if (target === 'system-health') {
+      openSystemHealthFocus().catch((error) => {
+        if (systemHealthRows) systemHealthRows.innerHTML = `<div class="empty">${escapeHtml(String(error.message || 'Request failed'))}</div>`;
+      });
+      return;
+    }
+    if (!['active-users', 'errors'].includes(target)) return;
+    openRuntimeDiagnosticsFocus(target).catch((error) => {
+      if (runtimeDiagnosticsMsg) runtimeDiagnosticsMsg.textContent = String(error.message || 'Request failed');
+    });
+  };
+  card.addEventListener('click', open);
+  card.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    open();
+  });
+});
+
 refreshRuntimeDiagnosticsBtn?.addEventListener('click', () => {
   loadRuntimeDiagnostics().catch((error) => {
     if (runtimeDiagnosticsMsg) runtimeDiagnosticsMsg.textContent = String(error.message || 'Request failed');
@@ -2608,18 +3370,189 @@ runAuditSearchBtn?.addEventListener('click', () => {
   });
 });
 
+exportAuditEventsBtn?.addEventListener('click', () => {
+  exportAuditEvents().catch((error) => {
+    if (auditEventsMsg) auditEventsMsg.textContent = String(error.message || t('audit_export_failed'));
+  });
+});
+
 assetRightsSearchBtn?.addEventListener('click', () => {
+  hideAssetRightsSuggestions();
+  assetRightsPage = 1;
   loadAssetRightsRows().catch((error) => {
     if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
   });
 });
 
+assetRightsSearchInput?.addEventListener('input', () => {
+  queueAssetRightsSuggestionRequest();
+});
+
+assetRightsSearchInput?.addEventListener('focus', () => {
+  queueAssetRightsSuggestionRequest();
+});
+
+assetRightsSearchInput?.addEventListener('blur', () => {
+  if (assetRightsSuggestHideTimer) clearTimeout(assetRightsSuggestHideTimer);
+  assetRightsSuggestHideTimer = setTimeout(() => {
+    hideAssetRightsSuggestions();
+    assetRightsSuggestHideTimer = null;
+  }, 120);
+});
+
 assetRightsSearchInput?.addEventListener('keydown', (event) => {
-  if (event.key !== 'Enter') return;
+  const isOpen = Boolean(assetRightsSuggestList && !assetRightsSuggestList.classList.contains('hidden'));
+  if (!isOpen && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+    queueAssetRightsSuggestionRequest();
+    return;
+  }
+  if (isOpen && event.key === 'ArrowDown') {
+    event.preventDefault();
+    setAssetRightsSuggestActive((assetRightsSuggestActiveIndex < 0 ? -1 : assetRightsSuggestActiveIndex) + 1);
+    return;
+  }
+  if (isOpen && event.key === 'ArrowUp') {
+    event.preventDefault();
+    setAssetRightsSuggestActive((assetRightsSuggestActiveIndex < 0 ? assetRightsSuggestItems.length : assetRightsSuggestActiveIndex) - 1);
+    return;
+  }
+  if (isOpen && event.key === 'Enter' && assetRightsSuggestActiveIndex >= 0 && assetRightsSuggestItems[assetRightsSuggestActiveIndex]) {
+    event.preventDefault();
+    applyAssetRightsSuggestion(assetRightsSuggestItems[assetRightsSuggestActiveIndex]);
+    return;
+  }
+  if (isOpen && event.key === 'Escape') {
+    hideAssetRightsSuggestions();
+    return;
+  }
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    hideAssetRightsSuggestions();
+    assetRightsPage = 1;
+    loadAssetRightsRows().catch((error) => {
+      if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+    });
+  }
+});
+
+assetRightsSuggestList?.addEventListener('mousedown', (event) => {
   event.preventDefault();
+});
+
+assetRightsSuggestList?.addEventListener('click', (event) => {
+  const button = event.target.closest('.proxy-suggest-item');
+  if (!button) return;
+  const index = Number(button.dataset.index);
+  if (!Number.isFinite(index) || index < 0 || index >= assetRightsSuggestItems.length) return;
+  applyAssetRightsSuggestion(assetRightsSuggestItems[index]);
+});
+
+assetRightsTypeFilters.forEach((filter) => {
+  filter.addEventListener('change', () => {
+    assetRightsPage = 1;
+    loadAssetRightsRows().catch((error) => {
+      if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+    });
+  });
+});
+
+assetRightsVisibilityFilter?.addEventListener('change', () => {
+  assetRightsPage = 1;
   loadAssetRightsRows().catch((error) => {
     if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
   });
+});
+
+assetRightsPageSize?.addEventListener('change', () => {
+  assetRightsPage = 1;
+  loadAssetRightsRows().catch((error) => {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+assetRightsPrevPage?.addEventListener('click', () => {
+  assetRightsPage = Math.max(1, assetRightsPage - 1);
+  loadAssetRightsRows().catch((error) => {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+assetRightsNextPage?.addEventListener('click', () => {
+  assetRightsPage += 1;
+  loadAssetRightsRows().catch((error) => {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+assetRightsRows?.addEventListener('change', (event) => {
+  const select = event.target.closest('#assetRightsModeSelect');
+  if (!select) return;
+  assetRightsMode = select.value === 'type' ? 'type' : 'asset';
+  assetRightsPage = 1;
+  loadAssetRightsRows().catch((error) => {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+assetRightsRows?.addEventListener('input', (event) => {
+  const input = event.target.closest('input[data-group-suggest="1"]');
+  if (!input) return;
+  requestAssetRightsGroupSuggestions(input).catch(() => {});
+});
+
+assetRightsRows?.addEventListener('focusin', (event) => {
+  const input = event.target.closest('input[data-group-suggest="1"]');
+  if (!input) return;
+  if (assetRightsGroupSuggestHideTimer) {
+    clearTimeout(assetRightsGroupSuggestHideTimer);
+    assetRightsGroupSuggestHideTimer = null;
+  }
+  requestAssetRightsGroupSuggestions(input).catch(() => {});
+});
+
+assetRightsRows?.addEventListener('focusout', (event) => {
+  const input = event.target.closest('input[data-group-suggest="1"]');
+  if (!input) return;
+  if (assetRightsGroupSuggestHideTimer) clearTimeout(assetRightsGroupSuggestHideTimer);
+  assetRightsGroupSuggestHideTimer = setTimeout(() => {
+    hideAssetRightsGroupSuggestions();
+    assetRightsGroupSuggestHideTimer = null;
+  }, 120);
+});
+
+assetRightsRows?.addEventListener('keydown', (event) => {
+  const input = event.target.closest('input[data-group-suggest="1"]');
+  if (!input) return;
+  const isOpen = Boolean(assetRightsGroupSuggestEl && !assetRightsGroupSuggestEl.classList.contains('hidden'));
+  if (!isOpen && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+    requestAssetRightsGroupSuggestions(input).catch(() => {});
+    return;
+  }
+  if (isOpen && event.key === 'ArrowDown') {
+    event.preventDefault();
+    setAssetRightsGroupSuggestActive((assetRightsGroupSuggestActiveIndex < 0 ? -1 : assetRightsGroupSuggestActiveIndex) + 1);
+    return;
+  }
+  if (isOpen && event.key === 'ArrowUp') {
+    event.preventDefault();
+    setAssetRightsGroupSuggestActive((assetRightsGroupSuggestActiveIndex < 0 ? assetRightsGroupSuggestItems.length : assetRightsGroupSuggestActiveIndex) - 1);
+    return;
+  }
+  if (isOpen && event.key === 'Enter' && assetRightsGroupSuggestActiveIndex >= 0 && assetRightsGroupSuggestItems[assetRightsGroupSuggestActiveIndex]) {
+    event.preventDefault();
+    applyAssetRightsGroupSuggestion(assetRightsGroupSuggestItems[assetRightsGroupSuggestActiveIndex]);
+    return;
+  }
+  if (isOpen && event.key === 'Escape') {
+    event.preventDefault();
+    hideAssetRightsGroupSuggestions();
+  }
+});
+
+assetRightsRows?.addEventListener('scroll', () => {
+  if (assetRightsGroupSuggestInput && assetRightsGroupSuggestEl && !assetRightsGroupSuggestEl.classList.contains('hidden')) {
+    positionAssetRightsGroupSuggestions(assetRightsGroupSuggestInput);
+  }
 });
 
 assetRightsRows?.addEventListener('submit', async (event) => {
@@ -2627,17 +3560,30 @@ assetRightsRows?.addEventListener('submit', async (event) => {
   if (!form) return;
   event.preventDefault();
   const assetId = String(form.dataset.assetId || '').trim();
-  if (!assetId) return;
+  const typeGroup = String(form.dataset.typeGroup || '').trim();
+  const accessMode = String(form.dataset.accessMode || 'asset').trim();
+  if (accessMode === 'asset' && !assetId) return;
+  if (accessMode === 'type' && !typeGroup) return;
   const saveBtn = form.querySelector('button[type="submit"]');
   if (saveBtn) saveBtn.disabled = true;
   try {
     const data = new FormData(form);
     const payload = {
       visibility: String(data.get('visibility') || 'public'),
+      ownerGroups: parseAccessList(data.get('ownerGroups')),
       allowedGroups: parseAccessList(data.get('allowedGroups')),
-      allowedUsers: parseAccessList(data.get('allowedUsers'))
+      allowedUsers: parseAccessList(data.get('allowedUsers')),
+      deniedGroups: parseAccessList(data.get('deniedGroups')),
+      deniedUsers: parseAccessList(data.get('deniedUsers')),
+      editAllowedGroups: parseAccessList(data.get('editAllowedGroups')),
+      editAllowedUsers: parseAccessList(data.get('editAllowedUsers')),
+      editDeniedGroups: parseAccessList(data.get('editDeniedGroups')),
+      editDeniedUsers: parseAccessList(data.get('editDeniedUsers'))
     };
-    await api(`/api/admin/assets/${encodeURIComponent(assetId)}/access`, {
+    const endpoint = accessMode === 'type'
+      ? `/api/admin/asset-types/${encodeURIComponent(typeGroup)}/access`
+      : `/api/admin/assets/${encodeURIComponent(assetId)}/access`;
+    await api(endpoint, {
       method: 'PATCH',
       body: JSON.stringify(payload)
     });
@@ -2660,13 +3606,26 @@ settingsSubTabs.forEach((btn) => {
   });
 });
 
-languageSelect?.addEventListener('change', async (event) => {
-  currentLang = event.target.value === 'tr' ? 'tr' : 'en';
+function applyAdminLanguage(nextLang) {
+  currentLang = nextLang === 'tr' ? 'tr' : 'en';
+  if (languageSelect && languageSelect.value !== currentLang) {
+    languageSelect.value = currentLang;
+  }
   localStorage.setItem(LOCAL_LANG, currentLang);
   applyI18n();
+  if (assetRightsRows?.querySelector('.asset-rights-table') || lastAssetRightsAssets.length || lastAssetRightsTypes.length) {
+    renderAssetRightsRows(assetRightsMode === 'type' ? lastAssetRightsTypes : lastAssetRightsAssets);
+  }
+  renderAssetRightsPager();
+  syncAssetRightsTableLanguage();
+}
+
+languageSelect?.addEventListener('change', async (event) => {
+  applyAdminLanguage(event.target.value);
   if (!currentAdminProfile?.canAccessTextAdmin || currentAdminProfile?.canAccessAdmin || currentAdminProfile?.isAdmin) {
     await refreshTrackingAndHealth();
     await loadUserPermissions();
+    await loadIdentityOverview();
     await loadGroupAdmins();
   }
   await loadOcrRecords();
@@ -2691,10 +3650,17 @@ addGroupAdminBtn?.addEventListener('click', async () => {
     });
     if (groupAdminUserInput) groupAdminUserInput.value = '';
     if (groupAdminsMsg) groupAdminsMsg.textContent = t('group_admin_saved');
+    await loadIdentityOverview();
     await loadGroupAdmins();
   } catch (error) {
     if (groupAdminsMsg) groupAdminsMsg.textContent = String(error.message || t('group_admin_save_failed'));
   }
+});
+
+refreshIdentityOverviewBtn?.addEventListener('click', () => {
+  loadIdentityOverview().catch((error) => {
+    if (groupAdminsMsg) groupAdminsMsg.textContent = String(error.message || t('identity_load_failed'));
+  });
 });
 
 groupAdminsRows?.addEventListener('click', async (event) => {
@@ -2704,6 +3670,7 @@ groupAdminsRows?.addEventListener('click', async (event) => {
   if (!id) return;
   try {
     await api(`/api/admin/group-admins/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await loadIdentityOverview();
     await loadGroupAdmins();
   } catch (error) {
     if (groupAdminsMsg) groupAdminsMsg.textContent = String(error.message || t('group_admin_delete_failed'));
@@ -2712,17 +3679,14 @@ groupAdminsRows?.addEventListener('click', async (event) => {
 
 const onLanguageShortcut = (event) => {
   if (event.key !== 'L' || !event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
-  const target = event.target;
-  if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"]')) return;
   if (!languageSelect) return;
   const nextLang = languageSelect.value === 'tr' ? 'en' : 'tr';
-  languageSelect.value = nextLang;
-  languageSelect.dispatchEvent(new Event('change', { bubbles: true }));
+  applyAdminLanguage(nextLang);
   event.preventDefault();
   event.stopPropagation();
 };
 
-document.addEventListener('keydown', onLanguageShortcut);
+document.addEventListener('keydown', onLanguageShortcut, true);
 
 (async () => {
   try {
@@ -2733,14 +3697,13 @@ document.addEventListener('keydown', onLanguageShortcut);
       return;
     }
     await loadI18nFile();
-    currentLang = currentLang === 'tr' ? 'tr' : 'en';
-    if (languageSelect) languageSelect.value = currentLang;
-    applyI18n();
+    applyAdminLanguage(currentLang);
     updateProxyToolUi();
     if (!access.isTextOnly) {
       await loadSettings();
       await refreshTrackingAndHealth();
       await loadUserPermissions();
+      await loadIdentityOverview();
       await loadGroupAdmins();
     }
     await loadOcrRecords();

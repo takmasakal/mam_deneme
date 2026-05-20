@@ -20,6 +20,14 @@ function normalizeVisibility(value, fallback = 'public') {
   return fallback;
 }
 
+const ASSET_TYPE_GROUPS = ['video', 'audio', 'photo', 'document', 'other'];
+
+function normalizeAssetTypeGroup(value, fallback = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (ASSET_TYPE_GROUPS.includes(normalized)) return normalized;
+  return fallback;
+}
+
 function getUserAccessIdentity(user = {}) {
   const username = normalizeAccessName(user.username || user.email || user.displayName);
   const email = normalizeAccessName(user.email);
@@ -42,11 +50,123 @@ function getAssetAccessSnapshot(row = {}) {
     ownerUser: normalizeAccessName(row.owner_user),
     ownerGroups: normalizeAccessList(row.owner_groups || []),
     allowedUsers: normalizeAccessList(row.allowed_users || []),
-    allowedGroups: normalizeAccessList(row.allowed_groups || [])
+    allowedGroups: normalizeAccessList(row.allowed_groups || []),
+    deniedUsers: normalizeAccessList(row.denied_users || []),
+    deniedGroups: normalizeAccessList(row.denied_groups || []),
+    editAllowedUsers: normalizeAccessList(row.edit_allowed_users || []),
+    editAllowedGroups: normalizeAccessList(row.edit_allowed_groups || []),
+    editDeniedUsers: normalizeAccessList(row.edit_denied_users || []),
+    editDeniedGroups: normalizeAccessList(row.edit_denied_groups || [])
   };
 }
 
+function getTypeAccessSnapshot(row = {}) {
+  return {
+    typeGroup: normalizeAssetTypeGroup(row.type_group),
+    visibility: normalizeVisibility(row.visibility, 'public'),
+    ownerGroups: normalizeAccessList(row.owner_groups || []),
+    allowedUsers: normalizeAccessList(row.allowed_users || []),
+    allowedGroups: normalizeAccessList(row.allowed_groups || []),
+    deniedUsers: normalizeAccessList(row.denied_users || []),
+    deniedGroups: normalizeAccessList(row.denied_groups || []),
+    editAllowedUsers: normalizeAccessList(row.edit_allowed_users || []),
+    editAllowedGroups: normalizeAccessList(row.edit_allowed_groups || []),
+    editDeniedUsers: normalizeAccessList(row.edit_denied_users || []),
+    editDeniedGroups: normalizeAccessList(row.edit_denied_groups || []),
+    updatedAt: row.updated_at || null,
+    updatedBy: String(row.updated_by || '')
+  };
+}
+
+function isDocumentAsset(row = {}) {
+  const type = String(row.type || '').trim().toLowerCase();
+  const mimeType = String(row.mime_type || row.mimeType || '').trim().toLowerCase();
+  const fileName = String(row.file_name || row.fileName || '').trim().toLowerCase();
+  if (['document', 'pdf', 'office', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp'].includes(type)) return true;
+  if (mimeType === 'application/pdf') return true;
+  if (mimeType.includes('word') || mimeType.includes('excel') || mimeType.includes('sheet') || mimeType.includes('powerpoint') || mimeType.includes('presentation') || mimeType.includes('opendocument')) return true;
+  return /\.(pdf|doc|docx|xls|xlsx|ppt|pptx|odt|ods|odp|txt|rtf|csv|md|json|xml|yaml|yml|log|ini|cfg|conf)$/i.test(fileName);
+}
+
+function getAssetTypeGroup(row = {}) {
+  const type = String(row.type || '').trim().toLowerCase();
+  const mimeType = String(row.mime_type || row.mimeType || '').trim().toLowerCase();
+  const fileName = String(row.file_name || row.fileName || '').trim().toLowerCase();
+  if (type === 'video' || mimeType.startsWith('video/')) return 'video';
+  if (['audio', 'sound'].includes(type) || mimeType.startsWith('audio/')) return 'audio';
+  if (['photo', 'image', 'picture'].includes(type) || mimeType.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|tif|tiff|bmp|heic|heif)$/i.test(fileName)) return 'photo';
+  if (isDocumentAsset(row)) return 'document';
+  return 'other';
+}
+
+function buildAssetTypeGroupSql(group, alias = 'assets') {
+  const safeGroup = normalizeAssetTypeGroup(group);
+  if (safeGroup === 'video') {
+    return `(LOWER(COALESCE(${alias}.type, '')) = 'video' OR LOWER(COALESCE(${alias}.mime_type, '')) LIKE 'video/%')`;
+  }
+  if (safeGroup === 'audio') {
+    return `(LOWER(COALESCE(${alias}.type, '')) IN ('audio', 'sound') OR LOWER(COALESCE(${alias}.mime_type, '')) LIKE 'audio/%')`;
+  }
+  if (safeGroup === 'photo') {
+    return `(
+      LOWER(COALESCE(${alias}.type, '')) IN ('photo', 'image', 'picture')
+      OR LOWER(COALESCE(${alias}.mime_type, '')) LIKE 'image/%'
+      OR LOWER(COALESCE(${alias}.file_name, '')) ~ '\\.(jpg|jpeg|png|gif|webp|tif|tiff|bmp|heic|heif)$'
+    )`;
+  }
+  if (safeGroup === 'document') return buildDocumentAssetSql(alias);
+  if (safeGroup === 'other') {
+    return `NOT (
+      ${buildAssetTypeGroupSql('video', alias)}
+      OR ${buildAssetTypeGroupSql('audio', alias)}
+      OR ${buildAssetTypeGroupSql('photo', alias)}
+      OR ${buildDocumentAssetSql(alias)}
+    )`;
+  }
+  return 'FALSE';
+}
+
+function identityMatchesAny(identity = {}, users = [], groups = []) {
+  const safeUsers = normalizeAccessList(users);
+  const safeGroups = normalizeAccessList(groups);
+  return Boolean(
+    (identity.identifiers || []).some((id) => safeUsers.includes(id))
+    || (identity.groups || []).some((group) => safeGroups.includes(group))
+  );
+}
+
+function buildDocumentAssetSql(alias = 'assets') {
+  return `(
+    LOWER(COALESCE(${alias}.type, '')) IN ('document', 'pdf', 'office', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp')
+    OR LOWER(COALESCE(${alias}.mime_type, '')) = 'application/pdf'
+    OR LOWER(COALESCE(${alias}.mime_type, '')) LIKE '%word%'
+    OR LOWER(COALESCE(${alias}.mime_type, '')) LIKE '%excel%'
+    OR LOWER(COALESCE(${alias}.mime_type, '')) LIKE '%sheet%'
+    OR LOWER(COALESCE(${alias}.mime_type, '')) LIKE '%powerpoint%'
+    OR LOWER(COALESCE(${alias}.mime_type, '')) LIKE '%presentation%'
+    OR LOWER(COALESCE(${alias}.mime_type, '')) LIKE '%opendocument%'
+    OR LOWER(COALESCE(${alias}.file_name, '')) ~ '\\.(pdf|doc|docx|xls|xlsx|ppt|pptx|odt|ods|odp|txt|rtf|csv|md|json|xml|yaml|yml|log|ini|cfg|conf)$'
+  )`;
+}
+
 function createAssetAccessService({ pool }) {
+  async function getAssetTypeAccessRows() {
+    const result = await pool.query(
+      `
+        SELECT *
+        FROM asset_type_access
+        ORDER BY CASE type_group
+          WHEN 'video' THEN 1
+          WHEN 'audio' THEN 2
+          WHEN 'photo' THEN 3
+          WHEN 'document' THEN 4
+          ELSE 5
+        END
+      `
+    );
+    return result.rows.map(getTypeAccessSnapshot).filter((row) => row.typeGroup);
+  }
+
   async function getGroupAdminGroupsForUser(user = {}) {
     const identity = getUserAccessIdentity(user);
     if (!identity.identifiers.length) return [];
@@ -68,10 +188,12 @@ function createAssetAccessService({ pool }) {
       : {};
     const identity = getUserAccessIdentity(user);
     const groupAdminGroups = await getGroupAdminGroupsForUser(user);
+    const assetTypeAccessRules = await getAssetTypeAccessRows();
     return {
       ...user,
       accessIdentity: identity,
       groupAdminGroups,
+      assetTypeAccessRules,
       canManageAllAssetVisibility: Boolean(user.baseIsSuperAdmin)
     };
   }
@@ -81,6 +203,17 @@ function createAssetAccessService({ pool }) {
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
     const identifiers = identity.identifiers || [];
     const groups = identity.groups || [];
+    if (identifiers.length) {
+      values.push(identifiers);
+      const idx = values.length;
+      where.push(`NOT (COALESCE(${alias}.denied_users, '{}') && $${idx}::text[])`);
+    }
+    if (groups.length) {
+      values.push(groups);
+      const idx = values.length;
+      where.push(`NOT (COALESCE(${alias}.denied_groups, '{}') && $${idx}::text[])`);
+    }
+    appendAssetTypeAccessWhere(where, values, context, alias);
     const conditions = [`${alias}.visibility = 'public'`];
 
     if (identifiers.length) {
@@ -88,24 +221,135 @@ function createAssetAccessService({ pool }) {
       const idx = values.length;
       conditions.push(`${alias}.owner_user = ANY($${idx}::text[])`);
       conditions.push(`${alias}.allowed_users && $${idx}::text[]`);
+      conditions.push(`${alias}.edit_allowed_users && $${idx}::text[]`);
     }
     if (groups.length) {
       values.push(groups);
       const idx = values.length;
       conditions.push(`${alias}.owner_groups && $${idx}::text[]`);
       conditions.push(`${alias}.allowed_groups && $${idx}::text[]`);
+      conditions.push(`${alias}.edit_allowed_groups && $${idx}::text[]`);
     }
 
     where.push(`(${conditions.join(' OR ')})`);
   }
 
+  function appendAssetTypeAccessWhere(where, values, context, alias = 'assets') {
+    const rules = Array.isArray(context?.assetTypeAccessRules) ? context.assetTypeAccessRules : [];
+    if (!rules.length) return;
+    const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
+    const identifiers = identity.identifiers || [];
+    const groups = identity.groups || [];
+
+    rules.forEach((rule) => {
+      const typeSql = buildAssetTypeGroupSql(rule.typeGroup, alias);
+      if (identifiers.length && rule.deniedUsers.length) {
+        values.push(identifiers);
+        where.push(`NOT (${typeSql} AND $${values.length}::text[] && ARRAY[${rule.deniedUsers.map((_, idx) => `$${values.length + idx + 1}`).join(', ')}]::text[])`);
+        rule.deniedUsers.forEach((item) => values.push(item));
+      }
+      if (groups.length && rule.deniedGroups.length) {
+        values.push(groups);
+        where.push(`NOT (${typeSql} AND $${values.length}::text[] && ARRAY[${rule.deniedGroups.map((_, idx) => `$${values.length + idx + 1}`).join(', ')}]::text[])`);
+        rule.deniedGroups.forEach((item) => values.push(item));
+      }
+    });
+
+    const allowConditions = rules.map((rule) => {
+      const typeSql = buildAssetTypeGroupSql(rule.typeGroup, alias);
+      if (rule.visibility === 'public') return typeSql;
+      const checks = [];
+      if (identifiers.length) {
+        values.push(identifiers);
+        const idx = values.length;
+        if (rule.allowedUsers.length) {
+          values.push(rule.allowedUsers);
+          checks.push(`$${idx}::text[] && $${values.length}::text[]`);
+        }
+        if (rule.editAllowedUsers.length) {
+          values.push(rule.editAllowedUsers);
+          checks.push(`$${idx}::text[] && $${values.length}::text[]`);
+        }
+      }
+      if (groups.length) {
+        values.push(groups);
+        const idx = values.length;
+        [rule.ownerGroups, rule.allowedGroups, rule.editAllowedGroups].forEach((list) => {
+          if (!list.length) return;
+          values.push(list);
+          checks.push(`$${idx}::text[] && $${values.length}::text[]`);
+        });
+      }
+      return checks.length ? `(${typeSql} AND (${checks.join(' OR ')}))` : `FALSE`;
+    });
+    if (allowConditions.length) where.push(`(${allowConditions.join(' OR ')})`);
+  }
+
+  function getTypeRuleForAsset(row, context = {}) {
+    const typeGroup = getAssetTypeGroup(row);
+    const rules = Array.isArray(context.assetTypeAccessRules) ? context.assetTypeAccessRules : [];
+    return rules.find((rule) => rule.typeGroup === typeGroup) || {
+      typeGroup,
+      visibility: 'public',
+      ownerGroups: [],
+      allowedUsers: [],
+      allowedGroups: [],
+      deniedUsers: [],
+      deniedGroups: [],
+      editAllowedUsers: [],
+      editAllowedGroups: [],
+      editDeniedUsers: [],
+      editDeniedGroups: []
+    };
+  }
+
+  function canViewAssetType(row, context) {
+    const rule = getTypeRuleForAsset(row, context);
+    const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
+    if (identityMatchesAny(identity, rule.deniedUsers, rule.deniedGroups)) return false;
+    if (rule.visibility === 'public') return true;
+    if (identity.identifiers.some((id) => rule.allowedUsers.includes(id))) return true;
+    if (identity.groups.some((group) => rule.ownerGroups.includes(group) || rule.allowedGroups.includes(group))) return true;
+    if (identityMatchesAny(identity, rule.editAllowedUsers, rule.editAllowedGroups)) return true;
+    return false;
+  }
+
+  function canEditAssetType(row, context) {
+    const rule = getTypeRuleForAsset(row, context);
+    const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
+    if (identityMatchesAny(identity, rule.editDeniedUsers, rule.editDeniedGroups)) return false;
+    if (context?.canManageAllAssetVisibility) return true;
+    if (identityMatchesAny(identity, rule.editAllowedUsers, rule.editAllowedGroups)) return true;
+    return rule.visibility === 'public' || canViewAssetType(row, context);
+  }
+
+  function getAllowedAssetTypeGroups(context = {}) {
+    if (context?.canManageAllAssetVisibility) return [...ASSET_TYPE_GROUPS];
+    return ASSET_TYPE_GROUPS.filter((typeGroup) => {
+      const row = { type: typeGroup, mime_type: '', file_name: '' };
+      return canViewAssetType(row, context);
+    });
+  }
+
+  function canCreateAssetOfType(input = {}, context = {}) {
+    const typeGroup = normalizeAssetTypeGroup(input.typeGroup) || getAssetTypeGroup({
+      type: input.type || input.declaredType,
+      mime_type: input.mimeType || input.mime_type,
+      file_name: input.fileName || input.file_name
+    });
+    return getAllowedAssetTypeGroups(context).includes(typeGroup);
+  }
+
   function canViewAsset(row, context) {
     if (context?.canManageAllAssetVisibility) return true;
-    const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
     const asset = getAssetAccessSnapshot(row);
+    const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
+    if (identityMatchesAny(identity, asset.deniedUsers, asset.deniedGroups)) return false;
+    if (!canViewAssetType(row, context)) return false;
     if (asset.visibility === 'public') return true;
     if (identity.identifiers.some((id) => id && (id === asset.ownerUser || asset.allowedUsers.includes(id)))) return true;
     if (identity.groups.some((group) => asset.ownerGroups.includes(group) || asset.allowedGroups.includes(group))) return true;
+    if (identityMatchesAny(identity, asset.editAllowedUsers, asset.editAllowedGroups)) return true;
     return false;
   }
 
@@ -114,6 +358,27 @@ function createAssetAccessService({ pool }) {
     const asset = getAssetAccessSnapshot(row);
     const managedGroups = normalizeAccessList(context?.groupAdminGroups || []);
     return managedGroups.some((group) => asset.ownerGroups.includes(group));
+  }
+
+  function canEditAsset(row, context) {
+    if (!canViewAsset(row, context)) return false;
+    const asset = getAssetAccessSnapshot(row);
+    const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
+    if (identityMatchesAny(identity, asset.editDeniedUsers, asset.editDeniedGroups)) return false;
+    if (!canEditAssetType(row, context)) return false;
+    if (context?.canManageAllAssetVisibility) return true;
+    if (identityMatchesAny(identity, asset.editAllowedUsers, asset.editAllowedGroups)) return true;
+    return Boolean(context?.canEditMetadata || context?.canAccessAdmin);
+  }
+
+  function canDeleteAsset(row, context) {
+    if (!canViewAsset(row, context)) return false;
+    const asset = getAssetAccessSnapshot(row);
+    const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
+    if (identityMatchesAny(identity, asset.editDeniedUsers, asset.editDeniedGroups)) return false;
+    if (!canEditAssetType(row, context)) return false;
+    if (context?.canManageAllAssetVisibility) return true;
+    return Boolean(context?.canDeleteAssets);
   }
 
   function buildNewAssetAccess(input = {}, context = {}) {
@@ -127,7 +392,13 @@ function createAssetAccessService({ pool }) {
       ownerUser,
       ownerGroups,
       allowedUsers: normalizeAccessList(input.allowedUsers || input.allowed_users || []),
-      allowedGroups: normalizeAccessList(input.allowedGroups || input.allowed_groups || [])
+      allowedGroups: normalizeAccessList(input.allowedGroups || input.allowed_groups || []),
+      deniedUsers: normalizeAccessList(input.deniedUsers || input.denied_users || []),
+      deniedGroups: normalizeAccessList(input.deniedGroups || input.denied_groups || []),
+      editAllowedUsers: normalizeAccessList(input.editAllowedUsers || input.edit_allowed_users || []),
+      editAllowedGroups: normalizeAccessList(input.editAllowedGroups || input.edit_allowed_groups || []),
+      editDeniedUsers: normalizeAccessList(input.editDeniedUsers || input.edit_denied_users || []),
+      editDeniedGroups: normalizeAccessList(input.editDeniedGroups || input.edit_denied_groups || [])
     };
   }
 
@@ -145,7 +416,25 @@ function createAssetAccessService({ pool }) {
         : current.allowedUsers,
       allowedGroups: Object.prototype.hasOwnProperty.call(payload, 'allowedGroups')
         ? normalizeAccessList(payload.allowedGroups)
-        : current.allowedGroups
+        : current.allowedGroups,
+      deniedUsers: Object.prototype.hasOwnProperty.call(payload, 'deniedUsers')
+        ? normalizeAccessList(payload.deniedUsers)
+        : current.deniedUsers,
+      deniedGroups: Object.prototype.hasOwnProperty.call(payload, 'deniedGroups')
+        ? normalizeAccessList(payload.deniedGroups)
+        : current.deniedGroups,
+      editAllowedUsers: Object.prototype.hasOwnProperty.call(payload, 'editAllowedUsers')
+        ? normalizeAccessList(payload.editAllowedUsers)
+        : current.editAllowedUsers,
+      editAllowedGroups: Object.prototype.hasOwnProperty.call(payload, 'editAllowedGroups')
+        ? normalizeAccessList(payload.editAllowedGroups)
+        : current.editAllowedGroups,
+      editDeniedUsers: Object.prototype.hasOwnProperty.call(payload, 'editDeniedUsers')
+        ? normalizeAccessList(payload.editDeniedUsers)
+        : current.editDeniedUsers,
+      editDeniedGroups: Object.prototype.hasOwnProperty.call(payload, 'editDeniedGroups')
+        ? normalizeAccessList(payload.editDeniedGroups)
+        : current.editDeniedGroups
     };
     const updated = await pool.query(
       `
@@ -153,11 +442,29 @@ function createAssetAccessService({ pool }) {
         SET visibility = $2,
             allowed_users = $3,
             allowed_groups = $4,
-            updated_at = $5
+            denied_users = $5,
+            denied_groups = $6,
+            edit_allowed_users = $7,
+            edit_allowed_groups = $8,
+            edit_denied_users = $9,
+            edit_denied_groups = $10,
+            updated_at = $11
         WHERE id = $1
         RETURNING *
       `,
-      [assetId, next.visibility, next.allowedUsers, next.allowedGroups, new Date().toISOString()]
+      [
+        assetId,
+        next.visibility,
+        next.allowedUsers,
+        next.allowedGroups,
+        next.deniedUsers,
+        next.deniedGroups,
+        next.editAllowedUsers,
+        next.editAllowedGroups,
+        next.editDeniedUsers,
+        next.editDeniedGroups,
+        new Date().toISOString()
+      ]
     );
     return { status: 200, row: updated.rows[0] };
   }
@@ -166,12 +473,21 @@ function createAssetAccessService({ pool }) {
     normalizeAccessName,
     normalizeAccessList,
     normalizeVisibility,
+    normalizeAssetTypeGroup,
     getUserAccessIdentity,
     getAssetAccessSnapshot,
+    getTypeAccessSnapshot,
+    getAssetTypeAccessRows,
+    getAssetTypeGroup,
+    buildAssetTypeGroupSql,
+    getAllowedAssetTypeGroups,
+    canCreateAssetOfType,
     getGroupAdminGroupsForUser,
     resolveAccessContext,
     appendAssetAccessWhere,
     canViewAsset,
+    canEditAsset,
+    canDeleteAsset,
     canManageAssetVisibility,
     buildNewAssetAccess,
     updateAssetVisibility
@@ -183,6 +499,11 @@ module.exports = {
   normalizeAccessName,
   normalizeAccessList,
   normalizeVisibility,
+  normalizeAssetTypeGroup,
   getUserAccessIdentity,
-  getAssetAccessSnapshot
+  getAssetAccessSnapshot,
+  getTypeAccessSnapshot,
+  getAssetTypeGroup,
+  buildAssetTypeGroupSql,
+  ASSET_TYPE_GROUPS
 };

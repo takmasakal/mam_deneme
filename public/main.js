@@ -86,6 +86,9 @@ let currentUserCanDeleteAssets = false;
 let currentUserCanUsePdfAdvancedTools = false;
 let currentOfficeEditorProvider = 'none';
 let currentUsername = '';
+let currentUserGroups = [];
+let currentUserRoles = [];
+let currentUserAllowedAssetTypes = [];
 let searchSuggestModule = null;
 const selectedAssetIds = new Set();
 let lastSelectedAssetId = null;
@@ -98,13 +101,18 @@ let currentSearchFuzzyUsed = false;
 let currentOcrHighlightQuery = '';
 let currentOcrDidYouMean = '';
 let currentOcrFuzzyUsed = false;
+let currentSubtitleHighlightQuery = '';
+let currentSubtitleDidYouMean = '';
+let currentSubtitleFuzzyUsed = false;
 let searchResultCounterVisible = false;
 const cutMarksByAsset = new Map();
 const subtitleOverlayEnabledByAsset = new Map();
 let panelSizes = Object.fromEntries(PANELS.map((p) => [p.id, p.defaultSize]));
 let panelVisibility = { panelIngest: true, panelAssets: true, panelDetail: true };
+let panelLayoutSyncRaf = 0;
 let dynamicDetailMinPx = DETAIL_PANEL_BASE_MIN_PX;
 let assetViewMode = localStorage.getItem(LOCAL_ASSET_VIEW_MODE) === 'list' ? 'list' : 'grid';
+const accessScopeModule = window.createMainAccessScopeModule();
 
 function hideSearchSuggestions() {
   return searchSuggestModule?.hideSearchSuggestions?.();
@@ -369,6 +377,12 @@ let i18n = {
     owner_groups: 'Owner groups',
     allowed_groups: 'Allowed groups',
     allowed_users: 'Allowed users',
+    denied_groups: 'Denied groups',
+    denied_users: 'Denied users',
+    edit_allowed_groups: 'Editable groups',
+    edit_allowed_users: 'Editable users',
+    edit_denied_groups: 'Edit denied groups',
+    edit_denied_users: 'Edit denied users',
     save_visibility: 'Save visibility',
     visibility_save_failed: 'Failed to save asset visibility.',
     dublin_core: 'Dublin Core Metadata',
@@ -401,6 +415,7 @@ let i18n = {
     restore_office_original: 'Restore Original Office',
     download_pdf_original: 'Download Original PDF',
     download_office_original: 'Download Original Office',
+    download_version: 'Download Version',
     restore_pdf_confirm: 'Restore this PDF version? Current PDF state will be saved as a new restore version.',
     restore_pdf_original_confirm: 'Restore the original PDF snapshot?',
     restore_office_original_confirm: 'Restore the original Office snapshot?',
@@ -441,6 +456,7 @@ let i18n = {
     trash_confirm: 'Permanently delete this asset? This cannot be undone.',
     select_media_first: 'Select a media file to upload.',
     upload_empty_file: 'The selected file is empty (0 KB). Please choose a complete file.',
+    upload_type_mismatch: 'Selected asset type is {expected}, but the selected file looks like {actual}. Please choose a matching file or change the asset type.',
     proxy_failed: 'Proxy failed. Switched to original media.',
     proxy_fallback_status: 'fallback',
     webaudio_unavailable: 'Web Audio API is not available in this browser.',
@@ -698,6 +714,12 @@ let i18n = {
     owner_groups: 'Sahip gruplar',
     allowed_groups: 'İzinli gruplar',
     allowed_users: 'İzinli kullanıcılar',
+    denied_groups: 'Göremeyen gruplar',
+    denied_users: 'Göremeyen kullanıcılar',
+    edit_allowed_groups: 'Değiştirebilen gruplar',
+    edit_allowed_users: 'Değiştirebilen kullanıcılar',
+    edit_denied_groups: 'Değiştiremeyen gruplar',
+    edit_denied_users: 'Değiştiremeyen kullanıcılar',
     save_visibility: 'Görünürlüğü kaydet',
     visibility_save_failed: 'Varlık görünürlüğü kaydedilemedi.',
     dublin_core: 'Dublin Core Metadata',
@@ -730,6 +752,7 @@ let i18n = {
     restore_office_original: "Orijinal Office'e Dön",
     download_pdf_original: "Orijinal PDF'yi İndir",
     download_office_original: "Orijinal Office'i İndir",
+    download_version: 'Versiyonu İndir',
     restore_pdf_confirm: 'Bu PDF sürümüne geri dönülsün mü? Mevcut PDF durumu yeni bir restore sürümü olarak kaydedilir.',
     restore_pdf_original_confirm: 'Orijinal PDF snapshotına geri dönülsün mü?',
     restore_office_original_confirm: 'Orijinal Office snapshotına geri dönülsün mü?',
@@ -770,6 +793,7 @@ let i18n = {
     trash_confirm: 'Bu varlık kalıcı olarak silinecek. Geri alınamaz.',
     select_media_first: 'Yüklemek için medya dosyası seçin.',
     upload_empty_file: 'Seçilen dosya boş (0 KB). Lütfen tam inmiş/geçerli bir dosya seçin.',
+    upload_type_mismatch: 'Seçilen varlık türü {expected}, ancak seçilen dosya {actual} gibi görünüyor. Lütfen uygun dosya seçin veya varlık türünü değiştirin.',
     proxy_failed: 'Proxy açılamadı. Orijinal medyaya geçildi.',
     proxy_fallback_status: 'yedek',
     webaudio_unavailable: 'Bu tarayıcıda Web Audio API desteklenmiyor.',
@@ -1124,6 +1148,18 @@ function applyAssetViewModeUI() {
   assetViewThumbBtn?.classList.toggle('active', !isList);
 }
 
+function getDefaultIngestType() {
+  return accessScopeModule.getDefaultIngestType({ allowedAssetTypes: currentUserAllowedAssetTypes });
+}
+
+function applyCurrentUserAssetTypeScope() {
+  accessScopeModule.applyAssetTypeScope({
+    allowedAssetTypes: currentUserAllowedAssetTypes,
+    ingestForm,
+    assetTypeFilters
+  });
+}
+
 async function loadCurrentUser() {
   if (!currentUserBtn) return;
   try {
@@ -1137,6 +1173,9 @@ async function loadCurrentUser() {
     const canEditOffice = toStrictBool(me.canEditOffice, false);
     const canDeleteAssets = toStrictBool(me.canDeleteAssets, toStrictBool(me.isAdmin, false));
     const canUsePdfAdvancedTools = toStrictBool(me.canUsePdfAdvancedTools, toStrictBool(me.isAdmin, false));
+    currentUserGroups = Array.isArray(me.groups) ? me.groups : [];
+    currentUserRoles = Array.isArray(me.roles) ? me.roles : [];
+    currentUserAllowedAssetTypes = accessScopeModule.normalizeAllowedAssetTypes(me.allowedAssetTypes || []);
     currentUserCanAccessAdmin = canAccessAdmin;
     currentUserCanEditMetadata = canEditMetadata;
     currentUserCanEditOffice = canEditOffice;
@@ -1151,8 +1190,9 @@ async function loadCurrentUser() {
     currentUserBtn.textContent = value;
     currentUserBtn.title = value;
     if (adminMenuLink) {
-      adminMenuLink.classList.toggle('hidden', !(canAccessAdmin || canAccessTextAdmin));
+      adminMenuLink.classList.toggle('hidden', !accessScopeModule.canShowAdminMenu(me));
     }
+    applyCurrentUserAssetTypeScope();
   } catch (_error) {
     currentUserCanAccessAdmin = false;
     currentUserCanEditMetadata = false;
@@ -1160,10 +1200,14 @@ async function loadCurrentUser() {
     currentUserCanDeleteAssets = false;
     currentUserCanUsePdfAdvancedTools = false;
     currentOfficeEditorProvider = 'none';
+    currentUserGroups = [];
+    currentUserRoles = [];
+    currentUserAllowedAssetTypes = [];
     currentUserBtn.dataset.value = '';
     currentUserBtn.textContent = t('unknown_user');
     currentUserBtn.title = t('unknown_user');
     if (adminMenuLink) adminMenuLink.classList.add('hidden');
+    applyCurrentUserAssetTypeScope();
   }
 }
 
@@ -1220,6 +1264,7 @@ function setPanelVisible(panelId, nextVisible) {
   }
 
   applyPanelLayout();
+  schedulePanelLayoutSync();
   if (!isVideoToolsPageMode) savePanelVisibilityPrefs();
 }
 
@@ -1335,6 +1380,14 @@ function applyPanelLayout() {
     const panelId = tab.dataset.showPanel;
     if (!panelId) return;
     tab.style.display = isPanelVisible(panelId) ? 'none' : 'inline-flex';
+  });
+}
+
+function schedulePanelLayoutSync() {
+  if (panelLayoutSyncRaf) cancelAnimationFrame(panelLayoutSyncRaf);
+  panelLayoutSyncRaf = requestAnimationFrame(() => {
+    panelLayoutSyncRaf = 0;
+    applyPanelLayout();
   });
 }
 
@@ -1530,6 +1583,7 @@ ingestModule = window.createMainIngestModule({
   currentAssetsRef: {
     get: () => currentAssets
   },
+  getDefaultIngestType,
   loadAssets: (...args) => loadAssets(...args)
 });
 
@@ -1550,6 +1604,7 @@ const assetBrowserModule = window.createMainAssetBrowserModule({
   panelDetail,
   searchQueryInput,
   ocrQueryInput,
+  subtitleQueryInput,
   currentUserCanDeleteAssetsRef: {
     get: () => currentUserCanDeleteAssets
   },
@@ -1584,7 +1639,10 @@ const assetBrowserModule = window.createMainAssetBrowserModule({
     get currentOcrFuzzyUsed() { return currentOcrFuzzyUsed; },
     get currentSearchHighlightQuery() { return currentSearchHighlightQuery; },
     get currentOcrHighlightQuery() { return currentOcrHighlightQuery; },
-    get currentSubtitleQuery() { return currentSubtitleQuery; }
+    get currentSubtitleQuery() { return currentSubtitleQuery; },
+    get currentSubtitleDidYouMean() { return currentSubtitleDidYouMean; },
+    get currentSubtitleFuzzyUsed() { return currentSubtitleFuzzyUsed; },
+    get currentSubtitleHighlightQuery() { return currentSubtitleHighlightQuery; }
   },
   t,
   escapeHtml,
@@ -1936,7 +1994,13 @@ const assetsModule = window.createMainAssetsModule({
     get currentOcrDidYouMean() { return currentOcrDidYouMean; },
     set currentOcrDidYouMean(next) { currentOcrDidYouMean = next; },
     get currentOcrFuzzyUsed() { return currentOcrFuzzyUsed; },
-    set currentOcrFuzzyUsed(next) { currentOcrFuzzyUsed = next; }
+    set currentOcrFuzzyUsed(next) { currentOcrFuzzyUsed = next; },
+    get currentSubtitleHighlightQuery() { return currentSubtitleHighlightQuery; },
+    set currentSubtitleHighlightQuery(next) { currentSubtitleHighlightQuery = next; },
+    get currentSubtitleDidYouMean() { return currentSubtitleDidYouMean; },
+    set currentSubtitleDidYouMean(next) { currentSubtitleDidYouMean = next; },
+    get currentSubtitleFuzzyUsed() { return currentSubtitleFuzzyUsed; },
+    set currentSubtitleFuzzyUsed(next) { currentSubtitleFuzzyUsed = next; }
   }
 });
 
@@ -2131,8 +2195,18 @@ async function openAsset(id, workflow, options = {}) {
     if (saveBtn) saveBtn.disabled = true;
     try {
       const payload = serializeForm(formEl);
-      payload.allowedGroups = parseList(payload.allowedGroups);
-      payload.allowedUsers = parseList(payload.allowedUsers);
+      [
+        'allowedGroups',
+        'allowedUsers',
+        'deniedGroups',
+        'deniedUsers',
+        'editAllowedGroups',
+        'editAllowedUsers',
+        'editDeniedGroups',
+        'editDeniedUsers'
+      ].forEach((key) => {
+        payload[key] = parseList(payload[key]);
+      });
       await api(`/api/assets/${id}/visibility`, { method: 'PATCH', body: JSON.stringify(payload) });
       await loadAssets();
       await openAsset(id, workflow);
@@ -2183,7 +2257,7 @@ async function openAsset(id, workflow, options = {}) {
 
   const restoreOfficeOriginalBtn = document.getElementById('restoreOfficeOriginalBtn');
   restoreOfficeOriginalBtn?.addEventListener('click', async () => {
-    if (!currentUserCanEditOffice) return;
+    if (!currentUserCanEditOffice && !asset.canEditAsset) return;
     const ok = confirm(t('restore_office_original_confirm'));
     if (!ok) return;
     await api(`/api/assets/${id}/office-restore-original`, { method: 'POST', body: '{}' });
@@ -2192,7 +2266,7 @@ async function openAsset(id, workflow, options = {}) {
 
   const downloadOfficeOriginalBtn = document.getElementById('downloadOfficeOriginalBtn');
   downloadOfficeOriginalBtn?.addEventListener('click', () => {
-    if (!currentUserCanEditOffice) return;
+    if (!currentUserCanEditOffice && !asset.canEditAsset) return;
     const link = document.createElement('a');
     link.href = `/api/assets/${encodeURIComponent(id)}/office-original/download`;
     link.setAttribute('download', '');
@@ -2310,6 +2384,22 @@ async function openAsset(id, workflow, options = {}) {
       event.preventDefault();
       event.stopPropagation();
       await handleDeleteVersion(event.currentTarget);
+    });
+  });
+
+  assetVersionsListEl?.querySelectorAll('.downloadVersionBtn').forEach((btn) => {
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const versionId = String(event.currentTarget?.dataset?.versionId || '').trim();
+      if (!versionId) return;
+      const link = document.createElement('a');
+      link.href = `/api/assets/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/download`;
+      link.setAttribute('download', '');
+      link.rel = 'noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
     });
   });
 
@@ -2476,7 +2566,8 @@ assetGrid.addEventListener('click', async (event) => {
       return;
     }
     if (action === 'delete') {
-      if (!currentUserCanDeleteAssets) return;
+      const targetAsset = currentAssets.find((item) => String(item.id || '') === String(id));
+      if (!currentUserCanDeleteAssets && !targetAsset?.canDeleteAsset) return;
       const ok = confirm(t('trash_confirm'));
       if (!ok) return;
       await deleteApi(`/api/assets/${id}`);
@@ -2630,24 +2721,28 @@ languageSelect?.addEventListener('change', async (event) => {
   hideOcrSuggestions();
   hideSubtitleSuggestions();
   applyStaticI18n();
-  await loadWorkflow();
-  await loadAssets();
-  if (selectedAssetIds.size > 1) {
-    await openMultiSelectionDetail();
-    return;
-  }
-  if (selectedAssetId) {
-    const workflow = await api('/api/workflow');
-    await openAsset(selectedAssetId, workflow);
-  } else {
-    if (activeDetailPinCleanup) {
-      activeDetailPinCleanup();
-      activeDetailPinCleanup = null;
+  try {
+    await loadWorkflow();
+    await loadAssets();
+    if (selectedAssetIds.size > 1) {
+      await openMultiSelectionDetail();
+      return;
     }
-    assetDetail.textContent = t('select_asset');
-    assetDetail.classList.remove('video-detail-mode');
-    assetDetail.classList.remove('detail-video-pinned');
-    setPanelVideoToolsButtonState(false);
+    if (selectedAssetId) {
+      const workflow = await api('/api/workflow');
+      await openAsset(selectedAssetId, workflow);
+    } else {
+      if (activeDetailPinCleanup) {
+        activeDetailPinCleanup();
+        activeDetailPinCleanup = null;
+      }
+      assetDetail.textContent = t('select_asset');
+      assetDetail.classList.remove('video-detail-mode');
+      assetDetail.classList.remove('detail-video-pinned');
+      setPanelVideoToolsButtonState(false);
+    }
+  } finally {
+    schedulePanelLayoutSync();
   }
 });
 

@@ -6,11 +6,19 @@ node_modules/
 .env.local
 .env.*.local
 deploy/.env.easy
+deploy/.env.rpi
+deploy/secrets/
 
 # Runtime/generated data
 uploads/
 data/
 deploy/keycloak/mam-realm.json
+deploy/keycloak/mam-rpi-realm.json
+docker-compose.override.yml
+public/_pgbackup/
+public/_pginfo/
+public/*.orj.*
+public/pinegrow.json
 
 # Logs
 npm-debug.log*

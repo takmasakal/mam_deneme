@@ -49,22 +49,23 @@
     function getVersionSectionAccess(asset) {
       const assetIsPdf = String(asset?.mimeType || '').toLowerCase().includes('pdf');
       const assetIsOffice = isOfficeDocument(asset);
+      const canEditThisAsset = Boolean(asset?.canEditAsset);
       return {
         assetIsPdf,
         assetIsOffice,
         canViewVersions: Boolean(
           assetIsPdf
-            ? currentUserCanUsePdfAdvancedTools()
+            ? (currentUserCanUsePdfAdvancedTools() || canEditThisAsset)
             : assetIsOffice
-              ? currentUserCanEditOffice()
-              : currentUserCanAccessAdmin()
+              ? (currentUserCanEditOffice() || canEditThisAsset)
+              : (currentUserCanAccessAdmin() || canEditThisAsset)
         ),
         canManageVersions: Boolean(
           assetIsPdf
-            ? currentUserCanUsePdfAdvancedTools()
+            ? (currentUserCanUsePdfAdvancedTools() || canEditThisAsset)
             : assetIsOffice
-              ? currentUserCanEditOffice()
-              : currentUserCanAccessAdmin()
+              ? (currentUserCanEditOffice() || canEditThisAsset)
+              : (currentUserCanAccessAdmin() || canEditThisAsset)
         )
       };
     }
@@ -77,18 +78,23 @@
       const isOwnVersion = Boolean(username && actorUsername && username === actorUsername);
       const canEditOrDelete = Boolean(
         access.assetIsPdf
-          ? (currentUserCanUsePdfAdvancedTools() && (currentUserCanAccessAdmin() || isOwnVersion))
+          ? ((currentUserCanUsePdfAdvancedTools() || access.canManageVersions) && (currentUserCanAccessAdmin() || isOwnVersion || access.canManageVersions))
           : access.assetIsOffice
-            ? currentUserCanEditOffice()
-            : currentUserCanAccessAdmin()
+            ? (currentUserCanEditOffice() || access.canManageVersions)
+            : (currentUserCanAccessAdmin() || access.canManageVersions)
       );
       return {
         actionType,
-        canRestorePdf: Boolean(currentUserCanAccessAdmin() && access.assetIsPdf && hasSnapshot),
-        canRestoreOffice: Boolean(currentUserCanEditOffice() && access.assetIsOffice && hasSnapshot),
+        canRestorePdf: Boolean(access.canManageVersions && access.assetIsPdf && hasSnapshot),
+        canRestoreOffice: Boolean(access.canManageVersions && access.assetIsOffice && hasSnapshot),
+        canDownloadVersion: hasSnapshot,
         canEditVersion: canEditOrDelete,
         canDeleteVersion: canEditOrDelete
       };
+    }
+
+    function canDeleteAsset(asset) {
+      return Boolean(currentUserCanDeleteAssets() || asset?.canDeleteAsset);
     }
 
     function renderVersionRow(asset, version, access, interactive) {
@@ -98,12 +104,16 @@
       const cleanNote = cleanVersionNoteText(version.note);
       const rowClass = rowState.canRestorePdf ? 'version version-restorable' : 'version';
       const restoreAttr = rowState.canRestorePdf ? ` data-restore-version-id="${escapeHtml(version.versionId)}"` : '';
-      const actionBar = interactive ? `
+      const downloadButton = rowState.canDownloadVersion
+        ? `<button type="button" class="downloadVersionBtn" data-version-id="${escapeHtml(version.versionId)}">${escapeHtml(t('download_version'))}</button>`
+        : '';
+      const actionBar = (interactive || downloadButton) ? `
         <div class="timecode-bar" style="margin-top:8px;">
           ${access.assetIsPdf ? `<button type="button" class="restorePdfVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canRestorePdf ? '' : 'disabled'}>${escapeHtml(rowState.canRestorePdf ? t('restore_pdf_version') : t('restore_pdf_unavailable'))}</button>` : ''}
           ${access.assetIsOffice ? `<button type="button" class="restoreOfficeVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canRestoreOffice ? '' : 'disabled'}>${escapeHtml(rowState.canRestoreOffice ? t('restore_office_version') : t('restore_pdf_unavailable'))}</button>` : ''}
-          <button type="button" class="editVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canEditVersion ? '' : 'disabled'}>${escapeHtml(t('edit_version_name'))}</button>
-          ${rowState.canDeleteVersion ? `<button type="button" class="deleteVersionBtn danger" data-version-id="${escapeHtml(version.versionId)}">${escapeHtml(t('delete_version'))}</button>` : ''}
+          ${downloadButton}
+          ${interactive ? `<button type="button" class="editVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canEditVersion ? '' : 'disabled'}>${escapeHtml(t('edit_version_name'))}</button>` : ''}
+          ${interactive && rowState.canDeleteVersion ? `<button type="button" class="deleteVersionBtn danger" data-version-id="${escapeHtml(version.versionId)}">${escapeHtml(t('delete_version'))}</button>` : ''}
         </div>
       ` : '';
       return `
@@ -146,7 +156,7 @@
           </div>
         `
         : '';
-      const canEditMetadata = currentUserCanEditMetadata();
+      const canEditMetadata = Boolean(currentUserCanEditMetadata() || asset.canEditAsset);
       const metadataLockNotice = canEditMetadata
         ? ''
         : `<div class="asset-meta metadata-lock-note">${escapeHtml(t('metadata_edit_locked'))}</div>`;
@@ -166,6 +176,12 @@
             <label>${escapeHtml(t('owner_groups'))}<input value="${escapeHtml(accessListText(asset.ownerGroups))}" disabled /></label>
             <label>${escapeHtml(t('allowed_groups'))}<input name="allowedGroups" value="${escapeHtml(accessListText(asset.allowedGroups))}" placeholder="group-a, group-b" /></label>
             <label>${escapeHtml(t('allowed_users'))}<input name="allowedUsers" value="${escapeHtml(accessListText(asset.allowedUsers))}" placeholder="user-a, user-b" /></label>
+            <label>${escapeHtml(t('denied_groups'))}<input name="deniedGroups" value="${escapeHtml(accessListText(asset.deniedGroups))}" placeholder="group-a, group-b" /></label>
+            <label>${escapeHtml(t('denied_users'))}<input name="deniedUsers" value="${escapeHtml(accessListText(asset.deniedUsers))}" placeholder="user-a, user-b" /></label>
+            <label>${escapeHtml(t('edit_allowed_groups'))}<input name="editAllowedGroups" value="${escapeHtml(accessListText(asset.editAllowedGroups))}" placeholder="group-a, group-b" /></label>
+            <label>${escapeHtml(t('edit_allowed_users'))}<input name="editAllowedUsers" value="${escapeHtml(accessListText(asset.editAllowedUsers))}" placeholder="user-a, user-b" /></label>
+            <label>${escapeHtml(t('edit_denied_groups'))}<input name="editDeniedGroups" value="${escapeHtml(accessListText(asset.editDeniedGroups))}" placeholder="group-a, group-b" /></label>
+            <label>${escapeHtml(t('edit_denied_users'))}<input name="editDeniedUsers" value="${escapeHtml(accessListText(asset.editDeniedUsers))}" placeholder="user-a, user-b" /></label>
           </div>
           <button type="submit">${escapeHtml(t('save_visibility'))}</button>
         </form>
@@ -182,8 +198,8 @@
         <div class="timecode-bar">
           ${asset.mediaUrl ? `<button type="button" id="downloadAssetBtn">${t('download_asset')}</button>` : ''}
           ${currentUserCanAccessAdmin() && isVideo(asset) && asset.proxyUrl ? `<button type="button" id="downloadProxyBtn">${t('download_proxy')}</button>` : ''}
-          ${currentUserCanDeleteAssets() && !asset.inTrash ? `<button type="button" id="moveToTrashBtn" class="danger">${t('delete_asset')}</button>` : ''}
-          ${currentUserCanDeleteAssets() && asset.inTrash ? `<button type="button" id="restoreAssetBtn">${t('restore')}</button><button type="button" id="deleteAssetBtn" class="danger">${t('delete_permanent')}</button>` : ''}
+          ${canDeleteAsset(asset) && !asset.inTrash ? `<button type="button" id="moveToTrashBtn" class="danger">${t('delete_asset')}</button>` : ''}
+          ${canDeleteAsset(asset) && asset.inTrash ? `<button type="button" id="restoreAssetBtn">${t('restore')}</button><button type="button" id="deleteAssetBtn" class="danger">${t('delete_permanent')}</button>` : ''}
         </div>
         ${isVideo(asset) ? `
           <div class="tech-info-box">
@@ -258,7 +274,7 @@
           </div>
         ` : ''}
         ${(
-          currentUserCanEditOffice()
+          (currentUserCanEditOffice() || asset.canEditAsset)
           && assetIsOffice
         ) ? `
           <div class="timecode-bar" style="margin: 0 0 8px 0;">
@@ -303,7 +319,7 @@
             ${selectedAssets.slice(0, 40).map((asset) => `<span class="chip multi-chip" style="${assetTagChipStyle(asset)}">${escapeHtml(asset.title)}</span>`).join('')}
           </div>
           <div class="timecode-bar">
-            ${currentUserCanDeleteAssets() ? `<button type="button" id="bulkDeleteBtn">${escapeHtml(t('bulk_delete_selected'))}</button>` : ''}
+            ${selectedAssets.some((asset) => canDeleteAsset(asset)) ? `<button type="button" id="bulkDeleteBtn">${escapeHtml(t('bulk_delete_selected'))}</button>` : ''}
             <button type="button" id="bulkClearBtn">${escapeHtml(t('bulk_clear_selection'))}</button>
           </div>
         </div>
@@ -334,8 +350,9 @@
       const bulkClearBtn = document.getElementById('bulkClearBtn');
 
       bulkDeleteBtn?.addEventListener('click', async () => {
-        if (!currentUserCanDeleteAssets()) return;
-        const ids = [...selectedAssetIds()];
+        const ids = currentAssets()
+          .filter((asset) => selectedAssetIds().has(asset.id) && canDeleteAsset(asset))
+          .map((asset) => asset.id);
         if (!ids.length) return;
         const ok = confirm(tf('bulk_delete_confirm', { count: ids.length }));
         if (!ok) return;

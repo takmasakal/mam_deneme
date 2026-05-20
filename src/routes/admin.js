@@ -23,6 +23,7 @@ function registerAdminRoutes(app, deps) {
     resolveEffectivePermissions,
     getUserPermissionsSettings,
     fetchKeycloakUsers,
+    fetchKeycloakGroups,
     isVisibleKeycloakUser,
     fetchKeycloakUserPermissionDefaults,
     resolvePermissionKeysFromPrincipals,
@@ -105,6 +106,81 @@ async function requireSuperAdminRequest(req, res) {
   return effective;
 }
 
+async function collectMamAccessGroups() {
+  const result = await pool.query(
+    `
+      SELECT DISTINCT group_name
+      FROM (
+        SELECT unnest(owner_groups) AS group_name FROM assets WHERE cardinality(owner_groups) > 0
+        UNION ALL
+        SELECT unnest(allowed_groups) AS group_name FROM assets WHERE cardinality(allowed_groups) > 0
+        UNION ALL
+        SELECT group_name FROM group_admins
+      ) groups
+      WHERE group_name IS NOT NULL AND group_name <> ''
+      ORDER BY group_name ASC
+    `
+  );
+  return result.rows.map((row) => String(row.group_name || '').trim()).filter(Boolean);
+}
+
+app.get('/api/admin/identity/overview', async (_req, res) => {
+  try {
+    const [kcData, kcGroupsData, mamGroups, groupAdminsResult] = await Promise.all([
+      fetchKeycloakUsers(),
+      typeof fetchKeycloakGroups === 'function' ? fetchKeycloakGroups() : Promise.resolve({ groups: [] }),
+      collectMamAccessGroups(),
+      pool.query(
+        `
+          SELECT id, group_name, username, created_at, created_by
+          FROM group_admins
+          ORDER BY group_name ASC, username ASC
+        `
+      )
+    ]);
+    const kcUsersAll = Array.isArray(kcData?.users) ? kcData.users : [];
+    const kcUsers = kcUsersAll.filter((row) => isVisibleKeycloakUser(row));
+    const permissionDefaultsByUser = await fetchKeycloakUserPermissionDefaults(kcUsers, kcData?.realmByUsername);
+    const users = kcUsers
+      .map((user) => {
+        const username = String(user?.username || '').trim().toLowerCase();
+        const defaults = permissionDefaultsByUser.get(username) || [];
+        return {
+          id: String(user?.id || '').trim(),
+          username,
+          displayName: [user?.firstName, user?.lastName].map((item) => String(item || '').trim()).filter(Boolean).join(' '),
+          email: String(user?.email || '').trim(),
+          enabled: user?.enabled !== false,
+          realm: String(kcData?.realmByUsername?.get(username) || '').trim(),
+          permissionKeys: defaults
+        };
+      })
+      .filter((row) => row.username)
+      .sort((a, b) => a.username.localeCompare(b.username));
+    const groups = Array.isArray(kcGroupsData?.groups) ? kcGroupsData.groups : [];
+    const keycloakGroupNames = new Set(
+      groups.flatMap((group) => [group.name, group.path]).map((item) => String(item || '').trim().toLowerCase()).filter(Boolean)
+    );
+    const mamOnlyGroups = mamGroups.filter((group) => !keycloakGroupNames.has(group.toLowerCase()));
+    return res.json({
+      source: users.length || groups.length ? 'keycloak' : 'empty',
+      users,
+      groups,
+      mamGroups,
+      mamOnlyGroups,
+      groupAdmins: groupAdminsResult.rows.map((row) => ({
+        id: row.id,
+        groupName: row.group_name,
+        username: row.username,
+        createdAt: row.created_at,
+        createdBy: row.created_by || ''
+      }))
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load identity overview' });
+  }
+});
+
 app.get('/api/admin/group-admins', async (_req, res) => {
   try {
     const result = await pool.query(
@@ -184,23 +260,94 @@ app.delete('/api/admin/group-admins/:id', async (req, res) => {
 app.get('/api/admin/assets/access', async (req, res) => {
   try {
     const q = String(req.query.q || '').trim().toLowerCase();
-    const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 40));
+    const requestedTypeGroups = (Array.isArray(req.query.typeGroup) ? req.query.typeGroup : [req.query.typeGroup])
+      .map((item) => String(item || '').trim().toLowerCase())
+      .filter((item) => ['video', 'audio', 'photo', 'document', 'other'].includes(item));
+    const visibility = String(req.query.visibility || '').trim().toLowerCase();
+    const limit = Number(req.query.limit) === 50 ? 50 : 20;
+    const requestedPage = Math.max(1, Number(req.query.page) || 1);
     const values = [];
     const where = [];
     if (q) {
       values.push(`%${q}%`);
       where.push(`(LOWER(title) LIKE $${values.length} OR LOWER(file_name) LIKE $${values.length} OR LOWER(owner) LIKE $${values.length})`);
     }
-    values.push(limit);
+    if (requestedTypeGroups.length) {
+      const typeConditions = [];
+      if (requestedTypeGroups.includes('video')) {
+        typeConditions.push(`(LOWER(COALESCE(type, '')) = 'video' OR LOWER(COALESCE(mime_type, '')) LIKE 'video/%')`);
+      }
+      if (requestedTypeGroups.includes('audio')) {
+        typeConditions.push(`(LOWER(COALESCE(type, '')) IN ('audio', 'sound') OR LOWER(COALESCE(mime_type, '')) LIKE 'audio/%')`);
+      }
+      if (requestedTypeGroups.includes('photo')) {
+        typeConditions.push(`(
+          LOWER(COALESCE(type, '')) IN ('photo', 'image', 'picture')
+          OR LOWER(COALESCE(mime_type, '')) LIKE 'image/%'
+          OR LOWER(COALESCE(file_name, '')) ~ '\\.(jpg|jpeg|png|gif|webp|tif|tiff|bmp|heic|heif)$'
+        )`);
+      }
+      if (requestedTypeGroups.includes('document')) {
+        typeConditions.push(`(
+          LOWER(COALESCE(type, '')) IN ('document', 'pdf', 'office', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx')
+          OR LOWER(COALESCE(mime_type, '')) IN (
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+          )
+          OR LOWER(COALESCE(file_name, '')) ~ '\\.(pdf|doc|docx|xls|xlsx|ppt|pptx|odt|ods|odp)$'
+        )`);
+      }
+      if (requestedTypeGroups.includes('other')) {
+        typeConditions.push(`NOT (
+          LOWER(COALESCE(type, '')) IN ('video', 'audio', 'sound', 'document', 'pdf', 'office', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx')
+          OR LOWER(COALESCE(mime_type, '')) LIKE 'video/%'
+          OR LOWER(COALESCE(mime_type, '')) LIKE 'audio/%'
+          OR LOWER(COALESCE(type, '')) IN ('photo', 'image', 'picture')
+          OR LOWER(COALESCE(mime_type, '')) LIKE 'image/%'
+          OR LOWER(COALESCE(mime_type, '')) IN (
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+          )
+          OR LOWER(COALESCE(file_name, '')) ~ '\\.(pdf|doc|docx|xls|xlsx|ppt|pptx|odt|ods|odp|jpg|jpeg|png|gif|webp|tif|tiff|bmp|heic|heif)$'
+        )`);
+      }
+      if (typeConditions.length) where.push(`(${typeConditions.join(' OR ')})`);
+    }
+    if (['private', 'group', 'groups', 'public'].includes(visibility)) {
+      values.push(visibility);
+      where.push(`COALESCE(visibility, 'public') = $${values.length}`);
+    }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const countResult = await pool.query(`SELECT COUNT(*)::int AS total FROM assets ${whereSql}`, values);
+    const total = Number(countResult.rows?.[0]?.total || 0);
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const page = Math.min(requestedPage, totalPages);
+    const offset = (page - 1) * limit;
+    const pageValues = [...values, limit, offset];
     const result = await pool.query(
       `
-        SELECT id, title, file_name, owner, type, visibility, owner_user, owner_groups, allowed_users, allowed_groups, updated_at
+        SELECT
+          id, title, file_name, owner, type, visibility, owner_user, owner_groups,
+          allowed_users, allowed_groups, denied_users, denied_groups,
+          edit_allowed_users, edit_allowed_groups, edit_denied_users, edit_denied_groups,
+          updated_at
         FROM assets
-        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ${whereSql}
         ORDER BY updated_at DESC
-        LIMIT $${values.length}
+        LIMIT $${pageValues.length - 1}
+        OFFSET $${pageValues.length}
       `,
-      values
+      pageValues
     );
     return res.json({
       assets: result.rows.map((row) => ({
@@ -214,8 +361,15 @@ app.get('/api/admin/assets/access', async (req, res) => {
         ownerGroups: row.owner_groups || [],
         allowedUsers: row.allowed_users || [],
         allowedGroups: row.allowed_groups || [],
+        deniedUsers: row.denied_users || [],
+        deniedGroups: row.denied_groups || [],
+        editAllowedUsers: row.edit_allowed_users || [],
+        editAllowedGroups: row.edit_allowed_groups || [],
+        editDeniedUsers: row.edit_denied_users || [],
+        editDeniedGroups: row.edit_denied_groups || [],
         updatedAt: row.updated_at
-      }))
+      })),
+      pagination: { page, limit, total, totalPages }
     });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to load asset access rows' });
@@ -241,7 +395,13 @@ app.patch('/api/admin/assets/:id/access', async (req, res) => {
         source: 'admin_rights_panel',
         visibility: result.row.visibility,
         allowedUsers: result.row.allowed_users || [],
-        allowedGroups: result.row.allowed_groups || []
+        allowedGroups: result.row.allowed_groups || [],
+        deniedUsers: result.row.denied_users || [],
+        deniedGroups: result.row.denied_groups || [],
+        editAllowedUsers: result.row.edit_allowed_users || [],
+        editAllowedGroups: result.row.edit_allowed_groups || [],
+        editDeniedUsers: result.row.edit_denied_users || [],
+        editDeniedGroups: result.row.edit_denied_groups || []
       }
     });
     return res.json({
@@ -252,11 +412,116 @@ app.patch('/api/admin/assets/:id/access', async (req, res) => {
         ownerUser: result.row.owner_user || '',
         ownerGroups: result.row.owner_groups || [],
         allowedUsers: result.row.allowed_users || [],
-        allowedGroups: result.row.allowed_groups || []
+        allowedGroups: result.row.allowed_groups || [],
+        deniedUsers: result.row.denied_users || [],
+        deniedGroups: result.row.denied_groups || [],
+        editAllowedUsers: result.row.edit_allowed_users || [],
+        editAllowedGroups: result.row.edit_allowed_groups || [],
+        editDeniedUsers: result.row.edit_denied_users || [],
+        editDeniedGroups: result.row.edit_denied_groups || []
       }
     });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to update asset access' });
+  }
+});
+
+app.get('/api/admin/asset-types/access', async (_req, res) => {
+  try {
+    const rows = await assetAccessService.getAssetTypeAccessRows();
+    return res.json({
+      types: rows.map((row) => ({
+        typeGroup: row.typeGroup,
+        visibility: row.visibility || 'public',
+        ownerGroups: row.ownerGroups || [],
+        allowedUsers: row.allowedUsers || [],
+        allowedGroups: row.allowedGroups || [],
+        deniedUsers: row.deniedUsers || [],
+        deniedGroups: row.deniedGroups || [],
+        editAllowedUsers: row.editAllowedUsers || [],
+        editAllowedGroups: row.editAllowedGroups || [],
+        editDeniedUsers: row.editDeniedUsers || [],
+        editDeniedGroups: row.editDeniedGroups || [],
+        updatedAt: row.updatedAt,
+        updatedBy: row.updatedBy || ''
+      })),
+      pagination: { page: 1, limit: 5, total: rows.length, totalPages: 1 }
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load asset type access rows' });
+  }
+});
+
+app.patch('/api/admin/asset-types/:typeGroup/access', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const typeGroup = assetAccessService.normalizeAssetTypeGroup(req.params.typeGroup || '');
+    if (!typeGroup) return res.status(400).json({ error: 'Invalid asset type group' });
+    const payload = req.body || {};
+    const actor = String(effective.displayName || effective.username || '').trim();
+    const next = {
+      visibility: assetAccessService.normalizeVisibility(payload.visibility, 'public'),
+      ownerGroups: assetAccessService.normalizeAccessList(payload.ownerGroups),
+      allowedUsers: assetAccessService.normalizeAccessList(payload.allowedUsers),
+      allowedGroups: assetAccessService.normalizeAccessList(payload.allowedGroups),
+      deniedUsers: assetAccessService.normalizeAccessList(payload.deniedUsers),
+      deniedGroups: assetAccessService.normalizeAccessList(payload.deniedGroups),
+      editAllowedUsers: assetAccessService.normalizeAccessList(payload.editAllowedUsers),
+      editAllowedGroups: assetAccessService.normalizeAccessList(payload.editAllowedGroups),
+      editDeniedUsers: assetAccessService.normalizeAccessList(payload.editDeniedUsers),
+      editDeniedGroups: assetAccessService.normalizeAccessList(payload.editDeniedGroups)
+    };
+    const result = await pool.query(
+      `
+        INSERT INTO asset_type_access (
+          type_group, visibility, owner_groups, allowed_users, allowed_groups,
+          denied_users, denied_groups, edit_allowed_users, edit_allowed_groups,
+          edit_denied_users, edit_denied_groups, updated_at, updated_by
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        ON CONFLICT (type_group) DO UPDATE
+        SET visibility = EXCLUDED.visibility,
+            owner_groups = EXCLUDED.owner_groups,
+            allowed_users = EXCLUDED.allowed_users,
+            allowed_groups = EXCLUDED.allowed_groups,
+            denied_users = EXCLUDED.denied_users,
+            denied_groups = EXCLUDED.denied_groups,
+            edit_allowed_users = EXCLUDED.edit_allowed_users,
+            edit_allowed_groups = EXCLUDED.edit_allowed_groups,
+            edit_denied_users = EXCLUDED.edit_denied_users,
+            edit_denied_groups = EXCLUDED.edit_denied_groups,
+            updated_at = EXCLUDED.updated_at,
+            updated_by = EXCLUDED.updated_by
+        RETURNING *
+      `,
+      [
+        typeGroup,
+        next.visibility,
+        next.ownerGroups,
+        next.allowedUsers,
+        next.allowedGroups,
+        next.deniedUsers,
+        next.deniedGroups,
+        next.editAllowedUsers,
+        next.editAllowedGroups,
+        next.editDeniedUsers,
+        next.editDeniedGroups,
+        new Date().toISOString(),
+        actor
+      ]
+    );
+    await recordAuditEvent?.(req, {
+      action: 'asset_type.visibility_updated',
+      targetType: 'asset_type',
+      targetId: typeGroup,
+      targetTitle: typeGroup,
+      details: { source: 'admin_rights_panel', ...next }
+    });
+    const row = assetAccessService.getTypeAccessSnapshot(result.rows[0]);
+    return res.json({ type: row });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to update asset type access' });
   }
 });
 
@@ -1084,44 +1349,9 @@ app.patch('/api/admin/settings', async (req, res) => {
 
 app.get('/api/admin/audit-events', async (req, res) => {
   try {
+    const { where, values } = await buildAuditEventFilters(req);
+
     const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 100));
-    const where = [];
-    const values = [];
-    const action = String(req.query.action || '').trim();
-    const actor = String(req.query.actor || '').trim();
-    const target = String(req.query.target || '').trim();
-    const from = String(req.query.from || '').trim();
-    const to = String(req.query.to || '').trim();
-
-    if (action) {
-      values.push(action);
-      where.push(`action = $${values.length}`);
-    }
-    if (actor) {
-      values.push(`%${actor.toLowerCase()}%`);
-      where.push(`LOWER(actor) LIKE $${values.length}`);
-    }
-    if (target) {
-      const elasticTargetIds = await suggestAssetIdsElastic?.(target, 100).catch(() => null);
-      const targetConditions = [];
-      values.push(`%${target.toLowerCase()}%`);
-      targetConditions.push(`LOWER(target_id) LIKE $${values.length}`);
-      targetConditions.push(`LOWER(target_title) LIKE $${values.length}`);
-      if (Array.isArray(elasticTargetIds) && elasticTargetIds.length) {
-        values.push(elasticTargetIds);
-        targetConditions.push(`target_id = ANY($${values.length}::text[])`);
-      }
-      where.push(`(${targetConditions.join(' OR ')})`);
-    }
-    if (from) {
-      values.push(from);
-      where.push(`created_at >= $${values.length}`);
-    }
-    if (to) {
-      values.push(to);
-      where.push(`created_at < ($${values.length}::date + INTERVAL '1 day')`);
-    }
-
     values.push(limit);
     const result = await pool.query(
       `
@@ -1154,8 +1384,106 @@ app.get('/api/admin/audit-events', async (req, res) => {
   }
 });
 
+async function buildAuditEventFilters(req) {
+  const where = [];
+  const values = [];
+  const action = String(req.query.action || '').trim();
+  const actor = String(req.query.actor || '').trim();
+  const target = String(req.query.target || '').trim();
+  const from = String(req.query.from || '').trim();
+  const to = String(req.query.to || '').trim();
+
+  if (action) {
+    values.push(action);
+    where.push(`action = $${values.length}`);
+  }
+  if (actor) {
+    values.push(`%${actor.toLowerCase()}%`);
+    where.push(`LOWER(actor) LIKE $${values.length}`);
+  }
+  if (target) {
+    const elasticTargetIds = await suggestAssetIdsElastic?.(target, 100).catch(() => null);
+    const targetConditions = [];
+    values.push(`%${target.toLowerCase()}%`);
+    targetConditions.push(`LOWER(target_id) LIKE $${values.length}`);
+    targetConditions.push(`LOWER(target_title) LIKE $${values.length}`);
+    if (Array.isArray(elasticTargetIds) && elasticTargetIds.length) {
+      values.push(elasticTargetIds);
+      targetConditions.push(`target_id = ANY($${values.length}::text[])`);
+    }
+    where.push(`(${targetConditions.join(' OR ')})`);
+  }
+  if (from) {
+    values.push(from);
+    where.push(`created_at >= $${values.length}`);
+  }
+  if (to) {
+    values.push(to);
+    where.push(`created_at < ($${values.length}::date + INTERVAL '1 day')`);
+  }
+
+  return { where, values };
+}
+
+function safeCsvCell(value) {
+  let text = value == null ? '' : String(value);
+  if (/^[=+\-@]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function auditDetailsForExport(details) {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return '';
+  return Object.entries(details)
+    .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value ?? '')}`)
+    .join(' | ');
+}
+
+app.get('/api/admin/audit-events/export', async (req, res) => {
+  try {
+    const { where, values } = await buildAuditEventFilters(req);
+    const limit = Math.max(1, Math.min(5000, Number(req.query.limit) || 5000));
+    values.push(limit);
+    const result = await pool.query(
+      `
+        SELECT created_at, actor, action, target_type, target_id, target_title, client_medium, details, ip, user_agent
+        FROM audit_events
+        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY created_at DESC
+        LIMIT $${values.length}
+      `,
+      values
+    );
+    const headers = ['Created At', 'Actor', 'Action', 'Target Type', 'Target ID', 'Target Title', 'Client', 'IP', 'Details', 'User Agent'];
+    const rows = result.rows.map((row) => [
+      row.created_at ? new Date(row.created_at).toISOString() : '',
+      row.actor || '',
+      row.action || '',
+      row.target_type || '',
+      row.target_id || '',
+      row.target_title || '',
+      row.client_medium || '',
+      row.ip || '',
+      auditDetailsForExport(row.details || {}),
+      row.user_agent || ''
+    ]);
+    const csv = [
+      headers.map(safeCsvCell).join(','),
+      ...rows.map((row) => row.map(safeCsvCell).join(','))
+    ].join('\r\n');
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="audit-events-${stamp}.csv"`);
+    return res.send(`\uFEFF${csv}`);
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to export audit events' });
+  }
+});
+
 app.get('/api/admin/user-permissions', async (req, res) => {
   try {
+    const q = String(req.query.q || '').trim().toLowerCase();
+    const limit = Number(req.query.limit) === 50 ? 50 : 20;
+    const requestedPage = Math.max(1, Number(req.query.page) || 1);
     const saved = await getUserPermissionsSettings();
     const kcData = await fetchKeycloakUsers();
     const kcUsersAll = Array.isArray(kcData?.users) ? kcData.users : [];
@@ -1164,10 +1492,13 @@ app.get('/api/admin/user-permissions', async (req, res) => {
       return res.status(503).json({ error: 'Failed to fetch users from Keycloak' });
     }
     const permissionDefaultsByUser = await fetchKeycloakUserPermissionDefaults(kcUsers, kcData?.realmByUsername);
+    const keycloakUserByUsername = new Map();
     const usernames = new Set();
     kcUsers.forEach((row) => {
       const username = String(row?.username || '').trim().toLowerCase();
-      if (username) usernames.add(username);
+      if (!username) return;
+      usernames.add(username);
+      keycloakUserByUsername.set(username, row);
     });
     Object.keys(saved || {}).forEach((k) => {
       const username = String(k || '').trim().toLowerCase();
@@ -1175,15 +1506,18 @@ app.get('/api/admin/user-permissions', async (req, res) => {
       if (usernames.has(username)) usernames.add(username);
     });
 
-    const users = Array.from(usernames)
+    const allUsers = Array.from(usernames)
       .sort((a, b) => a.localeCompare(b))
       .map((username) => {
+        const kcUser = keycloakUserByUsername.get(username) || {};
         const defaults = permissionDefaultsByUser.has(username)
           ? permissionDefaultsByUser.get(username)
           : resolvePermissionKeysFromPrincipals({ username }).permissionKeys;
         const effective = normalizePermissionEntry(saved?.[username], defaults);
         return {
           username,
+          displayName: [kcUser?.firstName, kcUser?.lastName].map((item) => String(item || '').trim()).filter(Boolean).join(' '),
+          email: String(kcUser?.email || '').trim(),
           permissionKeys: effective.permissionKeys,
           adminPageAccess: effective.adminPageAccess,
           textAdminAccess: effective.textAdminAccess,
@@ -1192,9 +1526,18 @@ app.get('/api/admin/user-permissions', async (req, res) => {
           pdfAdvancedTools: effective.pdfAdvancedTools
         };
       });
+    const filteredUsers = q.length >= 2
+      ? allUsers.filter((user) => [user.username, user.displayName, user.email].map((item) => String(item || '').toLowerCase()).join(' ').includes(q))
+      : allUsers;
+    const total = filteredUsers.length;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const page = Math.min(requestedPage, totalPages);
+    const offset = (page - 1) * limit;
+    const users = filteredUsers.slice(offset, offset + limit);
     return res.json({
       users,
       availablePermissions: getPermissionDefinitionsPayload(),
+      pagination: { page, limit, total, totalPages },
       source: kcUsers.length ? 'keycloak' : 'fallback'
     });
   } catch (_error) {

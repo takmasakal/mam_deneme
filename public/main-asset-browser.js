@@ -7,6 +7,7 @@
       panelDetail,
       searchQueryInput,
       ocrQueryInput,
+      subtitleQueryInput,
       currentUserCanDeleteAssetsRef,
       currentAssetsRef,
       selectedAssetIdsRef,
@@ -95,6 +96,7 @@ function buildAssetSearchNoticeHtml() {
 
   pushNotice('q', currentSearchDidYouMean, currentSearchQuery, currentSearchFuzzyUsed);
   pushNotice('ocr', currentOcrDidYouMean, currentOcrQuery, currentOcrFuzzyUsed);
+  pushNotice('subtitle', searchStateRef?.currentSubtitleDidYouMean, searchStateRef?.currentSubtitleQuery, searchStateRef?.currentSubtitleFuzzyUsed);
   return notices.join('');
 }
 
@@ -224,7 +226,7 @@ function renderAssets(assets) {
             ${asset.inTrash ? `
               <div class="card-actions">
                 <button type="button" data-card-action="restore" data-id="${asset.id}">${t('restore')}</button>
-                ${currentUserCanDeleteAssets ? `<button type="button" class="danger" data-card-action="delete" data-id="${asset.id}">${t('delete_permanent')}</button>` : ''}
+                ${(currentUserCanDeleteAssetsRef?.get?.() || asset.canDeleteAsset) ? `<button type="button" class="danger" data-card-action="delete" data-id="${asset.id}">${t('delete_permanent')}</button>` : ''}
               </div>
             ` : ''}
           </div>
@@ -238,6 +240,7 @@ function renderAssets(assets) {
       const suggestion = String(event.currentTarget?.textContent || '').trim();
       if (!suggestion) return;
       if (type === 'ocr' && ocrQueryInput) ocrQueryInput.value = suggestion;
+      else if (type === 'subtitle' && subtitleQueryInput) subtitleQueryInput.value = suggestion;
       else if (type === 'q' && searchQueryInput) searchQueryInput.value = suggestion;
       await loadAssets();
     });

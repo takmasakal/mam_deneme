@@ -6,8 +6,13 @@
       escapeHtml,
       highlightSuggestion,
       openTextEditorModal,
+      userPermissionsSearchInput,
       userPermissionsRows,
       userPermissionsMsg,
+      userPermissionsPageSize,
+      userPermissionsPrevPage,
+      userPermissionsNextPage,
+      userPermissionsPageInfo,
       ocrAdminSearchInput,
       ocrDeleteFileCheck,
       ocrRecordsRows,
@@ -27,6 +32,27 @@
     let ocrRecordsTimer = null;
     let subtitleRecordsTimer = null;
     let availableUserPermissions = [];
+    let allUserPermissionUsers = [];
+    let userPermissionsPage = 1;
+    let userPermissionsPagination = { page: 1, limit: 20, total: 0, totalPages: 1 };
+
+    function getUserPermissionSearchQuery() {
+      return String(userPermissionsSearchInput?.value || '').trim().toLowerCase();
+    }
+
+    function renderUserPermissionsPager() {
+      const total = Number(userPermissionsPagination.total || 0);
+      const page = Math.max(1, Number(userPermissionsPagination.page || 1));
+      const totalPages = Math.max(1, Number(userPermissionsPagination.totalPages || 1));
+      if (userPermissionsPageInfo) {
+        userPermissionsPageInfo.textContent = t('page_info')
+          .replace('{page}', String(page))
+          .replace('{pages}', String(totalPages))
+          .replace('{total}', String(total));
+      }
+      if (userPermissionsPrevPage) userPermissionsPrevPage.disabled = page <= 1;
+      if (userPermissionsNextPage) userPermissionsNextPage.disabled = page >= totalPages;
+    }
 
     function formatPermissionLabel(definition) {
       const labelKey = String(definition?.labelKey || '').trim();
@@ -55,8 +81,15 @@
           { key: 'pdf.advanced', legacyField: 'pdfAdvancedTools', labelKey: 'perm_pdf_advanced' },
           { key: 'text.admin', legacyField: 'textAdminAccess', labelKey: 'perm_text_admin' }
         ];
+      if (!list.length) {
+        userPermissionsRows.innerHTML = `<div class="empty">${escapeHtml(t(getUserPermissionSearchQuery().length >= 2 ? 'user_search_no_match' : 'user_permissions_empty'))}</div>`;
+        return;
+      }
       userPermissionsRows.innerHTML = list.map((user) => {
         const uname = escapeHtml(user.username || '');
+        const displayName = String(user.displayName || '').trim();
+        const email = String(user.email || '').trim();
+        const meta = [displayName, email].filter(Boolean).join(' · ');
         const activeKeys = new Set(Array.isArray(user.permissionKeys) ? user.permissionKeys : []);
         const checkboxes = defs.map((definition) => {
           const checked = activeKeys.has(definition.key) || Boolean(user?.[definition.legacyField]);
@@ -76,6 +109,7 @@
           <div class="row user-perm-row" data-username="${uname}">
             <div class="user-perm-identity">
               <strong>${uname}</strong>
+              ${meta ? `<small>${escapeHtml(meta)}</small>` : ''}
             </div>
             <div class="user-perm-options">
               ${checkboxes}
@@ -109,10 +143,48 @@
     }
 
     async function loadUserPermissions() {
-      const result = await api('/api/admin/user-permissions');
+      const params = new URLSearchParams();
+      const q = getUserPermissionSearchQuery();
+      if (q.length >= 2) params.set('q', q);
+      const limit = Number(userPermissionsPageSize?.value || 20) === 50 ? 50 : 20;
+      params.set('limit', String(limit));
+      params.set('page', String(Math.max(1, userPermissionsPage)));
+      const result = await api(`/api/admin/user-permissions?${params.toString()}`);
       availableUserPermissions = Array.isArray(result.availablePermissions) ? result.availablePermissions : [];
-      renderUserPermissions(result.users || [], availableUserPermissions);
+      allUserPermissionUsers = Array.isArray(result.users) ? result.users : [];
+      userPermissionsPagination = result.pagination || { page: userPermissionsPage, limit, total: allUserPermissionUsers.length, totalPages: 1 };
+      userPermissionsPage = Number(userPermissionsPagination.page || userPermissionsPage);
+      renderUserPermissions(allUserPermissionUsers, availableUserPermissions);
+      renderUserPermissionsPager();
     }
+
+    userPermissionsSearchInput?.addEventListener('input', () => {
+      userPermissionsPage = 1;
+      loadUserPermissions().catch((error) => {
+        if (userPermissionsMsg) userPermissionsMsg.textContent = String(error.message || 'Request failed');
+      });
+    });
+
+    userPermissionsPageSize?.addEventListener('change', () => {
+      userPermissionsPage = 1;
+      loadUserPermissions().catch((error) => {
+        if (userPermissionsMsg) userPermissionsMsg.textContent = String(error.message || 'Request failed');
+      });
+    });
+
+    userPermissionsPrevPage?.addEventListener('click', () => {
+      userPermissionsPage = Math.max(1, userPermissionsPage - 1);
+      loadUserPermissions().catch((error) => {
+        if (userPermissionsMsg) userPermissionsMsg.textContent = String(error.message || 'Request failed');
+      });
+    });
+
+    userPermissionsNextPage?.addEventListener('click', () => {
+      userPermissionsPage += 1;
+      loadUserPermissions().catch((error) => {
+        if (userPermissionsMsg) userPermissionsMsg.textContent = String(error.message || 'Request failed');
+      });
+    });
 
     function renderOcrRecords(records) {
       if (!ocrRecordsRows) return;

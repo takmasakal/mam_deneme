@@ -6,7 +6,6 @@ function registerAssetRoutes(app, deps) {
     pool,
     WORKFLOW,
     requireAssetDelete,
-    requireMetadataEdit,
     resolveEffectivePermissions,
     collectAssetCleanupPaths,
     cleanupAssetFiles,
@@ -95,7 +94,40 @@ function registerAssetRoutes(app, deps) {
   function mapAssetRowForUser(row, accessContext) {
     const mapped = mapAssetRow(row);
     mapped.canManageVisibility = assetAccessService.canManageAssetVisibility(row, accessContext);
+    mapped.canEditAsset = assetAccessService.canEditAsset(row, accessContext);
+    mapped.canDeleteAsset = assetAccessService.canDeleteAsset(row, accessContext);
     return mapped;
+  }
+
+  function getUploadFileCategory({ mimeType = '', fileName = '' } = {}) {
+    const mime = String(mimeType || '').toLowerCase();
+    const ext = String(getFileExtension(fileName) || '').toLowerCase();
+    if (mime.startsWith('video/') || ['mp4', 'mov', 'm4v', 'mkv', 'avi', 'webm', 'mpg', 'mpeg'].includes(ext)) return 'video';
+    if (mime.startsWith('audio/') || ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'oga'].includes(ext)) return 'audio';
+    if (mime.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tif', 'tiff', 'heic', 'heif'].includes(ext)) return 'photo';
+    if (mime === 'application/pdf' || ext === 'pdf') return 'document';
+    if ([
+      'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'txt', 'rtf', 'csv', 'sql',
+      'py', 'js', 'ts', 'tsx', 'jsx', 'json', 'md', 'xml', 'yaml', 'yml', 'log',
+      'ini', 'cfg', 'conf', 'sh', 'bash', 'zsh', 'java', 'c', 'cpp', 'h', 'hpp',
+      'go', 'rs', 'rb', 'php', 'swift', 'kt'
+    ].includes(ext)) return 'document';
+    return 'other';
+  }
+
+  function validateDeclaredUploadType({ declaredType = '', mimeType = '', fileName = '' } = {}) {
+    const declared = String(declaredType || '').trim().toLowerCase();
+    if (!declared || declared === 'other') return { ok: true };
+    const expected = declared === 'image' ? 'photo' : declared;
+    const actual = getUploadFileCategory({ mimeType, fileName });
+    if (expected === actual) return { ok: true };
+    return {
+      ok: false,
+      expected,
+      actual,
+      error: 'Selected asset type does not match the uploaded file type',
+      code: 'asset_type_file_mismatch'
+    };
   }
 
   app.get('/api/assets', async (req, res) => {
@@ -726,6 +758,17 @@ function registerAssetRoutes(app, deps) {
     try {
       const effective = await resolveEffectivePermissions(req).catch(() => null);
       const context = effective || buildUserContextFromRequest(req);
+      const typeAllowed = assetAccessService.canCreateAssetOfType({
+        type: req.body?.type,
+        mimeType: req.body?.mimeType,
+        fileName: req.body?.fileName
+      }, context);
+      if (!typeAllowed) {
+        return res.status(403).json({
+          error: 'You are not allowed to create this asset type',
+          code: 'asset_type_upload_forbidden'
+        });
+      }
       const requestedOwner = String(req.body?.owner || req.body?.uploadedBy || '').trim();
       const owner = String(context?.displayName || context?.username || context?.email || '').trim() || requestedOwner || 'Unknown';
       const payload = {
@@ -757,6 +800,14 @@ function registerAssetRoutes(app, deps) {
     }
   
     const safeName = sanitizeFileName(fileName);
+    const typeValidation = validateDeclaredUploadType({
+      declaredType: metadata.type,
+      mimeType,
+      fileName: safeName
+    });
+    if (!typeValidation.ok) {
+      return res.status(400).json(typeValidation);
+    }
     let buffer = null;
     let fileHash = '';
   
@@ -782,6 +833,20 @@ function registerAssetRoutes(app, deps) {
       });
     }
   
+    const effective = await resolveEffectivePermissions(req).catch(() => null);
+    const context = effective || buildUserContextFromRequest(req);
+    const typeAllowed = assetAccessService.canCreateAssetOfType({
+      type: metadata.type,
+      mimeType,
+      fileName: safeName
+    }, context);
+    if (!typeAllowed) {
+      return res.status(403).json({
+        error: 'You are not allowed to upload this asset type',
+        code: 'asset_type_upload_forbidden'
+      });
+    }
+
     const storedName = `${Date.now()}-${nanoid()}-${safeName}`;
     const ingestPath = getIngestStoragePath({ type: metadata.type, mimeType, fileName: safeName });
     const absolutePath = path.join(ingestPath.absoluteDir, storedName);
@@ -924,8 +989,6 @@ function registerAssetRoutes(app, deps) {
       thumbnailUrl = '';
     }
   
-    const effective = await resolveEffectivePermissions(req).catch(() => null);
-    const context = effective || buildUserContextFromRequest(req);
     const requestedOwner = String(metadata.owner || metadata.uploadedBy || '').trim();
     const owner = String(context?.displayName || context?.username || context?.email || '').trim() || requestedOwner || 'Unknown';
     const payload = {
@@ -1072,7 +1135,13 @@ function registerAssetRoutes(app, deps) {
         details: {
           visibility: result.row.visibility,
           allowedUsers: result.row.allowed_users || [],
-          allowedGroups: result.row.allowed_groups || []
+          allowedGroups: result.row.allowed_groups || [],
+          deniedUsers: result.row.denied_users || [],
+          deniedGroups: result.row.denied_groups || [],
+          editAllowedUsers: result.row.edit_allowed_users || [],
+          editAllowedGroups: result.row.edit_allowed_groups || [],
+          editDeniedUsers: result.row.edit_denied_users || [],
+          editDeniedGroups: result.row.edit_denied_groups || []
         }
       });
       return res.json(mapAssetRowForUser(result.row, accessContext));
@@ -1202,11 +1271,14 @@ function registerAssetRoutes(app, deps) {
     }
   });
 
-  app.post('/api/assets/:id/trash', requireAssetDelete, async (req, res) => {
+  app.post('/api/assets/:id/trash', async (req, res) => {
     try {
       const loaded = await loadVisibleAssetRow(req, req.params.id);
       if (loaded.status !== 200) {
         return res.status(loaded.status).json({ error: loaded.error });
+      }
+      if (!assetAccessService.canDeleteAsset(loaded.row, loaded.accessContext)) {
+        return res.status(403).json({ error: 'Forbidden' });
       }
       const now = new Date().toISOString();
       const result = await pool.query(
@@ -1236,6 +1308,9 @@ function registerAssetRoutes(app, deps) {
       if (loaded.status !== 200) {
         return res.status(loaded.status).json({ error: loaded.error });
       }
+      if (!assetAccessService.canDeleteAsset(loaded.row, loaded.accessContext)) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
       const now = new Date().toISOString();
       const result = await pool.query(
         'UPDATE assets SET deleted_at = NULL, updated_at = $2 WHERE id = $1 RETURNING *',
@@ -1258,11 +1333,14 @@ function registerAssetRoutes(app, deps) {
     }
   });
 
-  app.delete('/api/assets/:id', requireAssetDelete, async (req, res) => {
+  app.delete('/api/assets/:id', async (req, res) => {
     try {
       const loaded = await loadVisibleAssetRow(req, req.params.id);
       if (loaded.status !== 200) {
         return res.status(loaded.status).json({ error: loaded.error });
+      }
+      if (!assetAccessService.canDeleteAsset(loaded.row, loaded.accessContext)) {
+        return res.status(403).json({ error: 'Forbidden' });
       }
       const existing = { rows: [loaded.row], rowCount: 1 };
       const versionRows = (await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1', [req.params.id])).rows;
@@ -1284,12 +1362,15 @@ function registerAssetRoutes(app, deps) {
     }
   });
 
-  app.patch('/api/assets/:id', requireMetadataEdit, async (req, res) => {
+  app.patch('/api/assets/:id', async (req, res) => {
     try {
       const body = req.body && typeof req.body === 'object' ? req.body : {};
       const loaded = await loadVisibleAssetRow(req, req.params.id);
       if (loaded.status !== 200) {
         return res.status(loaded.status).json({ error: loaded.error });
+      }
+      if (!assetAccessService.canEditAsset(loaded.row, loaded.accessContext)) {
+        return res.status(403).json({ error: 'Forbidden' });
       }
 
       const row = loaded.row;
@@ -1382,7 +1463,7 @@ function registerAssetRoutes(app, deps) {
         return res.status(loaded.status).json({ error: loaded.error });
       }
       const row = loaded.row;
-      if (!canCreateVersionForAsset(req.userPermissions, row)) {
+      if (!assetAccessService.canEditAsset(row, loaded.accessContext) && !canCreateVersionForAsset(req.userPermissions, row)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
 
@@ -1423,6 +1504,44 @@ function registerAssetRoutes(app, deps) {
     }
   });
 
+  app.get('/api/assets/:id/versions/:versionId/download', async (req, res) => {
+    try {
+      const assetId = String(req.params.id || '').trim();
+      const versionId = String(req.params.versionId || '').trim();
+      if (!assetId || !versionId) return res.status(400).json({ error: 'assetId and versionId are required' });
+
+      const loaded = await loadVisibleAssetRow(req, assetId);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+
+      const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
+      const versionRow = versionResult.rows[0];
+      if (!versionRow) return res.status(404).json({ error: 'Version not found' });
+
+      const snapshotMediaUrl = String(versionRow.snapshot_media_url || '').trim();
+      if (!snapshotMediaUrl.startsWith('/uploads/')) {
+        return res.status(400).json({ error: 'Selected version has no downloadable snapshot' });
+      }
+      let snapshotSourcePath = String(versionRow.snapshot_source_path || '').trim();
+      if (!snapshotSourcePath || !fs.existsSync(snapshotSourcePath)) {
+        const resolved = publicUploadUrlToAbsolutePath(snapshotMediaUrl);
+        snapshotSourcePath = resolved && fs.existsSync(resolved) ? resolved : '';
+      }
+      if (!snapshotSourcePath || !fs.existsSync(snapshotSourcePath)) {
+        return res.status(404).json({ error: 'Version snapshot file is missing on disk' });
+      }
+
+      const fallbackName = `${String(loaded.row.file_name || loaded.row.title || assetId).trim() || assetId}-version`;
+      const downloadName = sanitizeFileName(String(versionRow.snapshot_file_name || fallbackName || path.basename(snapshotSourcePath)));
+      return res.download(snapshotSourcePath, downloadName, (error) => {
+        if (error && !res.headersSent) {
+          res.status(500).json({ error: 'Failed to download version snapshot' });
+        }
+      });
+    } catch (_error) {
+      return res.status(500).json({ error: 'Failed to download version' });
+    }
+  });
+
   app.delete('/api/assets/:id/versions/:versionId', async (req, res) => {
     try {
       const effective = await resolveEffectivePermissions(req);
@@ -1436,7 +1555,7 @@ function registerAssetRoutes(app, deps) {
       const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
       const row = versionResult.rows[0];
       if (!row) return res.status(404).json({ error: 'Version not found' });
-      if (!canManageVersionRow(req.userPermissions, assetRow, row)) {
+      if (!assetAccessService.canEditAsset(assetRow, loaded.accessContext) && !canManageVersionRow(req.userPermissions, assetRow, row)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
       if (String(row.action_type || '').trim().toLowerCase() === 'pdf_original') {
@@ -1463,7 +1582,7 @@ function registerAssetRoutes(app, deps) {
       const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
       const row = versionResult.rows[0];
       if (!row) return res.status(404).json({ error: 'Version not found' });
-      if (!canManageVersionRow(req.userPermissions, assetRow, row)) {
+      if (!assetAccessService.canEditAsset(assetRow, loaded.accessContext) && !canManageVersionRow(req.userPermissions, assetRow, row)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
 

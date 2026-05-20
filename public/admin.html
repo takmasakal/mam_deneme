@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MAM Admin</title>
     <link rel="stylesheet" href="/styles.css?v=20260424-seek-preview-1" />
-    <link rel="stylesheet" href="/admin.css?v=20260430-admin-mam-theme-1" />
+    <link rel="stylesheet" href="/admin.css?v=20260519-audit-export-1" />
   </head>
   <body>
     <main class="admin-wrap">
@@ -48,17 +48,17 @@
             <strong id="overviewActiveAssets">-</strong>
             <small id="overviewTotalAssets">-</small>
           </article>
-          <article class="overview-card">
+          <article class="overview-card is-clickable" role="button" tabindex="0" data-overview-target="system-health">
             <span data-i18n="overview_system_health">System Health</span>
             <strong id="overviewSystemHealth">-</strong>
             <small id="overviewSystemHealthSub">-</small>
           </article>
-          <article class="overview-card is-warning">
+          <article class="overview-card is-warning is-clickable" role="button" tabindex="0" data-overview-target="errors">
             <span data-i18n="overview_open_errors">Open Errors</span>
             <strong id="overviewOpenErrors">-</strong>
             <small id="overviewOpenErrorsSub">-</small>
           </article>
-          <article class="overview-card">
+          <article class="overview-card is-clickable" role="button" tabindex="0" data-overview-target="active-users">
             <span data-i18n="overview_active_users">Active Users</span>
             <strong id="overviewActiveUsers">-</strong>
             <small data-i18n="overview_recent_window">Recent window</small>
@@ -83,16 +83,16 @@
             <h2 data-i18n="runtime_diagnostics">Diagnostik</h2>
             <button id="refreshRuntimeDiagnosticsBtn" type="button" data-i18n="refresh">Yenile</button>
           </div>
-          <h3 data-i18n="active_users">Anlık Kullanıcılar</h3>
+          <h3 id="activeUsersSectionTitle" data-i18n="active_users">Anlık Kullanıcılar</h3>
           <div id="activeUsersRows" class="rows"></div>
-          <h3 data-i18n="error_logs">Hata Logları</h3>
+          <h3 id="runtimeErrorsSectionTitle" data-i18n="error_logs">Hata Logları</h3>
           <div id="runtimeErrorRows" class="rows"></div>
           <div id="runtimeDiagnosticsMsg" class="admin-note"></div>
         </article>
 
         <article class="admin-card admin-panel" data-panel="auditEvents">
           <h2 data-i18n="audit_events">İşlem Geçmişi</h2>
-          <div class="proxy-tool-grid records-toolbar">
+          <div class="proxy-tool-grid records-toolbar audit-events-toolbar">
             <label>
               <span data-i18n="audit_filter_actor">Kullanıcı</span>
               <input id="auditActorInput" type="text" />
@@ -125,6 +125,7 @@
             </label>
             <div class="proxy-tool-actions">
               <button id="runAuditSearchBtn" type="button" data-i18n="audit_filter_run">Filtrele</button>
+              <button id="exportAuditEventsBtn" type="button" data-i18n="audit_export_excel">Excel'e aktar</button>
             </div>
           </div>
           <div id="auditEventsRows" class="rows"></div>
@@ -133,16 +134,47 @@
 
         <article class="admin-card admin-panel" data-panel="assetRights">
           <h2 data-i18n="asset_rights">Asset Rights</h2>
-          <div class="proxy-tool-grid records-toolbar">
+          <div class="proxy-tool-grid records-toolbar asset-rights-toolbar">
             <label>
               <span data-i18n="asset_rights_search">Asset Search</span>
-              <input id="assetRightsSearchInput" type="text" />
+              <input id="assetRightsSearchInput" type="text" autocomplete="off" />
+              <div id="assetRightsSuggestList" class="proxy-suggest hidden"></div>
             </label>
-            <div class="proxy-tool-actions">
+            <fieldset class="asset-rights-type-filters" aria-label="Asset type filters">
+              <legend data-i18n="asset_rights_type_filter">Type</legend>
+              <label><input type="checkbox" name="assetRightsType" value="video" /> <span data-i18n="asset_type_video">Video</span></label>
+              <label><input type="checkbox" name="assetRightsType" value="audio" /> <span data-i18n="asset_type_audio">Audio</span></label>
+              <label><input type="checkbox" name="assetRightsType" value="photo" /> <span data-i18n="asset_type_photo">Photo</span></label>
+              <label><input type="checkbox" name="assetRightsType" value="document" /> <span data-i18n="asset_type_document">Doc</span></label>
+              <label><input type="checkbox" name="assetRightsType" value="other" /> <span data-i18n="asset_type_other">Other</span></label>
+            </fieldset>
+            <label class="asset-rights-visibility-filter">
+              <span data-i18n="asset_rights_visibility_filter">Visibility</span>
+              <select id="assetRightsVisibilityFilter">
+                <option value="" data-i18n="asset_rights_visibility_all">All</option>
+                <option value="private" data-i18n="visibility_private">Private</option>
+                <option value="group" data-i18n="visibility_group">Owner groups</option>
+                <option value="groups" data-i18n="visibility_groups">Selected groups/users</option>
+                <option value="public" data-i18n="visibility_public">Public</option>
+              </select>
+            </label>
+            <div class="proxy-tool-actions asset-rights-load-action">
               <button id="assetRightsSearchBtn" type="button" data-i18n="asset_rights_load">Load</button>
             </div>
           </div>
           <div id="assetRightsRows" class="rows"></div>
+          <div class="admin-pager" id="assetRightsPager">
+            <label>
+              <span data-i18n="page_size">Page size</span>
+              <select id="assetRightsPageSize">
+                <option value="20">20</option>
+                <option value="50">50</option>
+              </select>
+            </label>
+            <button id="assetRightsPrevPage" type="button" data-i18n="prev_page">Prev</button>
+            <span id="assetRightsPageInfo">-</span>
+            <button id="assetRightsNextPage" type="button" data-i18n="next_page">Next</button>
+          </div>
           <div id="assetRightsMsg" class="admin-note"></div>
         </article>
 
@@ -417,21 +449,57 @@
           </section>
 
           <section class="settings-subpanel" data-settings-panel="users">
-            <h3 data-i18n="user_settings">User Settings</h3>
+            <div class="settings-section-head user-settings-head">
+              <h3 data-i18n="user_settings">User Settings</h3>
+              <input id="userPermissionsSearchInput" class="user-settings-search" type="text" data-i18n-placeholder="user_search_ph" placeholder="Search user..." autocomplete="off" aria-label="User Search" />
+            </div>
             <div id="userPermissionsRows" class="rows"></div>
+            <div class="admin-pager" id="userPermissionsPager">
+              <label>
+                <span data-i18n="page_size">Page size</span>
+                <select id="userPermissionsPageSize">
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                </select>
+              </label>
+              <button id="userPermissionsPrevPage" type="button" data-i18n="prev_page">Prev</button>
+              <span id="userPermissionsPageInfo">-</span>
+              <button id="userPermissionsNextPage" type="button" data-i18n="next_page">Next</button>
+            </div>
             <div id="userPermissionsMsg" class="admin-note"></div>
+            <h3 data-i18n="identity_overview">Identity Overview</h3>
+            <div class="proxy-tool-actions">
+              <button id="refreshIdentityOverviewBtn" type="button" data-i18n="refresh">Refresh</button>
+            </div>
+            <div id="identityOverviewSummary" class="metrics"></div>
+            <div class="identity-grid">
+              <section>
+                <h4 data-i18n="identity_keycloak_groups">Keycloak Groups</h4>
+                <div id="identityGroupsRows" class="rows compact-rows"></div>
+              </section>
+              <section>
+                <h4 data-i18n="identity_keycloak_users">Keycloak Users</h4>
+                <div id="identityUsersRows" class="rows compact-rows"></div>
+              </section>
+              <section>
+                <h4 data-i18n="identity_mam_only_groups">MAM-only Groups</h4>
+                <div id="identityMamGroupsRows" class="rows compact-rows"></div>
+              </section>
+            </div>
             <h3 data-i18n="group_admins">Group Admins</h3>
             <div class="filter-row">
               <label>
                 <span data-i18n="group_name">Group</span>
-                <input id="groupAdminGroupInput" type="text" placeholder="archive-team" />
+                <input id="groupAdminGroupInput" type="text" placeholder="archive-team" list="identityGroupOptions" />
               </label>
               <label>
                 <span data-i18n="username">User</span>
-                <input id="groupAdminUserInput" type="text" placeholder="username" />
+                <input id="groupAdminUserInput" type="text" placeholder="username" list="identityUserOptions" />
               </label>
               <button id="addGroupAdminBtn" type="button" data-i18n="add_group_admin">Add</button>
             </div>
+            <datalist id="identityGroupOptions"></datalist>
+            <datalist id="identityUserOptions"></datalist>
             <div id="groupAdminsRows" class="rows"></div>
             <div id="groupAdminsMsg" class="admin-note"></div>
           </section>
@@ -440,7 +508,8 @@
       </section>
     </main>
 
-    <script src="/admin-records.js?v=20260424-admin-refactor-1"></script>
-    <script src="/admin.js?v=20260430-admin-dashboard-1"></script>
+    <script src="/main-access-scope.js?v=20260518-access-scope-module-2"></script>
+    <script src="/admin-records.js?v=20260519-asset-rights-sticky-col-1"></script>
+    <script src="/admin.js?v=20260519-audit-export-1"></script>
   </body>
 </html>

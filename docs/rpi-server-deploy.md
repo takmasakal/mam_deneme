@@ -7,7 +7,11 @@ Temel farklar:
 - dışarı sadece auth'li MAM portu açılır: `3000`
 - direct `app` portu dışarı açılmaz
 - Keycloak realm ve `oauth2-proxy` secret aynı kaynaktan üretilir
+- varsayılan parolalar `.env` içinde tutulmaz; Docker secrets ile `deploy/secrets/` altında üretilir
 - IP değişirse `init-rpi.sh` tekrar çalıştırılarak yeni host ile dosyalar yenilenir
+
+Secret prosedürü için ayrıca bak:
+- [`docs/docker-secrets.md`](docker-secrets.md)
 
 ## 1. Sistem paketleri
 
@@ -37,7 +41,8 @@ git pull
 Script şunları yapar:
 - Pi IP'sini otomatik algılar
 - `deploy/.env.rpi` üretir
-- `deploy/keycloak/mam-rpi-realm.json` üretir
+- `deploy/secrets/` altında git dışı secret dosyalarını üretir
+- Keycloak realm import JSON'unu container açılışında secret dosyalarından oluşturur
 - stack'i `docker-compose.rpi.yml` ile ayağa kaldırır
 
 ## 4. Adresler
@@ -56,11 +61,13 @@ Not:
 ## 5. Kullanıcılar
 
 Varsayılan realm kullanıcıları:
-- `mamadmin / mamadmin`
-- `mamuser / mamuser`
+- `mamadmin`; parola: `deploy/secrets/mam_admin_password`
+- `mamuser`; parola: `deploy/secrets/mam_user_password`
+- `yazici`; parola: `deploy/secrets/mam_text_admin_password`
 
 Keycloak admin:
-- `admin / admin`
+- kullanıcı adı: `deploy/.env.rpi` içindeki `KEYCLOAK_ADMIN`
+- parola: `deploy/secrets/keycloak_admin_password`
 
 ## 6. Loglar
 

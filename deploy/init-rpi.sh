@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEPLOY_DIR="${ROOT_DIR}/deploy"
 ENV_OUT="${DEPLOY_DIR}/.env.rpi"
 REALM_TEMPLATE="${DEPLOY_DIR}/keycloak/mam-realm.template.json"
-REALM_OUT="${DEPLOY_DIR}/keycloak/mam-rpi-realm.json"
+SECRETS_DIR="${DEPLOY_DIR}/secrets"
 
 detect_host() {
   if command -v ip >/dev/null 2>&1; then
@@ -32,11 +32,54 @@ rand_hex() {
   fi
 }
 
-escape_sed() {
-  printf '%s' "$1" | sed -e 's/[\/&]/\\&/g'
+rand_cookie_secret() {
+  rand_hex 16
 }
 
-mkdir -p "${ROOT_DIR}/uploads" "${DEPLOY_DIR}/keycloak"
+lower() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
+is_weak_secret() {
+  local value="$1"
+  shift || true
+  [[ -z "${value}" ]] && return 0
+  local weak
+  for weak in "$@"; do
+    [[ "${value}" == "${weak}" ]] && return 0
+  done
+  return 1
+}
+
+ensure_secret() {
+  local name="$1"
+  local candidate="$2"
+  local generator="$3"
+  shift 3 || true
+  local path="${SECRETS_DIR}/${name}"
+  local current=""
+  if [[ -f "${path}" ]]; then
+    current="$(cat "${path}")"
+  fi
+  if is_weak_secret "${current}" "$@"; then
+    if is_weak_secret "${candidate}" "$@"; then
+      case "${generator}" in
+        cookie) candidate="$(rand_cookie_secret)" ;;
+        *) candidate="$(rand_hex 24)" ;;
+      esac
+    fi
+    printf '%s\n' "${candidate}" > "${path}"
+    chmod 600 "${path}"
+  fi
+}
+
+if [[ ! -f "${REALM_TEMPLATE}" ]]; then
+  echo "Missing realm template: ${REALM_TEMPLATE}"
+  exit 1
+fi
+
+mkdir -p "${ROOT_DIR}/uploads" "${DEPLOY_DIR}/keycloak" "${SECRETS_DIR}"
+chmod 700 "${SECRETS_DIR}"
 
 REQUESTED_OFFICE_EDITOR_PROVIDER="${OFFICE_EDITOR_PROVIDER:-}"
 REQUESTED_ENABLE_ONLYOFFICE="${ENABLE_ONLYOFFICE:-}"
@@ -54,54 +97,47 @@ if [[ -z "${PUBLIC_HOST}" ]]; then
 fi
 
 KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
-KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
 KEYCLOAK_DB_USER="${KEYCLOAK_DB_USER:-keycloak}"
-KEYCLOAK_DB_PASSWORD="${KEYCLOAK_DB_PASSWORD:-keycloak}"
 KEYCLOAK_DB_NAME="${KEYCLOAK_DB_NAME:-keycloak}"
-
 MAM_ADMIN_USER="${MAM_ADMIN_USER:-mamadmin}"
-MAM_ADMIN_PASSWORD="${MAM_ADMIN_PASSWORD:-mamadmin}"
 MAM_USER="${MAM_USER:-mamuser}"
-MAM_USER_PASSWORD="${MAM_USER_PASSWORD:-mamuser}"
 MAM_TEXT_ADMIN_USER="${MAM_TEXT_ADMIN_USER:-yazici}"
-MAM_TEXT_ADMIN_PASSWORD="${MAM_TEXT_ADMIN_PASSWORD:-yazici}"
-
 OAUTH2_PROXY_CLIENT_ID="${OAUTH2_PROXY_CLIENT_ID:-mam-web}"
-OAUTH2_PROXY_CLIENT_SECRET="${OAUTH2_PROXY_CLIENT_SECRET:-$(rand_hex 24)}"
-OAUTH2_PROXY_COOKIE_SECRET="${OAUTH2_PROXY_COOKIE_SECRET:-$(rand_hex 16)}"
 UPLOADS_DIR="${UPLOADS_DIR:-${ROOT_DIR}/uploads}"
 ENABLE_ONLYOFFICE="${REQUESTED_ENABLE_ONLYOFFICE:-${ENABLE_ONLYOFFICE:-false}}"
 OFFICE_EDITOR_PROVIDER="${REQUESTED_OFFICE_EDITOR_PROVIDER:-${OFFICE_EDITOR_PROVIDER:-libreoffice}}"
-if [[ "${ENABLE_ONLYOFFICE,,}" != "true" && "${OFFICE_EDITOR_PROVIDER,,}" == "onlyoffice" ]]; then
+if [[ "$(lower "${ENABLE_ONLYOFFICE}")" != "true" && "$(lower "${OFFICE_EDITOR_PROVIDER}")" == "onlyoffice" ]]; then
   OFFICE_EDITOR_PROVIDER="libreoffice"
 fi
 INSTALL_LIBREOFFICE="${INSTALL_LIBREOFFICE:-false}"
-MAM_BUILD_LOCAL="${MAM_BUILD_LOCAL:-true}"
+MAM_BUILD_LOCAL="${MAM_BUILD_LOCAL:-false}"
 MAM_OFFLINE_MODE="${MAM_OFFLINE_MODE:-true}"
 PRELOAD_ML_MODELS="${PRELOAD_ML_MODELS:-true}"
 PRELOAD_PADDLE_OCR="${PRELOAD_PADDLE_OCR:-true}"
 WHISPER_MODEL="${WHISPER_MODEL:-small}"
-if [[ "${OFFICE_EDITOR_PROVIDER,,}" == "libreoffice" && "${INSTALL_LIBREOFFICE,,}" != "true" ]]; then
+if [[ "$(lower "${OFFICE_EDITOR_PROVIDER}")" == "libreoffice" && "$(lower "${INSTALL_LIBREOFFICE}")" != "true" ]]; then
   INSTALL_LIBREOFFICE="true"
 fi
 
-cat > "${ENV_OUT}" <<EOF
+ensure_secret mam_postgres_password "${MAM_POSTGRES_PASSWORD:-${POSTGRES_PASSWORD:-}}" hex "postgres"
+ensure_secret keycloak_db_password "${KEYCLOAK_DB_PASSWORD:-}" hex "keycloak"
+ensure_secret keycloak_admin_password "${KEYCLOAK_ADMIN_PASSWORD:-}" hex "admin"
+ensure_secret oauth2_proxy_client_secret "${OAUTH2_PROXY_CLIENT_SECRET:-}" hex "change-me"
+ensure_secret oauth2_proxy_cookie_secret "${OAUTH2_PROXY_COOKIE_SECRET:-}" cookie "0123456789abcdef0123456789abcdef" "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+ensure_secret mam_admin_password "${MAM_ADMIN_PASSWORD:-}" hex "mamadmin"
+ensure_secret mam_user_password "${MAM_USER_PASSWORD:-}" hex "mamuser"
+ensure_secret mam_text_admin_password "${MAM_TEXT_ADMIN_PASSWORD:-}" hex "yazici"
+
+cat > "${ENV_OUT}" <<EOV
 PUBLIC_HOST=${PUBLIC_HOST}
 UPLOADS_DIR=${UPLOADS_DIR}
 KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN}
-KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
 KEYCLOAK_DB_USER=${KEYCLOAK_DB_USER}
-KEYCLOAK_DB_PASSWORD=${KEYCLOAK_DB_PASSWORD}
 KEYCLOAK_DB_NAME=${KEYCLOAK_DB_NAME}
 MAM_ADMIN_USER=${MAM_ADMIN_USER}
-MAM_ADMIN_PASSWORD=${MAM_ADMIN_PASSWORD}
 MAM_USER=${MAM_USER}
-MAM_USER_PASSWORD=${MAM_USER_PASSWORD}
 MAM_TEXT_ADMIN_USER=${MAM_TEXT_ADMIN_USER}
-MAM_TEXT_ADMIN_PASSWORD=${MAM_TEXT_ADMIN_PASSWORD}
 OAUTH2_PROXY_CLIENT_ID=${OAUTH2_PROXY_CLIENT_ID}
-OAUTH2_PROXY_CLIENT_SECRET=${OAUTH2_PROXY_CLIENT_SECRET}
-OAUTH2_PROXY_COOKIE_SECRET=${OAUTH2_PROXY_COOKIE_SECRET}
 ENABLE_ONLYOFFICE=${ENABLE_ONLYOFFICE}
 OFFICE_EDITOR_PROVIDER=${OFFICE_EDITOR_PROVIDER}
 INSTALL_LIBREOFFICE=${INSTALL_LIBREOFFICE}
@@ -110,25 +146,14 @@ MAM_OFFLINE_MODE=${MAM_OFFLINE_MODE}
 PRELOAD_ML_MODELS=${PRELOAD_ML_MODELS}
 PRELOAD_PADDLE_OCR=${PRELOAD_PADDLE_OCR}
 WHISPER_MODEL=${WHISPER_MODEL}
-EOF
-
-sed \
-  -e "s|__PUBLIC_HOST__|$(escape_sed "${PUBLIC_HOST}")|g" \
-  -e "s|__CLIENT_SECRET__|$(escape_sed "${OAUTH2_PROXY_CLIENT_SECRET}")|g" \
-  -e "s|__MAM_ADMIN_USER__|$(escape_sed "${MAM_ADMIN_USER}")|g" \
-  -e "s|__MAM_ADMIN_PASSWORD__|$(escape_sed "${MAM_ADMIN_PASSWORD}")|g" \
-  -e "s|__MAM_USER__|$(escape_sed "${MAM_USER}")|g" \
-  -e "s|__MAM_USER_PASSWORD__|$(escape_sed "${MAM_USER_PASSWORD}")|g" \
-  -e "s|__MAM_TEXT_ADMIN_USER__|$(escape_sed "${MAM_TEXT_ADMIN_USER}")|g" \
-  -e "s|__MAM_TEXT_ADMIN_PASSWORD__|$(escape_sed "${MAM_TEXT_ADMIN_PASSWORD}")|g" \
-  "${REALM_TEMPLATE}" > "${REALM_OUT}"
-
+EOV
 chmod 600 "${ENV_OUT}"
 
 echo "Prepared Raspberry Pi deployment files:"
 echo "  - ${ENV_OUT}"
-echo "  - ${REALM_OUT}"
+echo "  - ${SECRETS_DIR}/ (Docker secrets, git ignored)"
 echo
 echo "Detected host: ${PUBLIC_HOST}"
 echo "MAM URL: http://${PUBLIC_HOST}:3000"
 echo "Keycloak URL: http://${PUBLIC_HOST}:8081"
+echo "Passwords are stored only under ${SECRETS_DIR}."

@@ -63,6 +63,7 @@ const PROXIES_DIR = path.join(UPLOADS_DIR, 'proxies');
 const THUMBNAILS_DIR = path.join(UPLOADS_DIR, 'thumbnails');
 const SUBTITLES_DIR = path.join(UPLOADS_DIR, 'subtitles');
 const OCR_DIR = path.join(UPLOADS_DIR, 'ocr');
+const AUDIT_EXPORTS_DIR = path.join(UPLOADS_DIR, '_audit_exports');
 const OCR_FRAMES_DIR = path.join(OCR_DIR, '_frames');
 const OCR_FRAME_CACHE_DIR = path.join(OCR_FRAMES_DIR, '_cache');
 const OCR_FRAME_CACHE_ENABLED = String(process.env.OCR_FRAME_CACHE_ENABLE || 'false').trim().toLowerCase() === 'true';
@@ -149,6 +150,19 @@ function normalizeSubtitleStyle(value = {}) {
 function normalizeAuditRetentionDays(value) {
   return clampNumber(value, 1, 3650, DEFAULT_ADMIN_SETTINGS.auditRetentionDays);
 }
+function readSecretFile(filePath) {
+  if (!filePath) return '';
+  try {
+    return fs.readFileSync(filePath, 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+function readEnvOrFile(name) {
+  const direct = process.env[name];
+  if (direct) return direct;
+  return readSecretFile(process.env[`${name}_FILE`]);
+}
 const DEFAULT_USER_PERMISSIONS = {};
 const ELASTIC_URL = process.env.ELASTIC_URL || 'http://localhost:9200';
 const ELASTIC_INDEX = process.env.ELASTIC_INDEX || 'mam_assets';
@@ -164,9 +178,11 @@ const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM || 'mam';
 const KEYCLOAK_REALMS = String(process.env.KEYCLOAK_REALMS || '').trim();
 const KEYCLOAK_ADMIN_REALM = process.env.KEYCLOAK_ADMIN_REALM || 'master';
 const KEYCLOAK_ADMIN_USERNAME = process.env.KEYCLOAK_ADMIN_USERNAME || process.env.KEYCLOAK_ADMIN || '';
-const KEYCLOAK_ADMIN_PASSWORD = process.env.KEYCLOAK_ADMIN_PASSWORD || '';
+const KEYCLOAK_ADMIN_PASSWORD = readEnvOrFile('KEYCLOAK_ADMIN_PASSWORD');
 const KEYCLOAK_ADMIN_CLIENT_ID = process.env.KEYCLOAK_ADMIN_CLIENT_ID || 'admin-cli';
 const USE_OAUTH2_PROXY = String(process.env.USE_OAUTH2_PROXY || 'false').trim().toLowerCase() === 'true';
+const DIRECT_APP_PORT = String(process.env.DIRECT_APP_PORT || process.env.MAM_DIRECT_APP_PORT || '3001').trim();
+const DIRECT_API_TOKEN_REQUIRED = String(process.env.MAM_DIRECT_API_TOKEN_REQUIRED ?? 'true').trim().toLowerCase() !== 'false';
 const OFFICE_EDITOR_PROVIDER = ['onlyoffice', 'libreoffice'].includes(String(process.env.OFFICE_EDITOR_PROVIDER || '').trim().toLowerCase())
   ? String(process.env.OFFICE_EDITOR_PROVIDER || '').trim().toLowerCase()
   : 'none';
@@ -181,6 +197,7 @@ const pdfOcrCache = new Map();
 const KEYCLOAK_ADMIN_CACHE_TTL_MS = Math.max(5, Number(process.env.KEYCLOAK_ADMIN_CACHE_TTL_SECONDS) || 60) * 1000;
 const SYSTEM_HEALTH_CACHE_TTL_MS = Math.max(5, Number(process.env.SYSTEM_HEALTH_CACHE_TTL_SECONDS) || 30) * 1000;
 let keycloakUsersCache = { expiresAt: 0, value: null };
+let keycloakGroupsCache = { expiresAt: 0, value: null };
 const keycloakPermissionDefaultsCache = new Map();
 let systemHealthCache = { expiresAt: 0, value: null };
 const runtimeErrorLogs = [];
@@ -353,6 +370,9 @@ if (!fs.existsSync(SUBTITLES_DIR)) {
 if (!fs.existsSync(OCR_DIR)) {
   fs.mkdirSync(OCR_DIR, { recursive: true });
 }
+if (!fs.existsSync(AUDIT_EXPORTS_DIR)) {
+  fs.mkdirSync(AUDIT_EXPORTS_DIR, { recursive: true });
+}
 if (!fs.existsSync(OCR_FRAMES_DIR)) {
   fs.mkdirSync(OCR_FRAMES_DIR, { recursive: true });
 }
@@ -406,6 +426,7 @@ function parseSearchTokens(value, normalizeFn = (input) => String(input || '').t
   const optional = [];
   const optionalExact = [];
   let hasOperators = false;
+  let sawOrOperator = false;
 
   const matcher = /([+-]?)"([^"]+)"|(\S+)/g;
   let match = null;
@@ -428,6 +449,10 @@ function parseSearchTokens(value, normalizeFn = (input) => String(input || '').t
       if (!bucket.includes(valueToPush)) bucket.push(valueToPush);
     };
 
+    if (!isQuoted && prefix !== '+' && prefix !== '-' && normalizedToken.toLowerCase() === 'or') {
+      sawOrOperator = true;
+      continue;
+    }
     if (prefix === '+') {
       hasOperators = true;
       pushUnique(isQuoted ? mustIncludeExact : mustInclude, normalizedToken);
@@ -445,9 +470,14 @@ function parseSearchTokens(value, normalizeFn = (input) => String(input || '').t
     }
     pushUnique(optional, normalizedToken);
   }
+  if (sawOrOperator && (optional.length + optionalExact.length + mustInclude.length + mustIncludeExact.length) > 1) {
+    hasOperators = true;
+  }
 
   return {
-    raw: normalizeFn(raw),
+    raw: sawOrOperator
+      ? [...mustInclude, ...mustIncludeExact, ...mustExclude, ...mustExcludeExact, ...optional, ...optionalExact].join(' ').trim()
+      : normalizeFn(raw),
     hasOperators,
     mustInclude,
     mustIncludeExact,
@@ -4235,6 +4265,12 @@ function mapAssetRow(row) {
     ownerGroups: row.owner_groups || [],
     allowedUsers: row.allowed_users || [],
     allowedGroups: row.allowed_groups || [],
+    deniedUsers: row.denied_users || [],
+    deniedGroups: row.denied_groups || [],
+    editAllowedUsers: row.edit_allowed_users || [],
+    editAllowedGroups: row.edit_allowed_groups || [],
+    editDeniedUsers: row.edit_denied_users || [],
+    editDeniedGroups: row.edit_denied_groups || [],
     dcMetadata,
     audioChannels: Number(dcMetadata.audioChannels) || 0,
     subtitleUrl: String(dcMetadata.subtitleUrl || '').trim(),
@@ -4323,6 +4359,12 @@ async function createAssetRecord(input) {
     ownerGroups: assetAccessService.normalizeAccessList(input.ownerGroups || input.owner_groups || []),
     allowedUsers: assetAccessService.normalizeAccessList(input.allowedUsers || input.allowed_users || []),
     allowedGroups: assetAccessService.normalizeAccessList(input.allowedGroups || input.allowed_groups || []),
+    deniedUsers: assetAccessService.normalizeAccessList(input.deniedUsers || input.denied_users || []),
+    deniedGroups: assetAccessService.normalizeAccessList(input.deniedGroups || input.denied_groups || []),
+    editAllowedUsers: assetAccessService.normalizeAccessList(input.editAllowedUsers || input.edit_allowed_users || []),
+    editAllowedGroups: assetAccessService.normalizeAccessList(input.editAllowedGroups || input.edit_allowed_groups || []),
+    editDeniedUsers: assetAccessService.normalizeAccessList(input.editDeniedUsers || input.edit_denied_users || []),
+    editDeniedGroups: assetAccessService.normalizeAccessList(input.editDeniedGroups || input.edit_denied_groups || []),
     dcMetadata: {
       ...buildDefaultDcMetadata(input),
       ...sanitizeDcMetadata(input.dcMetadata)
@@ -4357,11 +4399,12 @@ async function createAssetRecord(input) {
           id, title, description, type, tags, owner, duration_seconds, source_path,
           media_url, proxy_url, proxy_status, thumbnail_url, file_name, mime_type, dc_metadata, file_hash,
           visibility, owner_user, owner_groups, allowed_users, allowed_groups,
+          denied_users, denied_groups, edit_allowed_users, edit_allowed_groups, edit_denied_users, edit_denied_groups,
           status, created_at, updated_at
           , deleted_at
         ) VALUES (
           $1,$2,$3,$4,$5,$6,$7,$8,
-          $9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25
+          $9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31
         )
       `,
       [
@@ -4386,6 +4429,12 @@ async function createAssetRecord(input) {
         asset.ownerGroups,
         asset.allowedUsers,
         asset.allowedGroups,
+        asset.deniedUsers,
+        asset.deniedGroups,
+        asset.editAllowedUsers,
+        asset.editAllowedGroups,
+        asset.editDeniedUsers,
+        asset.editDeniedGroups,
         asset.status,
         asset.createdAt,
         asset.updatedAt,
@@ -5595,12 +5644,104 @@ async function saveAdminSettings(settings) {
   return settings;
 }
 
+let auditCleanupInProgress = false;
+
 async function cleanupAuditEvents(retentionDays = DEFAULT_ADMIN_SETTINGS.auditRetentionDays) {
+  if (auditCleanupInProgress) return;
+  auditCleanupInProgress = true;
   const days = normalizeAuditRetentionDays(retentionDays);
-  await pool.query(
-    "DELETE FROM audit_events WHERE created_at < NOW() - ($1::int * INTERVAL '1 day')",
+  try {
+    for (let i = 0; i < 20; i += 1) {
+      const archived = await archiveExpiredAuditEvents(days);
+      if (!archived || archived.count < 50000) return;
+    }
+  } finally {
+    auditCleanupInProgress = false;
+  }
+}
+
+function safeAuditArchiveCell(value) {
+  let text = value == null ? '' : String(value);
+  if (/^[=+\-@]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function auditDetailsArchiveText(details) {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return '';
+  return Object.entries(details)
+    .map(([key, value]) => {
+      const formatted = Array.isArray(value)
+        ? value.join(', ')
+        : typeof value === 'object' && value !== null
+          ? JSON.stringify(value)
+          : String(value ?? '');
+      return `${key}: ${formatted}`;
+    })
+    .join(' | ');
+}
+
+function auditArchiveDateStamp(value) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return new Date().toISOString().replace(/[:.]/g, '-');
+  return date.toISOString().replace(/[:.]/g, '-');
+}
+
+async function archiveExpiredAuditEvents(retentionDays) {
+  const days = normalizeAuditRetentionDays(retentionDays);
+  const result = await pool.query(
+    `
+      SELECT id, created_at, actor, action, target_type, target_id, target_title,
+             client_medium, details, ip, user_agent
+      FROM audit_events
+      WHERE created_at < NOW() - ($1::int * INTERVAL '1 day')
+      ORDER BY created_at ASC
+      LIMIT 50000
+    `,
     [days]
   );
+  if (!result.rowCount) return null;
+
+  await fs.promises.mkdir(AUDIT_EXPORTS_DIR, { recursive: true });
+  const headers = ['Created At', 'Actor', 'Action', 'Target Type', 'Target ID', 'Target Title', 'Client', 'IP', 'Details', 'User Agent'];
+  const rows = result.rows.map((row) => [
+    row.created_at ? new Date(row.created_at).toISOString() : '',
+    row.actor || '',
+    row.action || '',
+    row.target_type || '',
+    row.target_id || '',
+    row.target_title || '',
+    row.client_medium || '',
+    row.ip || '',
+    auditDetailsArchiveText(row.details || {}),
+    row.user_agent || ''
+  ]);
+  const csv = [
+    headers.map(safeAuditArchiveCell).join(','),
+    ...rows.map((row) => row.map(safeAuditArchiveCell).join(','))
+  ].join('\r\n');
+  const first = result.rows[0]?.created_at;
+  const last = result.rows[result.rows.length - 1]?.created_at;
+  const filename = `audit-events-${auditArchiveDateStamp(first)}--${auditArchiveDateStamp(last)}-${nanoid(8)}.csv`;
+  const archivePath = path.join(AUDIT_EXPORTS_DIR, filename);
+  await fs.promises.writeFile(archivePath, `\uFEFF${csv}`, 'utf8');
+
+  const ids = result.rows.map((row) => row.id).filter(Boolean);
+  if (ids.length) {
+    await pool.query('DELETE FROM audit_events WHERE id = ANY($1::text[])', [ids]);
+  }
+  console.log(`Archived ${ids.length} audit events to ${archivePath}`);
+  return { archivePath, count: ids.length };
+}
+
+function scheduleAuditCleanup() {
+  const run = async () => {
+    const settings = await getAdminSettings().catch(() => DEFAULT_ADMIN_SETTINGS);
+    await cleanupAuditEvents(settings.auditRetentionDays);
+  };
+  run().catch(() => {});
+  setInterval(() => {
+    run().catch(() => {});
+  }, 24 * 60 * 60 * 1000);
 }
 
 async function recordAuditEvent(req, event = {}) {
@@ -5678,7 +5819,7 @@ function getBearerFromRequest(req) {
 }
 
 function getApiKeyFromRequest(req) {
-  return getHeaderString(req, 'x-api-token');
+  return getHeaderString(req, 'x-api-token') || getHeaderString(req, 'x-mam-api-token');
 }
 
 function hasAuthenticatedUpstreamUser(req) {
@@ -5686,6 +5827,45 @@ function hasAuthenticatedUpstreamUser(req) {
     getHeaderString(req, 'x-forwarded-user') ||
     getHeaderString(req, 'x-auth-request-user')
   );
+}
+
+function getRawRequestHost(req) {
+  return String(req.get?.('host') || req.headers?.host || '').trim();
+}
+
+function getHostPort(host) {
+  const raw = String(host || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('[')) {
+    const closingBracket = raw.indexOf(']');
+    return closingBracket >= 0 && raw[closingBracket + 1] === ':' ? raw.slice(closingBracket + 2) : '';
+  }
+  const parts = raw.split(':');
+  return parts.length > 1 ? parts.pop() : '';
+}
+
+function normalizeRemoteAddress(address) {
+  return String(address || '')
+    .replace(/^::ffff:/, '')
+    .replace(/^::1$/, '127.0.0.1')
+    .trim();
+}
+
+function isDockerGatewayAddress(address) {
+  const remote = normalizeRemoteAddress(address);
+  if (!remote) return false;
+  if (remote === '127.0.0.1') return true;
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d+\.1$/.test(remote)) return true;
+  if (/^10\.\d+\.\d+\.1$/.test(remote)) return true;
+  if (/^192\.168\.\d+\.1$/.test(remote)) return true;
+  return false;
+}
+
+function isDirectAppRequest(req) {
+  if (!DIRECT_API_TOKEN_REQUIRED) return false;
+  const rawHostPort = getHostPort(getRawRequestHost(req));
+  if (DIRECT_APP_PORT && rawHostPort === DIRECT_APP_PORT) return true;
+  return isDockerGatewayAddress(req.socket?.remoteAddress);
 }
 
 function decodeJwtPart(part) {
@@ -5809,12 +5989,15 @@ async function verifyOidcBearerToken(token, settings) {
 async function maybeRequireApiToken(req, res, next) {
   if (!req.path.startsWith('/api/')) return next();
   if (!USE_OAUTH2_PROXY) return next();
-  if (/^\/api\/assets\/[^/]+\/office-config$/.test(req.path)) return next();
+  const directAppRequest = isDirectAppRequest(req);
+  if (!directAppRequest && /^\/api\/assets\/[^/]+\/office-config$/.test(req.path)) return next();
+  if (/^\/api\/assets\/[^/]+\/office-document$/.test(req.path)) return next();
   if (/^\/api\/assets\/[^/]+\/office-callback$/.test(req.path)) return next();
   try {
     const settings = await getAdminSettings();
-    if (!settings.apiTokenEnabled) return next();
-    if (hasAuthenticatedUpstreamUser(req)) return next();
+    const tokenProtectionEnabled = Boolean(settings.apiTokenEnabled) || directAppRequest;
+    if (!tokenProtectionEnabled) return next();
+    if (!directAppRequest && hasAuthenticatedUpstreamUser(req)) return next();
 
     const bearer = String(getBearerFromRequest(req) || '');
     if (settings.oidcBearerEnabled && bearer && bearer.includes('.')) {
@@ -6368,16 +6551,21 @@ function getHeaderString(req, name) {
   const value = req.headers?.[name];
   const raw = Array.isArray(value) ? String(value[0] || '').trim() : String(value || '').trim();
   if (!raw) return '';
-  const maybeUtf8 = Buffer.from(raw, 'latin1').toString('utf8');
-  const hasMojibake = /[ÃÂâÅ]/.test(raw);
+  const repairMojibake = (input) => {
+    let current = String(input || '');
+    for (let i = 0; i < 2 && /[ÃÂâÅÄ]/.test(current); i += 1) {
+      const repaired = Buffer.from(current, 'latin1').toString('utf8');
+      if (!repaired || repaired.includes('�') || repaired === current) break;
+      current = repaired;
+    }
+    return current;
+  };
   try {
     // Some providers send UTF-8 names URL-encoded in headers.
     const decoded = decodeURIComponent(raw);
-    if (hasMojibake && /[^\u0000-\u007f]/.test(maybeUtf8)) return maybeUtf8.normalize('NFC');
-    return decoded.normalize('NFC');
+    return repairMojibake(decoded).normalize('NFC');
   } catch (_error) {
-    if (hasMojibake && /[^\u0000-\u007f]/.test(maybeUtf8)) return maybeUtf8.normalize('NFC');
-    return raw.normalize('NFC');
+    return repairMojibake(raw).normalize('NFC');
   }
 }
 
@@ -6533,6 +6721,108 @@ function buildUserContextFromRequest(req) {
   };
 }
 
+function keycloakUserFullName(user) {
+  const firstName = String(user?.firstName || '').trim();
+  const lastName = String(user?.lastName || '').trim();
+  return [firstName, lastName].filter(Boolean).join(' ').trim();
+}
+
+function keycloakUserIdentityCandidates(user) {
+  const username = String(user?.username || '').trim();
+  const email = String(user?.email || '').trim();
+  const fullName = keycloakUserFullName(user);
+  const localEmail = email.includes('@') ? email.split('@')[0] : '';
+  return [username, email, localEmail, fullName]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+}
+
+async function findKeycloakUserForIdentity(user) {
+  const current = user && typeof user === 'object' ? user : {};
+  const candidates = [
+    current.username,
+    current.email,
+    String(current.email || '').includes('@') ? String(current.email).split('@')[0] : '',
+    current.displayName
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  if (!candidates.length) return { user: null, realm: '' };
+
+  const { users, realmByUsername } = await fetchKeycloakUsers();
+  const candidateKeys = new Set(candidates.map((value) => normalizeIdentityKey(value)).filter(Boolean));
+  const match = (Array.isArray(users) ? users : []).find((row) => (
+    keycloakUserIdentityCandidates(row).some((value) => candidateKeys.has(normalizeIdentityKey(value)))
+  ));
+  const username = String(match?.username || '').trim().toLowerCase();
+  return {
+    user: match || null,
+    realm: String(realmByUsername?.get(username) || '').trim()
+  };
+}
+
+async function enrichUserDisplayNameFromKeycloak(user) {
+  const current = user && typeof user === 'object' ? user : {};
+
+  try {
+    const { user: match } = await findKeycloakUserForIdentity(current);
+    const fullName = keycloakUserFullName(match);
+    if (!fullName) return current;
+    return {
+      ...current,
+      displayName: fullName
+    };
+  } catch (_error) {
+    return current;
+  }
+}
+
+async function enrichUserPrincipalsFromKeycloak(user) {
+  const current = user && typeof user === 'object' ? user : {};
+  try {
+    const { user: match, realm } = await findKeycloakUserForIdentity(current);
+    const userId = String(match?.id || '').trim();
+    const username = String(match?.username || current.username || '').trim().toLowerCase();
+    const realmName = String(realm || getKeycloakCandidateRealms()[0] || KEYCLOAK_REALM).trim();
+    const token = await getKeycloakAdminAccessToken();
+    if (!token || !userId || !realmName) return current;
+
+    const realmEncoded = encodeURIComponent(realmName);
+    const [rolesRes, groupsRes] = await Promise.all([
+      fetch(`${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users/${encodeURIComponent(userId)}/role-mappings/realm`, {
+        headers: { Authorization: `Bearer ${token}` }
+      }).catch(() => null),
+      fetch(`${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users/${encodeURIComponent(userId)}/groups`, {
+        headers: { Authorization: `Bearer ${token}` }
+      }).catch(() => null)
+    ]);
+    const roles = rolesRes && rolesRes.ok ? await rolesRes.json().catch(() => []) : [];
+    const groups = groupsRes && groupsRes.ok ? await groupsRes.json().catch(() => []) : [];
+    const roleNames = (Array.isArray(roles) ? roles : [])
+      .map((item) => String(item?.name || '').trim().toLowerCase())
+      .filter(Boolean);
+    const groupNames = (Array.isArray(groups) ? groups : [])
+      .map((item) => String(item?.path || item?.name || '').trim().toLowerCase())
+      .filter(Boolean);
+    const resolved = resolvePermissionKeysFromPrincipals({
+      username,
+      groups: groupNames,
+      roles: roleNames
+    });
+    return {
+      ...current,
+      username: current.username || username,
+      groups: Array.from(new Set([...(current.groups || []), ...groupNames])),
+      roles: Array.from(new Set([...(current.roles || []), ...roleNames])),
+      baseIsAdmin: current.baseIsAdmin || resolved.permissionKeys.includes('admin.access'),
+      basePermissionKeys: Array.from(new Set([...(current.basePermissionKeys || []), ...resolved.permissionKeys])),
+      baseIsSuperAdmin: Boolean(current.baseIsSuperAdmin || resolved.isSuperAdmin)
+    };
+  } catch (_error) {
+    return current;
+  }
+}
+
 function getKeycloakCandidateRealms() {
   const fromList = KEYCLOAK_REALMS
     ? KEYCLOAK_REALMS.split(',').map((item) => String(item || '').trim()).filter(Boolean)
@@ -6614,6 +6904,60 @@ async function fetchKeycloakUsers() {
   return value;
 }
 
+function flattenKeycloakGroups(rows, realm, parentPath = '') {
+  const out = [];
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const name = String(row?.name || '').trim();
+    const pathValue = String(row?.path || '').trim();
+    const pathName = pathValue || `${parentPath}/${name}`.replace(/\/+/g, '/');
+    if (name) {
+      out.push({
+        id: String(row?.id || '').trim(),
+        name,
+        path: pathName,
+        realm: String(realm || '').trim()
+      });
+    }
+    out.push(...flattenKeycloakGroups(row?.subGroups || [], realm, pathName));
+  });
+  return out;
+}
+
+async function fetchKeycloakGroups() {
+  const now = Date.now();
+  if (keycloakGroupsCache.value && keycloakGroupsCache.expiresAt > now) {
+    return keycloakGroupsCache.value;
+  }
+  const token = await getKeycloakAdminAccessToken();
+  if (!token) return { groups: [], realmByGroupPath: new Map() };
+  const realms = getKeycloakCandidateRealms();
+  const groups = [];
+  const realmByGroupPath = new Map();
+  const seen = new Set();
+  for (const realm of realms) {
+    try {
+      const response = await fetch(`${KEYCLOAK_INTERNAL_URL}/admin/realms/${encodeURIComponent(realm)}/groups?briefRepresentation=false`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!response.ok) continue;
+      const rows = await response.json().catch(() => []);
+      flattenKeycloakGroups(rows, realm).forEach((group) => {
+        const key = `${String(group.realm || '').toLowerCase()}:${String(group.path || group.name || '').toLowerCase()}`;
+        if (!group.name || seen.has(key)) return;
+        seen.add(key);
+        groups.push(group);
+        realmByGroupPath.set(String(group.path || group.name || '').toLowerCase(), realm);
+      });
+    } catch (_error) {
+      // Try next realm candidate.
+    }
+  }
+  groups.sort((a, b) => String(a.path || a.name).localeCompare(String(b.path || b.name)));
+  const value = { groups, realmByGroupPath };
+  keycloakGroupsCache = { expiresAt: now + KEYCLOAK_ADMIN_CACHE_TTL_MS, value };
+  return value;
+}
+
 function isVisibleKeycloakUser(user) {
   const username = String(user?.username || '').trim().toLowerCase();
   if (!username) return false;
@@ -6674,7 +7018,9 @@ async function fetchKeycloakUserPermissionDefaults(users, realmByUsername) {
 }
 
 async function resolveEffectivePermissions(req) {
-  const user = buildUserContextFromRequest(req);
+  const user = await enrichUserPrincipalsFromKeycloak(
+    await enrichUserDisplayNameFromKeycloak(buildUserContextFromRequest(req))
+  );
   const settings = await getUserPermissionsSettings();
   const override = getPermissionOverrideForUser(settings, user);
   const effective = normalizePermissionEntry(override, user.basePermissionKeys || []);
@@ -6706,6 +7052,7 @@ app.get('/api/me', async (req, res) => {
   res.set('Surrogate-Control', 'no-store');
   try {
     const effective = await resolveEffectivePermissions(req);
+    const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
     res.json({
       username: effective.username,
       displayName: effective.displayName,
@@ -6721,6 +7068,7 @@ app.get('/api/me', async (req, res) => {
       canEditOffice: effective.canEditOffice,
       canDeleteAssets: effective.canDeleteAssets,
       canUsePdfAdvancedTools: effective.canUsePdfAdvancedTools,
+      allowedAssetTypes: assetAccessService.getAllowedAssetTypeGroups(accessContext),
       officeEditorProvider: OFFICE_EDITOR_PROVIDER,
       permissionKeys: effective.permissionKeys
     });
@@ -7296,6 +7644,7 @@ registerAdminRoutes(app, {
   resolveEffectivePermissions,
   getUserPermissionsSettings,
   fetchKeycloakUsers,
+  fetchKeycloakGroups,
   isVisibleKeycloakUser,
   fetchKeycloakUserPermissionDefaults,
   resolvePermissionKeysFromPrincipals,
@@ -7581,6 +7930,7 @@ initDb()
     ensureElasticIndex()
       .then(() => backfillElasticIndex().catch(() => {}))
       .catch(() => {});
+    scheduleAuditCleanup();
     app.listen(PORT, () => {
       console.log(`MAM MVP running on http://localhost:${PORT}`);
     });

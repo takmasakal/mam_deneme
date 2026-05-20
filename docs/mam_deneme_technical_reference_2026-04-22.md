@@ -119,7 +119,8 @@ Dosyalar:
 Amaç:
 - host/IP değerini otomatik üretmek
 - `.env.easy` üretmek
-- Keycloak realm import dosyasını üretmek
+- `deploy/secrets/` altında Docker secrets dosyalarını üretmek
+- Keycloak realm import dosyasını container açılışında secret dosyalarından üretmek
 - manuel Keycloak ayar ihtiyacını azaltmak
 
 Kullanım:
@@ -139,7 +140,8 @@ Dosyalar:
 - `docker-compose.rpi.yml`
 - `deploy/init-rpi.sh`
 - `deploy/mam-rpi.sh`
-- `deploy/keycloak/mam-rpi-realm.json`
+- `deploy/secrets/`
+- `deploy/keycloak/mam-realm.template.json`
 
 RPI modunun farkları:
 - direct app portu dışarı açılmaz
@@ -147,6 +149,7 @@ RPI modunun farkları:
 - `PUBLIC_HOST` otomatik algılanır
 - Keycloak realm import URL'leri o anki host/IP ile yazılır
 - `deploy/.env.rpi` kurulumun ana env dosyasıdır
+- secret değerleri `.env.rpi` içinde değil, `deploy/secrets/` altındadır
 
 Temel kurulum:
 ```bash
@@ -208,14 +211,18 @@ Görevleri:
 - Elasticsearch index tetikleme
 
 Önemli env:
-- `DATABASE_URL`
+- `MAM_DB_HOST`
+- `MAM_DB_PORT`
+- `MAM_DB_USER`
+- `MAM_DB_NAME`
+- `MAM_DB_PASSWORD_FILE`
 - `ELASTIC_URL`
 - `ELASTIC_INDEX`
 - `PORT`
 - `KEYCLOAK_INTERNAL_URL`
 - `KEYCLOAK_REALM`
 - `KEYCLOAK_ADMIN_USERNAME`
-- `KEYCLOAK_ADMIN_PASSWORD`
+- `KEYCLOAK_ADMIN_PASSWORD_FILE`
 - `USE_OAUTH2_PROXY`
 - `OFFICE_EDITOR_PROVIDER`
 - `ONLYOFFICE_PUBLIC_URL`
@@ -1083,31 +1090,27 @@ Bu modda Office preview/edit kapalıdır. Fallback preview istenmez.
 
 ### 14.1 Admin Hesabı
 
-Geliştirme default'u:
-```text
-admin / admin
-```
+Güncel kurulumda varsayılan parolalar Compose veya `.env` içinde tutulmaz. `deploy/init.sh` ve `deploy/init-rpi.sh` secret dosyalarını `deploy/secrets/` altında üretir.
 
-Bu değer production veya kalıcı RPI kullanımında değiştirilmelidir.
-
-Yerel `.env`:
+Yerel `.env.easy` ve RPI `.env.rpi` sadece secret olmayan değerleri taşır:
 ```env
 KEYCLOAK_ADMIN=admin
-KEYCLOAK_ADMIN_PASSWORD=YeniGucluSifre
 KEYCLOAK_DB_USER=keycloak
-KEYCLOAK_DB_PASSWORD=keycloak
 KEYCLOAK_DB_NAME=keycloak
 ```
 
-RPI `deploy/.env.rpi`:
-```env
-KEYCLOAK_ADMIN=admin
-KEYCLOAK_ADMIN_PASSWORD=YeniGucluSifre
+İlgili secret dosyaları:
+```text
+deploy/secrets/keycloak_admin_password
+deploy/secrets/keycloak_db_password
+deploy/secrets/oauth2_proxy_client_secret
+deploy/secrets/oauth2_proxy_cookie_secret
 ```
 
 Önemli:
-- Bu env değerleri ilk bootstrap sırasında admin hesabını yaratır.
-- Keycloak DB volume'u zaten varsa env değiştirmek mevcut şifreyi otomatik değiştirmeyebilir.
+- Bu secret değerleri ilk bootstrap sırasında admin hesabını ve client secret değerlerini yaratır.
+- Keycloak DB volume'u veya mevcut `mam` realm'i zaten varsa secret dosyasını değiştirmek mevcut şifreyi/client secret'i otomatik değiştirmeyebilir.
+- Detaylı prosedür: `docs/docker-secrets.md`.
 - Mevcut şifre biliniyorsa panelden değiştirmek en temiz yöntemdir.
 
 Panel:

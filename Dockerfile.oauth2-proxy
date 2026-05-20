@@ -1,0 +1,6 @@
+FROM quay.io/oauth2-proxy/oauth2-proxy:v7.6.0 AS upstream
+
+FROM alpine:3.20
+COPY --from=upstream /bin/oauth2-proxy /bin/oauth2-proxy
+COPY --from=upstream /etc/ssl/certs /etc/ssl/certs
+ENTRYPOINT ["/bin/oauth2-proxy"]

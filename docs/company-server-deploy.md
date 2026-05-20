@@ -179,9 +179,12 @@ Production için repo içindeki `.env` dosyasına gerçek secret yazmak yerine s
 
 ```bash
 /opt/mam_deneme/deploy/.env.company
+/opt/mam_deneme/deploy/secrets/
 ```
 
-Örnek:
+`.env.company` sadece secret olmayan değerleri taşımalıdır. Parola, client secret ve cookie secret değerleri `deploy/secrets/` altında Docker secrets olarak tutulmalıdır. Aynı modelin yerel/RPI uygulaması için bkz. [`docs/docker-secrets.md`](docker-secrets.md).
+
+Örnek `.env.company`:
 
 ```bash
 PUBLIC_MAM_URL=https://mam.company.local
@@ -190,23 +193,18 @@ PUBLIC_KEYCLOAK_URL=https://auth.company.local
 UPLOADS_DIR=/srv/mam/uploads
 
 POSTGRES_USER=mam
-POSTGRES_PASSWORD=CHANGE_ME_LONG_RANDOM
 POSTGRES_DB=mam_mvp
 
 KEYCLOAK_DB_USER=keycloak
-KEYCLOAK_DB_PASSWORD=CHANGE_ME_LONG_RANDOM
 KEYCLOAK_DB_NAME=keycloak
 
 KEYCLOAK_ADMIN=kc-admin
-KEYCLOAK_ADMIN_PASSWORD=CHANGE_ME_LONG_RANDOM
 
 KEYCLOAK_REALM=mam
 KEYCLOAK_REALMS=mam
 KEYCLOAK_ADMIN_REALM=master
 
 OAUTH2_PROXY_CLIENT_ID=mam-web
-OAUTH2_PROXY_CLIENT_SECRET=CHANGE_ME_KEYCLOAK_CLIENT_SECRET
-OAUTH2_PROXY_COOKIE_SECRET=CHANGE_ME_32_BYTE_BASE64_OR_HEX_COMPATIBLE
 
 OFFICE_EDITOR_PROVIDER=onlyoffice
 ONLYOFFICE_PUBLIC_URL=https://office.company.local
@@ -216,17 +214,39 @@ APP_INTERNAL_URL=http://app:3000
 USE_OAUTH2_PROXY=true
 ```
 
+Secret dosyaları:
+
+```text
+deploy/secrets/mam_postgres_password
+deploy/secrets/keycloak_db_password
+deploy/secrets/keycloak_admin_password
+deploy/secrets/oauth2_proxy_client_secret
+deploy/secrets/oauth2_proxy_cookie_secret
+deploy/secrets/mam_admin_password
+deploy/secrets/mam_user_password
+deploy/secrets/mam_text_admin_password
+```
+
 Secret üretmek için:
 
 ```bash
-openssl rand -hex 32
-openssl rand -base64 32
+mkdir -p deploy/secrets
+chmod 700 deploy/secrets
+openssl rand -hex 24 > deploy/secrets/mam_postgres_password
+openssl rand -hex 24 > deploy/secrets/keycloak_db_password
+openssl rand -hex 24 > deploy/secrets/keycloak_admin_password
+openssl rand -hex 24 > deploy/secrets/oauth2_proxy_client_secret
+openssl rand -base64 32 > deploy/secrets/oauth2_proxy_cookie_secret
+openssl rand -hex 24 > deploy/secrets/mam_admin_password
+openssl rand -hex 24 > deploy/secrets/mam_user_password
+openssl rand -hex 24 > deploy/secrets/mam_text_admin_password
+chmod 600 deploy/secrets/*
 ```
 
 Not:
-- `.env.company` git'e commit edilmemelidir.
-- Daha güvenli model için Docker secrets veya server secret manager kullanılabilir.
-- İlk kurulumda env ile başlamak pratik olabilir, sonra secrets modeline geçilebilir.
+- `.env.company` ve `deploy/secrets/` git'e commit edilmemelidir.
+- Docker secrets dosya mount modelidir; kurumsal ortamda Vault, SOPS, Ansible Vault veya CI/CD secret store ile beslenebilir.
+- Parola değiştirirken mevcut Postgres volume'u ve mevcut Keycloak realm/client secret değerleri ayrıca güncellenmelidir; sadece secret dosyasını değiştirmek mevcut DB parolasını veya Keycloak client secret'ini otomatik değiştirmez.
 
 ---
 
@@ -267,15 +287,26 @@ keycloak:
     KC_DB_URL_HOST: keycloak-postgres
     KC_DB_URL_DATABASE: ${KEYCLOAK_DB_NAME}
     KC_DB_USERNAME: ${KEYCLOAK_DB_USER}
-    KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
     KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
-    KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
     KC_HTTP_ENABLED: "true"
     KC_HOSTNAME: auth.company.local
     KC_PROXY_HEADERS: xforwarded
+  entrypoint:
+    - /bin/sh
+    - /opt/keycloak/mam-keycloak-entrypoint.sh
   command:
     - start
     - --http-port=8080
+  volumes:
+    - ./deploy/keycloak/mam-realm.template.json:/opt/keycloak/mam-realm.template.json:ro
+    - ./deploy/keycloak-entrypoint.sh:/opt/keycloak/mam-keycloak-entrypoint.sh:ro
+  secrets:
+    - keycloak_db_password
+    - keycloak_admin_password
+    - oauth2_proxy_client_secret
+    - mam_admin_password
+    - mam_user_password
+    - mam_text_admin_password
 ```
 
 Neden:
@@ -354,8 +385,6 @@ oauth2-proxy:
   environment:
     OAUTH2_PROXY_PROVIDER: oidc
     OAUTH2_PROXY_CLIENT_ID: mam-web
-    OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_CLIENT_SECRET}
-    OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET}
     OAUTH2_PROXY_OIDC_ISSUER_URL: https://auth.company.local/realms/mam
     OAUTH2_PROXY_REDIRECT_URL: https://mam.company.local/oauth2/callback
     OAUTH2_PROXY_EMAIL_DOMAINS: "*"
@@ -367,15 +396,24 @@ oauth2-proxy:
     OAUTH2_PROXY_UPSTREAMS: http://app:3000
     OAUTH2_PROXY_REVERSE_PROXY: "true"
     OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
-    OAUTH2_PROXY_PASS_ACCESS_TOKEN: "true"
+    OAUTH2_PROXY_PASS_ACCESS_TOKEN: "false"
     OAUTH2_PROXY_PASS_USER_HEADERS: "true"
     OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+  entrypoint:
+    - /bin/sh
+    - /opt/mam/oauth2-proxy-entrypoint.sh
+  volumes:
+    - ./deploy/oauth2-proxy-entrypoint.sh:/opt/mam/oauth2-proxy-entrypoint.sh:ro
+  secrets:
+    - oauth2_proxy_client_secret
+    - oauth2_proxy_cookie_secret
 ```
 
 Not:
 - HTTPS varsa `OAUTH2_PROXY_COOKIE_SECURE=true` olmalıdır.
 - `REDIRECT_URL`, Keycloak client redirect URI ile birebir uyumlu olmalıdır.
 - Browser giriş adresi `https://mam.company.local` olmalıdır.
+- Client secret ve cookie secret `.env` içine yazılmamalı; Docker secrets ile `/run/secrets/...` üzerinden okunmalıdır.
 
 ---
 

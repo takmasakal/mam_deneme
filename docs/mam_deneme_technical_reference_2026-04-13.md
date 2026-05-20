@@ -1,5 +1,7 @@
 # MAM Deneme Teknik Referans
 
+> Not: Bu doküman eski referanstır. Güncel Docker secrets ve varsayılan parola prosedürü için `docs/docker-secrets.md`, güncel teknik referans için `docs/mam_deneme_technical_reference_2026-04-22.md` kullanılmalıdır.
+
 Tarih: 2026-04-13  
 Proje yolu: `/Users/erinc/OyunAlanım/mam_deneme`
 

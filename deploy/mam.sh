@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
 ENV_FILE="deploy/.env.easy"
-COMPOSE_FILE="docker-compose.easy.yml"
+COMPOSE_FILE="docker-compose.yml"
 
 detect_docker_cmd() {
   if docker info >/dev/null 2>&1; then
@@ -27,11 +27,11 @@ fi
 
 dc() {
   # shellcheck disable=SC2086
-  ${DOCKER_CMD} compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
+  ${DOCKER_CMD} compose -f "${COMPOSE_FILE}" "$@"
 }
 
 ensure_init() {
-  if [[ ! -f "${ENV_FILE}" || ! -f "deploy/keycloak/mam-realm.json" ]]; then
+  if [[ ! -f "${ENV_FILE}" || ! -d "deploy/secrets" ]]; then
     echo "Initializing deployment files..."
     ./deploy/init.sh "${1:-}"
   fi

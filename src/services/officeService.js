@@ -156,6 +156,31 @@ function createOfficeService(deps) {
     return actionUser || user || String(fallback || 'onlyoffice').trim() || 'onlyoffice';
   }
 
+  function getOfficeDocumentTokenPayload(row) {
+    return [
+      String(row.id || '').trim(),
+      String(row.media_url || '').trim(),
+      String(row.updated_at || row.created_at || '').trim(),
+      String(row.file_hash || '').trim(),
+      configVersion
+    ].join('|');
+  }
+
+  function createOfficeDocumentToken(row) {
+    return crypto
+      .createHmac('sha256', String(configVersion || 'mam-office-document'))
+      .update(getOfficeDocumentTokenPayload(row))
+      .digest('hex');
+  }
+
+  function isValidOfficeDocumentToken(row, token) {
+    const expected = createOfficeDocumentToken(row);
+    const given = String(token || '').trim();
+    const expectedBuffer = Buffer.from(expected);
+    const givenBuffer = Buffer.from(given);
+    return expectedBuffer.length === givenBuffer.length && crypto.timingSafeEqual(expectedBuffer, givenBuffer);
+  }
+
   async function buildOnlyOfficeConfig({ row, effective, lang }) {
     if (!row) throw createHttpError(404, 'Asset not found');
     if (!isOfficeDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
@@ -201,7 +226,8 @@ function createOfficeService(deps) {
       }
     }
 
-    const documentUrl = `${appInternalUrl}${mediaUrl}`;
+    const documentToken = createOfficeDocumentToken(row);
+    const documentUrl = `${appInternalUrl}/api/assets/${encodeURIComponent(String(row.id || '').trim())}/office-document?token=${encodeURIComponent(documentToken)}`;
     const callbackUrl = `${appInternalUrl}/api/assets/${encodeURIComponent(String(row.id || '').trim())}/office-callback`;
     const officeKeySeed = [
       String(row.id || '').trim(),
@@ -403,6 +429,7 @@ function createOfficeService(deps) {
   return {
     buildOnlyOfficeConfig,
     saveOnlyofficeCallbackVersion,
+    isValidOfficeDocumentToken,
     getOnlyOfficeDocumentType,
     normalizeDocxForOnlyOfficeEdit
   };

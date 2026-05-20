@@ -13,6 +13,7 @@
       readFileAsBase64,
       showUploadProxyDecisionModal,
       currentAssetsRef,
+      getDefaultIngestType,
       loadAssets
     } = deps || {};
 
@@ -130,6 +131,64 @@
       }
     }
 
+    function getFileExt(fileName = '') {
+      const match = String(fileName || '').toLowerCase().match(/\.([a-z0-9]+)$/);
+      return match ? match[1] : '';
+    }
+
+    function getUploadFileCategory(file) {
+      const mime = String(file?.type || '').toLowerCase();
+      const ext = getFileExt(file?.name || '');
+      if (mime.startsWith('video/') || ['mp4', 'mov', 'm4v', 'mkv', 'avi', 'webm', 'mpg', 'mpeg'].includes(ext)) return 'video';
+      if (mime.startsWith('audio/') || ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'oga'].includes(ext)) return 'audio';
+      if (mime.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tif', 'tiff', 'heic', 'heif'].includes(ext)) return 'photo';
+      if (['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'txt', 'rtf', 'csv', 'sql', 'py', 'js', 'ts', 'tsx', 'jsx', 'json', 'md', 'xml', 'yaml', 'yml', 'log', 'ini', 'cfg', 'conf', 'sh', 'bash', 'zsh', 'java', 'c', 'cpp', 'h', 'hpp', 'go', 'rs', 'rb', 'php', 'swift', 'kt'].includes(ext)) return 'document';
+      return 'other';
+    }
+
+    function normalizeAssetType(type) {
+      const value = String(type || '').trim().toLowerCase();
+      if (value === 'image') return 'photo';
+      return value;
+    }
+
+    function typeLabel(type) {
+      const value = normalizeAssetType(type);
+      if (value === 'video') return t('type_video');
+      if (value === 'audio') return t('type_audio');
+      if (value === 'document') return t('type_document');
+      if (value === 'photo') return t('type_photo');
+      return t('type_other');
+    }
+
+    function validateSelectedFileForType(file, declaredType) {
+      const expected = normalizeAssetType(declaredType);
+      if (!expected || expected === 'other') return { ok: true };
+      const actual = getUploadFileCategory(file);
+      if (actual === expected) return { ok: true };
+      return { ok: false, expected, actual };
+    }
+
+    function formatTypeMismatchMessage(expected, actual) {
+      return String(t('upload_type_mismatch') || 'Selected asset type is {expected}, but the selected file looks like {actual}.')
+        .replace('{expected}', typeLabel(expected))
+        .replace('{actual}', typeLabel(actual));
+    }
+
+    function updateFileAcceptForType() {
+      if (!mediaFileInput || !ingestForm) return;
+      const typeSelect = ingestForm.querySelector('[name="type"]');
+      const selected = normalizeAssetType(typeSelect?.value || '');
+      const acceptByType = {
+        video: 'video/*,.mp4,.mov,.m4v,.mkv,.avi,.webm,.mpg,.mpeg',
+        audio: 'audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.oga',
+        photo: 'image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.heic,.heif',
+        document: '.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,.csv,.sql,.py,.js,.ts,.tsx,.jsx,.json,.md,.xml,.yaml,.yml,.log,.ini,.cfg,.conf,.sh,.bash,.zsh,.java,.c,.cpp,.h,.hpp,.go,.rs,.rb,.php,.swift,.kt',
+        other: 'video/*,audio/*,image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.rtf,.csv,.sql,.py,.js,.ts,.tsx,.jsx,.json,.md,.xml,.yaml,.yml,.log,.ini,.cfg,.conf,.sh,.bash,.zsh,.java,.c,.cpp,.h,.hpp,.go,.rs,.rb,.php,.swift,.kt'
+      };
+      mediaFileInput.setAttribute('accept', acceptByType[selected] || acceptByType.other);
+    }
+
     function initIngestHandlers() {
       if (mediaFileBtn && String(mediaFileBtn.tagName || '').toLowerCase() !== 'label') {
         mediaFileBtn.addEventListener('click', () => {
@@ -137,8 +196,27 @@
         });
       }
 
+      updateFileAcceptForType();
+      ingestForm?.querySelector('[name="type"]')?.addEventListener('change', () => {
+        updateFileAcceptForType();
+        const file = mediaFileInput?.files?.[0];
+        const validation = validateSelectedFileForType(file, ingestForm.querySelector('[name="type"]')?.value);
+        if (file && !validation.ok) {
+          alert(formatTypeMismatchMessage(validation.expected, validation.actual));
+          if (mediaFileInput) mediaFileInput.value = '';
+          if (mediaFileName) mediaFileName.textContent = '';
+        }
+      });
+
       mediaFileInput?.addEventListener('change', (event) => {
         const file = event.target.files?.[0];
+        const validation = validateSelectedFileForType(file, ingestForm?.querySelector('[name="type"]')?.value);
+        if (file && !validation.ok) {
+          alert(formatTypeMismatchMessage(validation.expected, validation.actual));
+          event.target.value = '';
+          if (mediaFileName) mediaFileName.textContent = '';
+          return;
+        }
         if (mediaFileName) mediaFileName.textContent = file?.name || '';
       });
 
@@ -156,6 +234,11 @@
         }
         if (!mediaFile.size) {
           alert(t('upload_empty_file'));
+          return;
+        }
+        const typeValidation = validateSelectedFileForType(mediaFile, formData.get('type'));
+        if (!typeValidation.ok) {
+          alert(formatTypeMismatchMessage(typeValidation.expected, typeValidation.actual));
           return;
         }
 
@@ -202,7 +285,10 @@
           }
           setUploadProgress(96, t('processing'));
           ingestForm.reset();
-          ingestForm.querySelector('[name="type"]').value = 'Video';
+          ingestForm.querySelector('[name="type"]').value = typeof getDefaultIngestType === 'function'
+            ? getDefaultIngestType()
+            : 'Video';
+          updateFileAcceptForType();
           if (mediaFileName) mediaFileName.textContent = '';
           await waitUntilAssetVisible(created?.id || null);
           setUploadProgress(100, t('processing'));

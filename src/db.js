@@ -1,6 +1,37 @@
+const fs = require('fs');
 const { Pool } = require('pg');
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/mam_mvp';
+function readSecretFile(filePath) {
+  if (!filePath) return '';
+  try {
+    return fs.readFileSync(filePath, 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
+function readEnvOrFile(name) {
+  const direct = process.env[name];
+  if (direct) return direct;
+  return readSecretFile(process.env[`${name}_FILE`]);
+}
+
+function buildConnectionString() {
+  const directUrl = readEnvOrFile('DATABASE_URL');
+  if (directUrl) return directUrl;
+
+  const user = process.env.MAM_DB_USER || process.env.POSTGRES_USER || 'postgres';
+  const password = readEnvOrFile('MAM_DB_PASSWORD');
+  if (!password) {
+    throw new Error('Database password is missing. Set DATABASE_URL, DATABASE_URL_FILE, MAM_DB_PASSWORD, or MAM_DB_PASSWORD_FILE.');
+  }
+  const host = process.env.MAM_DB_HOST || 'localhost';
+  const port = process.env.MAM_DB_PORT || '5432';
+  const database = process.env.MAM_DB_NAME || process.env.POSTGRES_DB || 'mam_mvp';
+  return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${encodeURIComponent(database)}`;
+}
+
+const connectionString = buildConnectionString();
 
 const pool = new Pool({ connectionString });
 
@@ -31,6 +62,12 @@ async function initDb() {
       owner_groups TEXT[] NOT NULL DEFAULT '{}',
       allowed_users TEXT[] NOT NULL DEFAULT '{}',
       allowed_groups TEXT[] NOT NULL DEFAULT '{}',
+      denied_users TEXT[] NOT NULL DEFAULT '{}',
+      denied_groups TEXT[] NOT NULL DEFAULT '{}',
+      edit_allowed_users TEXT[] NOT NULL DEFAULT '{}',
+      edit_allowed_groups TEXT[] NOT NULL DEFAULT '{}',
+      edit_denied_users TEXT[] NOT NULL DEFAULT '{}',
+      edit_denied_groups TEXT[] NOT NULL DEFAULT '{}',
       deleted_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL
@@ -63,6 +100,24 @@ async function initDb() {
     ALTER TABLE assets
     ADD COLUMN IF NOT EXISTS allowed_groups TEXT[] NOT NULL DEFAULT '{}';
 
+    ALTER TABLE assets
+    ADD COLUMN IF NOT EXISTS denied_users TEXT[] NOT NULL DEFAULT '{}';
+
+    ALTER TABLE assets
+    ADD COLUMN IF NOT EXISTS denied_groups TEXT[] NOT NULL DEFAULT '{}';
+
+    ALTER TABLE assets
+    ADD COLUMN IF NOT EXISTS edit_allowed_users TEXT[] NOT NULL DEFAULT '{}';
+
+    ALTER TABLE assets
+    ADD COLUMN IF NOT EXISTS edit_allowed_groups TEXT[] NOT NULL DEFAULT '{}';
+
+    ALTER TABLE assets
+    ADD COLUMN IF NOT EXISTS edit_denied_users TEXT[] NOT NULL DEFAULT '{}';
+
+    ALTER TABLE assets
+    ADD COLUMN IF NOT EXISTS edit_denied_groups TEXT[] NOT NULL DEFAULT '{}';
+
     UPDATE assets
     SET visibility = 'public'
     WHERE visibility = '';
@@ -74,6 +129,27 @@ async function initDb() {
       created_at TIMESTAMPTZ NOT NULL,
       created_by TEXT NOT NULL DEFAULT ''
     );
+
+    CREATE TABLE IF NOT EXISTS asset_type_access (
+      type_group TEXT PRIMARY KEY,
+      visibility TEXT NOT NULL DEFAULT 'public',
+      owner_groups TEXT[] NOT NULL DEFAULT '{}',
+      allowed_users TEXT[] NOT NULL DEFAULT '{}',
+      allowed_groups TEXT[] NOT NULL DEFAULT '{}',
+      denied_users TEXT[] NOT NULL DEFAULT '{}',
+      denied_groups TEXT[] NOT NULL DEFAULT '{}',
+      edit_allowed_users TEXT[] NOT NULL DEFAULT '{}',
+      edit_allowed_groups TEXT[] NOT NULL DEFAULT '{}',
+      edit_denied_users TEXT[] NOT NULL DEFAULT '{}',
+      edit_denied_groups TEXT[] NOT NULL DEFAULT '{}',
+      updated_at TIMESTAMPTZ NOT NULL,
+      updated_by TEXT NOT NULL DEFAULT ''
+    );
+
+    INSERT INTO asset_type_access (type_group, updated_at)
+    SELECT item, NOW()
+    FROM UNNEST(ARRAY['video', 'audio', 'photo', 'document', 'other']) AS item
+    ON CONFLICT (type_group) DO NOTHING;
 
     CREATE TABLE IF NOT EXISTS asset_versions (
       version_id TEXT PRIMARY KEY,
@@ -264,6 +340,7 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_media_jobs_status ON media_processing_jobs(status);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_group_admins_group_user ON group_admins(group_name, username);
     CREATE INDEX IF NOT EXISTS idx_group_admins_username ON group_admins(username);
+    CREATE INDEX IF NOT EXISTS idx_asset_type_access_visibility ON asset_type_access(visibility);
     CREATE INDEX IF NOT EXISTS idx_learned_turkish_corrections_updated ON learned_turkish_corrections(updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_audit_events_created ON audit_events(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_audit_events_action ON audit_events(action);
