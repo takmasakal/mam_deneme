@@ -1,6 +1,7 @@
 services:
   nginx:
     image: nginx:1.27-alpine
+    pull_policy: never
     container_name: mam-nginx
     depends_on:
       oauth2-proxy:

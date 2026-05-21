@@ -1740,7 +1740,6 @@ function videoToolsPageMarkup(asset) {
 detailModule = window.createMainDetailModule({
   t,
   tf,
-  api,
   deleteApi,
   escapeHtml,
   isVideo,

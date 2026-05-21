@@ -3,6 +3,7 @@ name: mam_deneme
 services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    pull_policy: never
     container_name: mam-elasticsearch
     environment:
       discovery.type: single-node
@@ -15,6 +16,7 @@ services:
 
   postgres:
     image: postgres:16
+    pull_policy: never
     container_name: mam-postgres
     environment:
       POSTGRES_USER: postgres
@@ -90,6 +92,7 @@ services:
 
   onlyoffice:
     image: onlyoffice/documentserver:8.3
+    pull_policy: never
     container_name: mam-onlyoffice
     environment:
       JWT_ENABLED: "false"
@@ -123,6 +126,7 @@ services:
 
   keycloak-postgres:
     image: postgres:16
+    pull_policy: never
     container_name: mam-keycloak-postgres
     environment:
       POSTGRES_USER: ${KEYCLOAK_DB_USER:-keycloak}
@@ -144,6 +148,7 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:25.0
+    pull_policy: never
     container_name: mam-keycloak
     depends_on:
       keycloak-postgres:

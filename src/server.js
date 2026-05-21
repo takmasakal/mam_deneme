@@ -105,6 +105,7 @@ const DEFAULT_ADMIN_SETTINGS = {
     maxWidth: 82
   },
   auditRetentionDays: 180,
+  mediaJobRetentionDays: 30,
   apiTokenEnabled: false,
   apiToken: '',
   oidcBearerEnabled: false,
@@ -150,6 +151,10 @@ function normalizeSubtitleStyle(value = {}) {
 
 function normalizeAuditRetentionDays(value) {
   return clampNumber(value, 1, 3650, DEFAULT_ADMIN_SETTINGS.auditRetentionDays);
+}
+
+function normalizeMediaJobRetentionDays(value) {
+  return clampNumber(value, 1, 3650, DEFAULT_ADMIN_SETTINGS.mediaJobRetentionDays);
 }
 function readSecretFile(filePath) {
   if (!filePath) return '';
@@ -5637,7 +5642,8 @@ async function getAdminSettings() {
     ...DEFAULT_ADMIN_SETTINGS,
     ...value,
     subtitleStyle: normalizeSubtitleStyle(value.subtitleStyle),
-    auditRetentionDays: normalizeAuditRetentionDays(value.auditRetentionDays)
+    auditRetentionDays: normalizeAuditRetentionDays(value.auditRetentionDays),
+    mediaJobRetentionDays: normalizeMediaJobRetentionDays(value.mediaJobRetentionDays)
   };
 }
 
@@ -5748,6 +5754,37 @@ function scheduleAuditCleanup() {
   const run = async () => {
     const settings = await getAdminSettings().catch(() => DEFAULT_ADMIN_SETTINGS);
     await cleanupAuditEvents(settings.auditRetentionDays);
+  };
+  run().catch(() => {});
+  setInterval(() => {
+    run().catch(() => {});
+  }, 24 * 60 * 60 * 1000);
+}
+
+let mediaJobCleanupInProgress = false;
+
+async function cleanupMediaProcessingJobs(retentionDays = DEFAULT_ADMIN_SETTINGS.mediaJobRetentionDays) {
+  if (mediaJobCleanupInProgress) return 0;
+  mediaJobCleanupInProgress = true;
+  const days = normalizeMediaJobRetentionDays(retentionDays);
+  try {
+    const result = await pool.query(
+      `
+        DELETE FROM media_processing_jobs
+        WHERE updated_at < NOW() - ($1::int * INTERVAL '1 day')
+      `,
+      [days]
+    );
+    return Number(result.rowCount || 0);
+  } finally {
+    mediaJobCleanupInProgress = false;
+  }
+}
+
+function scheduleMediaJobCleanup() {
+  const run = async () => {
+    const settings = await getAdminSettings().catch(() => DEFAULT_ADMIN_SETTINGS);
+    await cleanupMediaProcessingJobs(settings.mediaJobRetentionDays);
   };
   run().catch(() => {});
   setInterval(() => {
@@ -7674,7 +7711,9 @@ registerAdminRoutes(app, {
   normalizePlayerUiMode,
   normalizeSubtitleStyle,
   normalizeAuditRetentionDays,
+  normalizeMediaJobRetentionDays,
   cleanupAuditEvents,
+  cleanupMediaProcessingJobs,
   recordAuditEvent,
   generateApiToken,
   systemHealthCache,
@@ -7950,6 +7989,7 @@ initDb()
       .then(() => backfillElasticIndex().catch(() => {}))
       .catch(() => {});
     scheduleAuditCleanup();
+    scheduleMediaJobCleanup();
     app.listen(PORT, () => {
       console.log(`MAM MVP running on http://localhost:${PORT}`);
     });

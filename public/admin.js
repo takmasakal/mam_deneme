@@ -171,6 +171,11 @@ let i18n = {
     asset_rights_saved: 'Asset rights saved.',
     asset_rights_load_failed: 'Failed to load asset rights.',
     asset_rights_save_failed: 'Failed to save asset rights.',
+    asset_lock_locked_by: 'Locked by',
+    asset_lock_unlock: 'Unlock',
+    asset_lock_unlock_confirm: 'Release this asset edit lock?',
+    asset_lock_unlock_done: 'Asset edit lock released.',
+    asset_lock_unlock_failed: 'Failed to release asset edit lock.',
     asset_rights_asset_col: 'Asset',
     asset_rights_mode_asset: 'Asset',
     asset_rights_mode_type: 'Type',
@@ -264,6 +269,7 @@ let i18n = {
     settings_group_identity: 'Token & OIDC',
     settings_group_audit: 'Audit Log',
     audit_retention_days: 'Log retention (days)',
+    media_job_retention_days: 'Recent media jobs retention (days)',
     settings_group_docs: 'Documentation',
     audit_filter_actor: 'User',
     audit_filter_action: 'Action',
@@ -379,6 +385,7 @@ let i18n = {
     health_up: 'UP',
     health_down: 'DOWN',
     health_recent_jobs: 'Recent Media Jobs',
+    health_recent_jobs_window: 'Last {days} days',
     health_subtitle_jobs: 'Subtitle Jobs',
     health_ocr_jobs: 'OCR Jobs',
     health_job_running_now: 'Running now',
@@ -531,6 +538,11 @@ let i18n = {
     asset_rights_saved: 'Varlık yetkileri kaydedildi.',
     asset_rights_load_failed: 'Varlık yetkileri yüklenemedi.',
     asset_rights_save_failed: 'Varlık yetkileri kaydedilemedi.',
+    asset_lock_locked_by: 'Kilitleyen',
+    asset_lock_unlock: 'Kilidi Aç',
+    asset_lock_unlock_confirm: 'Bu varlık düzenleme kilidi kaldırılsın mı?',
+    asset_lock_unlock_done: 'Varlık düzenleme kilidi kaldırıldı.',
+    asset_lock_unlock_failed: 'Varlık düzenleme kilidi kaldırılamadı.',
     asset_rights_asset_col: 'Varlık',
     asset_rights_mode_asset: 'Varlık',
     asset_rights_mode_type: 'Tür',
@@ -624,6 +636,7 @@ let i18n = {
     settings_group_identity: 'Token ve OIDC',
     settings_group_audit: 'Audit Log',
     audit_retention_days: 'Log saklama süresi (gün)',
+    media_job_retention_days: 'Son medya işleri saklama süresi (gün)',
     settings_group_docs: 'Dokümantasyon',
     audit_filter_actor: 'Kullanıcı',
     audit_filter_action: 'İşlem',
@@ -739,6 +752,7 @@ let i18n = {
     health_up: 'AYAKTA',
     health_down: 'KAPALI',
     health_recent_jobs: 'Son Medya İşleri',
+    health_recent_jobs_window: 'Son {days} gün',
     health_subtitle_jobs: 'Altyazı İşleri',
     health_ocr_jobs: 'OCR İşleri',
     health_job_running_now: 'Şu an çalışan',
@@ -1477,6 +1491,7 @@ function renderSystemHealth(data) {
   const services = data?.services || {};
   const integrity = data?.integrity || {};
   const recent = data?.recentJobs || {};
+  const mediaJobRetentionDays = Math.max(1, Number(data?.mediaJobRetentionDays) || 30);
   const serviceEntries = [
     ['health_service_app', services.app],
     ['health_service_postgres', services.postgres],
@@ -1512,8 +1527,12 @@ function renderSystemHealth(data) {
     `<div class="row"><strong>${escapeHtml(t('health_integrity'))}</strong><span>${escapeHtml(t('health_missing_proxy'))}: ${escapeHtml(String(integrity.missingProxy || 0))} | ${escapeHtml(t('health_missing_thumbnail'))}: ${escapeHtml(String(integrity.missingThumbnail || 0))} | ${escapeHtml(t('health_missing_subtitle'))}: ${escapeHtml(String(integrity.missingSubtitle || 0))} | ${escapeHtml(t('health_missing_ocr'))}: ${escapeHtml(String(integrity.missingOcr || 0))}</span></div>`
   ].join('');
   if (systemJobStatusEl) {
+    const windowLabel = t('health_recent_jobs_window').replace('{days}', String(mediaJobRetentionDays));
     systemJobStatusEl.innerHTML = `
-      <h3>${escapeHtml(t('health_recent_jobs'))}</h3>
+      <div class="system-job-status-head">
+        <h3>${escapeHtml(t('health_recent_jobs'))}</h3>
+        <span>${escapeHtml(windowLabel)}</span>
+      </div>
       <div class="system-job-grid">
         ${renderSystemJobGroup('health_subtitle_jobs', recent.subtitle || {}, 'subtitle')}
         ${renderSystemJobGroup('health_ocr_jobs', recent.ocr || {}, 'ocr')}
@@ -2752,15 +2771,19 @@ function renderAssetRightsRows(assets = []) {
     const editDeniedUsers = Array.isArray(asset.editDeniedUsers) ? asset.editDeniedUsers.join(', ') : '';
     const title = isTypeMode ? getAssetTypeGroupLabel(asset.typeGroup) : (asset.title || asset.id || '');
     const meta = isTypeMode ? labels.type : [asset.type || '-', asset.owner || '-'].filter(Boolean).join(' · ');
-    const ownerGroupInput = isTypeMode
-      ? `<input name="ownerGroups" value="${escapeHtml(ownerGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />`
-      : `<input value="${escapeHtml(ownerGroups)}" disabled />`;
+    const lock = !isTypeMode && asset.editLock && typeof asset.editLock === 'object' ? asset.editLock : null;
+    const lockName = String(lock?.lockedByName || lock?.lockedBy || '').trim();
+    const lockInfo = lock ? `
+          <span class="asset-rights-lock">${escapeHtml(t('asset_lock_locked_by'))}: ${escapeHtml(lockName || '-')}</span>
+        ` : '';
+    const ownerGroupInput = `<input name="ownerGroups" value="${escapeHtml(ownerGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />`;
 
     return `
       <form class="asset-rights-row" data-access-mode="${escapeHtml(assetRightsMode)}" data-asset-id="${escapeHtml(asset.id || '')}" data-type-group="${escapeHtml(asset.typeGroup || '')}">
         <div class="asset-rights-asset" data-asset-rights-cell-label="${isTypeMode ? 'type' : 'asset'}" data-label="${escapeHtml(isTypeMode ? labels.type : labels.asset)}">
           <strong ${isTypeMode ? `data-asset-rights-type-label="${escapeHtml(asset.typeGroup || '')}"` : ''}>${escapeHtml(title)}</strong>
           <span>${escapeHtml(meta)}</span>
+          ${lockInfo}
         </div>
         <label class="asset-rights-cell" data-asset-rights-cell-label="visibility" data-label="${escapeHtml(labels.visibility)}">
           <span data-asset-rights-label="visibility">${escapeHtml(labels.visibility)}</span>
@@ -2803,6 +2826,7 @@ function renderAssetRightsRows(assets = []) {
           <input name="editDeniedUsers" value="${escapeHtml(editDeniedUsers)}" placeholder="user@example.com" />
         </label>
         <div class="asset-rights-actions">
+          ${lock ? `<button type="button" class="asset-lock-unlock-btn" data-unlock-asset-id="${escapeHtml(asset.id || '')}">${escapeHtml(t('asset_lock_unlock'))}</button>` : ''}
           <button type="submit" data-asset-rights-label="save">${escapeHtml(labels.save)}</button>
         </div>
       </form>
@@ -2971,6 +2995,9 @@ async function loadSettings() {
   if (settingsForm.elements.auditRetentionDays) {
     settingsForm.elements.auditRetentionDays.value = String(settings.auditRetentionDays || 180);
   }
+  if (settingsForm.elements.mediaJobRetentionDays) {
+    settingsForm.elements.mediaJobRetentionDays.value = String(settings.mediaJobRetentionDays || 30);
+  }
   {
     const advancedModeInput = document.getElementById('ocrDefaultAdvancedMode');
     const turkishFixInput = document.getElementById('ocrDefaultTurkishAiCorrect');
@@ -3029,7 +3056,8 @@ settingsForm.addEventListener('submit', async (event) => {
     oidcIssuerUrl: String(settingsForm.elements.oidcIssuerUrl.value || '').trim(),
     oidcJwksUrl: String(settingsForm.elements.oidcJwksUrl.value || '').trim(),
     oidcAudience: String(settingsForm.elements.oidcAudience.value || '').trim(),
-    auditRetentionDays: Number(settingsForm.elements.auditRetentionDays?.value) || 180
+    auditRetentionDays: Number(settingsForm.elements.auditRetentionDays?.value) || 180,
+    mediaJobRetentionDays: Number(settingsForm.elements.mediaJobRetentionDays?.value) || 30
   };
   await api('/api/admin/settings', { method: 'PATCH', body: JSON.stringify(payload) });
   settingsMsg.textContent = t('settings_saved');
@@ -3595,6 +3623,25 @@ assetRightsRows?.addEventListener('submit', async (event) => {
     if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || t('asset_rights_save_failed'));
   } finally {
     if (saveBtn) saveBtn.disabled = false;
+  }
+});
+
+assetRightsRows?.addEventListener('click', async (event) => {
+  const unlockBtn = event.target.closest('[data-unlock-asset-id]');
+  if (!unlockBtn) return;
+  event.preventDefault();
+  const assetId = String(unlockBtn.getAttribute('data-unlock-asset-id') || '').trim();
+  if (!assetId) return;
+  if (!window.confirm(t('asset_lock_unlock_confirm'))) return;
+  unlockBtn.disabled = true;
+  try {
+    await api(`/api/admin/assets/${encodeURIComponent(assetId)}/edit-lock`, { method: 'DELETE' });
+    if (assetRightsMsg) assetRightsMsg.textContent = t('asset_lock_unlock_done');
+    await loadAssetRightsRows();
+  } catch (error) {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || t('asset_lock_unlock_failed'));
+  } finally {
+    unlockBtn.disabled = false;
   }
 });
 

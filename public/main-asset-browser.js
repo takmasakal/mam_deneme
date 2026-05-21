@@ -44,6 +44,10 @@
 
 function thumbnailMarkup(asset) {
   const thumbSrc = escapeHtml(asset.thumbnailUrl || '');
+  const declaredType = String(asset?.type || '').trim().toLowerCase();
+  if (declaredType === 'other' || declaredType === 'file') {
+    return '<div class="asset-thumb asset-thumb-file">FILE</div>';
+  }
   if (isImage(asset)) {
     return `<img class="asset-thumb" src="${escapeHtml(asset.thumbnailUrl || asset.mediaUrl || '')}" alt="${escapeHtml(asset.title)}" />`;
   }
@@ -68,6 +72,8 @@ function thumbnailMarkup(asset) {
 }
 
 function assetTypeIcon(asset) {
+  const declaredType = String(asset?.type || '').trim().toLowerCase();
+  if (declaredType === 'other' || declaredType === 'file') return '📦';
   if (isVideo(asset)) return '🎬';
   if (isAudio(asset)) return '🎵';
   if (isImage(asset)) return '🖼️';

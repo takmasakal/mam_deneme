@@ -31,6 +31,10 @@ function mediaViewer(asset, options = {}) {
   const includeDetailPin = options.includeDetailPin === true;
   const tcInControlBar = options.tcInControlBar === true;
   if (!asset.mediaUrl) return `<div class="empty">${escapeHtml(t('no_media'))}</div>`;
+  const declaredType = String(asset?.type || '').trim().toLowerCase();
+  if (declaredType === 'other' || declaredType === 'file') {
+    return `<div class="empty">${escapeHtml(t('preview_not_supported'))}</div>`;
+  }
 
   const playbackUrl = escapeHtml(isVideo(asset) ? (asset.proxyUrl || '') : asset.mediaUrl);
   const proxyStatus = escapeHtml(asset.proxyStatus || 'not_applicable');

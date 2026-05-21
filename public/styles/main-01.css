@@ -175,7 +175,7 @@ body.video-tools-page-mode #assetDetail {
   position: absolute;
   left: 54px;
   right: 64px;
-  top: 50%;
+  top: calc(50% - 7px);
   transform: translateY(-50%);
   display: inline-flex;
   align-items: center;

@@ -38,7 +38,9 @@ function registerAdminRoutes(app, deps) {
     normalizePlayerUiMode,
     normalizeSubtitleStyle,
     normalizeAuditRetentionDays,
+    normalizeMediaJobRetentionDays,
     cleanupAuditEvents,
+    cleanupMediaProcessingJobs,
     recordAuditEvent,
     generateApiToken,
     systemHealthCache,
@@ -338,13 +340,21 @@ app.get('/api/admin/assets/access', async (req, res) => {
     const result = await pool.query(
       `
         SELECT
-          id, title, file_name, owner, type, visibility, owner_user, owner_groups,
-          allowed_users, allowed_groups, denied_users, denied_groups,
-          edit_allowed_users, edit_allowed_groups, edit_denied_users, edit_denied_groups,
-          updated_at
+          assets.id, assets.title, assets.file_name, assets.owner, assets.type, assets.visibility, assets.owner_user, assets.owner_groups,
+          assets.allowed_users, assets.allowed_groups, assets.denied_users, assets.denied_groups,
+          assets.edit_allowed_users, assets.edit_allowed_groups, assets.edit_denied_users, assets.edit_denied_groups,
+          assets.updated_at,
+          asset_edit_locks.locked_by,
+          asset_edit_locks.locked_by_name,
+          asset_edit_locks.purpose AS lock_purpose,
+          asset_edit_locks.created_at AS lock_created_at,
+          asset_edit_locks.expires_at AS lock_expires_at
         FROM assets
+        LEFT JOIN asset_edit_locks
+          ON asset_edit_locks.asset_id = assets.id
+         AND asset_edit_locks.expires_at > NOW()
         ${whereSql}
-        ORDER BY updated_at DESC
+        ORDER BY assets.updated_at DESC
         LIMIT $${pageValues.length - 1}
         OFFSET $${pageValues.length}
       `,
@@ -368,12 +378,48 @@ app.get('/api/admin/assets/access', async (req, res) => {
         editAllowedGroups: row.edit_allowed_groups || [],
         editDeniedUsers: row.edit_denied_users || [],
         editDeniedGroups: row.edit_denied_groups || [],
+        editLock: row.locked_by ? {
+          lockedBy: row.locked_by || '',
+          lockedByName: row.locked_by_name || row.locked_by || '',
+          purpose: row.lock_purpose || '',
+          lockedAt: row.lock_created_at,
+          expiresAt: row.lock_expires_at
+        } : null,
         updatedAt: row.updated_at
       })),
       pagination: { page, limit, total, totalPages }
     });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to load asset access rows' });
+  }
+});
+
+app.delete('/api/admin/assets/:id/edit-lock', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    if (!assetEditLockService) return res.status(503).json({ error: 'Edit lock service is not available' });
+    const assetId = String(req.params.id || '').trim();
+    if (!assetId) return res.status(400).json({ error: 'assetId is required' });
+    const assetResult = await pool.query('SELECT id, title, file_name FROM assets WHERE id = $1', [assetId]);
+    const assetRow = assetResult.rows[0] || null;
+    if (!assetRow) return res.status(404).json({ error: 'Asset not found' });
+    const result = await assetEditLockService.releaseAsset(assetId);
+    await recordAuditEvent?.(req, {
+      action: 'asset.edit_lock_released',
+      targetType: 'asset',
+      targetId: assetId,
+      targetTitle: String(assetRow.title || assetRow.file_name || assetId),
+      details: {
+        source: 'admin_rights_panel',
+        forced: true,
+        released: Boolean(result.released),
+        lock: result.lock || null
+      }
+    });
+    return res.json({ released: Boolean(result.released), lock: result.lock || null });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to release edit lock' });
   }
 });
 
@@ -1321,6 +1367,9 @@ app.patch('/api/admin/settings', async (req, res) => {
       auditRetentionDays: Object.prototype.hasOwnProperty.call(req.body, 'auditRetentionDays')
         ? normalizeAuditRetentionDays(req.body.auditRetentionDays)
         : normalizeAuditRetentionDays(current.auditRetentionDays),
+      mediaJobRetentionDays: Object.prototype.hasOwnProperty.call(req.body, 'mediaJobRetentionDays')
+        ? normalizeMediaJobRetentionDays(req.body.mediaJobRetentionDays)
+        : normalizeMediaJobRetentionDays(current.mediaJobRetentionDays),
       apiTokenEnabled: Object.prototype.hasOwnProperty.call(req.body, 'apiTokenEnabled')
         ? Boolean(req.body.apiTokenEnabled)
         : current.apiTokenEnabled,
@@ -1342,6 +1391,11 @@ app.patch('/api/admin/settings', async (req, res) => {
     };
     const saved = await saveAdminSettings(next);
     cleanupAuditEvents?.(saved.auditRetentionDays).catch(() => {});
+    cleanupMediaProcessingJobs?.(saved.mediaJobRetentionDays).catch(() => {});
+    if (systemHealthCache) {
+      systemHealthCache.expiresAt = 0;
+      systemHealthCache.value = null;
+    }
     return res.json(saved);
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to save settings' });
@@ -1712,6 +1766,9 @@ app.get('/api/admin/system-health', async (req, res) => {
         segmentCount: jobType === 'video_ocr' ? Number(mapped.segmentCount || 0) : 0
       };
     };
+    const settings = await getAdminSettings().catch(() => ({ mediaJobRetentionDays: 30 }));
+    const mediaJobRetentionDays = normalizeMediaJobRetentionDays(settings.mediaJobRetentionDays);
+    cleanupMediaProcessingJobs?.(mediaJobRetentionDays).catch(() => {});
 
     const [proxyRunning, proxyFailed] = [
       Array.from(proxyJobs.values()).filter((job) => ['running', 'queued'].includes(String(job.status || ''))).length,
@@ -1722,8 +1779,10 @@ app.get('/api/admin/system-health', async (req, res) => {
         SELECT job_type, status, COUNT(*)::int AS count
         FROM media_processing_jobs
         WHERE job_type IN ('subtitle', 'video_ocr')
+          AND updated_at >= NOW() - ($1::int * INTERVAL '1 day')
         GROUP BY job_type, status
-      `
+      `,
+      [mediaJobRetentionDays]
     );
     const mediaCounts = {};
     mediaJobsStats.rows.forEach((row) => {
@@ -1772,9 +1831,11 @@ app.get('/api/admin/system-health', async (req, res) => {
         FROM media_processing_jobs mpj
         LEFT JOIN assets a ON a.id = mpj.asset_id
         WHERE mpj.job_type IN ('subtitle', 'video_ocr')
+          AND mpj.updated_at >= NOW() - ($1::int * INTERVAL '1 day')
         ORDER BY mpj.updated_at DESC
         LIMIT 200
-      `
+      `,
+      [mediaJobRetentionDays]
     );
     const recentJobs = {
       subtitle: { active: null, latestCompleted: null, latestFailed: null },
@@ -1824,7 +1885,8 @@ app.get('/api/admin/system-health', async (req, res) => {
         missingSubtitle,
         missingOcr
       },
-      recentJobs
+      recentJobs,
+      mediaJobRetentionDays
     };
     systemHealthCache.expiresAt = Date.now() + SYSTEM_HEALTH_CACHE_TTL_MS;
     systemHealthCache.value = payload;

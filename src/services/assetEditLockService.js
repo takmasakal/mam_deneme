@@ -144,8 +144,8 @@ function createAssetEditLockService({ pool, ttlSeconds = 900 } = {}) {
   async function releaseAsset(assetId) {
     const safeAssetId = String(assetId || '').trim();
     if (!safeAssetId) return { ok: true, released: false };
-    const result = await pool.query('DELETE FROM asset_edit_locks WHERE asset_id = $1', [safeAssetId]);
-    return { ok: true, released: Number(result.rowCount || 0) > 0 };
+    const result = await pool.query('DELETE FROM asset_edit_locks WHERE asset_id = $1 RETURNING *', [safeAssetId]);
+    return { ok: true, released: Number(result.rowCount || 0) > 0, lock: toPayload(result.rows?.[0]) };
   }
 
   async function assertWritable(req, assetId) {
