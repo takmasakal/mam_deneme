@@ -1,4 +1,16 @@
 services:
+  elasticsearch:
+    pull_policy: missing
+
+  postgres:
+    pull_policy: missing
+
+  onlyoffice:
+    pull_policy: missing
+
+  keycloak-postgres:
+    pull_policy: missing
+
   oauth2-proxy:
     environment:
       OAUTH2_PROXY_OIDC_ISSUER_URL: ${PUBLIC_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM:-mam}
@@ -10,6 +22,7 @@ services:
       OAUTH2_PROXY_WHITELIST_DOMAINS: ${OAUTH2_PROXY_WHITELIST_DOMAINS:-.company.local}
 
   keycloak:
+    pull_policy: missing
     environment:
       KC_HOSTNAME: ${PUBLIC_KEYCLOAK_HOST}
       KC_HOSTNAME_STRICT: "true"
