@@ -6,6 +6,12 @@
   "resetPasswordAllowed": true,
   "rememberMe": true,
   "loginTheme": "mam",
+  "internationalizationEnabled": true,
+  "defaultLocale": "tr",
+  "supportedLocales": [
+    "tr",
+    "en"
+  ],
   "clients": [
     {
       "clientId": "mam-web",
