@@ -14,18 +14,40 @@ print(urllib.parse.quote(sys.argv[1].rstrip('/'), safe=''))
 PY
 }
 
+is_ipv4() {
+  [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
+}
+
 mam_host="${1:-${PUBLIC_MAM_HOST:-mam.company.local}}"
-keycloak_host="${2:-${PUBLIC_KEYCLOAK_HOST:-auth.company.local}}"
-office_host="${3:-${PUBLIC_OFFICE_HOST:-office.company.local}}"
-company_domain="${4:-${OAUTH2_PROXY_WHITELIST_DOMAINS:-.company.local}}"
+direct_ip_mode=false
+if [[ $# -eq 1 ]] && is_ipv4 "${mam_host}"; then
+  direct_ip_mode=true
+fi
+
+if [[ "${direct_ip_mode}" == "true" ]]; then
+  keycloak_host="${mam_host}"
+  office_host="${mam_host}"
+  company_domain="${mam_host},${mam_host}:3000,${mam_host}:8081,${mam_host}:8082"
+  mam_url="http://${mam_host}:3000"
+  keycloak_url="http://${keycloak_host}:8081"
+  office_url="http://${office_host}:8082"
+  oauth_cookie_secure=false
+  keycloak_hostname_strict=false
+else
+  keycloak_host="${2:-${PUBLIC_KEYCLOAK_HOST:-auth.company.local}}"
+  office_host="${3:-${PUBLIC_OFFICE_HOST:-office.company.local}}"
+  company_domain="${4:-${OAUTH2_PROXY_WHITELIST_DOMAINS:-.company.local}}"
+  mam_url="https://${mam_host}"
+  keycloak_url="https://${keycloak_host}"
+  office_url="https://${office_host}"
+  oauth_cookie_secure=true
+  keycloak_hostname_strict=true
+fi
 
 if [[ ! -d "${SECRETS_DIR}" ]]; then
   "${DEPLOY_DIR}/init.sh" "${mam_host}"
 fi
 
-mam_url="https://${mam_host}"
-keycloak_url="https://${keycloak_host}"
-office_url="https://${office_host}"
 encoded_mam_url="$(urlencode "${mam_url}")"
 
 cat > "${ENV_OUT}" <<EOV
@@ -46,6 +68,8 @@ KEYCLOAK_DB_USER=keycloak
 KEYCLOAK_DB_NAME=keycloak
 OAUTH2_PROXY_CLIENT_ID=mam-web
 OAUTH2_PROXY_WHITELIST_DOMAINS=${company_domain}
+OAUTH2_PROXY_COOKIE_SECURE=${oauth_cookie_secure}
+KC_HOSTNAME_STRICT=${keycloak_hostname_strict}
 
 OFFICE_EDITOR_PROVIDER=onlyoffice
 ONLYOFFICE_PUBLIC_URL=${office_url}
