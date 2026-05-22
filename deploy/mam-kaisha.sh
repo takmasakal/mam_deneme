@@ -14,13 +14,16 @@ detect_docker_cmd() {
   echo ""
 }
 
-DOCKER_CMD="${DOCKER_CMD:-$(detect_docker_cmd)}"
-if [[ -z "${DOCKER_CMD}" ]]; then
-  echo "Docker daemon is not reachable. Start Docker or use sudo."
-  exit 1
-fi
+DOCKER_CMD="${DOCKER_CMD:-}"
 
 dc() {
+  if [[ -z "${DOCKER_CMD}" ]]; then
+    DOCKER_CMD="$(detect_docker_cmd)"
+  fi
+  if [[ -z "${DOCKER_CMD}" ]]; then
+    echo "Docker daemon is not reachable. Start Docker or use sudo."
+    exit 1
+  fi
   # shellcheck disable=SC2086
   ${DOCKER_CMD} compose --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}" "$@"
 }
@@ -47,7 +50,8 @@ HELP
 cmd="${1:-}"
 case "${cmd}" in
   init)
-    ./deploy/init-kaisha.sh "${2:-}" "${3:-}" "${4:-}" "${5:-}"
+    shift || true
+    ./deploy/init-kaisha.sh "$@"
     ;;
   up)
     ensure_init
