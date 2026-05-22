@@ -15,3 +15,11 @@ services:
       KC_HOSTNAME_STRICT: "true"
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: "true"
+
+volumes:
+  pg_data:
+    external: false
+    name: mam_kaisha_pg_data
+  keycloak_pg_data:
+    external: false
+    name: mam_kaisha_keycloak_pg_data
