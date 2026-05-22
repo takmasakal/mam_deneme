@@ -1735,6 +1735,11 @@ async function loadSettingsSubtabData(tabName) {
     return;
   }
   if (tab === 'backup') {
+    if (!currentAdminProfile?.canAccessAdmin && !currentAdminProfile?.isAdmin) {
+      if (settingsMsg) settingsMsg.textContent = 'Admin permission is required';
+      switchSettingsSubtab('ocr');
+      return;
+    }
     await loadBackups();
     return;
   }

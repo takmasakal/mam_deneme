@@ -122,6 +122,7 @@
       general: !access.isTextOnly,
       workflow: !access.isTextOnly,
       proxy: !access.isTextOnly,
+      backup: !access.isTextOnly,
       ocr: true,
       subtitle: true,
       users: !access.isTextOnly && access.isSuperAdmin

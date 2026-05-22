@@ -112,6 +112,15 @@ async function requireSuperAdminRequest(req, res) {
   return effective;
 }
 
+async function requireFullAdminRequest(req, res) {
+  const effective = await resolveEffectivePermissions(req);
+  if (!effective?.canAccessAdmin) {
+    res.status(403).json({ error: 'Admin permission is required' });
+    return null;
+  }
+  return effective;
+}
+
 async function collectMamAccessGroups() {
   const result = await pool.query(
     `
@@ -1341,6 +1350,10 @@ app.get('/api/admin/settings', async (_req, res) => {
 
 app.patch('/api/admin/settings', async (req, res) => {
   try {
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'backup')) {
+      const effective = await requireFullAdminRequest(req, res);
+      if (!effective) return null;
+    }
     const current = await getAdminSettings();
     const next = {
       ...current,
@@ -1412,8 +1425,10 @@ app.patch('/api/admin/settings', async (req, res) => {
   }
 });
 
-app.get('/api/admin/backups', async (_req, res) => {
+app.get('/api/admin/backups', async (req, res) => {
   try {
+    const effective = await requireFullAdminRequest(req, res);
+    if (!effective) return null;
     const settings = await getAdminSettings();
     const backup = normalizeBackupSettings(settings.backup);
     const listed = await listBackupFiles(backup);
