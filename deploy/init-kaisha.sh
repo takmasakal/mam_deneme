@@ -5,8 +5,6 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEPLOY_DIR="${ROOT_DIR}/deploy"
 ENV_OUT="${DEPLOY_DIR}/.env.kaisha"
 SECRETS_DIR="${DEPLOY_DIR}/secrets"
-NGINX_TEMPLATE="${DEPLOY_DIR}/nginx/mam-https.template.conf"
-NGINX_CONF="${DEPLOY_DIR}/nginx/mam-https.conf"
 
 urlencode() {
   local raw="$1"
@@ -19,6 +17,7 @@ PY
 mam_host="${1:-${PUBLIC_MAM_HOST:-mam.company.local}}"
 keycloak_host="${2:-${PUBLIC_KEYCLOAK_HOST:-auth.company.local}}"
 office_host="${3:-${PUBLIC_OFFICE_HOST:-office.company.local}}"
+company_domain="${4:-${OAUTH2_PROXY_WHITELIST_DOMAINS:-.company.local}}"
 
 if [[ ! -d "${SECRETS_DIR}" ]]; then
   "${DEPLOY_DIR}/init.sh" "${mam_host}"
@@ -28,17 +27,6 @@ mam_url="https://${mam_host}"
 keycloak_url="https://${keycloak_host}"
 office_url="https://${office_host}"
 encoded_mam_url="$(urlencode "${mam_url}")"
-
-mkdir -p "${DEPLOY_DIR}/nginx"
-if [[ ! -f "${NGINX_TEMPLATE}" ]]; then
-  echo "Missing Nginx template: ${NGINX_TEMPLATE}"
-  exit 1
-fi
-sed \
-  -e "s/__MAM_HOST__/${mam_host}/g" \
-  -e "s/__KEYCLOAK_HOST__/${keycloak_host}/g" \
-  -e "s/__OFFICE_HOST__/${office_host}/g" \
-  "${NGINX_TEMPLATE}" > "${NGINX_CONF}"
 
 cat > "${ENV_OUT}" <<EOV
 PUBLIC_HOST=${mam_host}
@@ -57,7 +45,7 @@ KEYCLOAK_ADMIN=
 KEYCLOAK_DB_USER=keycloak
 KEYCLOAK_DB_NAME=keycloak
 OAUTH2_PROXY_CLIENT_ID=mam-web
-OAUTH2_PROXY_WHITELIST_DOMAINS=.company.local
+OAUTH2_PROXY_WHITELIST_DOMAINS=${company_domain}
 
 OFFICE_EDITOR_PROVIDER=onlyoffice
 ONLYOFFICE_PUBLIC_URL=${office_url}
@@ -72,23 +60,20 @@ EOV
 chmod 600 "${ENV_OUT}"
 
 cat <<MSG
-Prepared company HTTPS files:
+Prepared company deployment env:
   - ${ENV_OUT}
-  - ${NGINX_CONF}
 
-Copy company certificates to:
-  - ${DEPLOY_DIR}/certs/mam.fullchain.pem
-  - ${DEPLOY_DIR}/certs/mam.privkey.pem
-  - ${DEPLOY_DIR}/certs/auth.fullchain.pem
-  - ${DEPLOY_DIR}/certs/auth.privkey.pem
-  - ${DEPLOY_DIR}/certs/office.fullchain.pem
-  - ${DEPLOY_DIR}/certs/office.privkey.pem
+This repository no longer starts an internal Nginx/HTTPS reverse proxy.
+Company reverse proxy must route public HTTPS traffic to these host ports:
+  - ${mam_url}       -> http://SERVER_IP:3000
+  - ${keycloak_url}  -> http://SERVER_IP:8081
+  - ${office_url}    -> http://SERVER_IP:8082  (OnlyOffice kullaniliyorsa)
 
 Start with:
-  docker compose --env-file ${ENV_OUT} -f docker-compose.yml -f docker-compose.kaisha-proxy.yml up -d
+  docker compose --env-file ${ENV_OUT} -f docker-compose.yml -f docker-compose.kaisha.yml up -d
 
 Public URLs:
-  MAM:       ${mam_url}
-  Keycloak:  ${keycloak_url}
-  OnlyOffice:${office_url}
+  MAM:        ${mam_url}
+  Keycloak:   ${keycloak_url}
+  OnlyOffice: ${office_url}
 MSG

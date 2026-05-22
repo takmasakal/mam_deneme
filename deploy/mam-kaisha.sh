@@ -6,7 +6,7 @@ cd "${ROOT_DIR}"
 
 ENV_FILE="deploy/.env.kaisha"
 BASE_COMPOSE="docker-compose.yml"
-PROXY_COMPOSE="docker-compose.kaisha-proxy.yml"
+KAISHA_COMPOSE="docker-compose.kaisha.yml"
 
 detect_docker_cmd() {
   if docker info >/dev/null 2>&1; then echo docker; return; fi
@@ -22,7 +22,7 @@ fi
 
 dc() {
   # shellcheck disable=SC2086
-  ${DOCKER_CMD} compose --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${PROXY_COMPOSE}" "$@"
+  ${DOCKER_CMD} compose --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}" "$@"
 }
 
 ensure_init() {
@@ -34,7 +34,7 @@ ensure_init() {
 usage() {
   cat <<'HELP'
 Usage:
-  ./deploy/mam-kaisha.sh init [MAM_HOST] [KEYCLOAK_HOST] [OFFICE_HOST]
+  ./deploy/mam-kaisha.sh init [MAM_HOST] [KEYCLOAK_HOST] [OFFICE_HOST] [WHITELIST_DOMAIN]
   ./deploy/mam-kaisha.sh up
   ./deploy/mam-kaisha.sh down
   ./deploy/mam-kaisha.sh restart
@@ -47,7 +47,7 @@ HELP
 cmd="${1:-}"
 case "${cmd}" in
   init)
-    ./deploy/init-kaisha.sh "${2:-}" "${3:-}" "${4:-}"
+    ./deploy/init-kaisha.sh "${2:-}" "${3:-}" "${4:-}" "${5:-}"
     ;;
   up)
     ensure_init
@@ -77,6 +77,7 @@ case "${cmd}" in
     echo "MAM: ${PUBLIC_MAM_URL}"
     echo "Keycloak: ${PUBLIC_KEYCLOAK_URL}"
     echo "OnlyOffice: ${PUBLIC_OFFICE_URL}"
+    echo "Reverse proxy: company-managed external HTTPS layer"
     ;;
   ""|-h|--help|help)
     usage
