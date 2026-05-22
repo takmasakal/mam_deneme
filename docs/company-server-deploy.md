@@ -331,3 +331,41 @@ Aşağıdakiler artık repo tarafından sağlanmaz:
 - repo içinde sertifika bağlama prosedürü
 
 Bu sorumluluk şirket reverse proxy / load balancer ekibindedir.
+
+## 14. Yönetim Sayfası Backup Ayarları
+
+Yönetim sayfasında `Ayarlar -> Yedekleme` bölümünden yedekleme yönetilir.
+
+Seçenekler:
+- Günlük yedeklemeyi aç/kapat
+- Yedekleme dizini
+- Günlük çalışma saati
+- Saklama süresi
+- MAM PostgreSQL dump
+- Keycloak PostgreSQL dump
+- Uploads arşivi
+- Manuel `Şimdi Yedekle`
+
+Önerilen NFS kullanımında backup dizini:
+
+```text
+/app/uploads/_backups
+```
+
+Eğer host tarafında NFS mount şöyleyse:
+
+```text
+/data/belgelik/uploads -> container /app/uploads
+```
+
+backup dosyaları host tarafında şurada görünür:
+
+```text
+/data/belgelik/uploads/_backups
+```
+
+Notlar:
+- MAM DB ve Keycloak DB yedekleri `pg_dump -Fc` formatında üretilir.
+- Uploads arşivi `.tar.gz` olarak üretilir ve `_backups` klasörü arşive dahil edilmez.
+- Gerçek storage-level NFS snapshot uygulama içinden alınmaz; bu şirket storage/backup altyapısında ayrıca planlanmalıdır.
+- DB ve Elasticsearch ana verisi NFS üstünde tutulmamalıdır; NFS sadece uploads/backup dosyaları için önerilir.

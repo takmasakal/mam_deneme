@@ -1284,6 +1284,15 @@ body {
   margin-bottom: 8px;
 }
 
+.proxy-job-actions button {
+  width: auto;
+  max-width: max-content;
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
+}
+
 .proxy-tool-box {
   margin-top: 12px;
   border: 1px solid #4a5b82;
@@ -1574,6 +1583,20 @@ body {
 .token-actions button:hover,
 .user-perm-row button:hover {
   filter: brightness(1.08);
+}
+
+.row button.danger {
+  border-color: rgba(255, 92, 92, 0.72);
+  background: #ff5c5c;
+  color: #fff7f7;
+}
+
+.backup-file-row {
+  align-items: center;
+}
+
+.backup-file-row strong {
+  overflow-wrap: anywhere;
 }
 
 .admin-note {
@@ -2069,6 +2092,11 @@ body {
 .asset-rights-cell input:disabled {
   opacity: 0.72;
   cursor: not-allowed;
+}
+
+.asset-rights-cell input:not(:placeholder-shown) {
+  border-color: rgba(57, 211, 143, 0.82);
+  box-shadow: 0 0 0 1px rgba(57, 211, 143, 0.26);
 }
 
 .asset-rights-actions {

@@ -12,31 +12,80 @@ function createAssetEditLockService({ pool, ttlSeconds = 900 } = {}) {
     return new Date(Date.now() + ttlMs).toISOString();
   }
 
+  function getHeader(req, name) {
+    try {
+      return String(req?.get?.(name) || '').trim();
+    } catch (_error) {
+      return '';
+    }
+  }
+
+  function normalizeIdentity(value) {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  function isUuidLike(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
+  }
+
+  function emailLocalPart(value) {
+    const email = String(value || '').trim();
+    return email.includes('@') ? email.split('@')[0] : '';
+  }
+
   function getActor(req = {}) {
     const permissions = req.userPermissions || {};
+    const rawUser = getHeader(req, 'X-Auth-Request-User') || getHeader(req, 'X-Forwarded-User');
+    const preferred = getHeader(req, 'X-Auth-Request-Preferred-Username') || getHeader(req, 'X-Forwarded-Preferred-Username');
+    const email = String(permissions.email || getHeader(req, 'X-Auth-Request-Email') || getHeader(req, 'X-Forwarded-Email') || '').trim();
+    const localEmail = emailLocalPart(email);
+    const permissionUsername = String(permissions.username || '').trim();
     const username = String(
-      permissions.username
-      || req.get?.('X-Auth-Request-User')
-      || req.get?.('X-Forwarded-User')
+      permissionUsername
+      || preferred
+      || (!isUuidLike(rawUser) ? rawUser : '')
+      || localEmail
+      || rawUser
       || ''
     ).trim();
     const displayName = String(
       permissions.displayName
       || permissions.name
-      || req.get?.('X-Auth-Request-Preferred-Username')
+      || preferred
+      || (!isUuidLike(rawUser) ? rawUser : '')
       || username
+      || localEmail
       || 'user'
     ).trim();
+    const aliases = [
+      permissionUsername,
+      permissions.displayName,
+      permissions.name,
+      permissions.email,
+      preferred,
+      rawUser,
+      email,
+      localEmail,
+      username,
+      displayName
+    ]
+      .map(normalizeIdentity)
+      .filter(Boolean);
     return {
       username: username || displayName || 'user',
-      displayName: displayName || username || 'user'
+      displayName: displayName || username || 'user',
+      aliases: Array.from(new Set(aliases))
     };
   }
 
   function isOwnLock(lock, actor) {
-    const lockedBy = String(lock?.locked_by || '').trim().toLowerCase();
-    const username = String(actor?.username || '').trim().toLowerCase();
-    return Boolean(lockedBy && username && lockedBy === username);
+    const lockedBy = normalizeIdentity(lock?.locked_by);
+    const lockedByName = normalizeIdentity(lock?.locked_by_name);
+    const aliases = Array.isArray(actor?.aliases) ? actor.aliases : [actor?.username, actor?.displayName].map(normalizeIdentity);
+    return Boolean(
+      (lockedBy && aliases.includes(lockedBy))
+      || (lockedByName && aliases.includes(lockedByName))
+    );
   }
 
   function toPayload(lock) {

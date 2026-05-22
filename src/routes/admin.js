@@ -33,6 +33,9 @@ function registerAdminRoutes(app, deps) {
     saveUserPermissionsSettings,
     getAdminSettings,
     saveAdminSettings,
+    normalizeBackupSettings,
+    runSystemBackup,
+    listBackupFiles,
     getRuntimeErrorLogs,
     getActiveUsers,
     normalizePlayerUiMode,
@@ -127,8 +130,10 @@ async function collectMamAccessGroups() {
   return result.rows.map((row) => String(row.group_name || '').trim()).filter(Boolean);
 }
 
-app.get('/api/admin/identity/overview', async (_req, res) => {
+app.get('/api/admin/identity/overview', async (req, res) => {
   try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
     const [kcData, kcGroupsData, mamGroups, groupAdminsResult] = await Promise.all([
       fetchKeycloakUsers(),
       typeof fetchKeycloakGroups === 'function' ? fetchKeycloakGroups() : Promise.resolve({ groups: [] }),
@@ -184,8 +189,10 @@ app.get('/api/admin/identity/overview', async (_req, res) => {
   }
 });
 
-app.get('/api/admin/group-admins', async (_req, res) => {
+app.get('/api/admin/group-admins', async (req, res) => {
   try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
     const result = await pool.query(
       `
         SELECT id, group_name, username, created_at, created_by
@@ -1370,6 +1377,9 @@ app.patch('/api/admin/settings', async (req, res) => {
       mediaJobRetentionDays: Object.prototype.hasOwnProperty.call(req.body, 'mediaJobRetentionDays')
         ? normalizeMediaJobRetentionDays(req.body.mediaJobRetentionDays)
         : normalizeMediaJobRetentionDays(current.mediaJobRetentionDays),
+      backup: Object.prototype.hasOwnProperty.call(req.body, 'backup')
+        ? normalizeBackupSettings(req.body.backup)
+        : normalizeBackupSettings(current.backup),
       apiTokenEnabled: Object.prototype.hasOwnProperty.call(req.body, 'apiTokenEnabled')
         ? Boolean(req.body.apiTokenEnabled)
         : current.apiTokenEnabled,
@@ -1399,6 +1409,82 @@ app.patch('/api/admin/settings', async (req, res) => {
     return res.json(saved);
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to save settings' });
+  }
+});
+
+app.get('/api/admin/backups', async (_req, res) => {
+  try {
+    const settings = await getAdminSettings();
+    const backup = normalizeBackupSettings(settings.backup);
+    const listed = await listBackupFiles(backup);
+    return res.json({
+      settings: backup,
+      directory: listed.directory,
+      files: listed.files
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load backups' });
+  }
+});
+
+app.post('/api/admin/backups/run', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const settings = await getAdminSettings();
+    const backup = normalizeBackupSettings(
+      req.body && Object.keys(req.body).length ? req.body : settings.backup
+    );
+    const result = await runSystemBackup(backup, effective.username || effective.displayName || 'admin');
+    await recordAuditEvent?.(req, {
+      action: 'backup.created',
+      targetType: 'system',
+      targetId: 'backup',
+      targetTitle: result.directory,
+      details: {
+        files: result.files.map((file) => ({ type: file.type, path: file.path, size: file.size })),
+        requestedBy: result.requestedBy
+      }
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    const status = error?.code === 'backup_in_progress' ? 409 : 500;
+    return res.status(status).json({ error: String(error?.message || 'Failed to run backup') });
+  }
+});
+
+app.delete('/api/admin/backups/:fileName', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const fileName = path.basename(String(req.params.fileName || '').trim());
+    if (!/^mam-backup-[A-Za-z0-9_.-]+$/.test(fileName)) {
+      return res.status(400).json({ error: 'Invalid backup file name' });
+    }
+    const settings = await getAdminSettings();
+    const backup = normalizeBackupSettings(settings.backup);
+    const listed = await listBackupFiles(backup);
+    const target = (listed.files || []).find((file) => file.fileName === fileName);
+    if (!target) return res.status(404).json({ error: 'Backup file not found' });
+    const directory = path.resolve(listed.directory);
+    const filePath = path.resolve(directory, fileName);
+    if (!filePath.startsWith(`${directory}${path.sep}`)) {
+      return res.status(400).json({ error: 'Invalid backup file path' });
+    }
+    await fs.promises.unlink(filePath);
+    await recordAuditEvent?.(req, {
+      action: 'backup.deleted',
+      targetType: 'system',
+      targetId: fileName,
+      targetTitle: fileName,
+      details: {
+        path: filePath,
+        deletedBy: effective.username || effective.displayName || 'admin'
+      }
+    });
+    return res.json({ ok: true, fileName });
+  } catch (error) {
+    return res.status(500).json({ error: String(error?.message || 'Failed to delete backup') });
   }
 });
 
@@ -1536,6 +1622,8 @@ app.get('/api/admin/audit-events/export', async (req, res) => {
 
 app.get('/api/admin/user-permissions', async (req, res) => {
   try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
     const q = String(req.query.q || '').trim().toLowerCase();
     const limit = Number(req.query.limit) === 50 ? 50 : 20;
     const requestedPage = Math.max(1, Number(req.query.page) || 1);
@@ -1602,6 +1690,8 @@ app.get('/api/admin/user-permissions', async (req, res) => {
 
 app.patch('/api/admin/user-permissions/:username', async (req, res) => {
   try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
     const username = String(req.params.username || '').trim().toLowerCase();
     if (!username) return res.status(400).json({ error: 'username is required' });
     const kcData = await fetchKeycloakUsers();

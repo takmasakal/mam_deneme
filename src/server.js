@@ -59,12 +59,14 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || process.env.MAM_JSON_BODY_LIMIT || '1500mb';
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
 const PROXIES_DIR = path.join(UPLOADS_DIR, 'proxies');
 const THUMBNAILS_DIR = path.join(UPLOADS_DIR, 'thumbnails');
 const SUBTITLES_DIR = path.join(UPLOADS_DIR, 'subtitles');
 const OCR_DIR = path.join(UPLOADS_DIR, 'ocr');
 const AUDIT_EXPORTS_DIR = path.join(UPLOADS_DIR, '_audit_exports');
+const DEFAULT_BACKUP_DIR = process.env.MAM_BACKUP_DIR || path.join(UPLOADS_DIR, '_backups');
 const OCR_FRAMES_DIR = path.join(OCR_DIR, '_frames');
 const OCR_FRAME_CACHE_DIR = path.join(OCR_FRAMES_DIR, '_cache');
 const OCR_FRAME_CACHE_ENABLED = String(process.env.OCR_FRAME_CACHE_ENABLE || 'false').trim().toLowerCase() === 'true';
@@ -78,11 +80,21 @@ const WHISPER_MODEL_CACHE = process.env.WHISPER_MODEL_CACHE || HF_HOME;
 const PADDLE_CACHE_DIR = process.env.PADDLE_PDX_CACHE_HOME || path.join(MAM_MODEL_CACHE_DIR, 'paddle');
 const DOWNLOAD_AUDIT_THROTTLE_MS = Math.max(60_000, Math.min(3_600_000, Number(process.env.DOWNLOAD_AUDIT_THROTTLE_MS) || 300_000));
 const recentDownloadAuditKeys = new Map();
-app.use(express.json({ limit: '300mb' }));
+app.use(express.json({ limit: JSON_BODY_LIMIT }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/uploads', secureUploadAssetAccess);
 app.use('/uploads', auditUploadDownloadRequest);
 app.use('/uploads', express.static(UPLOADS_DIR));
+app.use((error, _req, res, next) => {
+  if (error?.type === 'entity.too.large' || Number(error?.status || 0) === 413) {
+    return res.status(413).json({
+      error: `Upload payload is too large. Current JSON body limit is ${JSON_BODY_LIMIT}.`,
+      code: 'upload_payload_too_large',
+      limit: JSON_BODY_LIMIT
+    });
+  }
+  return next(error);
+});
 
 const WORKFLOW = ['Ingested', 'QC', 'Approved', 'Published', 'Archived'];
 const DEFAULT_ADMIN_SETTINGS = {
@@ -106,6 +118,15 @@ const DEFAULT_ADMIN_SETTINGS = {
   },
   auditRetentionDays: 180,
   mediaJobRetentionDays: 30,
+  backup: {
+    enabled: false,
+    directory: DEFAULT_BACKUP_DIR,
+    dailyHour: 2,
+    includeMamDb: true,
+    includeKeycloakDb: false,
+    includeUploadsArchive: false,
+    retentionDays: 14
+  },
   apiTokenEnabled: false,
   apiToken: '',
   oidcBearerEnabled: false,
@@ -155,6 +176,21 @@ function normalizeAuditRetentionDays(value) {
 
 function normalizeMediaJobRetentionDays(value) {
   return clampNumber(value, 1, 3650, DEFAULT_ADMIN_SETTINGS.mediaJobRetentionDays);
+}
+
+function normalizeBackupSettings(value = {}) {
+  const defaults = DEFAULT_ADMIN_SETTINGS.backup;
+  const input = value && typeof value === 'object' ? value : {};
+  const rawDirectory = String(input.directory || defaults.directory).trim();
+  return {
+    enabled: Object.prototype.hasOwnProperty.call(input, 'enabled') ? Boolean(input.enabled) : defaults.enabled,
+    directory: rawDirectory || defaults.directory,
+    dailyHour: clampNumber(input.dailyHour, 0, 23, defaults.dailyHour),
+    includeMamDb: Object.prototype.hasOwnProperty.call(input, 'includeMamDb') ? Boolean(input.includeMamDb) : defaults.includeMamDb,
+    includeKeycloakDb: Object.prototype.hasOwnProperty.call(input, 'includeKeycloakDb') ? Boolean(input.includeKeycloakDb) : defaults.includeKeycloakDb,
+    includeUploadsArchive: Object.prototype.hasOwnProperty.call(input, 'includeUploadsArchive') ? Boolean(input.includeUploadsArchive) : defaults.includeUploadsArchive,
+    retentionDays: clampNumber(input.retentionDays, 1, 3650, defaults.retentionDays)
+  };
 }
 function readSecretFile(filePath) {
   if (!filePath) return '';
@@ -4677,6 +4713,17 @@ function runCommandCapture(cmd, args, options = {}) {
   });
 }
 
+function compactCommandOutput(value, maxLength = 1200) {
+  const text = String(value || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(' | ');
+  if (!text) return 'Command failed';
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
 function runCommandQuiet(cmd, args) {
   return new Promise((resolve) => {
     const p = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -4691,6 +4738,46 @@ function runCommandQuiet(cmd, args) {
       resolve({ ok: code === 0, code: code ?? -1, stderr });
     });
   });
+}
+
+function stripBenignTranscriptionWarnings(value = '') {
+  return String(value || '')
+    .split(/\r?\n/)
+    .filter((line) => {
+      const normalized = String(line || '').toLowerCase();
+      if (!normalized.trim()) return false;
+      if (normalized.includes('onnxruntime') && normalized.includes('cpuid_info warning')) return false;
+      if (normalized.includes('unknown cpu vendor') || normalized.includes('cpuinfo_vendor')) return false;
+      if (normalized.includes('gpu device discovery failed')) return false;
+      if (normalized.includes('device_discovery.cc')) return false;
+      return true;
+    })
+    .join('\n')
+    .trim();
+}
+
+function compactTranscriptionError(result) {
+  return stripBenignTranscriptionWarnings(`${String(result?.stderr || '')}\n${String(result?.stdout || '')}`)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function countGeneratedSubtitleCues(outputPath) {
+  try {
+    if (!outputPath || !fs.existsSync(outputPath)) return 0;
+    return parseSubtitleCues(fs.readFileSync(outputPath, 'utf8')).length;
+  } catch (_error) {
+    return 0;
+  }
+}
+
+function buildEmptySubtitleError(job = {}) {
+  const channel = Number.isFinite(Number(job.audioChannelIndex)) ? ` channel ${Number(job.audioChannelIndex)}` : '';
+  const stream = Number.isFinite(Number(job.audioStreamIndex)) ? ` stream ${Number(job.audioStreamIndex)}` : '';
+  const source = `${stream}${channel}`.trim();
+  return source
+    ? `No subtitle cues were generated from selected audio ${source}. Check the selected audio stream/channel or choose another language.`
+    : 'No subtitle cues were generated. Check the selected audio/language settings.';
 }
 
 async function transcribeMediaToVtt(inputPath, outputPath, options = {}) {
@@ -4734,7 +4821,8 @@ async function transcribeMediaToVtt(inputPath, outputPath, options = {}) {
         TRANSFORMERS_CACHE,
         HF_HUB_OFFLINE: MAM_OFFLINE_MODE ? '1' : (process.env.HF_HUB_OFFLINE || '0'),
         TRANSFORMERS_OFFLINE: MAM_OFFLINE_MODE ? '1' : (process.env.TRANSFORMERS_OFFLINE || '0'),
-        WHISPER_MODEL_CACHE
+        WHISPER_MODEL_CACHE,
+        ORT_LOG_SEVERITY_LEVEL: process.env.ORT_LOG_SEVERITY_LEVEL || '3'
       }
     });
   } finally {
@@ -5525,7 +5613,7 @@ function queueSubtitleGenerationJob(row, options = {}) {
     });
 
     try {
-      const inputPath = resolveAssetInputPath(row);
+      const inputPath = resolvePlaybackInputPath(row);
       if (!inputPath) throw new Error('Source media not found for transcription');
       const storedName = `${Date.now()}-${nanoid()}-auto-${sanitizeFileName(row.id)}.vtt`;
       const subtitleOut = buildArtifactPath('subtitles', storedName, row.created_at);
@@ -5537,12 +5625,10 @@ function queueSubtitleGenerationJob(row, options = {}) {
         audioStreamIndex,
         audioChannelIndex
       });
-      let subtitleReady = transcription.ok && fs.existsSync(subtitleOut.absolutePath) && fs.statSync(subtitleOut.absolutePath).size >= 16;
+      let generatedCueCount = countGeneratedSubtitleCues(subtitleOut.absolutePath);
+      let subtitleReady = transcription.ok && generatedCueCount > 0;
       if (!subtitleReady && usedSubtitleBackend === 'whisperx') {
-        const whisperxError = String(transcription.stderr || transcription.stdout || '')
-          .replace(/\s+/g, ' ')
-          .trim()
-          .slice(0, 240);
+        const whisperxError = compactTranscriptionError(transcription).slice(0, 240);
         usedSubtitleBackend = 'whisper';
         transcription = await transcribeMediaToVtt(inputPath, subtitleOut.absolutePath, {
           lang: subtitleLang,
@@ -5551,7 +5637,8 @@ function queueSubtitleGenerationJob(row, options = {}) {
           audioStreamIndex,
           audioChannelIndex
         });
-        subtitleReady = transcription.ok && fs.existsSync(subtitleOut.absolutePath) && fs.statSync(subtitleOut.absolutePath).size >= 16;
+        generatedCueCount = countGeneratedSubtitleCues(subtitleOut.absolutePath);
+        subtitleReady = transcription.ok && generatedCueCount > 0;
         if (subtitleReady) {
           running.warning = whisperxError
             ? `WhisperX failed (${whisperxError}); subtitle was generated with faster-whisper fallback.`
@@ -5559,7 +5646,11 @@ function queueSubtitleGenerationJob(row, options = {}) {
         }
       }
       if (!subtitleReady) {
-        throw new Error(String(transcription.stderr || transcription.stdout || 'Subtitle transcription failed'));
+        const transcriptionError = compactTranscriptionError(transcription);
+        const emptySubtitleError = transcription.ok && fs.existsSync(subtitleOut.absolutePath)
+          ? buildEmptySubtitleError(running)
+          : '';
+        throw new Error(emptySubtitleError || transcriptionError || 'Subtitle transcription failed');
       }
       running.subtitleBackend = usedSubtitleBackend;
       if (subtitleLang.startsWith('tr')) {
@@ -5643,7 +5734,8 @@ async function getAdminSettings() {
     ...value,
     subtitleStyle: normalizeSubtitleStyle(value.subtitleStyle),
     auditRetentionDays: normalizeAuditRetentionDays(value.auditRetentionDays),
-    mediaJobRetentionDays: normalizeMediaJobRetentionDays(value.mediaJobRetentionDays)
+    mediaJobRetentionDays: normalizeMediaJobRetentionDays(value.mediaJobRetentionDays),
+    backup: normalizeBackupSettings(value.backup)
   };
 }
 
@@ -5659,6 +5751,181 @@ async function saveAdminSettings(settings) {
     [JSON.stringify(settings), updatedAt]
   );
   return settings;
+}
+
+let backupInProgress = false;
+let lastBackupRunDate = '';
+
+function backupDateStamp(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  return safeDate.toISOString().replace(/[:.]/g, '-');
+}
+
+function getDbConnectionConfig(prefix = 'MAM') {
+  if (prefix === 'KEYCLOAK') {
+    return {
+      host: process.env.KEYCLOAK_DB_URL_HOST || process.env.KEYCLOAK_DB_HOST || 'keycloak-postgres',
+      port: process.env.KEYCLOAK_DB_PORT || '5432',
+      user: process.env.KEYCLOAK_DB_USERNAME || process.env.KEYCLOAK_DB_USER || 'keycloak',
+      database: process.env.KEYCLOAK_DB_URL_DATABASE || process.env.KEYCLOAK_DB_NAME || 'keycloak',
+      password: readEnvOrFile('KEYCLOAK_DB_PASSWORD')
+    };
+  }
+  return {
+    host: process.env.MAM_DB_HOST || 'postgres',
+    port: process.env.MAM_DB_PORT || '5432',
+    user: process.env.MAM_DB_USER || process.env.POSTGRES_USER || 'postgres',
+    database: process.env.MAM_DB_NAME || process.env.POSTGRES_DB || 'mam_mvp',
+    password: readEnvOrFile('MAM_DB_PASSWORD') || readEnvOrFile('POSTGRES_PASSWORD')
+  };
+}
+
+async function runPgDumpBackup(targetPath, dbConfig) {
+  const args = [
+    '-h', String(dbConfig.host || 'postgres'),
+    '-p', String(dbConfig.port || '5432'),
+    '-U', String(dbConfig.user || 'postgres'),
+    '-d', String(dbConfig.database || 'mam_mvp'),
+    '-Fc',
+    '-f', targetPath
+  ];
+  const result = await runCommandCapture('pg_dump', args, {
+    env: {
+      PGPASSWORD: String(dbConfig.password || '')
+    }
+  });
+  if (!result.ok) {
+    throw new Error(compactCommandOutput(result.stderr || result.stdout || 'pg_dump failed'));
+  }
+  return targetPath;
+}
+
+async function runTarArchiveBackup(targetPath, sourcePath) {
+  const parentDir = path.dirname(sourcePath);
+  const baseName = path.basename(sourcePath);
+  const result = await runCommandCapture('tar', ['-czf', targetPath, '--exclude', '_backups', '-C', parentDir, baseName]);
+  if (!result.ok) {
+    throw new Error(compactCommandOutput(result.stderr || result.stdout || 'uploads archive failed'));
+  }
+  return targetPath;
+}
+
+async function cleanupExpiredBackupFiles(directory, retentionDays) {
+  const days = clampNumber(retentionDays, 1, 3650, DEFAULT_ADMIN_SETTINGS.backup.retentionDays);
+  const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+  let deleted = 0;
+  try {
+    const entries = await fs.promises.readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      if (!/^mam-backup-/.test(entry.name)) continue;
+      const filePath = path.join(directory, entry.name);
+      const stat = await fs.promises.stat(filePath).catch(() => null);
+      if (stat && stat.mtimeMs < cutoff) {
+        await fs.promises.unlink(filePath).catch(() => {});
+        deleted += 1;
+      }
+    }
+  } catch (_error) {
+    // Missing backup directory is not a cleanup failure.
+  }
+  return deleted;
+}
+
+async function listBackupFiles(settings = DEFAULT_ADMIN_SETTINGS.backup) {
+  const backup = normalizeBackupSettings(settings);
+  const directory = path.resolve(backup.directory || DEFAULT_BACKUP_DIR);
+  try {
+    const entries = await fs.promises.readdir(directory, { withFileTypes: true });
+    const files = [];
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      if (!/^mam-backup-/.test(entry.name)) continue;
+      const filePath = path.join(directory, entry.name);
+      const stat = await fs.promises.stat(filePath).catch(() => null);
+      files.push({
+        fileName: entry.name,
+        path: filePath,
+        size: stat ? Number(stat.size || 0) : 0,
+        updatedAt: stat ? stat.mtime.toISOString() : ''
+      });
+    }
+    files.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+    return { directory, files };
+  } catch (_error) {
+    return { directory, files: [] };
+  }
+}
+
+async function runSystemBackup(settings = DEFAULT_ADMIN_SETTINGS.backup, requestedBy = '') {
+  if (backupInProgress) {
+    const error = new Error('Backup is already running');
+    error.code = 'backup_in_progress';
+    throw error;
+  }
+  const backup = normalizeBackupSettings(settings);
+  const directory = path.resolve(backup.directory || DEFAULT_BACKUP_DIR);
+  backupInProgress = true;
+  const startedAt = new Date();
+  const stamp = backupDateStamp(startedAt);
+  const result = {
+    startedAt: startedAt.toISOString(),
+    finishedAt: '',
+    directory,
+    requestedBy: String(requestedBy || '').trim(),
+    files: [],
+    errors: []
+  };
+  try {
+    await fs.promises.mkdir(directory, { recursive: true });
+    if (backup.includeMamDb) {
+      const filePath = path.join(directory, `mam-backup-${stamp}-mam-db.dump`);
+      await runPgDumpBackup(filePath, getDbConnectionConfig('MAM'));
+      const stat = await fs.promises.stat(filePath).catch(() => null);
+      result.files.push({ type: 'mam_db', path: filePath, size: stat ? Number(stat.size || 0) : 0 });
+    }
+    if (backup.includeKeycloakDb) {
+      const filePath = path.join(directory, `mam-backup-${stamp}-keycloak-db.dump`);
+      await runPgDumpBackup(filePath, getDbConnectionConfig('KEYCLOAK'));
+      const stat = await fs.promises.stat(filePath).catch(() => null);
+      result.files.push({ type: 'keycloak_db', path: filePath, size: stat ? Number(stat.size || 0) : 0 });
+    }
+    if (backup.includeUploadsArchive) {
+      const filePath = path.join(directory, `mam-backup-${stamp}-uploads.tar.gz`);
+      await runTarArchiveBackup(filePath, UPLOADS_DIR);
+      const stat = await fs.promises.stat(filePath).catch(() => null);
+      result.files.push({ type: 'uploads_archive', path: filePath, size: stat ? Number(stat.size || 0) : 0 });
+    }
+    await cleanupExpiredBackupFiles(directory, backup.retentionDays);
+    result.finishedAt = new Date().toISOString();
+    return result;
+  } finally {
+    backupInProgress = false;
+  }
+}
+
+function scheduleSystemBackups() {
+  const runIfDue = async () => {
+    const settings = await getAdminSettings().catch(() => DEFAULT_ADMIN_SETTINGS);
+    const backup = normalizeBackupSettings(settings.backup);
+    if (!backup.enabled) return;
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    if (lastBackupRunDate === today) return;
+    if (now.getHours() !== backup.dailyHour) return;
+    lastBackupRunDate = today;
+    try {
+      const result = await runSystemBackup(backup, 'scheduler');
+      console.log(`System backup completed: ${result.files.map((file) => file.path).join(', ')}`);
+    } catch (error) {
+      lastBackupRunDate = '';
+      console.error(`System backup failed: ${error?.message || error}`);
+    }
+  };
+  setInterval(() => {
+    runIfDue().catch(() => {});
+  }, 10 * 60 * 1000);
 }
 
 let auditCleanupInProgress = false;
@@ -7706,6 +7973,9 @@ registerAdminRoutes(app, {
   saveUserPermissionsSettings,
   getAdminSettings,
   saveAdminSettings,
+  normalizeBackupSettings,
+  runSystemBackup,
+  listBackupFiles,
   getRuntimeErrorLogs,
   getActiveUsers,
   normalizePlayerUiMode,
@@ -7990,6 +8260,7 @@ initDb()
       .catch(() => {});
     scheduleAuditCleanup();
     scheduleMediaJobCleanup();
+    scheduleSystemBackups();
     app.listen(PORT, () => {
       console.log(`MAM MVP running on http://localhost:${PORT}`);
     });

@@ -707,16 +707,15 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
       });
       setStatus(t('subtitle_job_started'));
       const result = await pollSubtitleJob(queued.jobId);
-      if (String(result.warning || '').trim()) {
-        alert(String(result.warning));
-      }
+      const warningText = String(result.warning || '').trim();
       applyAssetFromApi(result.asset);
       if (!asset.subtitleUrl) asset.subtitleUrl = result.subtitleUrl || '';
       if (!asset.subtitleLang) asset.subtitleLang = result.subtitleLang || getLang();
       if (!asset.subtitleLabel) asset.subtitleLabel = result.subtitleLabel || requestedLabel;
       applyTrack(asset.subtitleUrl, asset.subtitleLang, asset.subtitleLabel);
       renderSubtitleItems();
-      setStatus(`${t('subtitle_generate_success')} ${asset.subtitleLabel}`.trim());
+      const successText = `${t('subtitle_generate_success')} ${asset.subtitleLabel}`.trim();
+      setStatus(warningText ? `${successText} (${warningText})` : successText);
     } catch (error) {
       alert(String(error?.message || 'Subtitle generation failed'));
     } finally {

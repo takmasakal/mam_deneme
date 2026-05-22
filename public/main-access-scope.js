@@ -70,8 +70,9 @@
     const current = profile && typeof profile === 'object' ? profile : {};
     const canAccessAdmin = Boolean(current.canAccessAdmin || current.isAdmin);
     const canAccessTextAdmin = Boolean(current.canAccessTextAdmin || canAccessAdmin);
+    const isSuperAdmin = Boolean(current.isSuperAdmin || current.baseIsSuperAdmin);
     const isTextOnly = canAccessTextAdmin && !canAccessAdmin;
-    return { canAccessAdmin, canAccessTextAdmin, isTextOnly };
+    return { canAccessAdmin, canAccessTextAdmin, isSuperAdmin, isTextOnly };
   }
 
   function setTabVisibility(items = [], tabKey, dataAttr, visible) {
@@ -123,7 +124,7 @@
       proxy: !access.isTextOnly,
       ocr: true,
       subtitle: true,
-      users: !access.isTextOnly
+      users: !access.isTextOnly && access.isSuperAdmin
     };
     Object.entries(visibleSettingsTabs).forEach(([tabName, visible]) => {
       setTabVisibility(settingsSubTabs, tabName, 'settingsTab', visible);

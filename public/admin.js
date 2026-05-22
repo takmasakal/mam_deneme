@@ -10,6 +10,10 @@ const ocrSettingsForm = document.getElementById('ocrSettingsForm');
 const ocrSettingsMsg = document.getElementById('ocrSettingsMsg');
 const subtitleSettingsForm = document.getElementById('subtitleSettingsForm');
 const subtitleSettingsMsg = document.getElementById('subtitleSettingsMsg');
+const backupSettingsForm = document.getElementById('backupSettingsForm');
+const backupSettingsMsg = document.getElementById('backupSettingsMsg');
+const backupFilesRows = document.getElementById('backupFilesRows');
+const runBackupNowBtn = document.getElementById('runBackupNowBtn');
 const apiTokenInput = document.getElementById('apiTokenInput');
 const oidcIssuerUrlInput = document.getElementById('oidcIssuerUrlInput');
 const oidcJwksUrlInput = document.getElementById('oidcJwksUrlInput');
@@ -310,7 +314,32 @@ let i18n = {
     settings_sub_proxy: 'Proxy',
     settings_sub_ocr: 'OCR',
     settings_sub_subtitle: 'Subtitle',
+    settings_sub_backup: 'Backup',
     settings_sub_users: 'Users',
+    backup_settings: 'Backup Settings',
+    backup_schedule: 'Schedule',
+    backup_enabled: 'Enable daily backup',
+    backup_directory: 'Backup directory',
+    backup_directory_ph: '/app/uploads/_backups',
+    backup_daily_hour: 'Daily hour',
+    backup_retention_days: 'Retention (days)',
+    backup_contents: 'Contents',
+    backup_include_mam_db: 'MAM PostgreSQL dump',
+    backup_include_keycloak_db: 'Keycloak PostgreSQL dump',
+    backup_include_uploads: 'Uploads archive (.tar.gz)',
+    backup_run_now: 'Run Backup Now',
+    backup_saved: 'Backup settings saved.',
+    backup_started: 'Backup completed.',
+    backup_load_failed: 'Failed to load backups.',
+    backup_run_failed: 'Failed to run backup.',
+    backup_delete: 'Delete',
+    backup_delete_confirm: 'Delete this backup file?',
+    backup_deleted: 'Backup file deleted.',
+    backup_delete_failed: 'Failed to delete backup.',
+    backup_no_files: 'No backup file found.',
+    backup_file_name: 'File',
+    backup_file_size: 'Size',
+    backup_file_date: 'Date',
     save_settings: 'Save Settings',
     set_as_default: 'Set as Default',
     settings_saved: 'Settings saved.',
@@ -677,7 +706,32 @@ let i18n = {
     settings_sub_proxy: 'Proxy',
     settings_sub_ocr: 'OCR',
     settings_sub_subtitle: 'Altyazı',
+    settings_sub_backup: 'Yedekleme',
     settings_sub_users: 'Kullanıcılar',
+    backup_settings: 'Yedekleme Ayarları',
+    backup_schedule: 'Zamanlama',
+    backup_enabled: 'Günlük yedeklemeyi aç',
+    backup_directory: 'Yedekleme dizini',
+    backup_directory_ph: '/app/uploads/_backups',
+    backup_daily_hour: 'Günlük saat',
+    backup_retention_days: 'Saklama süresi (gün)',
+    backup_contents: 'İçerik',
+    backup_include_mam_db: 'MAM PostgreSQL dump',
+    backup_include_keycloak_db: 'Keycloak PostgreSQL dump',
+    backup_include_uploads: 'Uploads arşivi (.tar.gz)',
+    backup_run_now: 'Şimdi Yedekle',
+    backup_saved: 'Yedekleme ayarları kaydedildi.',
+    backup_started: 'Yedekleme tamamlandı.',
+    backup_load_failed: 'Yedekler yüklenemedi.',
+    backup_run_failed: 'Yedekleme çalıştırılamadı.',
+    backup_delete: 'Sil',
+    backup_delete_confirm: 'Bu yedek dosyası silinsin mi?',
+    backup_deleted: 'Yedek dosyası silindi.',
+    backup_delete_failed: 'Yedek silinemedi.',
+    backup_no_files: 'Yedek dosyası bulunamadı.',
+    backup_file_name: 'Dosya',
+    backup_file_size: 'Boyut',
+    backup_file_date: 'Tarih',
     save_settings: 'Ayarları Kaydet',
     set_as_default: 'Varsayılan Yap',
     settings_saved: 'Ayarlar kaydedildi.',
@@ -1680,7 +1734,16 @@ async function loadSettingsSubtabData(tabName) {
     await loadSubtitleRecords();
     return;
   }
+  if (tab === 'backup') {
+    await loadBackups();
+    return;
+  }
   if (tab === 'users') {
+    if (!currentAdminProfile?.isSuperAdmin) {
+      if (settingsMsg) settingsMsg.textContent = 'Super admin permission is required';
+      switchSettingsSubtab('general');
+      return;
+    }
     await loadUserPermissions();
     await loadIdentityOverview();
     await loadGroupAdmins();
@@ -2461,6 +2524,9 @@ function renderApiGuide() {
         'GET    /api/admin/runtime-diagnostics',
         'GET    /api/admin/ffmpeg-health',
         'GET    /api/admin/workflow-tracking',
+        'GET    /api/admin/backups',
+        'POST   /api/admin/backups/run',
+        'DELETE /api/admin/backups/:fileName',
         'POST   /api/admin/search/reindex',
         'POST   /api/admin/proxy-jobs',
         'GET    /api/admin/proxy-jobs',
@@ -3011,8 +3077,70 @@ async function loadSettings() {
     if (staticOverlayInput) staticOverlayInput.checked = Boolean(settings.ocrDefaultIgnoreStaticOverlays);
   }
   writeSubtitleStyleForm(settings.subtitleStyle || {});
+  writeBackupSettingsForm(settings.backup || {});
   renderApiHelp();
   renderApiGuide();
+}
+
+function formatAdminFileSize(bytes) {
+  const value = Math.max(0, Number(bytes) || 0);
+  if (value >= 1024 * 1024 * 1024) return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  if (value >= 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${value} B`;
+}
+
+function readBackupSettingsForm() {
+  const elements = backupSettingsForm?.elements;
+  return {
+    enabled: Boolean(elements?.backupEnabled?.checked),
+    directory: String(elements?.backupDirectory?.value || '').trim(),
+    dailyHour: Number(elements?.backupDailyHour?.value) || 0,
+    includeMamDb: Boolean(elements?.backupIncludeMamDb?.checked),
+    includeKeycloakDb: Boolean(elements?.backupIncludeKeycloakDb?.checked),
+    includeUploadsArchive: Boolean(elements?.backupIncludeUploadsArchive?.checked),
+    retentionDays: Number(elements?.backupRetentionDays?.value) || 14
+  };
+}
+
+function writeBackupSettingsForm(backup = {}) {
+  const elements = backupSettingsForm?.elements;
+  if (!elements) return;
+  elements.backupEnabled.checked = Boolean(backup.enabled);
+  elements.backupDirectory.value = String(backup.directory || '/app/uploads/_backups');
+  elements.backupDailyHour.value = String(Number.isFinite(Number(backup.dailyHour)) ? Number(backup.dailyHour) : 2);
+  elements.backupIncludeMamDb.checked = backup.includeMamDb !== false;
+  elements.backupIncludeKeycloakDb.checked = Boolean(backup.includeKeycloakDb);
+  elements.backupIncludeUploadsArchive.checked = Boolean(backup.includeUploadsArchive);
+  elements.backupRetentionDays.value = String(Number(backup.retentionDays) || 14);
+}
+
+function renderBackupFiles(files = []) {
+  if (!backupFilesRows) return;
+  if (!files.length) {
+    backupFilesRows.innerHTML = `<div class="empty">${escapeHtml(t('backup_no_files'))}</div>`;
+    return;
+  }
+  backupFilesRows.innerHTML = files.map((file) => `
+    <div class="row backup-file-row">
+      <strong>${escapeHtml(file.fileName || '')}</strong>
+      <span>${escapeHtml(formatAdminFileSize(file.size))}</span>
+      <span>${escapeHtml(formatAdminDateTime(file.updatedAt))}</span>
+      <button type="button" class="danger ghost backup-delete-btn" data-backup-file="${escapeHtml(file.fileName || '')}">${escapeHtml(t('backup_delete'))}</button>
+    </div>
+  `).join('');
+}
+
+async function loadBackups() {
+  if (!backupSettingsForm) return;
+  try {
+    const result = await api('/api/admin/backups');
+    writeBackupSettingsForm(result.settings || {});
+    renderBackupFiles(result.files || []);
+    if (backupSettingsMsg) backupSettingsMsg.textContent = result.directory ? `${t('backup_directory')}: ${result.directory}` : '';
+  } catch (error) {
+    if (backupSettingsMsg) backupSettingsMsg.textContent = error.message || t('backup_load_failed');
+  }
 }
 
 async function refreshTrackingAndHealth() {
@@ -3063,6 +3191,55 @@ settingsForm.addEventListener('submit', async (event) => {
   settingsMsg.textContent = t('settings_saved');
   renderApiHelp();
   renderApiGuide();
+});
+
+backupSettingsForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const current = await api('/api/admin/settings');
+  await api('/api/admin/settings', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      ...current,
+      backup: readBackupSettingsForm()
+    })
+  });
+  if (backupSettingsMsg) backupSettingsMsg.textContent = t('backup_saved');
+  await loadBackups();
+});
+
+runBackupNowBtn?.addEventListener('click', async () => {
+  runBackupNowBtn.disabled = true;
+  if (backupSettingsMsg) backupSettingsMsg.textContent = '';
+  try {
+    const result = await api('/api/admin/backups/run', {
+      method: 'POST',
+      body: JSON.stringify(readBackupSettingsForm())
+    });
+    const files = Array.isArray(result.files) ? result.files.length : 0;
+    if (backupSettingsMsg) backupSettingsMsg.textContent = `${t('backup_started')} (${files})`;
+    await loadBackups();
+  } catch (error) {
+    if (backupSettingsMsg) backupSettingsMsg.textContent = error.message || t('backup_run_failed');
+  } finally {
+    runBackupNowBtn.disabled = false;
+  }
+});
+
+backupFilesRows?.addEventListener('click', async (event) => {
+  const button = event.target.closest('.backup-delete-btn');
+  if (!button) return;
+  const fileName = String(button.dataset.backupFile || '').trim();
+  if (!fileName) return;
+  if (!window.confirm(t('backup_delete_confirm'))) return;
+  button.disabled = true;
+  try {
+    await api(`/api/admin/backups/${encodeURIComponent(fileName)}`, { method: 'DELETE' });
+    if (backupSettingsMsg) backupSettingsMsg.textContent = t('backup_deleted');
+    await loadBackups();
+  } catch (error) {
+    if (backupSettingsMsg) backupSettingsMsg.textContent = error.message || t('backup_delete_failed');
+    button.disabled = false;
+  }
 });
 
 ocrSettingsForm?.addEventListener('submit', async (event) => {
@@ -3673,9 +3850,11 @@ languageSelect?.addEventListener('change', async (event) => {
   applyAdminLanguage(event.target.value);
   if (!currentAdminProfile?.canAccessTextAdmin || currentAdminProfile?.canAccessAdmin || currentAdminProfile?.isAdmin) {
     await refreshTrackingAndHealth();
-    await loadUserPermissions();
-    await loadIdentityOverview();
-    await loadGroupAdmins();
+    if (currentAdminProfile?.isSuperAdmin) {
+      await loadUserPermissions();
+      await loadIdentityOverview();
+      await loadGroupAdmins();
+    }
   }
   await loadOcrRecords();
   await loadSubtitleRecords();
@@ -3751,9 +3930,11 @@ document.addEventListener('keydown', onLanguageShortcut, true);
     if (!access.isTextOnly) {
       await loadSettings();
       await refreshTrackingAndHealth();
-      await loadUserPermissions();
-      await loadIdentityOverview();
-      await loadGroupAdmins();
+      if (access.isSuperAdmin) {
+        await loadUserPermissions();
+        await loadIdentityOverview();
+        await loadGroupAdmins();
+      }
     }
     await loadOcrRecords();
     await loadSubtitleRecords();

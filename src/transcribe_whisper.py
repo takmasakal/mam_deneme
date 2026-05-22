@@ -4,6 +4,10 @@ import os
 import re
 import sys
 
+# ONNXRuntime can emit CPU vendor warnings on ARM/RPi-like environments.
+# They are not transcription failures, so keep them out of stderr.
+os.environ.setdefault("ORT_LOG_SEVERITY_LEVEL", "3")
+
 from faster_whisper import WhisperModel
 
 

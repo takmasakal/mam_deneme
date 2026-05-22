@@ -149,6 +149,7 @@ function registerAssetRoutes(app, deps) {
       if (!assetAccessService.canEditAsset(loaded.row, loaded.accessContext)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
+      req.userPermissions = loaded.accessContext;
       const result = await assetEditLockService.acquire(req, req.params.id, req.body?.purpose || 'edit');
       if (!result.ok) return assetEditLockService.sendLocked(res, result);
       return res.json({ locked: true, lock: result.lock });
@@ -165,6 +166,7 @@ function registerAssetRoutes(app, deps) {
       if (!assetAccessService.canEditAsset(loaded.row, loaded.accessContext)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
+      req.userPermissions = loaded.accessContext;
       const result = await assetEditLockService.refresh(req, req.params.id);
       if (!result.ok) return assetEditLockService.sendLocked(res, result);
       return res.json({ locked: true, lock: result.lock });
@@ -176,6 +178,7 @@ function registerAssetRoutes(app, deps) {
   app.delete('/api/assets/:id/edit-lock', async (req, res) => {
     try {
       if (!assetEditLockService) return res.status(503).json({ error: 'Edit lock service is not available' });
+      req.userPermissions = await resolveEffectivePermissions(req);
       const result = await assetEditLockService.release(req, req.params.id);
       if (!result.ok) return res.status(Number(result.status || 403)).json({ error: result.error, lock: result.lock || null });
       return res.json({ released: Boolean(result.released) });

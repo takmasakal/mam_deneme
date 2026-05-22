@@ -56,9 +56,15 @@ services:
       MAM_DB_USER: postgres
       MAM_DB_NAME: mam_mvp
       MAM_DB_PASSWORD_FILE: /run/secrets/mam_postgres_password
+      KEYCLOAK_DB_HOST: keycloak-postgres
+      KEYCLOAK_DB_PORT: 5432
+      KEYCLOAK_DB_USER: ${KEYCLOAK_DB_USER:-keycloak}
+      KEYCLOAK_DB_NAME: ${KEYCLOAK_DB_NAME:-keycloak}
+      KEYCLOAK_DB_PASSWORD_FILE: /run/secrets/keycloak_db_password
       ELASTIC_URL: http://elasticsearch:9200
       ELASTIC_INDEX: mam_assets
       PORT: 3000
+      JSON_BODY_LIMIT: ${JSON_BODY_LIMIT:-1500mb}
       MAM_OFFLINE_MODE: ${MAM_OFFLINE_MODE:-true}
       MAM_MODEL_CACHE_DIR: /opt/mam-models
       HF_HOME: /opt/mam-models/huggingface
@@ -87,6 +93,7 @@ services:
       - ./uploads:/app/uploads
     secrets:
       - mam_postgres_password
+      - keycloak_db_password
       - keycloak_admin_password
     restart: unless-stopped
 
