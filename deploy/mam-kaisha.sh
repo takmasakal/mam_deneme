@@ -44,6 +44,7 @@ Usage:
   ./deploy/mam-kaisha.sh ps
   ./deploy/mam-kaisha.sh logs [SERVICE...]
   ./deploy/mam-kaisha.sh urls
+  ./deploy/mam-kaisha.sh sync-keycloak
 HELP
 }
 
@@ -73,6 +74,10 @@ case "${cmd}" in
     ensure_init
     shift || true
     dc logs -f "$@"
+    ;;
+  sync-keycloak)
+    ensure_init
+    ./deploy/keycloak-sync-defaults.sh
     ;;
   urls)
     ensure_init
