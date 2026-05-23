@@ -54,89 +54,9 @@
     }
   ],
   "roles": {
-    "realm": [
-      {
-        "name": "mam-super-admin"
-      },
-      {
-        "name": "mam-admin"
-      },
-      {
-        "name": "mam-admin-access"
-      },
-      {
-        "name": "mam-asset-delete"
-      },
-      {
-        "name": "mam-office-edit"
-      },
-      {
-        "name": "mam-metadata-edit"
-      },
-      {
-        "name": "mam-pdf-advanced"
-      },
-      {
-        "name": "mam-text-admin"
-      },
-      {
-        "name": "admin-access"
-      },
-      {
-        "name": "asset-delete"
-      }
-    ]
+    "realm": []
   },
-  "groups": [
-    {
-      "name": "superadmin",
-      "realmRoles": [
-        "mam-super-admin",
-        "mam-admin-access",
-        "mam-asset-delete",
-        "mam-office-edit",
-        "mam-metadata-edit",
-        "mam-pdf-advanced",
-        "mam-text-admin",
-        "admin-access",
-        "asset-delete"
-      ]
-    },
-    {
-      "name": "admin",
-      "realmRoles": [
-        "mam-admin-access",
-        "mam-asset-delete",
-        "mam-office-edit",
-        "mam-metadata-edit",
-        "mam-pdf-advanced",
-        "admin-access",
-        "asset-delete"
-      ]
-    },
-    {
-      "name": "docadmin",
-      "realmRoles": [
-        "mam-office-edit",
-        "mam-pdf-advanced"
-      ]
-    },
-    {
-      "name": "dokumancilar"
-    },
-    {
-      "name": "ocrtitle-admin",
-      "realmRoles": [
-        "mam-text-admin"
-      ]
-    },
-    {
-      "name": "yazicilar"
-    },
-    {
-      "name": "standard-users"
-    }
-  ],
+  "groups": [],
   "users": [
     {
       "username": "__MAM_ADMIN_USER__",
@@ -148,19 +68,6 @@
           "value": "__MAM_ADMIN_PASSWORD__",
           "temporary": false
         }
-      ],
-      "realmRoles": [
-        "mam-super-admin",
-        "mam-admin-access",
-        "mam-asset-delete",
-        "mam-office-edit",
-        "mam-metadata-edit",
-        "mam-pdf-advanced",
-        "admin-access",
-        "asset-delete"
-      ],
-      "groups": [
-        "/superadmin"
       ]
     },
     {
@@ -185,13 +92,6 @@
           "value": "__MAM_TEXT_ADMIN_PASSWORD__",
           "temporary": false
         }
-      ],
-      "realmRoles": [
-        "mam-text-admin"
-      ],
-      "groups": [
-        "/ocrtitle-admin",
-        "/yazicilar"
       ]
     }
   ]

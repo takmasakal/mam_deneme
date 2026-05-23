@@ -128,8 +128,8 @@ echo "  - MAM: http://${PUBLIC_HOST}:3000"
 echo "  - Keycloak Admin: http://${PUBLIC_HOST}:8081"
 echo
 echo "Users created in realm 'mam':"
-echo "  - ${MAM_ADMIN_USER} (realm roles: admin-access, asset-delete)"
+echo "  - ${MAM_ADMIN_USER} (no permissions are granted automatically)"
 echo "  - ${MAM_USER}"
-echo "  - ${MAM_TEXT_ADMIN_USER} (realm roles: mam-text-admin)"
+echo "  - ${MAM_TEXT_ADMIN_USER} (no permissions are granted automatically)"
 echo
 echo "Passwords are stored only under ${SECRETS_DIR}."

@@ -2,44 +2,36 @@ const PERMISSION_DEFINITIONS = [
   {
     key: 'admin.access',
     legacyField: 'adminPageAccess',
-    roleNames: ['mam-admin', 'mam-admin-access', 'admin-access'],
     labelKey: 'perm_admin_access'
   },
   {
     key: 'metadata.edit',
     legacyField: 'metadataEdit',
-    roleNames: ['mam-metadata-edit'],
     labelKey: 'perm_metadata_edit'
   },
   {
     key: 'office.edit',
     legacyField: 'officeEdit',
-    roleNames: ['mam-office-edit'],
     labelKey: 'perm_office_edit'
   },
   {
     key: 'asset.delete',
     legacyField: 'assetDelete',
-    roleNames: ['mam-asset-delete', 'asset-delete'],
     labelKey: 'perm_asset_delete'
   },
   {
     key: 'pdf.advanced',
     legacyField: 'pdfAdvancedTools',
-    roleNames: ['mam-pdf-advanced'],
     labelKey: 'perm_pdf_advanced'
   },
   {
     key: 'text.admin',
     legacyField: 'textAdminAccess',
-    roleNames: ['mam-text-admin', 'text-admin'],
     labelKey: 'perm_text_admin'
   }
 ];
 
 const PERMISSION_KEYS = PERMISSION_DEFINITIONS.map((item) => item.key);
-const SUPER_ADMIN_ROLE_NAMES = ['admin', 'realm-admin', 'mam-super-admin', 'superadmin', '/superadmin'];
-const SUPER_ADMIN_USERNAMES = ['admin', 'mamadmin'];
 
 function normalizePrincipalNames(values) {
   return (Array.isArray(values) ? values : [])
@@ -56,35 +48,14 @@ function getPermissionDefinitionsPayload() {
   return PERMISSION_DEFINITIONS.map((item) => ({
     key: item.key,
     legacyField: item.legacyField,
-    labelKey: item.labelKey,
-    roleNames: [...item.roleNames]
+    labelKey: item.labelKey
   }));
 }
 
-function resolvePermissionKeysFromPrincipals({ username = '', groups = [], roles = [] } = {}) {
-  const normalizedUsername = String(username || '').trim().toLowerCase();
-  const principalNames = new Set([
-    ...normalizePrincipalNames(groups),
-    ...normalizePrincipalNames(roles)
-  ]);
-  const permissionKeys = new Set();
-  const isSuperAdmin =
-    SUPER_ADMIN_USERNAMES.includes(normalizedUsername)
-    || [...principalNames].some((name) => SUPER_ADMIN_ROLE_NAMES.includes(name));
-
-  if (isSuperAdmin) {
-    PERMISSION_KEYS.forEach((key) => permissionKeys.add(key));
-  }
-
-  PERMISSION_DEFINITIONS.forEach((definition) => {
-    if (definition.roleNames.some((roleName) => principalNames.has(roleName))) {
-      permissionKeys.add(definition.key);
-    }
-  });
-
+function resolvePermissionKeysFromPrincipals() {
   return {
-    permissionKeys: Array.from(permissionKeys),
-    isSuperAdmin
+    permissionKeys: [],
+    isSuperAdmin: false
   };
 }
 
@@ -155,16 +126,6 @@ function normalizePermissionEntry(input, fallbackPermissions) {
   };
 }
 
-function isAdminName(value) {
-  const normalized = String(value || '').trim().toLowerCase();
-  return SUPER_ADMIN_USERNAMES.includes(normalized);
-}
-
-function isAdminByGroupsOrRoles(groupsOrRoles) {
-  return normalizePrincipalNames(groupsOrRoles)
-    .some((name) => SUPER_ADMIN_ROLE_NAMES.includes(name) || name === 'mam-admin' || name === 'mam-admin-access' || name === 'admin-access');
-}
-
 module.exports = {
   PERMISSION_DEFINITIONS,
   PERMISSION_KEYS,
@@ -172,7 +133,5 @@ module.exports = {
   getPermissionDefinitionsPayload,
   resolvePermissionKeysFromPrincipals,
   permissionKeysToLegacyFlags,
-  normalizePermissionEntry,
-  isAdminName,
-  isAdminByGroupsOrRoles
+  normalizePermissionEntry
 };

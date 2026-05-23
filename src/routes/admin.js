@@ -105,7 +105,7 @@ app.use('/api/admin', requireScopedAdminAccess);
 
 async function requireSuperAdminRequest(req, res) {
   const effective = await resolveEffectivePermissions(req);
-  if (!effective?.baseIsSuperAdmin) {
+  if (!effective?.isSuperAdmin) {
     res.status(403).json({ error: 'Super admin permission is required' });
     return null;
   }

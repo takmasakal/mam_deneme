@@ -12,9 +12,7 @@ const {
   getPermissionDefinitionsPayload,
   resolvePermissionKeysFromPrincipals,
   permissionKeysToLegacyFlags,
-  normalizePermissionEntry,
-  isAdminName,
-  isAdminByGroupsOrRoles
+  normalizePermissionEntry
 } = require('./permissions');
 const { createOfficeService } = require('./services/officeService');
 const { createSearchService } = require('./services/searchService');
@@ -7289,12 +7287,11 @@ function isVisibleKeycloakUser(user) {
   const username = String(user?.username || '').trim().toLowerCase();
   if (!username) return false;
   if (username.startsWith('service-account-')) return false;
-  if (username === 'admin' || username === 'mamadmin') return false;
   if (user && Object.prototype.hasOwnProperty.call(user, 'enabled') && user.enabled === false) return false;
   return true;
 }
 
-async function fetchKeycloakUserPermissionDefaults(users, realmByUsername) {
+async function fetchKeycloakUserPermissionDefaults(users) {
   const cacheKey = (Array.isArray(users) ? users : [])
     .map((user) => `${String(user?.id || '').trim()}:${String(user?.username || '').trim().toLowerCase()}`)
     .sort()
@@ -7303,40 +7300,11 @@ async function fetchKeycloakUserPermissionDefaults(users, realmByUsername) {
   const cached = keycloakPermissionDefaultsCache.get(cacheKey);
   if (cached && cached.expiresAt > now) return new Map(cached.value);
 
-  const token = await getKeycloakAdminAccessToken();
-  if (!token) return new Map();
-  const candidateRealms = getKeycloakCandidateRealms();
-  const defaultRealm = candidateRealms[0] || KEYCLOAK_REALM;
   const results = new Map();
-  await Promise.all(
-    (Array.isArray(users) ? users : []).map(async (user) => {
-      const userId = String(user?.id || '').trim();
-      const username = String(user?.username || '').trim().toLowerCase();
-      if (!userId || !username) return;
-      const realm = String(realmByUsername?.get(username) || defaultRealm || KEYCLOAK_REALM).trim();
-      const realmEncoded = encodeURIComponent(realm);
-      const [rolesRes, groupsRes] = await Promise.all([
-        fetch(`${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users/${encodeURIComponent(userId)}/role-mappings/realm`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }).catch(() => null),
-        fetch(`${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users/${encodeURIComponent(userId)}/groups`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }).catch(() => null)
-      ]);
-      const roles = rolesRes && rolesRes.ok ? await rolesRes.json().catch(() => []) : [];
-      const groups = groupsRes && groupsRes.ok ? await groupsRes.json().catch(() => []) : [];
-      const roleNames = (Array.isArray(roles) ? roles : []).map((item) => String(item?.name || '').trim());
-      const groupNames = (Array.isArray(groups) ? groups : [])
-        .map((item) => String(item?.path || item?.name || '').trim())
-        .filter(Boolean);
-      const defaults = resolvePermissionKeysFromPrincipals({
-        username,
-        groups: groupNames,
-        roles: roleNames
-      });
-      results.set(username, defaults.permissionKeys);
-    })
-  );
+  (Array.isArray(users) ? users : []).forEach((user) => {
+    const username = String(user?.username || '').trim().toLowerCase();
+    if (username) results.set(username, []);
+  });
   keycloakPermissionDefaultsCache.set(cacheKey, {
     expiresAt: now + KEYCLOAK_ADMIN_CACHE_TTL_MS,
     value: Array.from(results.entries())
@@ -7351,11 +7319,13 @@ async function resolveEffectivePermissions(req) {
   const settings = await getUserPermissionsSettings();
   const override = getPermissionOverrideForUser(settings, user);
   const effective = normalizePermissionEntry(override, user.basePermissionKeys || []);
+  const isSuperAdmin = PERMISSION_KEYS.every((key) => effective.permissionKeys.includes(key));
   const canAccessAdmin = Boolean(effective.adminPageAccess);
   const canAccessTextAdmin = Boolean(effective.textAdminAccess || canAccessAdmin);
   const canEditOffice = Boolean(effective.officeEdit || canAccessAdmin);
   return {
     ...user,
+    isSuperAdmin,
     isAdmin: canAccessAdmin,
     canAccessAdmin,
     canAccessTextAdmin,
@@ -7387,7 +7357,7 @@ app.get('/api/me', async (req, res) => {
       groups: effective.groups || [],
       roles: effective.roles || [],
       groupAdminGroups: await assetAccessService.getGroupAdminGroupsForUser(effective).catch(() => []),
-      isSuperAdmin: Boolean(effective.baseIsSuperAdmin),
+      isSuperAdmin: Boolean(effective.isSuperAdmin),
       isAdmin: effective.isAdmin,
       canAccessAdmin: effective.canAccessAdmin,
       canAccessTextAdmin: effective.canAccessTextAdmin,
