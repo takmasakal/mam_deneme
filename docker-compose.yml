@@ -44,6 +44,9 @@ services:
         PRELOAD_PADDLE_OCR: ${PRELOAD_PADDLE_OCR:-true}
         WHISPER_MODEL: ${WHISPER_MODEL:-small}
         HF_TOKEN: ${HF_TOKEN:-}
+        MAM_GIT_COMMIT: ${MAM_GIT_COMMIT:-unknown}
+        MAM_GIT_BRANCH: ${MAM_GIT_BRANCH:-unknown}
+        MAM_BUILD_DATE: ${MAM_BUILD_DATE:-unknown}
     container_name: mam-app
     depends_on:
       postgres:
@@ -78,6 +81,9 @@ services:
       PADDLE_HOME: /opt/mam-models/paddle
       PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True"
       PADDLE_OCR_ALLOW_FALLBACK: "false"
+      MAM_GIT_COMMIT: ${MAM_GIT_COMMIT:-unknown}
+      MAM_GIT_BRANCH: ${MAM_GIT_BRANCH:-unknown}
+      MAM_BUILD_DATE: ${MAM_BUILD_DATE:-unknown}
       KEYCLOAK_INTERNAL_URL: http://keycloak:8080
       KEYCLOAK_REALM: mam
       KEYCLOAK_REALMS: mam

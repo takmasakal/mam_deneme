@@ -25,6 +25,13 @@ if [[ -z "${DOCKER_CMD}" ]]; then
   exit 1
 fi
 
+export_build_metadata() {
+  MAM_GIT_COMMIT="$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
+  MAM_GIT_BRANCH="$(git branch --show-current 2>/dev/null || echo unknown)"
+  MAM_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  export MAM_GIT_COMMIT MAM_GIT_BRANCH MAM_BUILD_DATE
+}
+
 dc() {
   local profile_args=()
   local provider=""
@@ -38,6 +45,13 @@ dc() {
   fi
   # shellcheck disable=SC2086
   ${DOCKER_CMD} compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "${profile_args[@]}" "$@"
+}
+
+print_running_version() {
+  echo
+  echo "Running MAM app build:"
+  # shellcheck disable=SC2086
+  ${DOCKER_CMD} exec mam-app node -e "console.log(JSON.stringify({gitCommit:process.env.MAM_GIT_COMMIT||'unknown',gitBranch:process.env.MAM_GIT_BRANCH||'unknown',buildDate:process.env.MAM_BUILD_DATE||'unknown'}, null, 2))" 2>/dev/null || echo "  mam-app is not running yet."
 }
 
 env_value() {
@@ -110,6 +124,7 @@ Usage:
   ./deploy/mam-rpi.sh ps
   ./deploy/mam-rpi.sh logs [SERVICE...]
   ./deploy/mam-rpi.sh urls
+  ./deploy/mam-rpi.sh version
   ./deploy/mam-rpi.sh reset
 EOF
 }
@@ -122,13 +137,18 @@ case "${cmd}" in
   build)
     init_if_needed "${2:-}"
     warn_office_config
+    export_build_metadata
+    echo "Building MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
     dc build app oauth2-proxy
     ;;
   up)
     init_if_needed "${2:-}"
     warn_office_config
+    export_build_metadata
+    echo "Starting MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
     dc up -d
     print_urls
+    print_running_version
     ;;
   down)
     dc down
@@ -136,9 +156,12 @@ case "${cmd}" in
   restart)
     init_if_needed "${2:-}"
     warn_office_config
+    export_build_metadata
+    echo "Restarting MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
     dc down
     dc up -d
     print_urls
+    print_running_version
     ;;
   ps)
     dc ps
@@ -153,6 +176,9 @@ case "${cmd}" in
     ;;
   urls)
     print_urls
+    ;;
+  version)
+    print_running_version
     ;;
   reset)
     dc down -v --remove-orphans

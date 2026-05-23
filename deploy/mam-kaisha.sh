@@ -16,6 +16,13 @@ detect_docker_cmd() {
 
 DOCKER_CMD="${DOCKER_CMD:-}"
 
+export_build_metadata() {
+  MAM_GIT_COMMIT="$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
+  MAM_GIT_BRANCH="$(git branch --show-current 2>/dev/null || echo unknown)"
+  MAM_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  export MAM_GIT_COMMIT MAM_GIT_BRANCH MAM_BUILD_DATE
+}
+
 dc() {
   if [[ -z "${DOCKER_CMD}" ]]; then
     DOCKER_CMD="$(detect_docker_cmd)"
@@ -26,6 +33,20 @@ dc() {
   fi
   # shellcheck disable=SC2086
   ${DOCKER_CMD} compose --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}" "$@"
+}
+
+print_running_version() {
+  if [[ -z "${DOCKER_CMD}" ]]; then
+    DOCKER_CMD="$(detect_docker_cmd)"
+  fi
+  if [[ -z "${DOCKER_CMD}" ]]; then
+    echo "Docker daemon is not reachable. Start Docker or use sudo."
+    exit 1
+  fi
+  echo
+  echo "Running MAM app build:"
+  # shellcheck disable=SC2086
+  ${DOCKER_CMD} exec mam-app node -e "console.log(JSON.stringify({gitCommit:process.env.MAM_GIT_COMMIT||'unknown',gitBranch:process.env.MAM_GIT_BRANCH||'unknown',buildDate:process.env.MAM_BUILD_DATE||'unknown'}, null, 2))" 2>/dev/null || echo "  mam-app is not running yet."
 }
 
 ensure_init() {
@@ -45,6 +66,7 @@ Usage:
   ./deploy/mam-kaisha.sh ps
   ./deploy/mam-kaisha.sh logs [SERVICE...]
   ./deploy/mam-kaisha.sh urls
+  ./deploy/mam-kaisha.sh version
   ./deploy/mam-kaisha.sh sync-keycloak
 HELP
 }
@@ -57,19 +79,27 @@ case "${cmd}" in
     ;;
   build)
     ensure_init
+    export_build_metadata
+    echo "Building MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
     dc build app oauth2-proxy
     ;;
   up)
     ensure_init
+    export_build_metadata
+    echo "Starting MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
     dc up -d --build
+    print_running_version
     ;;
   down)
     dc down
     ;;
   restart)
     ensure_init
+    export_build_metadata
+    echo "Restarting MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
     dc down
     dc up -d --build
+    print_running_version
     ;;
   ps)
     ensure_init
@@ -92,6 +122,10 @@ case "${cmd}" in
     echo "Keycloak: ${PUBLIC_KEYCLOAK_URL}"
     echo "OnlyOffice: ${PUBLIC_OFFICE_URL}"
     echo "Reverse proxy: company-managed external HTTPS layer"
+    ;;
+  version)
+    ensure_init
+    print_running_version
     ;;
   ""|-h|--help|help)
     usage

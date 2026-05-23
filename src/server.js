@@ -57,6 +57,14 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const APP_BUILD_INFO = {
+  name: 'mam_deneme',
+  version: '0.1.0',
+  gitCommit: String(process.env.MAM_GIT_COMMIT || 'unknown').trim() || 'unknown',
+  gitBranch: String(process.env.MAM_GIT_BRANCH || 'unknown').trim() || 'unknown',
+  buildDate: String(process.env.MAM_BUILD_DATE || 'unknown').trim() || 'unknown',
+  nodeEnv: String(process.env.NODE_ENV || '').trim() || 'development'
+};
 const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || process.env.MAM_JSON_BODY_LIMIT || '1500mb';
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
 const PROXIES_DIR = path.join(UPLOADS_DIR, 'proxies');
@@ -7342,6 +7350,13 @@ app.get('/api/workflow', (_req, res) => {
   res.json(WORKFLOW);
 });
 
+app.get('/api/version', (_req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  res.json(APP_BUILD_INFO);
+});
+
 app.get('/api/me', async (req, res) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.set('Pragma', 'no-cache');
@@ -8240,7 +8255,7 @@ initDb()
     scheduleMediaJobCleanup();
     scheduleSystemBackups();
     app.listen(PORT, () => {
-      console.log(`MAM MVP running on http://localhost:${PORT}`);
+      console.log(`MAM MVP running on http://localhost:${PORT} (${APP_BUILD_INFO.gitBranch}@${APP_BUILD_INFO.gitCommit}, built ${APP_BUILD_INFO.buildDate})`);
     });
   })
   .catch((error) => {
