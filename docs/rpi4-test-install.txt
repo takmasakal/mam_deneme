@@ -1,6 +1,6 @@
 # Raspberry Pi 4 Test Kurulum Rehberi
 
-Bu rehber, `codex/next-task` branch'indeki mevcut MAM sürümünü Raspberry Pi 4 üzerinde test amaçlı çalıştırmak içindir.
+Bu rehber, güncel MAM sürümünü Raspberry Pi 4 üzerinde test amaçlı çalıştırmak içindir.
 
 ## Ön Koşullar
 
@@ -32,7 +32,7 @@ git --version
 ```bash
 git clone https://github.com/takmasakal/mam_deneme.git
 cd mam_deneme
-git checkout codex/next-task
+git checkout main
 ```
 
 Eğer repo zaten varsa:
@@ -40,7 +40,7 @@ Eğer repo zaten varsa:
 ```bash
 cd mam_deneme
 git fetch origin
-git checkout codex/next-task
+git checkout main
 git pull
 ```
 
@@ -132,7 +132,7 @@ Yeni commit geldikçe:
 ```bash
 cd mam_deneme
 git fetch origin
-git checkout codex/next-task
+git checkout main
 git pull
 docker compose -f docker-compose.easy.yml up -d --build
 ```

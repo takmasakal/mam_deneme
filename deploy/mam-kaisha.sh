@@ -121,7 +121,7 @@ case "${cmd}" in
     echo "MAM: ${PUBLIC_MAM_URL}"
     echo "Keycloak: ${PUBLIC_KEYCLOAK_URL}"
     echo "OnlyOffice: ${PUBLIC_OFFICE_URL}"
-    echo "Reverse proxy: company-managed external HTTPS layer"
+    echo "Access mode: direct host ports"
     ;;
   version)
     ensure_init

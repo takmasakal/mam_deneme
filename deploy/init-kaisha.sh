@@ -87,11 +87,10 @@ cat <<MSG
 Prepared company deployment env:
   - ${ENV_OUT}
 
-This repository no longer starts an internal Nginx/HTTPS reverse proxy.
-Company reverse proxy must route public HTTPS traffic to these host ports:
-  - ${mam_url}       -> http://SERVER_IP:3000
-  - ${keycloak_url}  -> http://SERVER_IP:8081
-  - ${office_url}    -> http://SERVER_IP:8082  (OnlyOffice kullaniliyorsa)
+Use these service URLs directly from the server network:
+  - MAM:        ${mam_url}
+  - Keycloak:   ${keycloak_url}
+  - OnlyOffice: ${office_url}  (OnlyOffice kullaniliyorsa)
 
 Start with:
   docker compose --env-file ${ENV_OUT} -f docker-compose.yml -f docker-compose.kaisha.yml up -d

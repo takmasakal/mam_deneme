@@ -88,7 +88,7 @@ Sistemin ana parçaları şunlardır:
 - Tema özelleştirmesi `keycloak-theme/` altındadır
 
 ### oauth2-proxy
-- Reverse proxy olarak çalışır
+- Browser login koruması sağlar
 - Keycloak ile OIDC konuşur
 - Uygulama doğrudan anonim erişime açılmaz
 

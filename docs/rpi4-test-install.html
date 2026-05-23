@@ -48,7 +48,7 @@
 </head>
 <body>
   <h1>Raspberry Pi 4 Test Kurulum Rehberi</h1>
-  <p>Bu rehber, <code>codex/next-task</code> branch'indeki mevcut MAM sürümünü Raspberry Pi 4 üzerinde test amaçlı çalıştırmak içindir.</p>
+  <p>Bu rehber, güncel MAM sürümünü Raspberry Pi 4 üzerinde test amaçlı çalıştırmak içindir.</p>
 
   <h2>Ön Koşullar</h2>
   <ul>
@@ -73,12 +73,12 @@ git --version</code></pre>
   <h2>2. Repo'yu İndir</h2>
   <pre><code>git clone https://github.com/takmasakal/mam_deneme.git
 cd mam_deneme
-git checkout codex/next-task</code></pre>
+git checkout main</code></pre>
 
   <p>Eğer repo zaten varsa:</p>
   <pre><code>cd mam_deneme
 git fetch origin
-git checkout codex/next-task
+git checkout main
 git pull</code></pre>
 
   <h2>3. Disk Klasörlerini Hazırla</h2>
@@ -142,7 +142,7 @@ docker compose -f docker-compose.easy.yml logs -f oauth2-proxy</code></pre>
   <h2>9. Güncelleme</h2>
   <pre><code>cd mam_deneme
 git fetch origin
-git checkout codex/next-task
+git checkout main
 git pull
 docker compose -f docker-compose.easy.yml up -d --build</code></pre>
 

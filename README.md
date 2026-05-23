@@ -57,14 +57,12 @@ A lightweight Media Asset Management starter app.
    `http://localhost:3000`
 
 `up_latest_main.sh` behavior:
-- Fetches the latest `main` branch before starting.
+- Fetches the current branch before starting, or `MAM_DEPLOY_BRANCH` when set.
 - Prevents rebuilding an older checked-out revision by mistake.
-- Ensures the external PostgreSQL volume `codex_deneme_pg_data` exists.
-- Then starts the existing stack.
+- Starts the stack and lets Docker create the named PostgreSQL volume `mam_deneme_pg_data` automatically when missing.
 
 First-time manual alternative:
 ```bash
-docker volume create codex_deneme_pg_data || true
 docker compose build app oauth2-proxy
 docker compose up -d
 ```
@@ -334,4 +332,4 @@ To avoid accidentally building an older Git checkout, use:
 ./scripts/up_latest_main.sh
 ```
 
-This script fetches `origin/main`, fast-forwards the local `main` checkout, then starts the existing stack.
+This script fetches the current branch, fast-forwards it from `origin`, then starts the existing stack. Set `MAM_DEPLOY_BRANCH` to deploy a specific branch.
