@@ -181,10 +181,10 @@ ensure_web_client_urls() {
     echo "WARN: PUBLIC_MAM_URL is empty; skipped ${OAUTH2_PROXY_CLIENT_ID} URL sync"
     return
   fi
-  local client_uuid mam_url callback_url logged_out_url client_rows
+  local client_uuid mam_url callback_url start_url client_rows
   mam_url="${PUBLIC_MAM_URL%/}"
   callback_url="${mam_url}/oauth2/callback"
-  logged_out_url="${mam_url}/logged-out"
+  start_url="${mam_url}/oauth2/start?rd=%2F"
   client_rows="$(kcadm get clients -r "${REALM}" -q "clientId=${OAUTH2_PROXY_CLIENT_ID}")"
   client_uuid="$(printf '%s' "${client_rows}" | json_find_client_id "${OAUTH2_PROXY_CLIENT_ID}")"
   if [[ -z "${client_uuid}" ]]; then
@@ -193,9 +193,9 @@ ensure_web_client_urls() {
   fi
   kcadm update "clients/${client_uuid}" -r "${REALM}" \
     -s "baseUrl=${mam_url}" \
-    -s "redirectUris=[\"${callback_url}\",\"${logged_out_url}\"]" \
+    -s "redirectUris=[\"${callback_url}\"]" \
     -s "webOrigins=[\"${mam_url}\"]" \
-    -s 'attributes."post.logout.redirect.uris"="+"' >/dev/null
+    -s "attributes.\"post.logout.redirect.uris\"=\"${start_url}\"" >/dev/null
   echo "Client URLs ensured: ${OAUTH2_PROXY_CLIENT_ID}"
 }
 

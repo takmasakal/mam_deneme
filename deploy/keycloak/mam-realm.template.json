@@ -21,8 +21,7 @@
       "publicClient": false,
       "secret": "__CLIENT_SECRET__",
       "redirectUris": [
-        "http://__PUBLIC_HOST__:3000/oauth2/callback",
-        "http://__PUBLIC_HOST__:3000/logged-out"
+        "http://__PUBLIC_HOST__:3000/oauth2/callback"
       ],
       "webOrigins": [
         "http://__PUBLIC_HOST__:3000"

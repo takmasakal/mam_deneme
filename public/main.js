@@ -2821,9 +2821,9 @@ logoutBtn?.addEventListener('click', async () => {
     });
     const payload = await response.json().catch(() => ({}));
     const url = String(payload?.url || '').trim();
-    window.location.assign(url || '/oauth2/sign_out?rd=%2Flogged-out');
+    window.location.assign(url || '/oauth2/sign_out?rd=%2Foauth2%2Fstart%3Frd%3D%252F');
   } catch (_error) {
-    window.location.assign('/oauth2/sign_out?rd=%2Flogged-out');
+    window.location.assign('/oauth2/sign_out?rd=%2Foauth2%2Fstart%3Frd%3D%252F');
   }
 });
 

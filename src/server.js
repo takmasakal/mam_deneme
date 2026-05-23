@@ -394,14 +394,14 @@ function getRequestDerivedOidcSettings(settings, req) {
 function buildLogoutUrl(req) {
   if (!USE_OAUTH2_PROXY) return '/';
   const requestOrigin = `${resolveRequestProtocol(req)}://${resolveRequestHost(req)}`.replace(/\/+$/, '');
-  const postLogoutRedirectUri = `${requestOrigin}/logged-out`;
+  const postLogoutRedirectUri = `${requestOrigin}/oauth2/start?rd=%2F`;
   const keycloakPublicBaseUrl = trimTrailingSlashes(KEYCLOAK_PUBLIC_URL)
     || `${resolveRequestProtocol(req)}://${hostWithoutPort(resolveRequestHost(req))}:${String(process.env.KEYCLOAK_PUBLIC_PORT || '8081').trim() || '8081'}`;
   const keycloakLogoutUrl = `${buildRealmIssuerUrl(keycloakPublicBaseUrl)}/protocol/openid-connect/logout`
     + `?client_id=${encodeURIComponent(OAUTH2_PROXY_CLIENT_ID)}`
     + `&post_logout_redirect_uri=${encodeURIComponent(postLogoutRedirectUri)}`;
 
-  // First clear oauth2-proxy cookies, then clear the browser-side Keycloak session.
+  // First clear oauth2-proxy cookies, then clear Keycloak and return directly to the login flow.
   return `/oauth2/sign_out?rd=${encodeURIComponent(keycloakLogoutUrl)}`;
 }
 
@@ -7414,32 +7414,6 @@ app.get('/api/logout-url', (req, res) => {
   } catch (_error) {
     return res.json({ url: '/oauth2/sign_out' });
   }
-});
-
-app.get('/logged-out', (_req, res) => {
-  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.type('html').send(`<!doctype html>
-<html lang="tr">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MAM - Çıkış Yapıldı</title>
-  <style>
-    body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: Arial, sans-serif; background: #0f172a; color: #e5eefb; }
-    main { width: min(420px, calc(100vw - 32px)); padding: 28px; border: 1px solid rgba(142, 202, 230, 0.35); border-radius: 18px; background: rgba(2, 48, 71, 0.72); box-shadow: 0 22px 70px rgba(0,0,0,0.35); }
-    h1 { margin: 0 0 10px; font-size: 24px; }
-    p { margin: 0 0 22px; color: #b8c7d9; line-height: 1.45; }
-    a { display: inline-block; padding: 10px 14px; border-radius: 10px; background: #fb8500; color: #08111f; font-weight: 700; text-decoration: none; }
-  </style>
-</head>
-<body>
-  <main>
-    <h1>Çıkış yapıldı</h1>
-    <p>Oturum kapatıldı. Tekrar giriş yapmak için aşağıdaki bağlantıyı kullanın.</p>
-    <a href="/oauth2/start?rd=%2F">Tekrar giriş yap</a>
-  </main>
-</body>
-</html>`);
 });
 
 app.get('/api/ui-settings', async (_req, res) => {
