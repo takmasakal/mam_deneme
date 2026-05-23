@@ -392,9 +392,9 @@ function getRequestDerivedOidcSettings(settings, req) {
 
 function buildLogoutUrl(req) {
   if (!USE_OAUTH2_PROXY) return '/';
-  // Force return to oauth2 start page after local sign_out.
-  // oauth2-proxy will also call backend logout URL (Keycloak) with id_token_hint.
-  return '/oauth2/sign_out?rd=%2Foauth2%2Fstart%3Frd%3D%252F';
+  // oauth2-proxy clears its cookie and calls the backend Keycloak logout URL.
+  // Returning to /oauth2/start would immediately begin a fresh login flow.
+  return '/oauth2/sign_out?rd=%2Flogged-out';
 }
 
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -7406,6 +7406,32 @@ app.get('/api/logout-url', (req, res) => {
   } catch (_error) {
     return res.json({ url: '/oauth2/sign_out' });
   }
+});
+
+app.get('/logged-out', (_req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.type('html').send(`<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MAM - Çıkış Yapıldı</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: Arial, sans-serif; background: #0f172a; color: #e5eefb; }
+    main { width: min(420px, calc(100vw - 32px)); padding: 28px; border: 1px solid rgba(142, 202, 230, 0.35); border-radius: 18px; background: rgba(2, 48, 71, 0.72); box-shadow: 0 22px 70px rgba(0,0,0,0.35); }
+    h1 { margin: 0 0 10px; font-size: 24px; }
+    p { margin: 0 0 22px; color: #b8c7d9; line-height: 1.45; }
+    a { display: inline-block; padding: 10px 14px; border-radius: 10px; background: #fb8500; color: #08111f; font-weight: 700; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Çıkış yapıldı</h1>
+    <p>Oturum kapatıldı. Tekrar giriş yapmak için aşağıdaki bağlantıyı kullanın.</p>
+    <a href="/oauth2/start?rd=%2F">Tekrar giriş yap</a>
+  </main>
+</body>
+</html>`);
 });
 
 app.get('/api/ui-settings', async (_req, res) => {

@@ -38,13 +38,17 @@ const PERMISSION_DEFINITIONS = [
 ];
 
 const PERMISSION_KEYS = PERMISSION_DEFINITIONS.map((item) => item.key);
-const SUPER_ADMIN_ROLE_NAMES = ['admin', 'realm-admin', 'mam-super-admin'];
+const SUPER_ADMIN_ROLE_NAMES = ['admin', 'realm-admin', 'mam-super-admin', 'superadmin', '/superadmin'];
 const SUPER_ADMIN_USERNAMES = ['admin', 'mamadmin'];
 
 function normalizePrincipalNames(values) {
   return (Array.isArray(values) ? values : [])
     .flatMap((value) => String(value || '').split(/[,\s]+/))
-    .map((value) => String(value || '').trim().toLowerCase())
+    .flatMap((value) => {
+      const normalized = String(value || '').trim().toLowerCase();
+      const withoutSlash = normalized.replace(/^\/+/, '');
+      return normalized && withoutSlash !== normalized ? [normalized, withoutSlash] : [normalized];
+    })
     .filter(Boolean);
 }
 
