@@ -11,6 +11,10 @@ services:
   keycloak-postgres:
     pull_policy: missing
 
+  app:
+    environment:
+      KEYCLOAK_PUBLIC_URL: ${PUBLIC_KEYCLOAK_URL}
+
   oauth2-proxy:
     environment:
       OAUTH2_PROXY_OIDC_ISSUER_URL: ${PUBLIC_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM:-mam}

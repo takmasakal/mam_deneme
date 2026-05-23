@@ -16,6 +16,8 @@ fi
 REALM="${KEYCLOAK_REALM:-mam}"
 ADMIN_REALM="${KEYCLOAK_ADMIN_REALM:-master}"
 ADMIN_USER="${KEYCLOAK_ADMIN:-admin}"
+OAUTH2_PROXY_CLIENT_ID="${OAUTH2_PROXY_CLIENT_ID:-mam-web}"
+PUBLIC_MAM_URL="${PUBLIC_MAM_URL:-}"
 MAM_ADMIN_USER="${MAM_ADMIN_USER:-mamadmin}"
 MAM_TEXT_ADMIN_USER="${MAM_TEXT_ADMIN_USER:-yazici}"
 ADMIN_PASSWORD_FILE="${SECRETS_DIR}/keycloak_admin_password"
@@ -97,6 +99,23 @@ for row in rows if isinstance(rows, list) else []:
 ' "$wanted"
 }
 
+json_find_client_id() {
+  local wanted="$1"
+  python3 -c '
+import json, sys
+wanted = sys.argv[1].strip().lower()
+try:
+    rows = json.load(sys.stdin)
+except Exception:
+    rows = []
+for row in rows if isinstance(rows, list) else []:
+    client_id = str(row.get("clientId", "")).strip().lower()
+    if client_id == wanted:
+        print(row.get("id", ""))
+        break
+' "$wanted"
+}
+
 admin_password="$(cat "${ADMIN_PASSWORD_FILE}")"
 
 wait_for_keycloak
@@ -157,6 +176,29 @@ add_user_group() {
   echo "User group ensured: ${username} -> ${group}"
 }
 
+ensure_web_client_urls() {
+  if [[ -z "${PUBLIC_MAM_URL}" ]]; then
+    echo "WARN: PUBLIC_MAM_URL is empty; skipped ${OAUTH2_PROXY_CLIENT_ID} URL sync"
+    return
+  fi
+  local client_uuid mam_url callback_url logged_out_url client_rows
+  mam_url="${PUBLIC_MAM_URL%/}"
+  callback_url="${mam_url}/oauth2/callback"
+  logged_out_url="${mam_url}/logged-out"
+  client_rows="$(kcadm get clients -r "${REALM}" -q "clientId=${OAUTH2_PROXY_CLIENT_ID}")"
+  client_uuid="$(printf '%s' "${client_rows}" | json_find_client_id "${OAUTH2_PROXY_CLIENT_ID}")"
+  if [[ -z "${client_uuid}" ]]; then
+    echo "WARN: Keycloak client not found, skipped URL sync: ${OAUTH2_PROXY_CLIENT_ID}"
+    return
+  fi
+  kcadm update "clients/${client_uuid}" -r "${REALM}" \
+    -s "baseUrl=${mam_url}" \
+    -s "redirectUris=[\"${callback_url}\",\"${logged_out_url}\"]" \
+    -s "webOrigins=[\"${mam_url}\"]" \
+    -s 'attributes."post.logout.redirect.uris"="+"' >/dev/null
+  echo "Client URLs ensured: ${OAUTH2_PROXY_CLIENT_ID}"
+}
+
 roles=(
   mam-super-admin
   mam-admin
@@ -205,5 +247,6 @@ add_group_role ocrtitle-admin mam-text-admin
 add_user_group "${MAM_ADMIN_USER}" superadmin
 add_user_group "${MAM_TEXT_ADMIN_USER}" ocrtitle-admin
 add_user_group "${MAM_TEXT_ADMIN_USER}" yazicilar
+ensure_web_client_urls
 
 echo "Default Keycloak roles and groups are synchronized for realm: ${REALM}"

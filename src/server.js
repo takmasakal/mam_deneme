@@ -222,6 +222,7 @@ const KEYCLOAK_ADMIN_REALM = process.env.KEYCLOAK_ADMIN_REALM || 'master';
 const KEYCLOAK_ADMIN_USERNAME = process.env.KEYCLOAK_ADMIN_USERNAME || process.env.KEYCLOAK_ADMIN || '';
 const KEYCLOAK_ADMIN_PASSWORD = readEnvOrFile('KEYCLOAK_ADMIN_PASSWORD');
 const KEYCLOAK_ADMIN_CLIENT_ID = process.env.KEYCLOAK_ADMIN_CLIENT_ID || 'admin-cli';
+const OAUTH2_PROXY_CLIENT_ID = process.env.OAUTH2_PROXY_CLIENT_ID || 'mam-web';
 const USE_OAUTH2_PROXY = String(process.env.USE_OAUTH2_PROXY || 'false').trim().toLowerCase() === 'true';
 const DIRECT_APP_PORT = String(process.env.DIRECT_APP_PORT || process.env.MAM_DIRECT_APP_PORT || '3001').trim();
 const DIRECT_API_TOKEN_REQUIRED = String(process.env.MAM_DIRECT_API_TOKEN_REQUIRED ?? 'true').trim().toLowerCase() !== 'false';
@@ -392,9 +393,16 @@ function getRequestDerivedOidcSettings(settings, req) {
 
 function buildLogoutUrl(req) {
   if (!USE_OAUTH2_PROXY) return '/';
-  // oauth2-proxy clears its cookie and calls the backend Keycloak logout URL.
-  // Returning to /oauth2/start would immediately begin a fresh login flow.
-  return '/oauth2/sign_out?rd=%2Flogged-out';
+  const requestOrigin = `${resolveRequestProtocol(req)}://${resolveRequestHost(req)}`.replace(/\/+$/, '');
+  const postLogoutRedirectUri = `${requestOrigin}/logged-out`;
+  const keycloakPublicBaseUrl = trimTrailingSlashes(KEYCLOAK_PUBLIC_URL)
+    || `${resolveRequestProtocol(req)}://${hostWithoutPort(resolveRequestHost(req))}:${String(process.env.KEYCLOAK_PUBLIC_PORT || '8081').trim() || '8081'}`;
+  const keycloakLogoutUrl = `${buildRealmIssuerUrl(keycloakPublicBaseUrl)}/protocol/openid-connect/logout`
+    + `?client_id=${encodeURIComponent(OAUTH2_PROXY_CLIENT_ID)}`
+    + `&post_logout_redirect_uri=${encodeURIComponent(postLogoutRedirectUri)}`;
+
+  // First clear oauth2-proxy cookies, then clear the browser-side Keycloak session.
+  return `/oauth2/sign_out?rd=${encodeURIComponent(keycloakLogoutUrl)}`;
 }
 
 if (!fs.existsSync(UPLOADS_DIR)) {
