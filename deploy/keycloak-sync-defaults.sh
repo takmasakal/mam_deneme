@@ -42,6 +42,41 @@ kcadm() {
   ${DOCKER_CMD} exec "${KEYCLOAK_CONTAINER}" /opt/keycloak/bin/kcadm.sh "$@"
 }
 
+container_running() {
+  local state
+  # shellcheck disable=SC2086
+  state="$(${DOCKER_CMD} inspect -f '{{.State.Running}}' "${KEYCLOAK_CONTAINER}" 2>/dev/null || true)"
+  [[ "${state}" == "true" ]]
+}
+
+wait_for_keycloak() {
+  if ! container_running; then
+    echo "Keycloak container is not running: ${KEYCLOAK_CONTAINER}"
+    echo "Start it first: ./deploy/mam-kaisha.sh up"
+    exit 1
+  fi
+
+  local attempt max_attempts
+  max_attempts="${KEYCLOAK_SYNC_WAIT_ATTEMPTS:-60}"
+  for attempt in $(seq 1 "${max_attempts}"); do
+    if kcadm config credentials \
+      --server http://localhost:8080 \
+      --realm "${ADMIN_REALM}" \
+      --user "${ADMIN_USER}" \
+      --password "${admin_password}" >/dev/null 2>&1; then
+      return 0
+    fi
+    if [[ "${attempt}" == "1" ]]; then
+      echo "Waiting for Keycloak admin API in ${KEYCLOAK_CONTAINER}..."
+    fi
+    sleep 5
+  done
+
+  echo "Keycloak admin API did not become ready."
+  echo "Check logs: ./deploy/mam-kaisha.sh logs keycloak"
+  exit 1
+}
+
 json_find_id_by_name() {
   local wanted="$1"
   python3 -c '
@@ -64,11 +99,7 @@ for row in rows if isinstance(rows, list) else []:
 
 admin_password="$(cat "${ADMIN_PASSWORD_FILE}")"
 
-kcadm config credentials \
-  --server http://localhost:8080 \
-  --realm "${ADMIN_REALM}" \
-  --user "${ADMIN_USER}" \
-  --password "${admin_password}" >/dev/null
+wait_for_keycloak
 
 ensure_role() {
   local role="$1"
