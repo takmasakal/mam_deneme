@@ -38,6 +38,7 @@ usage() {
   cat <<'HELP'
 Usage:
   ./deploy/mam-kaisha.sh init [MAM_HOST] [KEYCLOAK_HOST] [OFFICE_HOST] [WHITELIST_DOMAIN]
+  ./deploy/mam-kaisha.sh build
   ./deploy/mam-kaisha.sh up
   ./deploy/mam-kaisha.sh down
   ./deploy/mam-kaisha.sh restart
@@ -54,9 +55,13 @@ case "${cmd}" in
     shift || true
     ./deploy/init-kaisha.sh "$@"
     ;;
+  build)
+    ensure_init
+    dc build app oauth2-proxy
+    ;;
   up)
     ensure_init
-    dc up -d
+    dc up -d --build
     ;;
   down)
     dc down
@@ -64,7 +69,7 @@ case "${cmd}" in
   restart)
     ensure_init
     dc down
-    dc up -d
+    dc up -d --build
     ;;
   ps)
     ensure_init
