@@ -39,7 +39,6 @@ const PERMISSION_DEFINITIONS = [
 
 const PERMISSION_KEYS = PERMISSION_DEFINITIONS.map((item) => item.key);
 const SUPER_ADMIN_ROLE_NAMES = ['admin', 'realm-admin', 'mam-super-admin'];
-const SUPER_ADMIN_USERNAMES = ['admin', 'mamadmin'];
 
 function normalizePrincipalNames(values) {
   return (Array.isArray(values) ? values : [])
@@ -57,16 +56,13 @@ function getPermissionDefinitionsPayload() {
   }));
 }
 
-function resolvePermissionKeysFromPrincipals({ username = '', groups = [], roles = [] } = {}) {
-  const normalizedUsername = String(username || '').trim().toLowerCase();
+function resolvePermissionKeysFromPrincipals({ groups = [], roles = [] } = {}) {
   const principalNames = new Set([
     ...normalizePrincipalNames(groups),
     ...normalizePrincipalNames(roles)
   ]);
   const permissionKeys = new Set();
-  const isSuperAdmin =
-    SUPER_ADMIN_USERNAMES.includes(normalizedUsername)
-    || [...principalNames].some((name) => SUPER_ADMIN_ROLE_NAMES.includes(name));
+  const isSuperAdmin = [...principalNames].some((name) => SUPER_ADMIN_ROLE_NAMES.includes(name));
 
   if (isSuperAdmin) {
     PERMISSION_KEYS.forEach((key) => permissionKeys.add(key));
@@ -151,9 +147,8 @@ function normalizePermissionEntry(input, fallbackPermissions) {
   };
 }
 
-function isAdminName(value) {
-  const normalized = String(value || '').trim().toLowerCase();
-  return SUPER_ADMIN_USERNAMES.includes(normalized);
+function isAdminName() {
+  return false;
 }
 
 function isAdminByGroupsOrRoles(groupsOrRoles) {
