@@ -39,6 +39,7 @@ function mediaViewer(asset, options = {}) {
   const playbackUrl = escapeHtml(isVideo(asset) ? (asset.proxyUrl || '') : asset.mediaUrl);
   const proxyStatus = escapeHtml(asset.proxyStatus || 'not_applicable');
   const audioChannelsAttr = Number(asset.audioChannels) > 0 ? ` data-audio-channels="${Number(asset.audioChannels)}"` : '';
+  const detailVideoPinned = Boolean(detailVideoPinnedRef && typeof detailVideoPinnedRef.get === 'function' ? detailVideoPinnedRef.get() : false);
 
   if (isVideo(asset)) {
     const customMode = useCustomLikeTimelineUI();
