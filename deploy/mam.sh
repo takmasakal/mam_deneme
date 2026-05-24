@@ -63,6 +63,8 @@ case "${cmd}" in
     ;;
   up)
     ensure_init "${2:-}"
+    dc up -d postgres
+    DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-postgres-password.sh -f "${COMPOSE_FILE}"
     dc up -d
     ;;
   down)
@@ -70,6 +72,8 @@ case "${cmd}" in
     ;;
   restart)
     dc down
+    dc up -d postgres
+    DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-postgres-password.sh -f "${COMPOSE_FILE}"
     dc up -d
     ;;
   ps)

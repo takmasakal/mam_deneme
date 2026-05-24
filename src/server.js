@@ -87,6 +87,15 @@ const PADDLE_CACHE_DIR = process.env.PADDLE_PDX_CACHE_HOME || path.join(MAM_MODE
 const DOWNLOAD_AUDIT_THROTTLE_MS = Math.max(60_000, Math.min(3_600_000, Number(process.env.DOWNLOAD_AUDIT_THROTTLE_MS) || 300_000));
 const recentDownloadAuditKeys = new Map();
 app.use(express.json({ limit: JSON_BODY_LIMIT }));
+app.get('/api/health', (_req, res) => {
+  res.json({
+    ok: true,
+    service: APP_BUILD_INFO.name,
+    gitCommit: APP_BUILD_INFO.gitCommit,
+    gitBranch: APP_BUILD_INFO.gitBranch,
+    buildDate: APP_BUILD_INFO.buildDate
+  });
+});
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/uploads', secureUploadAssetAccess);
 app.use('/uploads', auditUploadDownloadRequest);

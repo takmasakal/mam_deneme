@@ -87,6 +87,7 @@ Repo çekilir:
 ```bash
 git clone https://github.com/takmasakal/mam_deneme.git
 cd mam_deneme
+git checkout takmasakal/kaisha
 ```
 
 Kaisha ayar dosyası oluşturulur:
@@ -101,19 +102,26 @@ Bu komut şunu üretir:
 deploy/.env.kaisha
 ```
 
-Servisler başlatılır:
+Servisler başlatılır. Bu komut Postgres secret değerini mevcut volume ile eşitleyerek eski kurulumlardan kalan parola uyuşmazlığını da düzeltir:
+
+```bash
+./deploy/mam-kaisha.sh up
+```
+
+Manuel Compose alternatifi kullanılacaksa önce Postgres parola sync adımı çalıştırılır:
 
 ```bash
 docker compose --env-file deploy/.env.kaisha \
   -f docker-compose.yml \
   -f docker-compose.kaisha.yml \
+  up -d postgres
+./deploy/sync-postgres-password.sh --env-file deploy/.env.kaisha \
+  -f docker-compose.yml \
+  -f docker-compose.kaisha.yml
+docker compose --env-file deploy/.env.kaisha \
+  -f docker-compose.yml \
+  -f docker-compose.kaisha.yml \
   up -d --build
-```
-
-Kısa komut alternatifi:
-
-```bash
-./deploy/mam-kaisha.sh up
 ```
 
 URL kontrolü:
@@ -291,16 +299,9 @@ curl -I http://SERVER_IP:8082/web-apps/apps/api/documents/api.js
 ## 12. Güncelleme
 
 ```bash
+git fetch origin
+git checkout takmasakal/kaisha
 git pull
-docker compose --env-file deploy/.env.kaisha \
-  -f docker-compose.yml \
-  -f docker-compose.kaisha.yml \
-  up -d --build
-```
-
-Kısa komut:
-
-```bash
 ./deploy/mam-kaisha.sh restart
 ```
 

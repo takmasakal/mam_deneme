@@ -1,21 +1,29 @@
+name: kaisha
+
 services:
   elasticsearch:
+    container_name: kaisha-elasticsearch
     pull_policy: missing
 
   postgres:
+    container_name: kaisha-postgres
     pull_policy: missing
 
   onlyoffice:
+    container_name: kaisha-onlyoffice
     pull_policy: missing
 
   keycloak-postgres:
+    container_name: kaisha-keycloak-postgres
     pull_policy: missing
 
   app:
+    container_name: kaisha-app
     environment:
       KEYCLOAK_PUBLIC_URL: ${PUBLIC_KEYCLOAK_URL}
 
   oauth2-proxy:
+    container_name: kaisha-oauth2-proxy
     environment:
       OAUTH2_PROXY_OIDC_ISSUER_URL: ${PUBLIC_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM:-mam}
       OAUTH2_PROXY_LOGIN_URL: ${PUBLIC_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM:-mam}/protocol/openid-connect/auth
@@ -26,6 +34,7 @@ services:
       OAUTH2_PROXY_WHITELIST_DOMAINS: ${OAUTH2_PROXY_WHITELIST_DOMAINS:-.company.local}
 
   keycloak:
+    container_name: kaisha-keycloak
     pull_policy: missing
     environment:
       KC_HOSTNAME: ${PUBLIC_KEYCLOAK_HOST}
@@ -40,3 +49,6 @@ volumes:
   keycloak_pg_data:
     external: false
     name: mam_kaisha_keycloak_pg_data
+  es_data:
+    external: false
+    name: mam_kaisha_es_data

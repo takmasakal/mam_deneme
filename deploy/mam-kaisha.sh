@@ -45,8 +45,7 @@ print_running_version() {
   fi
   echo
   echo "Running MAM app build:"
-  # shellcheck disable=SC2086
-  ${DOCKER_CMD} exec mam-app node -e "console.log(JSON.stringify({gitCommit:process.env.MAM_GIT_COMMIT||'unknown',gitBranch:process.env.MAM_GIT_BRANCH||'unknown',buildDate:process.env.MAM_BUILD_DATE||'unknown'}, null, 2))" 2>/dev/null || echo "  mam-app is not running yet."
+  dc exec -T app node -e "console.log(JSON.stringify({gitCommit:process.env.MAM_GIT_COMMIT||'unknown',gitBranch:process.env.MAM_GIT_BRANCH||'unknown',buildDate:process.env.MAM_BUILD_DATE||'unknown'}, null, 2))" 2>/dev/null || echo "  app service is not running yet."
 }
 
 ensure_init() {
@@ -87,6 +86,8 @@ case "${cmd}" in
     ensure_init
     export_build_metadata
     echo "Starting MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
+    dc up -d postgres
+    DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-postgres-password.sh --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}"
     dc up -d --build
     print_running_version
     ;;
@@ -98,6 +99,8 @@ case "${cmd}" in
     export_build_metadata
     echo "Restarting MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
     dc down
+    dc up -d postgres
+    DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-postgres-password.sh --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}"
     dc up -d --build
     print_running_version
     ;;
