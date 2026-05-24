@@ -194,7 +194,7 @@ function createAssetAccessService({ pool }) {
       accessIdentity: identity,
       groupAdminGroups,
       assetTypeAccessRules,
-      canManageAllAssetVisibility: Boolean(user.baseIsSuperAdmin)
+      canManageAllAssetVisibility: Boolean(user.isSuperAdmin)
     };
   }
 

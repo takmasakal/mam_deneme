@@ -128,7 +128,6 @@
       params.set('trash', normalizeTrashScopeForSuggest(filters.trash));
       if (String(filters.tag || '').trim()) params.set('tag', String(filters.tag).trim());
       if (String(filters.type || '').trim()) params.set('type', String(filters.type).trim());
-      if (String(filters.status || '').trim()) params.set('status', String(filters.status).trim());
       if (selectedTypes.length < assetTypeFilters.length) params.set('types', selectedTypes.join(','));
 
       try {
@@ -226,7 +225,6 @@
       params.set('trash', normalizeTrashScopeForSuggest(filters.trash));
       if (String(filters.tag || '').trim()) params.set('tag', String(filters.tag).trim());
       if (String(filters.type || '').trim()) params.set('type', String(filters.type).trim());
-      if (String(filters.status || '').trim()) params.set('status', String(filters.status).trim());
       if (selectedTypes.length < assetTypeFilters.length) params.set('types', selectedTypes.join(','));
       try {
         const result = await api(`/api/assets/ocr-suggest?${params.toString()}`);
@@ -323,7 +321,6 @@
       params.set('trash', normalizeTrashScopeForSuggest(filters.trash));
       if (String(filters.tag || '').trim()) params.set('tag', String(filters.tag).trim());
       if (String(filters.type || '').trim()) params.set('type', String(filters.type).trim());
-      if (String(filters.status || '').trim()) params.set('status', String(filters.status).trim());
       if (selectedTypes.length < assetTypeFilters.length) params.set('types', selectedTypes.join(','));
       try {
         const result = await api(`/api/assets/subtitle-suggest?${params.toString()}`);

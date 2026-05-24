@@ -21,13 +21,15 @@
 
     async function loadWorkflow() {
       const workflow = await api('/api/workflow');
-      statusSelect.innerHTML = `<option value="">${escapeHtml(t('any_status'))}</option>`;
-      workflow.forEach((status) => {
-        const option = document.createElement('option');
-        option.value = status;
-        option.textContent = workflowLabel(status);
-        statusSelect.appendChild(option);
-      });
+      if (statusSelect) {
+        statusSelect.innerHTML = `<option value="">${escapeHtml(t('any_status'))}</option>`;
+        workflow.forEach((status) => {
+          const option = document.createElement('option');
+          option.value = status;
+          option.textContent = workflowLabel(status);
+          statusSelect.appendChild(option);
+        });
+      }
       return workflow;
     }
 
@@ -67,7 +69,6 @@
       if (searchStateRef.currentOcrQuery) params.set('ocrQ', searchStateRef.currentOcrQuery);
       if (searchStateRef.currentSubtitleQuery) params.set('subtitleQ', searchStateRef.currentSubtitleQuery);
       if (String(filters.tag || '').trim()) params.set('tag', String(filters.tag).trim());
-      if (String(filters.status || '').trim()) params.set('status', String(filters.status).trim());
       params.set('trash', trashScope);
       if (selectedTypes.length > 0 && selectedTypes.length < assetTypeFilters.length) {
         params.set('types', selectedTypes.join(','));
