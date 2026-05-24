@@ -234,7 +234,7 @@ services:
       OAUTH2_PROXY_SCOPE: "openid profile email"
       OAUTH2_PROXY_REVERSE_PROXY: "true"
       OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
-      OAUTH2_PROXY_SKIP_AUTH_ROUTES: "^/api/.*,^/uploads/.*"
+      OAUTH2_PROXY_SKIP_AUTH_ROUTES: "^/api/.*"
       OAUTH2_PROXY_SKIP_AUTH_STRIP_HEADERS: "false"
       OAUTH2_PROXY_SKIP_JWT_BEARER_TOKENS: "true"
       OAUTH2_PROXY_OIDC_EXTRA_AUDIENCES: ${OAUTH2_PROXY_OIDC_EXTRA_AUDIENCES:-account,metmam-mobile}
