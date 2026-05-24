@@ -202,6 +202,6 @@ services:
 volumes:
   pg_data:
     external: true
-    name: codex_deneme_pg_data
+    name: mam_deneme_pg_data
   es_data:
   keycloak_pg_data:

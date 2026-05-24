@@ -6,7 +6,7 @@ cd "$REPO_DIR"
 
 TARGET_REMOTE_REF="origin/main"
 TARGET_BRANCH="main"
-POSTGRES_VOLUME_NAME="codex_deneme_pg_data"
+POSTGRES_VOLUME_NAME="mam_deneme_pg_data"
 
 print_step() {
   printf '\n[%s] %s\n' "mam" "$1"
