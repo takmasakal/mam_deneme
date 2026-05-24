@@ -136,6 +136,7 @@ let assetRightsGroupNamesCache = null;
 let lastAssetRightsAssets = [];
 let lastAssetRightsTypes = [];
 let assetRightsMode = 'asset';
+let assetRightsLockedOnly = false;
 let assetRightsPage = 1;
 let assetRightsPagination = { page: 1, limit: 20, total: 0, totalPages: 1 };
 let currentAdminProfile = null;
@@ -180,6 +181,8 @@ let i18n = {
     asset_lock_unlock_confirm: 'Release this asset edit lock?',
     asset_lock_unlock_done: 'Asset edit lock released.',
     asset_lock_unlock_failed: 'Failed to release asset edit lock.',
+    asset_lock_editing_by: '{name} is editing this asset.',
+    asset_lock_editing_other: 'This asset is being edited by another user.',
     asset_rights_asset_col: 'Asset',
     asset_rights_mode_asset: 'Asset',
     asset_rights_mode_type: 'Type',
@@ -572,6 +575,8 @@ let i18n = {
     asset_lock_unlock_confirm: 'Bu varlık düzenleme kilidi kaldırılsın mı?',
     asset_lock_unlock_done: 'Varlık düzenleme kilidi kaldırıldı.',
     asset_lock_unlock_failed: 'Varlık düzenleme kilidi kaldırılamadı.',
+    asset_lock_editing_by: '{name} bu varlığı düzenliyor.',
+    asset_lock_editing_other: 'Bu varlık başka bir kullanıcı tarafından düzenleniyor.',
     asset_rights_asset_col: 'Varlık',
     asset_rights_mode_asset: 'Varlık',
     asset_rights_mode_type: 'Tür',
@@ -927,6 +932,16 @@ let i18n = {
   }
 };
 
+function formatApiError(body = {}) {
+  if (body?.code === 'asset_locked') {
+    const lock = body.lock && typeof body.lock === 'object' ? body.lock : {};
+    const name = String(lock.lockedByName || lock.lockedBy || '').trim();
+    if (name) return t('asset_lock_editing_by').replace('{name}', name);
+    return t('asset_lock_editing_other');
+  }
+  return String(body?.error || 'Request failed');
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     headers: { 'Content-Type': 'application/json' },
@@ -934,7 +949,7 @@ async function api(path, options = {}) {
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.error || 'Request failed');
+    throw new Error(formatApiError(body));
   }
   return response.json();
 }
@@ -2682,6 +2697,7 @@ const ASSET_RIGHTS_TABLE_LABELS = {
     editAllowedUsers: 'Editable users',
     editDeniedGroups: 'Edit denied groups',
     editDeniedUsers: 'Edit denied users',
+    lockedItems: 'Locked',
     empty: 'No asset found.',
     save: 'Save',
     visibilityPrivate: 'Private',
@@ -2704,6 +2720,7 @@ const ASSET_RIGHTS_TABLE_LABELS = {
     editAllowedUsers: 'Değiştirebilen kullanıcılar',
     editDeniedGroups: 'Değiştiremeyen gruplar',
     editDeniedUsers: 'Değiştiremeyen kullanıcılar',
+    lockedItems: 'Kilitliler',
     empty: 'Varlık bulunamadı.',
     save: 'Kaydet',
     visibilityPrivate: 'Özel',
@@ -2782,6 +2799,9 @@ function updateAssetRightsTableLanguage() {
   assetRightsRows.querySelectorAll('[data-asset-rights-type-label]').forEach((el) => {
     el.textContent = getAssetTypeGroupLabel(el.getAttribute('data-asset-rights-type-label'));
   });
+  assetRightsRows.querySelectorAll('[data-asset-rights-locked-label]').forEach((el) => {
+    el.textContent = labels.lockedItems;
+  });
   const empty = assetRightsRows.querySelector('[data-asset-rights-empty="true"]');
   if (empty) empty.textContent = labels.empty;
 }
@@ -2792,23 +2812,8 @@ function syncAssetRightsTableLanguage() {
   setTimeout(() => updateAssetRightsTableLanguage(), 0);
 }
 
-function renderAssetRightsRows(assets = []) {
-  if (!assetRightsRows) return;
-  const labels = getAssetRightsTableLabels();
-  const list = Array.isArray(assets) ? assets : [];
-  if (!list.length) {
-    assetRightsRows.innerHTML = `<div class="empty" data-asset-rights-empty="true">${escapeHtml(labels.empty)}</div>`;
-    return;
-  }
-
-  const visibilityOptions = ['private', 'group', 'groups', 'public'];
-  const visibilityLabels = {
-    private: labels.visibilityPrivate,
-    group: labels.visibilityGroup,
-    groups: labels.visibilityGroups,
-    public: labels.visibilityPublic
-  };
-  const header = `
+function renderAssetRightsHeader(labels) {
+  return `
     <div class="asset-rights-table-head" aria-hidden="true">
       ${renderAssetRightsModeSelect(labels)}
       <span data-asset-rights-label="visibility">${escapeHtml(labels.visibility)}</span>
@@ -2821,9 +2826,32 @@ function renderAssetRightsRows(assets = []) {
       <span data-asset-rights-label="editAllowedUsers">${escapeHtml(labels.editAllowedUsers)}</span>
       <span data-asset-rights-label="editDeniedGroups">${escapeHtml(labels.editDeniedGroups)}</span>
       <span data-asset-rights-label="editDeniedUsers">${escapeHtml(labels.editDeniedUsers)}</span>
-      <span></span>
+      <label class="asset-rights-locked-filter">
+        <input id="assetRightsLockedOnlyCheck" type="checkbox" ${assetRightsLockedOnly ? 'checked' : ''} ${assetRightsMode === 'type' ? 'disabled' : ''} />
+        <span data-asset-rights-locked-label>${escapeHtml(labels.lockedItems)}</span>
+      </label>
     </div>
   `;
+}
+
+function renderAssetRightsRows(assets = []) {
+  if (!assetRightsRows) return;
+  const labels = getAssetRightsTableLabels();
+  const list = Array.isArray(assets) ? assets : [];
+
+  const visibilityOptions = ['private', 'group', 'groups', 'public'];
+  const visibilityLabels = {
+    private: labels.visibilityPrivate,
+    group: labels.visibilityGroup,
+    groups: labels.visibilityGroups,
+    public: labels.visibilityPublic
+  };
+  const header = renderAssetRightsHeader(labels);
+  if (!list.length) {
+    assetRightsRows.innerHTML = `<div class="asset-rights-table">${header}<div class="empty asset-rights-empty-row" data-asset-rights-empty="true">${escapeHtml(labels.empty)}</div></div>`;
+    syncAssetRightsTableLanguage();
+    return;
+  }
 
   const rows = list.map((asset) => {
     const isTypeMode = assetRightsMode === 'type';
@@ -2946,6 +2974,7 @@ async function loadAssetRightsRows() {
     .forEach((item) => params.append('typeGroup', String(item.value || '').trim()));
   const visibility = String(assetRightsVisibilityFilter?.value || '').trim();
   if (visibility) params.set('visibility', visibility);
+  if (assetRightsLockedOnly) params.set('lockedOnly', '1');
   const limit = Number(assetRightsPageSize?.value || 20) === 50 ? 50 : 20;
   params.set('limit', String(limit));
   params.set('page', String(Math.max(1, assetRightsPage)));
@@ -3698,8 +3727,10 @@ assetRightsNextPage?.addEventListener('click', () => {
 
 assetRightsRows?.addEventListener('change', (event) => {
   const select = event.target.closest('#assetRightsModeSelect');
-  if (!select) return;
-  assetRightsMode = select.value === 'type' ? 'type' : 'asset';
+  const lockedOnlyCheck = event.target.closest('#assetRightsLockedOnlyCheck');
+  if (!select && !lockedOnlyCheck) return;
+  if (select) assetRightsMode = select.value === 'type' ? 'type' : 'asset';
+  if (lockedOnlyCheck) assetRightsLockedOnly = Boolean(lockedOnlyCheck.checked);
   assetRightsPage = 1;
   loadAssetRightsRows().catch((error) => {
     if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');

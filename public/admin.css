@@ -2028,6 +2028,11 @@ body {
   border-bottom: 0;
 }
 
+.asset-rights-empty-row {
+  width: 100%;
+  padding: 18px 10px;
+}
+
 .asset-rights-row:hover {
   background: rgba(2, 48, 71, 0.78);
   box-shadow: inset 3px 0 0 var(--amber-flame);
@@ -2101,13 +2106,15 @@ body {
 
 .asset-rights-actions {
   display: flex;
+  flex-direction: column;
   gap: 6px;
   justify-content: flex-end;
+  align-items: stretch;
 }
 
 .asset-rights-actions button {
-  width: auto;
-  min-width: 72px;
+  width: 100%;
+  min-width: 0;
   border-radius: 10px;
   min-height: 34px;
   border: 1px solid rgba(255, 183, 3, 0.62);
@@ -2123,9 +2130,32 @@ body {
 
 .asset-rights-actions .asset-lock-unlock-btn {
   min-width: 86px;
-  border-color: rgba(255, 183, 77, 0.6);
-  background: linear-gradient(180deg, #ffca74 0%, #e99b31 100%);
-  color: #281603;
+  border-color: rgba(235, 94, 40, 0.72);
+  background: #eb5e28;
+  color: #fff7ed;
+}
+
+.asset-rights-locked-filter {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  font-size: 10px;
+  line-height: 1.15;
+  color: var(--sky-blue-light);
+}
+
+.asset-rights-locked-filter input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #eb5e28;
+}
+
+.asset-rights-locked-filter span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @media (max-width: 720px) {

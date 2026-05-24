@@ -12,16 +12,38 @@ function createAssetEditLockService({ pool, ttlSeconds = 900 } = {}) {
     return new Date(Date.now() + ttlMs).toISOString();
   }
 
+  function repairMojibake(input) {
+    let current = String(input || '');
+    for (let i = 0; i < 2 && /[\u00c3\u00c2\u00e2\u00c5\u00c4]/.test(current); i += 1) {
+      const repaired = Buffer.from(current, 'latin1').toString('utf8');
+      if (!repaired || repaired.includes('\uFFFD') || repaired === current) break;
+      current = repaired;
+    }
+    return current;
+  }
+
+  function normalizeDisplayValue(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    return repairMojibake(raw).normalize('NFC').trim();
+  }
+
   function getHeader(req, name) {
     try {
-      return String(req?.get?.(name) || '').trim();
+      const raw = String(req?.get?.(name) || '').trim();
+      if (!raw) return '';
+      try {
+        return normalizeDisplayValue(decodeURIComponent(raw));
+      } catch (_decodeError) {
+        return normalizeDisplayValue(raw);
+      }
     } catch (_error) {
       return '';
     }
   }
 
   function normalizeIdentity(value) {
-    return String(value || '').trim().toLowerCase();
+    return normalizeDisplayValue(value).toLowerCase();
   }
 
   function isUuidLike(value) {
@@ -37,18 +59,18 @@ function createAssetEditLockService({ pool, ttlSeconds = 900 } = {}) {
     const permissions = req.userPermissions || {};
     const rawUser = getHeader(req, 'X-Auth-Request-User') || getHeader(req, 'X-Forwarded-User');
     const preferred = getHeader(req, 'X-Auth-Request-Preferred-Username') || getHeader(req, 'X-Forwarded-Preferred-Username');
-    const email = String(permissions.email || getHeader(req, 'X-Auth-Request-Email') || getHeader(req, 'X-Forwarded-Email') || '').trim();
+    const email = normalizeDisplayValue(permissions.email || getHeader(req, 'X-Auth-Request-Email') || getHeader(req, 'X-Forwarded-Email') || '');
     const localEmail = emailLocalPart(email);
-    const permissionUsername = String(permissions.username || '').trim();
-    const username = String(
+    const permissionUsername = normalizeDisplayValue(permissions.username || '');
+    const username = normalizeDisplayValue(
       permissionUsername
       || preferred
       || (!isUuidLike(rawUser) ? rawUser : '')
       || localEmail
       || rawUser
       || ''
-    ).trim();
-    const displayName = String(
+    );
+    const displayName = normalizeDisplayValue(
       permissions.displayName
       || permissions.name
       || preferred
@@ -56,7 +78,7 @@ function createAssetEditLockService({ pool, ttlSeconds = 900 } = {}) {
       || username
       || localEmail
       || 'user'
-    ).trim();
+    );
     const aliases = [
       permissionUsername,
       permissions.displayName,
@@ -93,13 +115,18 @@ function createAssetEditLockService({ pool, ttlSeconds = 900 } = {}) {
     return {
       assetId: String(lock.asset_id || ''),
       lockId: String(lock.lock_id || ''),
-      lockedBy: String(lock.locked_by || ''),
-      lockedByName: String(lock.locked_by_name || lock.locked_by || ''),
+      lockedBy: normalizeDisplayValue(lock.locked_by || ''),
+      lockedByName: normalizeDisplayValue(lock.locked_by_name || lock.locked_by || ''),
       purpose: String(lock.purpose || ''),
       lockedAt: lock.created_at,
       updatedAt: lock.updated_at,
       expiresAt: lock.expires_at
     };
+  }
+
+  function lockedErrorMessage(lock) {
+    const lockedBy = normalizeDisplayValue(lock?.locked_by_name || lock?.locked_by || 'Another user') || 'Another user';
+    return `${lockedBy} is editing this asset.`;
   }
 
   async function cleanupExpired() {
@@ -123,7 +150,7 @@ function createAssetEditLockService({ pool, ttlSeconds = 900 } = {}) {
       return {
         ok: false,
         status: 423,
-        error: `${String(existing.locked_by_name || existing.locked_by || 'Another user')} is editing this asset.`,
+        error: lockedErrorMessage(existing),
         code: 'asset_locked',
         lock: toPayload(existing)
       };
@@ -161,7 +188,7 @@ function createAssetEditLockService({ pool, ttlSeconds = 900 } = {}) {
       return {
         ok: false,
         status: 423,
-        error: `${String(existing.locked_by_name || existing.locked_by || 'Another user')} is editing this asset.`,
+        error: lockedErrorMessage(existing),
         code: 'asset_locked',
         lock: toPayload(existing)
       };
@@ -204,7 +231,7 @@ function createAssetEditLockService({ pool, ttlSeconds = 900 } = {}) {
       return {
         ok: false,
         status: 423,
-        error: `${String(existing.locked_by_name || existing.locked_by || 'Another user')} is editing this asset.`,
+        error: lockedErrorMessage(existing),
         code: 'asset_locked',
         lock: toPayload(existing)
       };

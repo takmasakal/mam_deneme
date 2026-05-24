@@ -88,11 +88,18 @@ function registerOfficeRoutes(app, deps) {
       }
       const row = loaded.row;
       const canEditAsset = assetAccessService.canEditAsset(row, loaded.accessContext);
-      if (canEditAsset && assetEditLockService) {
+      let canEditOffice = canEditAsset;
+      let editLock = null;
+      let readOnlyReason = '';
+      if (canEditOffice && assetEditLockService) {
         const lockResult = await assetEditLockService.acquire(req, req.params.id, 'office');
-        if (!lockResult.ok) return assetEditLockService.sendLocked(res, lockResult);
+        if (!lockResult.ok) {
+          canEditOffice = false;
+          readOnlyReason = String(lockResult.error || 'This document is being edited by another user; opened read-only.');
+          editLock = lockResult.lock || null;
+        }
       }
-      const effective = canEditAsset
+      const effective = canEditOffice
         ? { ...loaded.accessContext, canEditOffice: true }
         : loaded.accessContext;
       const payload = await officeService.buildOnlyOfficeConfig({
@@ -100,7 +107,9 @@ function registerOfficeRoutes(app, deps) {
         effective,
         lang: req.query.lang
       });
-      if (canEditAsset && assetEditLockService) {
+      if (readOnlyReason) payload.readOnlyReason = readOnlyReason;
+      if (editLock) payload.conflictingEditLock = editLock;
+      if (canEditOffice && assetEditLockService) {
         const activeLock = await assetEditLockService.getActiveLock(req.params.id);
         payload.editLock = activeLock ? {
           lockedBy: String(activeLock.locked_by || ''),

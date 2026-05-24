@@ -283,6 +283,7 @@ app.get('/api/admin/assets/access', async (req, res) => {
       .map((item) => String(item || '').trim().toLowerCase())
       .filter((item) => ['video', 'audio', 'photo', 'document', 'other'].includes(item));
     const visibility = String(req.query.visibility || '').trim().toLowerCase();
+    const lockedOnly = ['1', 'true', 'yes', 'on'].includes(String(req.query.lockedOnly || '').trim().toLowerCase());
     const limit = Number(req.query.limit) === 50 ? 50 : 20;
     const requestedPage = Math.max(1, Number(req.query.page) || 1);
     const values = [];
@@ -345,6 +346,14 @@ app.get('/api/admin/assets/access', async (req, res) => {
     if (['private', 'group', 'groups', 'public'].includes(visibility)) {
       values.push(visibility);
       where.push(`COALESCE(visibility, 'public') = $${values.length}`);
+    }
+    if (lockedOnly) {
+      where.push(`EXISTS (
+        SELECT 1
+        FROM asset_edit_locks
+        WHERE asset_edit_locks.asset_id = assets.id
+          AND asset_edit_locks.expires_at > NOW()
+      )`);
     }
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const countResult = await pool.query(`SELECT COUNT(*)::int AS total FROM assets ${whereSql}`, values);

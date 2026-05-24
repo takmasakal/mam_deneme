@@ -1337,6 +1337,7 @@ function registerAssetRoutes(app, deps) {
       if (!assetAccessService.canDeleteAsset(loaded.row, loaded.accessContext)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
+      if (await rejectIfForeignEditLock(req, res, req.params.id)) return undefined;
       const now = new Date().toISOString();
       const result = await pool.query(
         'UPDATE assets SET deleted_at = $2, updated_at = $2 WHERE id = $1 RETURNING *',
@@ -1399,6 +1400,7 @@ function registerAssetRoutes(app, deps) {
       if (!assetAccessService.canDeleteAsset(loaded.row, loaded.accessContext)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
+      if (await rejectIfForeignEditLock(req, res, req.params.id)) return undefined;
       const existing = { rows: [loaded.row], rowCount: 1 };
       const versionRows = (await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1', [req.params.id])).rows;
       const cleanupTargets = collectAssetCleanupPaths(existing.rows[0], versionRows);

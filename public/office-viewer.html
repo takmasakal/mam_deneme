@@ -28,6 +28,23 @@
       height: 100vh;
       width: 100%;
     }
+    .readonly-banner {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10000;
+      max-width: min(720px, calc(100% - 32px));
+      padding: 7px 12px;
+      border: 1px solid rgba(235, 94, 40, 0.55);
+      border-radius: 8px;
+      background: rgba(26, 34, 49, 0.94);
+      color: #ffd7c6;
+      font-size: 12px;
+      line-height: 1.35;
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+      pointer-events: none;
+    }
     .viewer-error {
       padding: 18px;
       margin: 18px;
@@ -44,6 +61,7 @@
 </head>
 <body>
   <div id="officeEditor"></div>
+  <div id="readOnlyBanner" class="readonly-banner hidden"></div>
   <div id="errorBox" class="viewer-error hidden"></div>
 
   <script>
@@ -52,6 +70,7 @@
     const lang = String(params.get('lang') || 'tr').trim().toLowerCase();
     const errorBox = document.getElementById('errorBox');
     const officeEditor = document.getElementById('officeEditor');
+    const readOnlyBanner = document.getElementById('readOnlyBanner');
     let editLockActive = false;
     let editLockRefreshTimer = null;
 
@@ -60,6 +79,27 @@
         errorBox.classList.remove('hidden');
         errorBox.textContent = String(message || 'Viewer failed');
       }
+    }
+
+    function showReadOnlyBanner(message) {
+      if (!readOnlyBanner || !message) return;
+      readOnlyBanner.classList.remove('hidden');
+      readOnlyBanner.textContent = String(message);
+    }
+
+    function formatAssetLockedMessage(payload = {}) {
+      const lock = payload?.conflictingEditLock && typeof payload.conflictingEditLock === 'object'
+        ? payload.conflictingEditLock
+        : (payload?.lock && typeof payload.lock === 'object' ? payload.lock : {});
+      const lockName = String(lock.lockedByName || lock.lockedBy || '').trim();
+      if (lockName) {
+        return lang === 'tr'
+          ? `${lockName} bu varlığı düzenliyor.`
+          : `${lockName} is editing this asset.`;
+      }
+      return lang === 'tr'
+        ? 'Bu varlık başka bir kullanıcı tarafından düzenleniyor.'
+        : 'This asset is being edited by another user.';
     }
 
     function releaseEditLock() {
@@ -105,8 +145,11 @@
         });
         const payload = await configRes.json().catch(() => ({}));
         if (!configRes.ok) {
-          throw new Error(String(payload.error || 'ONLYOFFICE config could not be loaded.'));
+          throw new Error(String(payload.code === 'asset_locked'
+            ? formatAssetLockedMessage(payload)
+            : (payload.error || 'ONLYOFFICE config could not be loaded.')));
         }
+        showReadOnlyBanner(payload?.conflictingEditLock ? formatAssetLockedMessage(payload) : (payload?.readOnlyReason || ''));
         if (payload?.editLock) startEditLockRefresh();
         const script = document.createElement('script');
         script.src = `${String(payload.onlyofficeUrl || '').replace(/\/+$/, '')}/web-apps/apps/api/documents/api.js`;
