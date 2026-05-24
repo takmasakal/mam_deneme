@@ -48,11 +48,11 @@ services:
 
 volumes:
   pg_data:
-    external: false
+    external: true
     name: mam_kaisha_pg_data
   keycloak_pg_data:
-    external: false
+    external: true
     name: mam_kaisha_keycloak_pg_data
   es_data:
-    external: false
+    external: true
     name: mam_kaisha_es_data

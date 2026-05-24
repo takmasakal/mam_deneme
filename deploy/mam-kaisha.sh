@@ -35,6 +35,21 @@ dc() {
   ${DOCKER_CMD} compose --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}" "$@"
 }
 
+ensure_external_volumes() {
+  if [[ -z "${DOCKER_CMD}" ]]; then
+    DOCKER_CMD="$(detect_docker_cmd)"
+  fi
+  if [[ -z "${DOCKER_CMD}" ]]; then
+    echo "Docker daemon is not reachable. Start Docker or use sudo."
+    exit 1
+  fi
+  local volume
+  for volume in mam_kaisha_pg_data mam_kaisha_keycloak_pg_data mam_kaisha_es_data; do
+    # shellcheck disable=SC2086
+    ${DOCKER_CMD} volume inspect "${volume}" >/dev/null 2>&1 || ${DOCKER_CMD} volume create "${volume}" >/dev/null
+  done
+}
+
 print_running_version() {
   if [[ -z "${DOCKER_CMD}" ]]; then
     DOCKER_CMD="$(detect_docker_cmd)"
@@ -78,12 +93,14 @@ case "${cmd}" in
     ;;
   build)
     ensure_init
+    ensure_external_volumes
     export_build_metadata
     echo "Building MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
     dc build app oauth2-proxy
     ;;
   up)
     ensure_init
+    ensure_external_volumes
     export_build_metadata
     echo "Starting MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
     dc up -d postgres keycloak-postgres
@@ -98,6 +115,7 @@ case "${cmd}" in
     ;;
   restart)
     ensure_init
+    ensure_external_volumes
     export_build_metadata
     echo "Restarting MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
     dc down
@@ -110,6 +128,7 @@ case "${cmd}" in
     ;;
   ps)
     ensure_init
+    ensure_external_volumes
     dc ps
     ;;
   logs)
