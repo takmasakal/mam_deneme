@@ -37,6 +37,13 @@ fi
 echo "Syncing PostgreSQL password with Docker secret..."
 "${docker_cmd_parts[@]}" exec "${container_id}" bash -lc '
 set -euo pipefail
+for attempt in $(seq 1 60); do
+  if pg_isready -U postgres -d postgres >/dev/null 2>&1; then
+    break
+  fi
+  sleep 2
+done
+pg_isready -U postgres -d postgres >/dev/null
 password="$(cat /run/secrets/mam_postgres_password)"
 psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "ALTER USER postgres WITH PASSWORD '\''${password}'\'';" >/dev/null
 '

@@ -37,7 +37,16 @@ fi
 echo "Syncing Keycloak PostgreSQL password with Docker secret..."
 "${docker_cmd_parts[@]}" exec "${container_id}" bash -lc '
 set -euo pipefail
+db_user="${POSTGRES_USER:-keycloak}"
+db_name="${POSTGRES_DB:-keycloak}"
+for attempt in $(seq 1 60); do
+  if pg_isready -U "${db_user}" -d "${db_name}" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 2
+done
+pg_isready -U "${db_user}" -d "${db_name}" >/dev/null
 password="$(cat /run/secrets/keycloak_db_password)"
-psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-keycloak}" -d "${POSTGRES_DB:-keycloak}" -c "ALTER USER ${POSTGRES_USER:-keycloak} WITH PASSWORD '\''${password}'\'';" >/dev/null
+psql -v ON_ERROR_STOP=1 -U "${db_user}" -d "${db_name}" -c "ALTER USER ${db_user} WITH PASSWORD '\''${password}'\'';" >/dev/null
 '
 echo "Keycloak PostgreSQL password is in sync."
