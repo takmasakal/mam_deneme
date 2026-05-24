@@ -86,8 +86,9 @@ case "${cmd}" in
     ensure_init
     export_build_metadata
     echo "Starting MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
-    dc up -d postgres
+    dc up -d postgres keycloak-postgres
     DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-postgres-password.sh --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}"
+    DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-keycloak-postgres-password.sh --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}"
     dc up -d --build
     KEYCLOAK_CONTAINER=kaisha-keycloak ENV_FILE="${ENV_FILE}" ./deploy/keycloak-sync-defaults.sh
     print_running_version
@@ -100,8 +101,9 @@ case "${cmd}" in
     export_build_metadata
     echo "Restarting MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
     dc down
-    dc up -d postgres
+    dc up -d postgres keycloak-postgres
     DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-postgres-password.sh --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}"
+    DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-keycloak-postgres-password.sh --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}"
     dc up -d --build
     KEYCLOAK_CONTAINER=kaisha-keycloak ENV_FILE="${ENV_FILE}" ./deploy/keycloak-sync-defaults.sh
     print_running_version

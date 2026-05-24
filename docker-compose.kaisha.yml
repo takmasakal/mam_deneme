@@ -36,6 +36,10 @@ services:
   keycloak:
     container_name: kaisha-keycloak
     pull_policy: missing
+    command:
+      - start
+      - --http-port=8080
+      - --import-realm
     environment:
       KC_HOSTNAME: ${PUBLIC_KEYCLOAK_HOST}
       KC_HOSTNAME_STRICT: ${KC_HOSTNAME_STRICT:-true}
