@@ -99,9 +99,9 @@ fi
 KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
 KEYCLOAK_DB_USER="${KEYCLOAK_DB_USER:-keycloak}"
 KEYCLOAK_DB_NAME="${KEYCLOAK_DB_NAME:-keycloak}"
+MAM_SUPERADMIN_USER="${MAM_SUPERADMIN_USER:-mamsup}"
 MAM_ADMIN_USER="${MAM_ADMIN_USER:-mamadmin}"
 MAM_USER="${MAM_USER:-mamuser}"
-MAM_TEXT_ADMIN_USER="${MAM_TEXT_ADMIN_USER:-yazici}"
 OAUTH2_PROXY_CLIENT_ID="${OAUTH2_PROXY_CLIENT_ID:-mam-web}"
 UPLOADS_DIR="${UPLOADS_DIR:-${ROOT_DIR}/uploads}"
 ENABLE_ONLYOFFICE="${REQUESTED_ENABLE_ONLYOFFICE:-${ENABLE_ONLYOFFICE:-false}}"
@@ -124,9 +124,9 @@ ensure_secret keycloak_db_password "${KEYCLOAK_DB_PASSWORD:-}" hex "keycloak"
 ensure_secret keycloak_admin_password "${KEYCLOAK_ADMIN_PASSWORD:-}" hex "admin"
 ensure_secret oauth2_proxy_client_secret "${OAUTH2_PROXY_CLIENT_SECRET:-}" hex "change-me"
 ensure_secret oauth2_proxy_cookie_secret "${OAUTH2_PROXY_COOKIE_SECRET:-}" cookie "0123456789abcdef0123456789abcdef" "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+ensure_secret mam_superadmin_password "${MAM_SUPERADMIN_PASSWORD:-}" hex "mamsup"
 ensure_secret mam_admin_password "${MAM_ADMIN_PASSWORD:-}" hex "mamadmin"
 ensure_secret mam_user_password "${MAM_USER_PASSWORD:-}" hex "mamuser"
-ensure_secret mam_text_admin_password "${MAM_TEXT_ADMIN_PASSWORD:-}" hex "yazici"
 
 cat > "${ENV_OUT}" <<EOV
 PUBLIC_HOST=${PUBLIC_HOST}
@@ -134,9 +134,9 @@ UPLOADS_DIR=${UPLOADS_DIR}
 KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN}
 KEYCLOAK_DB_USER=${KEYCLOAK_DB_USER}
 KEYCLOAK_DB_NAME=${KEYCLOAK_DB_NAME}
+MAM_SUPERADMIN_USER=${MAM_SUPERADMIN_USER}
 MAM_ADMIN_USER=${MAM_ADMIN_USER}
 MAM_USER=${MAM_USER}
-MAM_TEXT_ADMIN_USER=${MAM_TEXT_ADMIN_USER}
 OAUTH2_PROXY_CLIENT_ID=${OAUTH2_PROXY_CLIENT_ID}
 ENABLE_ONLYOFFICE=${ENABLE_ONLYOFFICE}
 OFFICE_EDITOR_PROVIDER=${OFFICE_EDITOR_PROVIDER}

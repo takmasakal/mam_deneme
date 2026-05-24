@@ -32,10 +32,18 @@ const PERMISSION_DEFINITIONS = [
 ];
 
 const PERMISSION_KEYS = PERMISSION_DEFINITIONS.map((item) => item.key);
+const PRINCIPAL_PERMISSION_MAP = {
+  superadmin: PERMISSION_KEYS,
+  admin: ['admin.access'],
+  'standart yönetici': ['admin.access'],
+  'standart yonetici': ['admin.access'],
+  altyazı_ocr_operator: ['text.admin'],
+  altyazi_ocr_operator: ['text.admin']
+};
 
 function normalizePrincipalNames(values) {
   return (Array.isArray(values) ? values : [])
-    .flatMap((value) => String(value || '').split(/[,\s]+/))
+    .flatMap((value) => String(value || '').split(','))
     .flatMap((value) => {
       const normalized = String(value || '').trim().toLowerCase();
       const withoutSlash = normalized.replace(/^\/+/, '');
@@ -52,10 +60,17 @@ function getPermissionDefinitionsPayload() {
   }));
 }
 
-function resolvePermissionKeysFromPrincipals() {
+function resolvePermissionKeysFromPrincipals({ groups = [], roles = [] } = {}) {
+  const principals = normalizePrincipalNames([...groups, ...roles]);
+  const keys = new Set();
+  principals.forEach((principal) => {
+    const mapped = PRINCIPAL_PERMISSION_MAP[principal] || [];
+    mapped.forEach((key) => keys.add(key));
+  });
+  const permissionKeys = PERMISSION_KEYS.filter((key) => keys.has(key));
   return {
-    permissionKeys: [],
-    isSuperAdmin: false
+    permissionKeys,
+    isSuperAdmin: PERMISSION_KEYS.every((key) => keys.has(key))
   };
 }
 

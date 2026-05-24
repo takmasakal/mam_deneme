@@ -174,9 +174,9 @@ services:
       KC_DB_URL_DATABASE: ${KEYCLOAK_DB_NAME:-keycloak}
       KC_DB_USERNAME: ${KEYCLOAK_DB_USER:-keycloak}
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      MAM_SUPERADMIN_USER: ${MAM_SUPERADMIN_USER:-mamsup}
       MAM_ADMIN_USER: ${MAM_ADMIN_USER:-mamadmin}
       MAM_USER: ${MAM_USER:-mamuser}
-      MAM_TEXT_ADMIN_USER: ${MAM_TEXT_ADMIN_USER:-yazici}
       KC_HTTP_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
     entrypoint:
@@ -196,9 +196,9 @@ services:
       - keycloak_db_password
       - keycloak_admin_password
       - oauth2_proxy_client_secret
+      - mam_superadmin_password
       - mam_admin_password
       - mam_user_password
-      - mam_text_admin_password
     restart: unless-stopped
 
   oauth2-proxy:
@@ -268,12 +268,12 @@ secrets:
     file: ./deploy/secrets/oauth2_proxy_client_secret
   oauth2_proxy_cookie_secret:
     file: ./deploy/secrets/oauth2_proxy_cookie_secret
+  mam_superadmin_password:
+    file: ./deploy/secrets/mam_superadmin_password
   mam_admin_password:
     file: ./deploy/secrets/mam_admin_password
   mam_user_password:
     file: ./deploy/secrets/mam_user_password
-  mam_text_admin_password:
-    file: ./deploy/secrets/mam_text_admin_password
 
 volumes:
   pg_data:

@@ -56,12 +56,38 @@
   "roles": {
     "realm": []
   },
-  "groups": [],
+  "groups": [
+    { "name": "dokyonet" },
+    { "name": "dokkullan" },
+    { "name": "fotokullan" },
+    { "name": "fotoyonet" },
+    { "name": "superadmin" },
+    { "name": "altyazı_ocr_operator" },
+    { "name": "standart yönetici" }
+  ],
   "users": [
+    {
+      "username": "__MAM_SUPERADMIN_USER__",
+      "enabled": true,
+      "emailVerified": true,
+      "groups": [
+        "/superadmin"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "__MAM_SUPERADMIN_PASSWORD__",
+          "temporary": false
+        }
+      ]
+    },
     {
       "username": "__MAM_ADMIN_USER__",
       "enabled": true,
       "emailVerified": true,
+      "groups": [
+        "/standart yönetici"
+      ],
       "credentials": [
         {
           "type": "password",
@@ -78,18 +104,6 @@
         {
           "type": "password",
           "value": "__MAM_USER_PASSWORD__",
-          "temporary": false
-        }
-      ]
-    },
-    {
-      "username": "__MAM_TEXT_ADMIN_USER__",
-      "enabled": true,
-      "emailVerified": true,
-      "credentials": [
-        {
-          "type": "password",
-          "value": "__MAM_TEXT_ADMIN_PASSWORD__",
           "temporary": false
         }
       ]

@@ -19,6 +19,18 @@ ADMIN_USER="${KEYCLOAK_ADMIN:-admin}"
 OAUTH2_PROXY_CLIENT_ID="${OAUTH2_PROXY_CLIENT_ID:-mam-web}"
 PUBLIC_MAM_URL="${PUBLIC_MAM_URL:-}"
 ADMIN_PASSWORD_FILE="${SECRETS_DIR}/keycloak_admin_password"
+MAM_SUPERADMIN_USER="${MAM_SUPERADMIN_USER:-mamsup}"
+MAM_ADMIN_USER="${MAM_ADMIN_USER:-mamadmin}"
+MAM_USER="${MAM_USER:-mamuser}"
+MAM_GROUPS=(
+  "dokyonet"
+  "dokkullan"
+  "fotokullan"
+  "fotoyonet"
+  "superadmin"
+  "altyazı_ocr_operator"
+  "standart yönetici"
+)
 
 if [[ ! -f "${ADMIN_PASSWORD_FILE}" ]]; then
   echo "Missing Keycloak admin secret: ${ADMIN_PASSWORD_FILE}"
@@ -94,6 +106,44 @@ for row in rows if isinstance(rows, list) else []:
 ' "$wanted"
 }
 
+json_find_user_id() {
+  local wanted="$1"
+  python3 -c '
+import json, sys
+wanted = sys.argv[1].strip().lower()
+try:
+    rows = json.load(sys.stdin)
+except Exception:
+    rows = []
+for row in rows if isinstance(rows, list) else []:
+    username = str(row.get("username", "")).strip().lower()
+    if username == wanted:
+        print(row.get("id", ""))
+        break
+' "$wanted"
+}
+
+json_find_group_id() {
+  local wanted="$1"
+  python3 -c '
+import json, sys
+wanted = sys.argv[1].strip().lower().lstrip("/")
+try:
+    rows = json.load(sys.stdin)
+except Exception:
+    rows = []
+stack = list(rows if isinstance(rows, list) else [])
+while stack:
+    row = stack.pop(0)
+    name = str(row.get("name", "")).strip().lower()
+    path = str(row.get("path", "")).strip().lower().lstrip("/")
+    if name == wanted or path == wanted:
+        print(row.get("id", ""))
+        break
+    stack.extend(row.get("subGroups") or [])
+' "$wanted"
+}
+
 admin_password="$(cat "${ADMIN_PASSWORD_FILE}")"
 
 wait_for_keycloak
@@ -121,6 +171,60 @@ ensure_web_client_urls() {
   echo "Client URLs ensured: ${OAUTH2_PROXY_CLIENT_ID}"
 }
 
+ensure_group() {
+  local group_name="$1"
+  local group_rows group_uuid
+  group_rows="$(kcadm get groups -r "${REALM}")"
+  group_uuid="$(printf '%s' "${group_rows}" | json_find_group_id "${group_name}")"
+  if [[ -z "${group_uuid}" ]]; then
+    kcadm create groups -r "${REALM}" -s "name=${group_name}" >/dev/null
+    echo "Group ensured: ${group_name}"
+  fi
+}
+
+ensure_user() {
+  local username="$1"
+  local password_file="$2"
+  local group_name="${3:-}"
+  local password user_rows user_uuid group_rows group_uuid
+  if [[ ! -f "${password_file}" ]]; then
+    echo "WARN: missing password secret for ${username}: ${password_file}"
+    return
+  fi
+  password="$(cat "${password_file}")"
+  user_rows="$(kcadm get users -r "${REALM}" -q "username=${username}")"
+  user_uuid="$(printf '%s' "${user_rows}" | json_find_user_id "${username}")"
+  if [[ -z "${user_uuid}" ]]; then
+    kcadm create users -r "${REALM}" \
+      -s "username=${username}" \
+      -s enabled=true \
+      -s emailVerified=true >/dev/null
+    user_rows="$(kcadm get users -r "${REALM}" -q "username=${username}")"
+    user_uuid="$(printf '%s' "${user_rows}" | json_find_user_id "${username}")"
+    echo "User ensured: ${username}"
+  fi
+  if [[ -n "${user_uuid}" ]]; then
+    kcadm set-password -r "${REALM}" --userid "${user_uuid}" --new-password "${password}" >/dev/null
+  fi
+  if [[ -n "${group_name}" && -n "${user_uuid}" ]]; then
+    group_rows="$(kcadm get groups -r "${REALM}")"
+    group_uuid="$(printf '%s' "${group_rows}" | json_find_group_id "${group_name}")"
+    if [[ -n "${group_uuid}" ]]; then
+      kcadm update "users/${user_uuid}/groups/${group_uuid}" -r "${REALM}" -n >/dev/null
+      echo "User group ensured: ${username} -> ${group_name}"
+    else
+      echo "WARN: group not found for ${username}: ${group_name}"
+    fi
+  fi
+}
+
+for group_name in "${MAM_GROUPS[@]}"; do
+  ensure_group "${group_name}"
+done
+
+ensure_user "${MAM_SUPERADMIN_USER}" "${SECRETS_DIR}/mam_superadmin_password" "superadmin"
+ensure_user "${MAM_ADMIN_USER}" "${SECRETS_DIR}/mam_admin_password" "standart yönetici"
+ensure_user "${MAM_USER}" "${SECRETS_DIR}/mam_user_password"
 ensure_web_client_urls
 
-echo "Keycloak client URLs are synchronized for realm: ${REALM}"
+echo "Keycloak defaults are synchronized for realm: ${REALM}"

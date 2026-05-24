@@ -18,16 +18,17 @@ is_ipv4() {
   [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
 }
 
-mam_host="${1:-${PUBLIC_MAM_HOST:-mam.company.local}}"
+COMPANY_SERVER_IP="${COMPANY_SERVER_IP:-10.0.6.200}"
+mam_host="${1:-${PUBLIC_MAM_HOST:-${PUBLIC_HOST:-${COMPANY_SERVER_IP}}}}"
 direct_ip_mode=false
-if [[ $# -eq 1 ]] && is_ipv4 "${mam_host}"; then
+if is_ipv4 "${mam_host}"; then
   direct_ip_mode=true
 fi
 
 if [[ "${direct_ip_mode}" == "true" ]]; then
   keycloak_host="${mam_host}"
   office_host="${mam_host}"
-  company_domain="${mam_host},${mam_host}:3000,${mam_host}:8081,${mam_host}:8082"
+  company_domain="${mam_host},${mam_host}:*,${mam_host}:3000,${mam_host}:8081,${mam_host}:8082"
   mam_url="http://${mam_host}:3000"
   keycloak_url="http://${keycloak_host}:8081"
   office_url="http://${office_host}:8082"
@@ -44,7 +45,7 @@ else
   keycloak_hostname_strict=true
 fi
 
-if [[ ! -d "${SECRETS_DIR}" ]]; then
+if [[ ! -d "${SECRETS_DIR}" || ! -f "${SECRETS_DIR}/mam_superadmin_password" ]]; then
   "${DEPLOY_DIR}/init.sh" "${mam_host}"
 fi
 
@@ -63,9 +64,13 @@ PUBLIC_MAM_URL_ENCODED=${encoded_mam_url}
 KEYCLOAK_REALM=mam
 KEYCLOAK_REALMS=mam
 KEYCLOAK_ADMIN_REALM=master
-KEYCLOAK_ADMIN=
+KEYCLOAK_ADMIN=admin
 KEYCLOAK_DB_USER=keycloak
 KEYCLOAK_DB_NAME=keycloak
+COMPANY_SERVER_IP=${COMPANY_SERVER_IP}
+MAM_SUPERADMIN_USER=${MAM_SUPERADMIN_USER:-mamsup}
+MAM_ADMIN_USER=${MAM_ADMIN_USER:-mamadmin}
+MAM_USER=${MAM_USER:-mamuser}
 OAUTH2_PROXY_CLIENT_ID=mam-web
 OAUTH2_PROXY_WHITELIST_DOMAINS=${company_domain}
 OAUTH2_PROXY_COOKIE_SECURE=${oauth_cookie_secure}

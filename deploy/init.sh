@@ -90,9 +90,9 @@ fi
 KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
 KEYCLOAK_DB_USER="${KEYCLOAK_DB_USER:-keycloak}"
 KEYCLOAK_DB_NAME="${KEYCLOAK_DB_NAME:-keycloak}"
+MAM_SUPERADMIN_USER="${MAM_SUPERADMIN_USER:-mamsup}"
 MAM_ADMIN_USER="${MAM_ADMIN_USER:-mamadmin}"
 MAM_USER="${MAM_USER:-mamuser}"
-MAM_TEXT_ADMIN_USER="${MAM_TEXT_ADMIN_USER:-yazici}"
 OAUTH2_PROXY_CLIENT_ID="${OAUTH2_PROXY_CLIENT_ID:-mam-web}"
 
 ensure_secret mam_postgres_password "${MAM_POSTGRES_PASSWORD:-${POSTGRES_PASSWORD:-}}" hex "postgres"
@@ -100,9 +100,9 @@ ensure_secret keycloak_db_password "${KEYCLOAK_DB_PASSWORD:-}" hex "keycloak"
 ensure_secret keycloak_admin_password "${KEYCLOAK_ADMIN_PASSWORD:-}" hex "admin"
 ensure_secret oauth2_proxy_client_secret "${OAUTH2_PROXY_CLIENT_SECRET:-}" hex "change-me"
 ensure_secret oauth2_proxy_cookie_secret "${OAUTH2_PROXY_COOKIE_SECRET:-}" cookie "0123456789abcdef0123456789abcdef" "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+ensure_secret mam_superadmin_password "${MAM_SUPERADMIN_PASSWORD:-}" hex "mamsup"
 ensure_secret mam_admin_password "${MAM_ADMIN_PASSWORD:-}" hex "mamadmin"
 ensure_secret mam_user_password "${MAM_USER_PASSWORD:-}" hex "mamuser"
-ensure_secret mam_text_admin_password "${MAM_TEXT_ADMIN_PASSWORD:-}" hex "yazici"
 
 cat > "${ENV_OUT}" <<EOV
 PUBLIC_HOST=${PUBLIC_HOST}
@@ -110,9 +110,9 @@ KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN}
 KEYCLOAK_DB_USER=${KEYCLOAK_DB_USER}
 KEYCLOAK_DB_NAME=${KEYCLOAK_DB_NAME}
 OAUTH2_PROXY_CLIENT_ID=${OAUTH2_PROXY_CLIENT_ID}
+MAM_SUPERADMIN_USER=${MAM_SUPERADMIN_USER}
 MAM_ADMIN_USER=${MAM_ADMIN_USER}
 MAM_USER=${MAM_USER}
-MAM_TEXT_ADMIN_USER=${MAM_TEXT_ADMIN_USER}
 EOV
 chmod 600 "${ENV_OUT}"
 
@@ -128,8 +128,8 @@ echo "  - MAM: http://${PUBLIC_HOST}:3000"
 echo "  - Keycloak Admin: http://${PUBLIC_HOST}:8081"
 echo
 echo "Users created in realm 'mam':"
-echo "  - ${MAM_ADMIN_USER} (no permissions are granted automatically)"
-echo "  - ${MAM_USER}"
-echo "  - ${MAM_TEXT_ADMIN_USER} (no permissions are granted automatically)"
+echo "  - ${MAM_SUPERADMIN_USER} (superadmin)"
+echo "  - ${MAM_ADMIN_USER} (admin)"
+echo "  - ${MAM_USER} (normal user)"
 echo
 echo "Passwords are stored only under ${SECRETS_DIR}."

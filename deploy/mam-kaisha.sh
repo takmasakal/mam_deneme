@@ -89,6 +89,7 @@ case "${cmd}" in
     dc up -d postgres
     DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-postgres-password.sh --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}"
     dc up -d --build
+    KEYCLOAK_CONTAINER=kaisha-keycloak ENV_FILE="${ENV_FILE}" ./deploy/keycloak-sync-defaults.sh
     print_running_version
     ;;
   down)
@@ -102,6 +103,7 @@ case "${cmd}" in
     dc up -d postgres
     DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-postgres-password.sh --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}"
     dc up -d --build
+    KEYCLOAK_CONTAINER=kaisha-keycloak ENV_FILE="${ENV_FILE}" ./deploy/keycloak-sync-defaults.sh
     print_running_version
     ;;
   ps)
@@ -115,7 +117,7 @@ case "${cmd}" in
     ;;
   sync-keycloak)
     ensure_init
-    ./deploy/keycloak-sync-defaults.sh
+    KEYCLOAK_CONTAINER=kaisha-keycloak ENV_FILE="${ENV_FILE}" ./deploy/keycloak-sync-defaults.sh
     ;;
   urls)
     ensure_init
