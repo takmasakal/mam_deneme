@@ -30,20 +30,21 @@
         mediaEl.muted = false;
         if (!Number.isFinite(mediaEl.volume) || mediaEl.volume <= 0) mediaEl.volume = 1;
         if (isVideo(asset)) {
-          let recoveringProxy = false;
+          let refreshingAsset = false;
           const onVideoError = async () => {
-            if (recoveringProxy) return;
-            recoveringProxy = true;
+            if (refreshingAsset) return;
+            refreshingAsset = true;
             try {
-              const refreshed = await api(`/api/assets/${asset.id}/ensure-proxy`, { method: 'POST', body: JSON.stringify({ force: true }) });
-              if (refreshed.proxyUrl) {
-                mediaEl.src = `${refreshed.proxyUrl}${refreshed.proxyUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
+              const refreshed = await api(`/api/assets/${asset.id}`);
+              const nextProxyUrl = String(refreshed?.proxyUrl || '').trim();
+              const currentUrl = String(mediaEl.currentSrc || mediaEl.src || '').split('?')[0];
+              if (nextProxyUrl && nextProxyUrl !== currentUrl) {
+                mediaEl.src = `${nextProxyUrl}${nextProxyUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
                 mediaEl.load();
-                mediaEl.play().catch(() => {});
               }
             } catch (_error) {
             } finally {
-              recoveringProxy = false;
+              refreshingAsset = false;
             }
           };
           mediaEl.addEventListener('error', onVideoError);
