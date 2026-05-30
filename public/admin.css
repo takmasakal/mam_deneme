@@ -1529,6 +1529,10 @@ body {
   justify-content: flex-end;
 }
 
+.identity-overview-actions {
+  margin-bottom: 14px;
+}
+
 .ocr-search-actions {
   margin-top: 0;
   justify-content: flex-start;

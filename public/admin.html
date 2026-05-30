@@ -20,7 +20,7 @@
         <nav class="admin-tabs" id="adminTabs">
           <button type="button" class="admin-tab active" data-tab="apiHelp" data-i18n="api_help_doc_title">API Help Document</button>
           <button type="button" class="admin-tab" data-tab="systemHealth" data-i18n="system_health">System Health</button>
-          <button type="button" class="admin-tab" data-tab="runtimeDiagnostics" data-i18n="runtime_diagnostics">Diagnostik</button>
+          <button type="button" class="admin-tab" data-tab="runtimeDiagnostics" data-i18n="runtime_diagnostics">Tanı</button>
           <button type="button" class="admin-tab" data-tab="auditEvents" data-i18n="audit_events">İşlem Geçmişi</button>
           <button type="button" class="admin-tab" data-tab="assetRights" data-i18n="asset_rights">Asset Rights</button>
           <button type="button" class="admin-tab" data-tab="settings" data-i18n="settings">Settings</button>
@@ -80,7 +80,7 @@
 
         <article class="admin-card admin-panel" data-panel="runtimeDiagnostics">
           <div class="admin-section-head">
-            <h2 data-i18n="runtime_diagnostics">Diagnostik</h2>
+            <h2 data-i18n="runtime_diagnostics">Tanı</h2>
             <button id="refreshRuntimeDiagnosticsBtn" type="button" data-i18n="refresh">Yenile</button>
           </div>
           <h3 id="activeUsersSectionTitle" data-i18n="active_users">Anlık Kullanıcılar</h3>
@@ -501,10 +501,6 @@
           </section>
 
           <section class="settings-subpanel" data-settings-panel="users">
-            <div class="settings-section-head user-settings-head">
-              <h3 data-i18n="user_settings">User Settings</h3>
-              <input id="userPermissionsSearchInput" class="user-settings-search" type="text" data-i18n-placeholder="user_search_ph" placeholder="Search user..." autocomplete="off" aria-label="User Search" />
-            </div>
             <form id="authSessionSettingsForm" class="stack">
               <fieldset class="settings-group">
                 <legend data-i18n="auth_session_settings">Login Session Settings</legend>
@@ -534,6 +530,10 @@
               </div>
               <div id="authSessionSettingsMsg" class="admin-note"></div>
             </form>
+            <div class="settings-section-head user-settings-head">
+              <h3 data-i18n="user_settings">User Settings</h3>
+              <input id="userPermissionsSearchInput" class="user-settings-search" type="text" data-i18n-placeholder="user_search_ph" placeholder="Search user..." autocomplete="off" aria-label="User Search" />
+            </div>
             <div id="userPermissionsRows" class="rows"></div>
             <div class="admin-pager" id="userPermissionsPager">
               <label>
@@ -549,7 +549,7 @@
             </div>
             <div id="userPermissionsMsg" class="admin-note"></div>
             <h3 data-i18n="identity_overview">Identity Overview</h3>
-            <div class="proxy-tool-actions">
+            <div class="proxy-tool-actions identity-overview-actions">
               <button id="refreshIdentityOverviewBtn" type="button" data-i18n="refresh">Refresh</button>
             </div>
             <div id="identityOverviewSummary" class="metrics"></div>
