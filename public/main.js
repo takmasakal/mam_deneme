@@ -52,6 +52,8 @@ const LOCAL_VIDEO_TOOLS_ORDER = 'mam.video.tools.order';
 const LOCAL_ASSET_VIEW_MODE = 'mam.assets.view.mode';
 const LOCAL_DETAIL_VIDEO_PIN = 'mam.detail.video.pin';
 const I18N_PATH = '/i18n.json';
+const FALLBACK_LOGOUT_URL = '/oauth2/sign_out?rd=%2Foauth2%2Fstart%3Frd%3D%252F';
+const LOGOUT_URL_TIMEOUT_MS = 1200;
 const DETAIL_PANEL_BASE_MIN_PX = 377;
 const PLAYER_FPS = 25;
 const PANELS = [
@@ -1001,6 +1003,33 @@ function documentSearchControls() { return commonModule.documentSearchControls()
 function formatDate(value) { return commonModule.formatDate(value); }
 function formatDuration(seconds) { return commonModule.formatDuration(seconds); }
 async function loadAssetTechnicalInfo(asset) { return commonModule.loadAssetTechnicalInfo(asset); }
+
+function openDownloadInNewTab(downloadUrl) {
+  const safeUrl = String(downloadUrl || '').trim();
+  if (!safeUrl) return;
+  const link = document.createElement('a');
+  link.href = safeUrl;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.setAttribute('download', '');
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = LOGOUT_URL_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    return await response.json().catch(() => ({}));
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
 function extractDcMetadataFromPayload(payload) { return commonModule.extractDcMetadataFromPayload(payload); }
 function foldSearchText(value) { return commonModule.foldSearchText(value); }
 function effectiveSearchHighlightClass(query, highlightQuery, fuzzyUsed = false) { return commonModule.effectiveSearchHighlightClass(query, highlightQuery, fuzzyUsed); }
@@ -2439,29 +2468,12 @@ async function openAsset(id, workflow, options = {}) {
 
   downloadBtn?.addEventListener('click', () => {
     // Varlık indir her zaman asıl kaynağı indirir; proxy bunun yerine geçmez.
-    const downloadUrl = String(asset.mediaUrl || '').trim();
-    if (!downloadUrl) return;
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    // Empty download attribute lets browser suggest a filename.
-    link.setAttribute('download', '');
-    link.rel = 'noreferrer';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    openDownloadInNewTab(asset.mediaUrl);
   });
 
   downloadProxyBtn?.addEventListener('click', () => {
     // Proxy indirme yalnızca admin için ek bir kolaylık olarak sunuluyor.
-    const downloadUrl = String(asset.proxyUrl || '').trim();
-    if (!downloadUrl) return;
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.setAttribute('download', '');
-    link.rel = 'noreferrer';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    openDownloadInNewTab(asset.proxyUrl);
   });
 
   moveToTrashBtn?.addEventListener('click', async () => {
@@ -2815,15 +2827,14 @@ logoutBtn?.addEventListener('click', async () => {
   userMenu?.classList.add('hidden');
   try {
     const logoutEndpoint = `/api/logout-url?ts=${Date.now()}`;
-    const response = await fetch(logoutEndpoint, {
+    const payload = await fetchJsonWithTimeout(logoutEndpoint, {
       credentials: 'include',
       cache: 'no-store'
-    });
-    const payload = await response.json().catch(() => ({}));
+    }, LOGOUT_URL_TIMEOUT_MS);
     const url = String(payload?.url || '').trim();
-    window.location.assign(url || '/oauth2/sign_out?rd=%2Foauth2%2Fstart%3Frd%3D%252F');
+    window.location.assign(url || FALLBACK_LOGOUT_URL);
   } catch (_error) {
-    window.location.assign('/oauth2/sign_out?rd=%2Foauth2%2Fstart%3Frd%3D%252F');
+    window.location.assign(FALLBACK_LOGOUT_URL);
   }
 });
 
