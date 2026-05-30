@@ -138,6 +138,8 @@
     setElementHidden(elements.ocrSettingsMsg, access.isTextOnly);
     setElementHidden(elements.subtitleSettingsForm, false);
     setElementHidden(elements.subtitleSettingsMsg, false);
+    setElementHidden(elements.authSessionSettingsForm, access.isTextOnly || !access.isSuperAdmin);
+    setElementHidden(elements.authSessionSettingsMsg, access.isTextOnly || !access.isSuperAdmin);
 
     if (access.isTextOnly) {
       if (typeof switchTab === 'function') switchTab('settings');

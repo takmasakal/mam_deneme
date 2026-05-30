@@ -505,6 +505,35 @@
               <h3 data-i18n="user_settings">User Settings</h3>
               <input id="userPermissionsSearchInput" class="user-settings-search" type="text" data-i18n-placeholder="user_search_ph" placeholder="Search user..." autocomplete="off" aria-label="User Search" />
             </div>
+            <form id="authSessionSettingsForm" class="stack">
+              <fieldset class="settings-group">
+                <legend data-i18n="auth_session_settings">Login Session Settings</legend>
+                <label class="toggle-row">
+                  <input type="checkbox" name="rememberMe" />
+                  <span data-i18n="auth_remember_me">Allow remember me</span>
+                </label>
+                <label>
+                  <span data-i18n="auth_sso_idle_minutes">Idle timeout (minutes)</span>
+                  <input name="ssoIdleMinutes" type="number" min="1" max="1440" step="1" />
+                </label>
+                <label>
+                  <span data-i18n="auth_sso_max_hours">Maximum session (hours)</span>
+                  <input name="ssoMaxHours" type="number" min="1" max="720" step="1" />
+                </label>
+                <label>
+                  <span data-i18n="auth_client_idle_minutes">Client idle timeout (minutes)</span>
+                  <input name="clientIdleMinutes" type="number" min="1" max="1440" step="1" />
+                </label>
+                <label>
+                  <span data-i18n="auth_client_max_hours">Client maximum session (hours)</span>
+                  <input name="clientMaxHours" type="number" min="1" max="720" step="1" />
+                </label>
+              </fieldset>
+              <div class="settings-submit-row">
+                <button type="submit" data-i18n="save_auth_session">Save Login Settings</button>
+              </div>
+              <div id="authSessionSettingsMsg" class="admin-note"></div>
+            </form>
             <div id="userPermissionsRows" class="rows"></div>
             <div class="admin-pager" id="userPermissionsPager">
               <label>

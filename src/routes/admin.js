@@ -42,6 +42,8 @@ function registerAdminRoutes(app, deps) {
     normalizeSubtitleStyle,
     normalizeAuditRetentionDays,
     normalizeMediaJobRetentionDays,
+    normalizeAuthSessionSettings,
+    applyKeycloakAuthSessionSettings,
     cleanupAuditEvents,
     cleanupMediaProcessingJobs,
     recordAuditEvent,
@@ -1399,6 +1401,9 @@ app.patch('/api/admin/settings', async (req, res) => {
       mediaJobRetentionDays: Object.prototype.hasOwnProperty.call(req.body, 'mediaJobRetentionDays')
         ? normalizeMediaJobRetentionDays(req.body.mediaJobRetentionDays)
         : normalizeMediaJobRetentionDays(current.mediaJobRetentionDays),
+      authSession: Object.prototype.hasOwnProperty.call(req.body, 'authSession')
+        ? normalizeAuthSessionSettings(req.body.authSession)
+        : normalizeAuthSessionSettings(current.authSession),
       backup: Object.prototype.hasOwnProperty.call(req.body, 'backup')
         ? normalizeBackupSettings(req.body.backup)
         : normalizeBackupSettings(current.backup),
@@ -1431,6 +1436,37 @@ app.patch('/api/admin/settings', async (req, res) => {
     return res.json(saved);
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to save settings' });
+  }
+});
+
+app.patch('/api/admin/identity/session-settings', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const current = await getAdminSettings();
+    const authSession = normalizeAuthSessionSettings(req.body?.authSession || req.body || {});
+    const next = {
+      ...current,
+      authSession
+    };
+    const applied = await applyKeycloakAuthSessionSettings(authSession);
+    const saved = await saveAdminSettings(next);
+    await recordAuditEvent(req, {
+      action: 'admin.settings.auth_session',
+      targetType: 'settings',
+      targetId: 'authSession',
+      targetTitle: 'Authentication session settings',
+      details: {
+        authSession: saved.authSession,
+        realms: applied.realms
+      }
+    });
+    return res.json({
+      authSession: saved.authSession,
+      realms: applied.realms
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error?.message || 'Failed to save authentication session settings' });
   }
 });
 

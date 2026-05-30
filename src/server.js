@@ -133,6 +133,13 @@ const DEFAULT_ADMIN_SETTINGS = {
   },
   auditRetentionDays: 180,
   mediaJobRetentionDays: 30,
+  authSession: {
+    rememberMe: false,
+    ssoIdleMinutes: 30,
+    ssoMaxHours: 8,
+    clientIdleMinutes: 30,
+    clientMaxHours: 8
+  },
   backup: {
     enabled: false,
     directory: DEFAULT_BACKUP_DIR,
@@ -191,6 +198,18 @@ function normalizeAuditRetentionDays(value) {
 
 function normalizeMediaJobRetentionDays(value) {
   return clampNumber(value, 1, 3650, DEFAULT_ADMIN_SETTINGS.mediaJobRetentionDays);
+}
+
+function normalizeAuthSessionSettings(value = {}) {
+  const defaults = DEFAULT_ADMIN_SETTINGS.authSession;
+  const input = value && typeof value === 'object' ? value : {};
+  return {
+    rememberMe: Object.prototype.hasOwnProperty.call(input, 'rememberMe') ? Boolean(input.rememberMe) : defaults.rememberMe,
+    ssoIdleMinutes: clampNumber(input.ssoIdleMinutes, 1, 1440, defaults.ssoIdleMinutes),
+    ssoMaxHours: clampNumber(input.ssoMaxHours, 1, 720, defaults.ssoMaxHours),
+    clientIdleMinutes: clampNumber(input.clientIdleMinutes, 1, 1440, defaults.clientIdleMinutes),
+    clientMaxHours: clampNumber(input.clientMaxHours, 1, 720, defaults.clientMaxHours)
+  };
 }
 
 function normalizeBackupSettings(value = {}) {
@@ -5758,6 +5777,7 @@ async function getAdminSettings() {
     subtitleStyle: normalizeSubtitleStyle(value.subtitleStyle),
     auditRetentionDays: normalizeAuditRetentionDays(value.auditRetentionDays),
     mediaJobRetentionDays: normalizeMediaJobRetentionDays(value.mediaJobRetentionDays),
+    authSession: normalizeAuthSessionSettings(value.authSession),
     backup: normalizeBackupSettings(value.backup)
   };
 }
@@ -7246,6 +7266,45 @@ async function fetchKeycloakUsers() {
   return value;
 }
 
+async function applyKeycloakAuthSessionSettings(settings) {
+  const normalized = normalizeAuthSessionSettings(settings);
+  const token = await getKeycloakAdminAccessToken();
+  if (!token) {
+    throw new Error('Keycloak admin token could not be obtained');
+  }
+  const realms = getKeycloakCandidateRealms();
+  const payload = {
+    rememberMe: normalized.rememberMe,
+    ssoSessionIdleTimeout: normalized.ssoIdleMinutes * 60,
+    ssoSessionMaxLifespan: normalized.ssoMaxHours * 60 * 60,
+    clientSessionIdleTimeout: normalized.clientIdleMinutes * 60,
+    clientSessionMaxLifespan: normalized.clientMaxHours * 60 * 60
+  };
+  const applied = [];
+  for (const realm of realms) {
+    const response = await fetch(`${KEYCLOAK_INTERNAL_URL}/admin/realms/${encodeURIComponent(realm)}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+    if (response.ok) {
+      applied.push(realm);
+      continue;
+    }
+    if (response.status !== 404) {
+      const body = await response.text().catch(() => '');
+      throw new Error(body || `Keycloak session settings update failed for realm ${realm}`);
+    }
+  }
+  if (!applied.length) {
+    throw new Error('No Keycloak realm was updated');
+  }
+  return { settings: normalized, realms: applied };
+}
+
 function flattenKeycloakGroups(rows, realm, parentPath = '') {
   const out = [];
   (Array.isArray(rows) ? rows : []).forEach((row) => {
@@ -7984,6 +8043,8 @@ registerAdminRoutes(app, {
   normalizeSubtitleStyle,
   normalizeAuditRetentionDays,
   normalizeMediaJobRetentionDays,
+  normalizeAuthSessionSettings,
+  applyKeycloakAuthSessionSettings,
   cleanupAuditEvents,
   cleanupMediaProcessingJobs,
   recordAuditEvent,

@@ -14,6 +14,8 @@ const backupSettingsForm = document.getElementById('backupSettingsForm');
 const backupSettingsMsg = document.getElementById('backupSettingsMsg');
 const backupFilesRows = document.getElementById('backupFilesRows');
 const runBackupNowBtn = document.getElementById('runBackupNowBtn');
+const authSessionSettingsForm = document.getElementById('authSessionSettingsForm');
+const authSessionSettingsMsg = document.getElementById('authSessionSettingsMsg');
 const apiTokenInput = document.getElementById('apiTokenInput');
 const oidcIssuerUrlInput = document.getElementById('oidcIssuerUrlInput');
 const oidcJwksUrlInput = document.getElementById('oidcJwksUrlInput');
@@ -319,6 +321,15 @@ let i18n = {
     settings_sub_subtitle: 'Subtitle',
     settings_sub_backup: 'Backup',
     settings_sub_users: 'Users',
+    auth_session_settings: 'Login Session Settings',
+    auth_remember_me: 'Allow remember me',
+    auth_sso_idle_minutes: 'Idle timeout (minutes)',
+    auth_sso_max_hours: 'Maximum session (hours)',
+    auth_client_idle_minutes: 'Client idle timeout (minutes)',
+    auth_client_max_hours: 'Client maximum session (hours)',
+    save_auth_session: 'Save Login Settings',
+    auth_session_saved: 'Login session settings saved.',
+    auth_session_save_failed: 'Failed to save login session settings.',
     backup_settings: 'Backup Settings',
     backup_schedule: 'Schedule',
     backup_enabled: 'Enable daily backup',
@@ -713,6 +724,15 @@ let i18n = {
     settings_sub_subtitle: 'Altyazı',
     settings_sub_backup: 'Yedekleme',
     settings_sub_users: 'Kullanıcılar',
+    auth_session_settings: 'Giriş Oturumu Ayarları',
+    auth_remember_me: 'Beni hatırla seçeneğine izin ver',
+    auth_sso_idle_minutes: 'Boşta kalma süresi (dakika)',
+    auth_sso_max_hours: 'Maksimum oturum (saat)',
+    auth_client_idle_minutes: 'Client boşta kalma süresi (dakika)',
+    auth_client_max_hours: 'Client maksimum oturum (saat)',
+    save_auth_session: 'Giriş Ayarlarını Kaydet',
+    auth_session_saved: 'Giriş oturumu ayarları kaydedildi.',
+    auth_session_save_failed: 'Giriş oturumu ayarları kaydedilemedi.',
     backup_settings: 'Yedekleme Ayarları',
     backup_schedule: 'Zamanlama',
     backup_enabled: 'Günlük yedeklemeyi aç',
@@ -2417,7 +2437,9 @@ function applyAdminAccessMode(me = {}) {
       ocrSettingsForm,
       ocrSettingsMsg,
       subtitleSettingsForm,
-      subtitleSettingsMsg
+      subtitleSettingsMsg,
+      authSessionSettingsForm,
+      authSessionSettingsMsg
     },
     switchTab,
     switchSettingsSubtab
@@ -3098,6 +3120,7 @@ async function loadSettings() {
   if (settingsForm.elements.mediaJobRetentionDays) {
     settingsForm.elements.mediaJobRetentionDays.value = String(settings.mediaJobRetentionDays || 30);
   }
+  writeAuthSessionSettingsForm(settings.authSession || {});
   {
     const advancedModeInput = document.getElementById('ocrDefaultAdvancedMode');
     const turkishFixInput = document.getElementById('ocrDefaultTurkishAiCorrect');
@@ -3114,6 +3137,27 @@ async function loadSettings() {
   writeBackupSettingsForm(settings.backup || {});
   renderApiHelp();
   renderApiGuide();
+}
+
+function readAuthSessionSettingsForm() {
+  const elements = authSessionSettingsForm?.elements;
+  return {
+    rememberMe: Boolean(elements?.rememberMe?.checked),
+    ssoIdleMinutes: Number(elements?.ssoIdleMinutes?.value) || 30,
+    ssoMaxHours: Number(elements?.ssoMaxHours?.value) || 8,
+    clientIdleMinutes: Number(elements?.clientIdleMinutes?.value) || 30,
+    clientMaxHours: Number(elements?.clientMaxHours?.value) || 8
+  };
+}
+
+function writeAuthSessionSettingsForm(authSession = {}) {
+  const elements = authSessionSettingsForm?.elements;
+  if (!elements) return;
+  elements.rememberMe.checked = Boolean(authSession.rememberMe);
+  elements.ssoIdleMinutes.value = String(Number(authSession.ssoIdleMinutes) || 30);
+  elements.ssoMaxHours.value = String(Number(authSession.ssoMaxHours) || 8);
+  elements.clientIdleMinutes.value = String(Number(authSession.clientIdleMinutes) || 30);
+  elements.clientMaxHours.value = String(Number(authSession.clientMaxHours) || 8);
 }
 
 function formatAdminFileSize(bytes) {
@@ -3273,6 +3317,25 @@ backupFilesRows?.addEventListener('click', async (event) => {
   } catch (error) {
     if (backupSettingsMsg) backupSettingsMsg.textContent = error.message || t('backup_delete_failed');
     button.disabled = false;
+  }
+});
+
+authSessionSettingsForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (authSessionSettingsMsg) authSessionSettingsMsg.textContent = '';
+  const submitButton = authSessionSettingsForm.querySelector('button[type="submit"]');
+  if (submitButton) submitButton.disabled = true;
+  try {
+    const result = await api('/api/admin/identity/session-settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ authSession: readAuthSessionSettingsForm() })
+    });
+    writeAuthSessionSettingsForm(result.authSession || {});
+    if (authSessionSettingsMsg) authSessionSettingsMsg.textContent = t('auth_session_saved');
+  } catch (error) {
+    if (authSessionSettingsMsg) authSessionSettingsMsg.textContent = error.message || t('auth_session_save_failed');
+  } finally {
+    if (submitButton) submitButton.disabled = false;
   }
 });
 

@@ -22,6 +22,13 @@ ADMIN_PASSWORD_FILE="${SECRETS_DIR}/keycloak_admin_password"
 MAM_SUPERADMIN_USER="${MAM_SUPERADMIN_USER:-mamsup}"
 MAM_ADMIN_USER="${MAM_ADMIN_USER:-mamadmin}"
 MAM_USER="${MAM_USER:-mamuser}"
+KEYCLOAK_SYNC_RESET_DEFAULT_PASSWORDS="${KEYCLOAK_SYNC_RESET_DEFAULT_PASSWORDS:-false}"
+KEYCLOAK_SYNC_SESSION_SETTINGS="${KEYCLOAK_SYNC_SESSION_SETTINGS:-false}"
+KEYCLOAK_SSO_IDLE_SECONDS="${KEYCLOAK_SSO_IDLE_SECONDS:-1800}"
+KEYCLOAK_SSO_MAX_SECONDS="${KEYCLOAK_SSO_MAX_SECONDS:-28800}"
+KEYCLOAK_CLIENT_IDLE_SECONDS="${KEYCLOAK_CLIENT_IDLE_SECONDS:-1800}"
+KEYCLOAK_CLIENT_MAX_SECONDS="${KEYCLOAK_CLIENT_MAX_SECONDS:-28800}"
+KEYCLOAK_REMEMBER_ME="${KEYCLOAK_REMEMBER_ME:-false}"
 MAM_GROUPS=(
   "dokyonet"
   "dokkullan"
@@ -171,6 +178,16 @@ ensure_web_client_urls() {
   echo "Client URLs ensured: ${OAUTH2_PROXY_CLIENT_ID}"
 }
 
+ensure_realm_session_settings() {
+  kcadm update "realms/${REALM}" \
+    -s "rememberMe=${KEYCLOAK_REMEMBER_ME}" \
+    -s "ssoSessionIdleTimeout=${KEYCLOAK_SSO_IDLE_SECONDS}" \
+    -s "ssoSessionMaxLifespan=${KEYCLOAK_SSO_MAX_SECONDS}" \
+    -s "clientSessionIdleTimeout=${KEYCLOAK_CLIENT_IDLE_SECONDS}" \
+    -s "clientSessionMaxLifespan=${KEYCLOAK_CLIENT_MAX_SECONDS}" >/dev/null
+  echo "Realm session settings ensured: ${REALM}"
+}
+
 ensure_group() {
   local group_name="$1"
   local group_rows group_uuid
@@ -194,6 +211,7 @@ ensure_user() {
   password="$(cat "${password_file}")"
   user_rows="$(kcadm get users -r "${REALM}" -q "username=${username}")"
   user_uuid="$(printf '%s' "${user_rows}" | json_find_user_id "${username}")"
+  local created=false
   if [[ -z "${user_uuid}" ]]; then
     kcadm create users -r "${REALM}" \
       -s "username=${username}" \
@@ -201,9 +219,10 @@ ensure_user() {
       -s emailVerified=true >/dev/null
     user_rows="$(kcadm get users -r "${REALM}" -q "username=${username}")"
     user_uuid="$(printf '%s' "${user_rows}" | json_find_user_id "${username}")"
+    created=true
     echo "User ensured: ${username}"
   fi
-  if [[ -n "${user_uuid}" ]]; then
+  if [[ -n "${user_uuid}" && ( "${created}" == "true" || "${KEYCLOAK_SYNC_RESET_DEFAULT_PASSWORDS}" == "true" ) ]]; then
     kcadm set-password -r "${REALM}" --userid "${user_uuid}" --new-password "${password}" >/dev/null
   fi
   if [[ -n "${group_name}" && -n "${user_uuid}" ]]; then
@@ -222,6 +241,9 @@ for group_name in "${MAM_GROUPS[@]}"; do
   ensure_group "${group_name}"
 done
 
+if [[ "${KEYCLOAK_SYNC_SESSION_SETTINGS}" == "true" ]]; then
+  ensure_realm_session_settings
+fi
 ensure_user "${MAM_SUPERADMIN_USER}" "${SECRETS_DIR}/mam_superadmin_password" "superadmin"
 ensure_user "${MAM_ADMIN_USER}" "${SECRETS_DIR}/mam_admin_password" "standart yönetici"
 ensure_user "${MAM_USER}" "${SECRETS_DIR}/mam_user_password"
