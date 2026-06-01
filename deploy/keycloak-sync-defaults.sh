@@ -31,6 +31,7 @@ KEYCLOAK_CLIENT_MAX_SECONDS="${KEYCLOAK_CLIENT_MAX_SECONDS:-28800}"
 KEYCLOAK_REMEMBER_ME="${KEYCLOAK_REMEMBER_ME:-false}"
 KEYCLOAK_DEFAULT_LOCALE="${KEYCLOAK_DEFAULT_LOCALE:-tr}"
 KEYCLOAK_SUPPORTED_LOCALES="${KEYCLOAK_SUPPORTED_LOCALES:-tr,en}"
+KEYCLOAK_RESET_PASSWORD_ALLOWED="${KEYCLOAK_RESET_PASSWORD_ALLOWED:-true}"
 MAM_GROUPS=(
   "dokyonet"
   "dokkullan"
@@ -192,7 +193,8 @@ print(json.dumps(items, ensure_ascii=False))
   kcadm update "realms/${REALM}" \
     -s "internationalizationEnabled=true" \
     -s "defaultLocale=${KEYCLOAK_DEFAULT_LOCALE}" \
-    -s "supportedLocales=${locales_json}" >/dev/null
+    -s "supportedLocales=${locales_json}" \
+    -s "resetPasswordAllowed=${KEYCLOAK_RESET_PASSWORD_ALLOWED}" >/dev/null
   echo "Realm locale settings ensured: ${REALM} (${KEYCLOAK_DEFAULT_LOCALE})"
 }
 
