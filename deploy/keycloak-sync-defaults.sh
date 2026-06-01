@@ -29,6 +29,8 @@ KEYCLOAK_SSO_MAX_SECONDS="${KEYCLOAK_SSO_MAX_SECONDS:-28800}"
 KEYCLOAK_CLIENT_IDLE_SECONDS="${KEYCLOAK_CLIENT_IDLE_SECONDS:-1800}"
 KEYCLOAK_CLIENT_MAX_SECONDS="${KEYCLOAK_CLIENT_MAX_SECONDS:-28800}"
 KEYCLOAK_REMEMBER_ME="${KEYCLOAK_REMEMBER_ME:-false}"
+KEYCLOAK_DEFAULT_LOCALE="${KEYCLOAK_DEFAULT_LOCALE:-tr}"
+KEYCLOAK_SUPPORTED_LOCALES="${KEYCLOAK_SUPPORTED_LOCALES:-tr,en}"
 MAM_GROUPS=(
   "dokyonet"
   "dokkullan"
@@ -178,6 +180,22 @@ ensure_web_client_urls() {
   echo "Client URLs ensured: ${OAUTH2_PROXY_CLIENT_ID}"
 }
 
+ensure_realm_locale_settings() {
+  local locales_json
+  locales_json="$(python3 -c '
+import json, sys
+items = [item.strip() for item in sys.argv[1].split(",") if item.strip()]
+if "tr" not in items:
+    items.insert(0, "tr")
+print(json.dumps(items, ensure_ascii=False))
+' "${KEYCLOAK_SUPPORTED_LOCALES}")"
+  kcadm update "realms/${REALM}" \
+    -s "internationalizationEnabled=true" \
+    -s "defaultLocale=${KEYCLOAK_DEFAULT_LOCALE}" \
+    -s "supportedLocales=${locales_json}" >/dev/null
+  echo "Realm locale settings ensured: ${REALM} (${KEYCLOAK_DEFAULT_LOCALE})"
+}
+
 ensure_realm_session_settings() {
   kcadm update "realms/${REALM}" \
     -s "rememberMe=${KEYCLOAK_REMEMBER_ME}" \
@@ -244,6 +262,7 @@ done
 if [[ "${KEYCLOAK_SYNC_SESSION_SETTINGS}" == "true" ]]; then
   ensure_realm_session_settings
 fi
+ensure_realm_locale_settings
 ensure_user "${MAM_SUPERADMIN_USER}" "${SECRETS_DIR}/mam_superadmin_password" "superadmin"
 ensure_user "${MAM_ADMIN_USER}" "${SECRETS_DIR}/mam_admin_password" "standart yönetici"
 ensure_user "${MAM_USER}" "${SECRETS_DIR}/mam_user_password"

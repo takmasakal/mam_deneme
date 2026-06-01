@@ -200,7 +200,7 @@ services:
       OAUTH2_PROXY_OIDC_ISSUER_URL: http://keycloak:8080/realms/mam
       OAUTH2_PROXY_SKIP_OIDC_DISCOVERY: "true"
       OAUTH2_PROXY_INSECURE_OIDC_SKIP_ISSUER_VERIFICATION: "true"
-      OAUTH2_PROXY_LOGIN_URL: http://${PUBLIC_HOST:-localhost}:8081/realms/mam/protocol/openid-connect/auth
+      OAUTH2_PROXY_LOGIN_URL: http://${PUBLIC_HOST:-localhost}:8081/realms/mam/protocol/openid-connect/auth?ui_locales=tr
       OAUTH2_PROXY_REDEEM_URL: http://keycloak:8080/realms/mam/protocol/openid-connect/token
       OAUTH2_PROXY_OIDC_JWKS_URL: http://keycloak:8080/realms/mam/protocol/openid-connect/certs
       OAUTH2_PROXY_CLIENT_ID: ${OAUTH2_PROXY_CLIENT_ID:-mam-web}
