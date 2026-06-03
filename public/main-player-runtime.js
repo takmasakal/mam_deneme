@@ -87,9 +87,9 @@
       let reverseTimer = null;
       let suppressPauseHandling = false;
 
-      try { mediaEl.preservesPitch = false; } catch (_error) {}
-      try { mediaEl.mozPreservesPitch = false; } catch (_error) {}
-      try { mediaEl.webkitPreservesPitch = false; } catch (_error) {}
+      try { mediaEl.preservesPitch = true; } catch (_error) {}
+      try { mediaEl.mozPreservesPitch = true; } catch (_error) {}
+      try { mediaEl.webkitPreservesPitch = true; } catch (_error) {}
 
       const closeMenu = () => {
         if (menuEl?.parentNode) menuEl.parentNode.removeChild(menuEl);
@@ -97,7 +97,8 @@
         menuOpen = false;
       };
 
-      const isPlaying = () => Boolean(reverseTimer) || (!mediaEl.paused && !mediaEl.ended);
+      const isReversePlaying = () => reverseTimer != null;
+      const isPlaying = () => isReversePlaying() || (!mediaEl.paused && !mediaEl.ended);
 
       const stopReversePlayback = () => {
         if (reverseTimer) {
@@ -112,7 +113,7 @@
         triggerBtn.title = `Playback rate ${displayRate}x`;
         triggerBtn.setAttribute('aria-label', `Playback rate ${displayRate}x`);
         triggerBtn.dataset.playbackRate = String(displayRate);
-        const showForwardActive = Math.abs(displayRate - 1) < 0.001 || preferredDirection === 'forward';
+        const showForwardActive = preferredDirection === 'forward';
         backwardBtn.classList.toggle('is-active', !showForwardActive && preferredDirection === 'reverse');
         forwardBtn.classList.toggle('is-active', showForwardActive);
       };
@@ -225,7 +226,7 @@
         const nextRate = Number(selectedRate) || 1;
         if (!Number.isFinite(nextRate) || nextRate <= 0) return;
         preferredRate = nextRate;
-        preferredDirection = Math.abs(nextRate - 1) < 0.001 ? 'forward' : direction;
+        preferredDirection = direction;
         mediaEl.dataset.preferredPlaybackRate = String(nextRate);
         mediaEl.dataset.preferredPlaybackDirection = preferredDirection;
         if (isPlaying()) applyDirectionState();
@@ -288,6 +289,7 @@
       mediaEl.__mamPreferredPlaybackDirection = () => preferredDirection;
       mediaEl.__mamStartReversePlayback = () => startReversePlayback();
       mediaEl.__mamStopReversePlayback = () => stopReversePlayback();
+      mediaEl.__mamIsReversePlaying = () => isReversePlaying();
 
       return () => {
         stopReversePlayback();
@@ -306,6 +308,7 @@
         delete mediaEl.__mamPreferredPlaybackDirection;
         delete mediaEl.__mamStartReversePlayback;
         delete mediaEl.__mamStopReversePlayback;
+        delete mediaEl.__mamIsReversePlaying;
       };
     }
 
@@ -503,7 +506,10 @@
       };
 
       const syncPlayButton = () => {
-        const isPaused = mediaEl.paused || mediaEl.ended;
+        const reversePlaying = typeof mediaEl.__mamIsReversePlaying === 'function'
+          ? mediaEl.__mamIsReversePlaying()
+          : false;
+        const isPaused = !reversePlaying && (mediaEl.paused || mediaEl.ended);
         playBtn.textContent = isPaused ? '▶' : '⏸';
         playBtn.title = isPaused ? t('play') : t('pause');
         playBtn.setAttribute('aria-label', isPaused ? t('play') : t('pause'));
@@ -528,7 +534,15 @@
           ? mediaEl.__mamPreferredPlaybackDirection()
           : 'forward';
         if (preferredDirection === 'reverse') {
-          if (typeof mediaEl.__mamStartReversePlayback === 'function') mediaEl.__mamStartReversePlayback();
+          const reversePlaying = typeof mediaEl.__mamIsReversePlaying === 'function'
+            ? mediaEl.__mamIsReversePlaying()
+            : false;
+          if (reversePlaying) {
+            if (typeof mediaEl.__mamStopReversePlayback === 'function') mediaEl.__mamStopReversePlayback();
+          } else if (typeof mediaEl.__mamStartReversePlayback === 'function') {
+            mediaEl.__mamStartReversePlayback();
+          }
+          syncPlayButton();
           return;
         }
         if (mediaEl.paused || mediaEl.ended) {

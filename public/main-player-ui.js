@@ -302,7 +302,10 @@
       });
 
       const syncButtons = () => {
-        const paused = mediaEl.paused || mediaEl.ended;
+        const reversePlaying = typeof mediaEl.__mamIsReversePlaying === 'function'
+          ? mediaEl.__mamIsReversePlaying()
+          : false;
+        const paused = !reversePlaying && (mediaEl.paused || mediaEl.ended);
         playBtn.textContent = paused ? '▶' : '⏸';
         muteBtn.textContent = mediaEl.muted || mediaEl.volume <= 0 ? '🔇' : '🔊';
       };
@@ -324,7 +327,14 @@
           ? mediaEl.__mamPreferredPlaybackDirection()
           : 'forward';
         if (preferredDirection === 'reverse') {
-          if (typeof mediaEl.__mamStartReversePlayback === 'function') mediaEl.__mamStartReversePlayback();
+          const reversePlaying = typeof mediaEl.__mamIsReversePlaying === 'function'
+            ? mediaEl.__mamIsReversePlaying()
+            : false;
+          if (reversePlaying) {
+            if (typeof mediaEl.__mamStopReversePlayback === 'function') mediaEl.__mamStopReversePlayback();
+          } else if (typeof mediaEl.__mamStartReversePlayback === 'function') {
+            mediaEl.__mamStartReversePlayback();
+          }
           syncButtons();
           return;
         }
