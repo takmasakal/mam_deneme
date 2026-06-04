@@ -1715,7 +1715,7 @@ app.get('/api/admin/user-permissions', async (req, res) => {
         const kcUser = keycloakUserByUsername.get(username) || {};
         const defaults = permissionDefaultsByUser.has(username)
           ? permissionDefaultsByUser.get(username)
-          : resolvePermissionKeysFromPrincipals({ username }).permissionKeys;
+          : [];
         const effective = normalizePermissionEntry(saved?.[username], defaults);
         return {
           username,
@@ -1778,7 +1778,7 @@ app.patch('/api/admin/user-permissions/:username', async (req, res) => {
         assetDelete: req.body?.assetDelete,
         pdfAdvancedTools: req.body?.pdfAdvancedTools
       },
-      resolvePermissionKeysFromPrincipals({ username }).permissionKeys
+      []
     );
     const next = {
       ...current,

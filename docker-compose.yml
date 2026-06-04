@@ -279,6 +279,7 @@ secrets:
 
 volumes:
   pg_data:
+    external: true
     name: mam_deneme_pg_data
   es_data:
   keycloak_pg_data:

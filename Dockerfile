@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 FROM node:22-bookworm-slim AS deps
 
 ARG TARGETARCH
@@ -8,6 +10,7 @@ ARG WHISPER_MODEL=small
 ARG HF_TOKEN=""
 
 ENV NODE_ENV=production \
+  DEBIAN_FRONTEND=noninteractive \
   PIP_DISABLE_PIP_VERSION_CHECK=1 \
   PYTHONDONTWRITEBYTECODE=1 \
   MAM_OFFLINE_MODE=true \
@@ -22,7 +25,10 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 
-RUN apt-get update \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+  apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates wget gnupg \
   && wget -qO- https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg \
   && echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
@@ -31,14 +37,14 @@ RUN apt-get update \
   && if [ "$INSTALL_LIBREOFFICE" = "true" ]; then \
       apt-get install -y --no-install-recommends libreoffice-core libreoffice-writer libreoffice-calc libreoffice-impress fonts-dejavu fonts-liberation; \
     fi \
-  && pip3 install --no-cache-dir --break-system-packages --retries 5 --default-timeout=300 requests faster-whisper==1.1.1 opencv-python-headless==4.10.0.84 numpy==1.26.4 \
-  && pip3 install --no-cache-dir --break-system-packages --retries 5 --default-timeout=300 torch==2.5.1 torchaudio==2.5.1 whisperx==3.3.1 \
+  && pip3 install --break-system-packages --retries 5 --default-timeout=300 requests faster-whisper==1.1.1 opencv-python-headless==4.10.0.84 numpy==1.26.4 \
+  && pip3 install --break-system-packages --retries 5 --default-timeout=300 torch==2.5.1 torchaudio==2.5.1 whisperx==3.3.1 \
   && arch="${TARGETARCH}" \
   && if [ -z "$arch" ]; then arch="$(dpkg --print-architecture 2>/dev/null || true)"; fi \
   && if [ -z "$arch" ]; then arch="$(uname -m)"; fi \
   && echo "Detected arch: $arch" \
   && if [ "$arch" = "amd64" ] || [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then \
-      pip3 install --no-cache-dir --break-system-packages --retries 5 --default-timeout=300 paddleocr==3.4.0 paddlepaddle==3.2.2; \
+      pip3 install --break-system-packages --retries 5 --default-timeout=300 paddleocr==3.4.0 paddlepaddle==3.2.2; \
     else \
       echo "Skipping PaddleOCR install on unsupported arch: $arch"; \
     fi \
@@ -61,7 +67,8 @@ LABEL org.opencontainers.image.revision="${MAM_GIT_COMMIT}" \
   org.opencontainers.image.source_branch="${MAM_GIT_BRANCH}"
 
 COPY package*.json ./
-RUN npm ci --omit=dev \
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+  npm ci --omit=dev \
   && npm cache clean --force
 
 COPY scripts ./scripts
