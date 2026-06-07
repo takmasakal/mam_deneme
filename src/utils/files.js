@@ -34,6 +34,8 @@ function inferMimeTypeFromFileName(fileName) {
     webp: 'image/webp',
     tif: 'image/tiff',
     tiff: 'image/tiff',
+    heic: 'image/heic',
+    heif: 'image/heif',
     svg: 'image/svg+xml',
     bmp: 'image/bmp',
     pdf: 'application/pdf',

@@ -2,7 +2,6 @@
   function createMainShellModule(deps) {
     const {
       searchForm,
-      statusSelect,
       assetTypeFilters,
       clearSearchBtn,
       ocrQueryInput,
@@ -69,7 +68,6 @@ function hasActiveSearchFields() {
     return Boolean(String(field?.value || '').trim());
   });
   if (hasText) return true;
-  if (String(statusSelect?.value || '').trim()) return true;
   const trashSelect = searchForm?.querySelector('[name="trash"]');
   if (String(trashSelect?.value || 'active').trim().toLowerCase() !== 'active') return true;
   return assetTypeFilters.some((input) => !input.checked);
@@ -85,7 +83,6 @@ async function clearSearchFields() {
     const field = searchForm?.querySelector(`[name="${name}"]`);
     if (field) field.value = '';
   });
-  if (statusSelect) statusSelect.value = '';
   const trashSelect = searchForm?.querySelector('[name="trash"]');
   if (trashSelect) trashSelect.value = 'active';
   assetTypeFilters.forEach((input) => {

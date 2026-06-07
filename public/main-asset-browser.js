@@ -26,7 +26,6 @@
       clipHighlightSnippet,
       effectiveSearchHighlightClass,
       foldSearchText,
-      workflowLabel,
       formatDuration,
       formatDate,
       secondsToTimecode,
@@ -212,13 +211,17 @@ function renderAssets(assets) {
         requestQuery: currentSubtitleQuery
       });
       const hitPager = `${subtitlePager}${ocrPager}`;
+      const mediaDuration = (isVideo(asset) || isAudio(asset)) ? escapeHtml(formatDuration(asset.durationSeconds)) : '';
+      const mediaInfoRow = (mediaDuration || hitPager)
+        ? `<div class="asset-meta asset-status-row"><span>${mediaDuration}</span>${hitPager}</div>`
+        : '';
       return `
         <article class="asset-card ${selected} ${trashClass} ${styleClass}" data-id="${asset.id}">
           ${thumbnailMarkup(asset)}
           <div class="asset-card-body">
             <h3><span class="type-icon" aria-hidden="true">${assetTypeIcon(asset)}</span> ${highlightMatch(asset.title, currentSearchHighlightQuery, searchHighlightClass)}</h3>
             <div class="asset-meta">${highlightMatch(asset.type, currentSearchHighlightQuery, searchHighlightClass)} | ${highlightMatch(asset.owner, currentSearchHighlightQuery, searchHighlightClass)}</div>
-            <div class="asset-meta asset-status-row"><span>${escapeHtml(workflowLabel(asset.status))}${(isVideo(asset) || isAudio(asset)) ? ` | ${escapeHtml(formatDuration(asset.durationSeconds))}` : ''}</span>${hitPager}</div>
+            ${mediaInfoRow}
             ${metadataHits ? `<div class="asset-meta dc-hit-row">${metadataHits}</div>` : ''}
             ${tagHits ? `<div class="asset-meta dc-hit-row">${tagHits}</div>` : ''}
             ${dcHits ? `<div class="asset-meta dc-hit-row">${dcHits}</div>` : ''}

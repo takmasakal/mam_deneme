@@ -8,6 +8,7 @@ function registerPdfRoutes(app, deps) {
     requirePdfAdvancedTools,
     requireAdminAccess,
     isPdfCandidate,
+    isOfficeDocumentCandidate,
     extractPdfPagesText,
     getPdfPageCount,
     renderPdfPageJpegBuffer,
@@ -24,6 +25,7 @@ function registerPdfRoutes(app, deps) {
     mapAssetRow,
     findOriginalVersionSnapshot,
     sendSnapshotDownload,
+    officeService,
     assetAccessService,
     assetEditLockService,
     resolveEffectivePermissions
@@ -40,6 +42,21 @@ function registerPdfRoutes(app, deps) {
     return { status: 200, row, accessContext };
   }
 
+  async function resolvePdfCompatiblePath(row) {
+    if (isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+      let inputPath = row.source_path;
+      if (!inputPath || !fs.existsSync(inputPath)) {
+        const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
+        if (mediaPath && fs.existsSync(mediaPath)) inputPath = mediaPath;
+      }
+      return inputPath && fs.existsSync(inputPath) ? inputPath : '';
+    }
+    if (isOfficeDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+      return officeService.ensureOfficePreviewPdf(row);
+    }
+    return '';
+  }
+
 app.get('/api/assets/:id/pdf-search', async (req, res) => {
   try {
     const query = String(req.query.q || '').trim();
@@ -48,17 +65,16 @@ app.get('/api/assets/:id/pdf-search', async (req, res) => {
     const loaded = await loadVisibleAssetRow(req, req.params.id);
     if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
     const row = loaded.row;
-    if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
-      return res.status(400).json({ error: 'Asset is not a PDF' });
+    if (
+      !isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })
+      && !isOfficeDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name })
+    ) {
+      return res.status(400).json({ error: 'Asset is not PDF-search compatible' });
     }
 
-    let inputPath = row.source_path;
+    const inputPath = await resolvePdfCompatiblePath(row);
     if (!inputPath || !fs.existsSync(inputPath)) {
-      const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
-      if (mediaPath && fs.existsSync(mediaPath)) inputPath = mediaPath;
-    }
-    if (!inputPath || !fs.existsSync(inputPath)) {
-      return res.status(404).json({ error: 'PDF file not found on server' });
+      return res.status(404).json({ error: 'Preview PDF file not found on server' });
     }
 
     const pages = await extractPdfPagesText(inputPath);
@@ -105,17 +121,16 @@ app.get('/api/assets/:id/pdf-page-text', async (req, res) => {
     const loaded = await loadVisibleAssetRow(req, req.params.id);
     if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
     const row = loaded.row;
-    if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
-      return res.status(400).json({ error: 'Asset is not a PDF' });
+    if (
+      !isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })
+      && !isOfficeDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name })
+    ) {
+      return res.status(400).json({ error: 'Asset is not PDF-search compatible' });
     }
 
-    let inputPath = row.source_path;
+    const inputPath = await resolvePdfCompatiblePath(row);
     if (!inputPath || !fs.existsSync(inputPath)) {
-      const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
-      if (mediaPath && fs.existsSync(mediaPath)) inputPath = mediaPath;
-    }
-    if (!inputPath || !fs.existsSync(inputPath)) {
-      return res.status(404).json({ error: 'PDF file not found on server' });
+      return res.status(404).json({ error: 'Preview PDF file not found on server' });
     }
 
     const pages = await extractPdfPagesText(inputPath);
@@ -139,17 +154,16 @@ app.get('/api/assets/:id/pdf-meta', async (req, res) => {
     const loaded = await loadVisibleAssetRow(req, req.params.id);
     if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
     const row = loaded.row;
-    if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
-      return res.status(400).json({ error: 'Asset is not a PDF' });
+    if (
+      !isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })
+      && !isOfficeDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name })
+    ) {
+      return res.status(400).json({ error: 'Asset is not PDF-search compatible' });
     }
 
-    let inputPath = row.source_path;
+    const inputPath = await resolvePdfCompatiblePath(row);
     if (!inputPath || !fs.existsSync(inputPath)) {
-      const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
-      if (mediaPath && fs.existsSync(mediaPath)) inputPath = mediaPath;
-    }
-    if (!inputPath || !fs.existsSync(inputPath)) {
-      return res.status(404).json({ error: 'PDF file not found on server' });
+      return res.status(404).json({ error: 'Preview PDF file not found on server' });
     }
 
     const totalPages = await getPdfPageCount(inputPath);
@@ -167,17 +181,16 @@ app.get('/api/assets/:id/pdf-page-image', async (req, res) => {
     const loaded = await loadVisibleAssetRow(req, req.params.id);
     if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
     const row = loaded.row;
-    if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
-      return res.status(400).json({ error: 'Asset is not a PDF' });
+    if (
+      !isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })
+      && !isOfficeDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name })
+    ) {
+      return res.status(400).json({ error: 'Asset is not PDF-search compatible' });
     }
 
-    let inputPath = row.source_path;
+    const inputPath = await resolvePdfCompatiblePath(row);
     if (!inputPath || !fs.existsSync(inputPath)) {
-      const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
-      if (mediaPath && fs.existsSync(mediaPath)) inputPath = mediaPath;
-    }
-    if (!inputPath || !fs.existsSync(inputPath)) {
-      return res.status(404).json({ error: 'PDF file not found on server' });
+      return res.status(404).json({ error: 'Preview PDF file not found on server' });
     }
 
     const totalPages = await getPdfPageCount(inputPath);

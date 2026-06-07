@@ -56,6 +56,7 @@ function registerAssetRoutes(app, deps) {
     generatePdfFallbackThumbnail,
     isDocumentCandidate,
     generateDocumentThumbnail,
+    imageDerivativeService,
     getFileExtension,
     isTextDocumentCandidate,
     getVideoDurationSeconds,
@@ -1030,7 +1031,28 @@ function registerAssetRoutes(app, deps) {
         thumbnailUrl = '';
       }
     } else if (String(mimeType || '').toLowerCase().startsWith('image/')) {
-      thumbnailUrl = mediaUrl;
+      if (imageDerivativeService?.isHeicCandidate({ mimeType, fileName: safeName })) {
+        try {
+          const derivatives = await imageDerivativeService.ensureImageDerivativesForUpload({
+            mimeType,
+            fileName: safeName,
+            inputPath: absolutePath,
+            createdAt: new Date()
+          });
+          proxyUrl = String(derivatives.proxyUrl || '').trim();
+          thumbnailUrl = String(derivatives.thumbnailUrl || '').trim();
+        } catch (error) {
+          proxyUrl = '';
+          thumbnailUrl = '';
+          ingestWarnings.push({
+            code: 'heic_derivative_generation_failed',
+            message: `HEIC preview generation failed: ${String(error?.message || error || '').slice(0, 240)}`,
+            retryHint: 'You can keep the original file and regenerate HEIC preview derivatives later.'
+          });
+        }
+      } else {
+        thumbnailUrl = mediaUrl;
+      }
     }
   
     if (persistOriginalMedia && !detectedAudioChannels && String(mimeType || '').toLowerCase().startsWith('audio/')) {
@@ -1173,6 +1195,40 @@ function registerAssetRoutes(app, deps) {
       });
     } catch (_error) {
       return res.status(500).json({ error: 'Failed to load technical info' });
+    }
+  });
+
+  app.get('/api/assets/:id/subtitle', async (req, res) => {
+    try {
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
+      }
+
+      const asset = mapAssetRowForUser(loaded.row, loaded.accessContext);
+      const subtitleUrl =
+        String(asset.subtitleUrl || '').trim() ||
+        String(asset.subtitleItems?.length === 1 ? asset.subtitleItems[0]?.subtitleUrl : '').trim();
+      if (!subtitleUrl) {
+        return res.status(404).json({ error: 'Subtitle not found' });
+      }
+
+      const subtitlePath = publicUploadUrlToAbsolutePath(subtitleUrl);
+      if (!subtitlePath || !fs.existsSync(subtitlePath)) {
+        return res.status(404).json({ error: 'Subtitle file not found' });
+      }
+
+      const normalizedUrl = subtitleUrl.toLowerCase();
+      if (normalizedUrl.endsWith('.vtt')) {
+        res.type('text/vtt; charset=utf-8');
+      } else if (normalizedUrl.endsWith('.srt')) {
+        res.type('application/x-subrip; charset=utf-8');
+      } else {
+        res.type('text/plain; charset=utf-8');
+      }
+      return res.sendFile(subtitlePath);
+    } catch (_error) {
+      return res.status(500).json({ error: 'Failed to load subtitle' });
     }
   });
 

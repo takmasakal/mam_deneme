@@ -19,6 +19,7 @@ const { createSearchService } = require('./services/searchService');
 const { createAssetDeletionService } = require('./services/assetDeletionService');
 const { createAssetAccessService } = require('./services/assetAccessService');
 const { createAssetEditLockService } = require('./services/assetEditLockService');
+const { createImageDerivativeService } = require('./services/imageDerivativeService');
 const {
   normalizeOcrText,
   normalizeOcrLine,
@@ -115,6 +116,7 @@ const WORKFLOW = ['Ingested', 'QC', 'Approved', 'Published', 'Archived'];
 const DEFAULT_ADMIN_SETTINGS = {
   workflowTrackingEnabled: true,
   autoProxyBackfillOnUpload: false,
+  newAssetDefaultVisibility: 'owner_groups',
   playerUiMode: 'vidstack',
   ocrDefaultAdvancedMode: true,
   ocrDefaultTurkishAiCorrect: true,
@@ -161,6 +163,13 @@ function normalizePlayerUiMode(value) {
   const mode = String(value || '').trim().toLowerCase();
   if (mode === 'vidstack' || mode === 'mpegdash') return mode;
   return 'vidstack';
+}
+
+function normalizeNewAssetDefaultVisibility(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'public' || normalized === 'private' || normalized === 'owner_groups') return normalized;
+  if (normalized === 'group' || normalized === 'groups') return 'owner_groups';
+  return 'owner_groups';
 }
 
 function clampNumber(value, min, max, fallback) {
@@ -4766,6 +4775,13 @@ function compactCommandOutput(value, maxLength = 1200) {
   return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
 }
 
+const imageDerivativeService = createImageDerivativeService({
+  runCommandCapture,
+  buildArtifactPath,
+  nanoid,
+  getFileExtension
+});
+
 function runCommandQuiet(cmd, args) {
   return new Promise((resolve) => {
     const p = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -5774,6 +5790,7 @@ async function getAdminSettings() {
   return {
     ...DEFAULT_ADMIN_SETTINGS,
     ...value,
+    newAssetDefaultVisibility: normalizeNewAssetDefaultVisibility(value.newAssetDefaultVisibility),
     subtitleStyle: normalizeSubtitleStyle(value.subtitleStyle),
     auditRetentionDays: normalizeAuditRetentionDays(value.auditRetentionDays),
     mediaJobRetentionDays: normalizeMediaJobRetentionDays(value.mediaJobRetentionDays),
@@ -7016,6 +7033,7 @@ const officeService = createOfficeService({
   normalizePublicUploadUrl,
   getIngestStoragePath,
   sanitizeFileName,
+  uploadsDir: UPLOADS_DIR,
   runCommandCapture,
   computeBufferSha256,
   getAssetStoredFileHash,
@@ -8040,6 +8058,7 @@ registerAdminRoutes(app, {
   getRuntimeErrorLogs,
   getActiveUsers,
   normalizePlayerUiMode,
+  normalizeNewAssetDefaultVisibility,
   normalizeSubtitleStyle,
   normalizeAuditRetentionDays,
   normalizeMediaJobRetentionDays,
@@ -8101,6 +8120,8 @@ registerAdminRoutes(app, {
   assetAccessService,
   assetEditLockService,
   recordAuditEvent,
+  getAdminSettings,
+  normalizeNewAssetDefaultVisibility,
   nanoid,
   removeAssetFromElastic
 });
@@ -8200,6 +8221,7 @@ registerAssetRoutes(app, {
   generatePdfFallbackThumbnail,
   isDocumentCandidate,
   generateDocumentThumbnail,
+  imageDerivativeService,
   getFileExtension,
   isTextDocumentCandidate,
   getVideoDurationSeconds,
@@ -8277,10 +8299,8 @@ registerOfficeRoutes(app, {
   findOriginalVersionSnapshot,
   sendSnapshotDownload,
   getFileExtension,
-  officeEditorProvider: OFFICE_EDITOR_PROVIDER,
-  uploadsDir: UPLOADS_DIR,
-  runCommandCapture,
   sanitizeFileName,
+  officeEditorProvider: OFFICE_EDITOR_PROVIDER,
   assetAccessService,
   assetEditLockService
 });
@@ -8290,6 +8310,7 @@ registerPdfRoutes(app, {
   requirePdfAdvancedTools,
   requireAdminAccess,
   isPdfCandidate,
+  isOfficeDocumentCandidate,
   extractPdfPagesText,
   getPdfPageCount,
   renderPdfPageJpegBuffer,
@@ -8307,6 +8328,7 @@ registerPdfRoutes(app, {
   mapAssetRow,
   findOriginalVersionSnapshot,
   sendSnapshotDownload,
+  officeService,
   assetAccessService,
   assetEditLockService,
   resolveEffectivePermissions

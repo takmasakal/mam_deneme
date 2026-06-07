@@ -39,6 +39,7 @@ function registerAdminRoutes(app, deps) {
     getRuntimeErrorLogs,
     getActiveUsers,
     normalizePlayerUiMode,
+    normalizeNewAssetDefaultVisibility,
     normalizeSubtitleStyle,
     normalizeAuditRetentionDays,
     normalizeMediaJobRetentionDays,
@@ -1374,6 +1375,9 @@ app.patch('/api/admin/settings', async (req, res) => {
       autoProxyBackfillOnUpload: Object.prototype.hasOwnProperty.call(req.body, 'autoProxyBackfillOnUpload')
         ? Boolean(req.body.autoProxyBackfillOnUpload)
         : current.autoProxyBackfillOnUpload,
+      newAssetDefaultVisibility: Object.prototype.hasOwnProperty.call(req.body, 'newAssetDefaultVisibility')
+        ? normalizeNewAssetDefaultVisibility(req.body.newAssetDefaultVisibility)
+        : normalizeNewAssetDefaultVisibility(current.newAssetDefaultVisibility),
       playerUiMode: Object.prototype.hasOwnProperty.call(req.body, 'playerUiMode')
         ? normalizePlayerUiMode(req.body.playerUiMode)
         : normalizePlayerUiMode(current.playerUiMode),

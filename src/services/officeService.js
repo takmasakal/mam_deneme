@@ -23,6 +23,7 @@ function createOfficeService(deps) {
     normalizePublicUploadUrl,
     getIngestStoragePath,
     sanitizeFileName,
+    uploadsDir,
     runCommandCapture,
     computeBufferSha256,
     getAssetStoredFileHash,
@@ -92,6 +93,64 @@ function createOfficeService(deps) {
       return { changed: false, reason: 'normalize-failed', error: String(result.stderr || result.stdout || '').slice(0, 500) };
     }
     return { changed: true, reason: 'removed-unenforced-document-protection' };
+  }
+
+  async function ensureOfficePreviewPdf(row) {
+    if (!row) throw createHttpError(404, 'Asset not found');
+    if (!isOfficeDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+      throw createHttpError(400, 'Asset is not an Office document');
+    }
+
+    let inputPath = String(row.source_path || '').trim();
+    if (!inputPath || !fs.existsSync(inputPath)) {
+      const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
+      if (mediaPath && fs.existsSync(mediaPath)) inputPath = mediaPath;
+    }
+    if (!inputPath || !fs.existsSync(inputPath)) {
+      throw createHttpError(404, 'Office source file not found');
+    }
+
+    const stat = fs.statSync(inputPath);
+    const assetId = String(row.id || '').trim();
+    const revision = `${Math.round(Number(stat.mtimeMs || 0))}-${Math.max(0, Number(stat.size || 0))}`;
+    const outputDir = path.join(uploadsDir, 'previews', 'libreoffice');
+    fs.mkdirSync(outputDir, { recursive: true });
+    const outputName = `${sanitizeFileName(assetId || 'asset')}-${revision}.pdf`;
+    const outputPath = path.join(outputDir, outputName);
+    if (fs.existsSync(outputPath)) return outputPath;
+
+    const tempDir = path.join('/tmp', `mam-lo-${Date.now()}-${nanoid()}`);
+    fs.mkdirSync(tempDir, { recursive: true });
+    const sourceExt = getFileExtension(row.file_name) || getFileExtension(inputPath) || 'docx';
+    const sourceBase = sanitizeFileName(path.basename(String(row.file_name || assetId || 'document'), path.extname(String(row.file_name || '')))) || 'document';
+    const tempInput = path.join(tempDir, `${sourceBase}.${sourceExt}`);
+    fs.copyFileSync(inputPath, tempInput);
+
+    const args = [
+      '--headless',
+      '--nologo',
+      '--nofirststartwizard',
+      '--nodefault',
+      '--norestore',
+      '--convert-to',
+      'pdf',
+      '--outdir',
+      tempDir,
+      tempInput
+    ];
+    let result = await runCommandCapture('libreoffice', args, { env: { HOME: tempDir } });
+    if (!result.ok) {
+      result = await runCommandCapture('soffice', args, { env: { HOME: tempDir } });
+    }
+    const convertedPath = path.join(tempDir, `${sourceBase}.pdf`);
+    if (!result.ok || !fs.existsSync(convertedPath)) {
+      try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (_cleanupError) {}
+      const message = String(result.stderr || result.stdout || 'LibreOffice conversion failed').slice(0, 500);
+      throw createHttpError(503, message);
+    }
+    fs.copyFileSync(convertedPath, outputPath);
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (_cleanupError) {}
+    return outputPath;
   }
 
   function resolveOnlyofficeDownloadUrl(rawUrl) {
@@ -427,10 +486,11 @@ function createOfficeService(deps) {
   }
 
   return {
-    buildOnlyOfficeConfig,
-    saveOnlyofficeCallbackVersion,
-    isValidOfficeDocumentToken,
-    getOnlyOfficeDocumentType,
+      buildOnlyOfficeConfig,
+      ensureOfficePreviewPdf,
+      saveOnlyofficeCallbackVersion,
+      isValidOfficeDocumentToken,
+      getOnlyOfficeDocumentType,
     normalizeDocxForOnlyOfficeEdit
   };
 }

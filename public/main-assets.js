@@ -4,8 +4,6 @@
       api,
       escapeHtml,
       t,
-      statusSelect,
-      workflowLabel,
       serializeForm,
       searchForm,
       assetTypeFilters,
@@ -20,17 +18,7 @@
     } = deps || {};
 
     async function loadWorkflow() {
-      const workflow = await api('/api/workflow');
-      if (statusSelect) {
-        statusSelect.innerHTML = `<option value="">${escapeHtml(t('any_status'))}</option>`;
-        workflow.forEach((status) => {
-          const option = document.createElement('option');
-          option.value = status;
-          option.textContent = workflowLabel(status);
-          statusSelect.appendChild(option);
-        });
-      }
-      return workflow;
+      return [];
     }
 
     async function loadAssets() {

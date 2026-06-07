@@ -24,8 +24,6 @@ const rotateApiTokenBtn = document.getElementById('rotateApiTokenBtn');
 const copyApiTokenBtn = document.getElementById('copyApiTokenBtn');
 const apiHelpBox = document.getElementById('apiHelpBox');
 const apiGuideDoc = document.getElementById('apiGuideDoc');
-const workflowSummary = document.getElementById('workflowSummary');
-const workflowRows = document.getElementById('workflowRows');
 const startProxyJobBtn = document.getElementById('startProxyJobBtn');
 const includeTrash = document.getElementById('includeTrash');
 const proxyJobState = document.getElementById('proxyJobState');
@@ -146,7 +144,7 @@ let currentAdminProfile = null;
 let i18n = {
   en: {
     admin_title: 'Admin Settings',
-    admin_subtitle: 'Workflow tracking, proxy generation, and system health.',
+    admin_subtitle: 'Proxy generation and system health.',
     system_overview: 'System Overview',
     overview_active_assets: 'Active Assets',
     overview_system_health: 'System Health',
@@ -225,7 +223,6 @@ let i18n = {
     identity_mam_group_count: 'MAM groups',
     settings: 'Settings',
     loading: 'Loading...',
-    workflow_tracking_enabled: 'Workflow tracking enabled',
     auto_proxy_backfill: 'Auto backfill proxies on upload',
     player_mode: 'Player Mode',
     player_mode_vidstack: 'Vidstack',
@@ -256,7 +253,6 @@ let i18n = {
     api_help_token_off: 'API token protection is currently OFF.',
     api_help_token_hint: 'Use current token from Settings for direct API tests.',
     api_help_quick_title: 'Quick Commands',
-    api_help_cmd_workflow: 'List workflow steps',
     api_help_cmd_assets: 'List active assets',
     api_help_cmd_asset_by_id: 'Get one asset by ID',
     api_help_cmd_create_collection: 'Create a collection',
@@ -273,7 +269,7 @@ let i18n = {
     api_help_group_office: 'Office Tools',
     api_help_group_admin: 'Admin / Diagnostics',
     api_help_group_records: 'Admin Records / Audit',
-    settings_group_workflow: 'Workflow & Player',
+    settings_group_player: 'Player',
     settings_group_security: 'Security',
     settings_group_identity: 'Token & OIDC',
     settings_group_audit: 'Audit Log',
@@ -314,8 +310,9 @@ let i18n = {
     ocr_default_blur_filter: 'Blur filter default',
     ocr_default_region_mode: 'Ticker region mode default',
     ocr_default_static_overlay_filter: 'Static overlay filter default',
+    new_asset_default_visibility: 'New asset default visibility',
+    new_asset_visibility_owner_groups: 'Owner groups',
     settings_sub_general: 'General',
-    settings_sub_workflow: 'Workflow',
     settings_sub_proxy: 'Proxy',
     settings_sub_ocr: 'OCR',
     settings_sub_subtitle: 'Subtitle',
@@ -357,7 +354,6 @@ let i18n = {
     save_settings: 'Save Settings',
     set_as_default: 'Set as Default',
     settings_saved: 'Settings saved.',
-    workflow_tracking: 'Workflow Tracking',
     proxy_jobs: 'Proxy Jobs',
     include_trash: 'Include trash',
     start_proxy_job: 'Start Proxy Job',
@@ -549,7 +545,7 @@ let i18n = {
   },
   tr: {
     admin_title: 'Yönetici Ayarları',
-    admin_subtitle: 'İş akışı izleme, proxy üretimi ve sistem sağlığı.',
+    admin_subtitle: 'Proxy üretimi ve sistem sağlığı.',
     system_overview: 'Sistem Özeti',
     overview_active_assets: 'Aktif Varlıklar',
     overview_system_health: 'Sistem Sağlığı',
@@ -628,7 +624,6 @@ let i18n = {
     identity_mam_group_count: 'MAM grubu',
     settings: 'Ayarlar',
     loading: 'Yükleniyor...',
-    workflow_tracking_enabled: 'İş akışı izleme etkin',
     auto_proxy_backfill: 'Yüklemede proxy backfill otomatik',
     player_mode: 'Oynatıcı Modu',
     player_mode_vidstack: 'Vidstack',
@@ -659,7 +654,6 @@ let i18n = {
     api_help_token_off: 'API token koruması şu anda KAPALI.',
     api_help_token_hint: 'Direkt API testlerinde Settings altındaki güncel tokeni kullanın.',
     api_help_quick_title: 'Hızlı Komutlar',
-    api_help_cmd_workflow: 'Workflow adımlarını listele',
     api_help_cmd_assets: 'Aktif varlıkları listele',
     api_help_cmd_asset_by_id: 'ID ile tek varlık getir',
     api_help_cmd_create_collection: 'Koleksiyon oluştur',
@@ -676,7 +670,7 @@ let i18n = {
     api_help_group_office: 'Office Araçları',
     api_help_group_admin: 'Yönetim / Tanı',
     api_help_group_records: 'Yönetim Kayıtları / Audit',
-    settings_group_workflow: 'İş Akışı ve Oynatıcı',
+    settings_group_player: 'Oynatıcı',
     settings_group_security: 'Güvenlik',
     settings_group_identity: 'Token ve OIDC',
     settings_group_audit: 'Audit Log',
@@ -717,8 +711,9 @@ let i18n = {
     ocr_default_blur_filter: 'Bulanıklık filtresi varsayılan açık',
     ocr_default_region_mode: 'Ticker bölge modu varsayılan açık',
     ocr_default_static_overlay_filter: 'Sabit yazı filtresi varsayılan açık',
+    new_asset_default_visibility: 'Yeni yüklenen varlık varsayılan görünürlüğü',
+    new_asset_visibility_owner_groups: 'Sahip gruplar',
     settings_sub_general: 'Genel',
-    settings_sub_workflow: 'İş Akışı',
     settings_sub_proxy: 'Proxy',
     settings_sub_ocr: 'OCR',
     settings_sub_subtitle: 'Altyazı',
@@ -760,7 +755,6 @@ let i18n = {
     save_settings: 'Ayarları Kaydet',
     set_as_default: 'Varsayılan Yap',
     settings_saved: 'Ayarlar kaydedildi.',
-    workflow_tracking: 'İş Akışı İzleme',
     proxy_jobs: 'Proxy Görevleri',
     include_trash: 'Çöpü dahil et',
     start_proxy_job: 'Proxy Görevi Başlat',
@@ -1460,23 +1454,10 @@ function openTextEditorModal({
   });
 }
 
-function renderWorkflowTracking(data) {
+function renderAssetTracking(data) {
   const totals = data.totals || {};
-  const proxies = data.proxies || {};
   if (overviewActiveAssets) overviewActiveAssets.textContent = String(totals.total_active || 0);
   if (overviewTotalAssets) overviewTotalAssets.textContent = `${t('overview_total_assets')}: ${totals.total_all || 0}`;
-
-  workflowSummary.innerHTML = [
-    `<div class="metric"><strong>${totals.total_all || 0}</strong><span>${t('assets_total')}</span></div>`,
-    `<div class="metric"><strong>${totals.total_active || 0}</strong><span>${t('assets_active')}</span></div>`,
-    `<div class="metric"><strong>${totals.total_trash || 0}</strong><span>${t('assets_trash')}</span></div>`,
-    `<div class="metric"><strong>${proxies.ready || 0}</strong><span>${t('proxies_ready')}</span></div>`
-  ].join('');
-
-  const wfRows = Object.entries(data.workflow || {}).map(([status, count]) => row(status, count));
-  const typeRows = Object.entries(data.types || {}).map(([type, count]) => row(type, count));
-  wfRows.push(row(t('proxies_missing'), proxies.missing || 0));
-  workflowRows.innerHTML = [...wfRows, ...typeRows].join('');
 }
 
 function renderHealth(health) {
@@ -1753,10 +1734,6 @@ function switchSettingsSubtab(tabName) {
 
 async function loadSettingsSubtabData(tabName) {
   const tab = String(tabName || '').trim().toLowerCase();
-  if (tab === 'workflow') {
-    await refreshTrackingAndHealth();
-    return;
-  }
   if (tab === 'proxy') {
     await refreshTrackingAndHealth();
     return;
@@ -2452,7 +2429,7 @@ function renderApiHelp() {
   const masked = token ? `${token.slice(0, 4)}...${token.slice(-4)}` : '-';
   apiHelpBox.textContent = [
     `${t('api_test_title')}:`,
-    `GET http://localhost:3000/api/workflow`,
+    `GET http://localhost:3000/api/assets`,
     t('api_test_note'),
     `Current token: ${masked}`
   ].join('\n');
@@ -2470,7 +2447,6 @@ function renderApiGuide() {
   const tokenHeader = token || '<api-token>';
   const postmanUrlStep = t('api_help_postman_step2').replace('{{baseUrl}}', apiBase);
 
-  const workflowCmd = `curl -s ${apiBase}/api/workflow \\\n  -H "X-API-Token: ${tokenHeader}"`;
   const assetsCmd = `curl -s "${apiBase}/api/assets?q=istanbul" \\\n  -H "X-API-Token: ${tokenHeader}"`;
   const oneAssetCmd = `curl -s ${apiBase}/api/assets/${sampleAssetId} \\\n  -H "X-API-Token: ${tokenHeader}"`;
   const collectionCmd = `curl -s -X POST ${apiBase}/api/collections \\\n  -H "Content-Type: application/json" \\\n  -H "X-API-Token: ${tokenHeader}" \\\n  -d '{"name":"News Rundown","assetIds":["${sampleAssetId}"]}'`;
@@ -2478,7 +2454,6 @@ function renderApiGuide() {
     {
       title: t('api_help_group_core'),
       endpoints: [
-        'GET    /api/workflow',
         'GET    /api/me',
         'GET    /api/logout-url',
         'GET    /api/ui-settings',
@@ -2499,7 +2474,6 @@ function renderApiGuide() {
         'PATCH  /api/assets/:id',
         'GET    /api/assets/:id/technical',
         'GET    /api/assets/:id/preview-text',
-        'POST   /api/assets/:id/transition',
         'POST   /api/assets/:id/trash',
         'POST   /api/assets/:id/restore',
         'DELETE /api/assets/:id',
@@ -2565,7 +2539,6 @@ function renderApiGuide() {
         'GET    /api/admin/system-health',
         'GET    /api/admin/runtime-diagnostics',
         'GET    /api/admin/ffmpeg-health',
-        'GET    /api/admin/workflow-tracking',
         'GET    /api/admin/backups',
         'POST   /api/admin/backups/run',
         'DELETE /api/admin/backups/:fileName',
@@ -2608,7 +2581,7 @@ function renderApiGuide() {
   apiGuideDoc.innerHTML = [
     `<p>${escapeHtml(t('api_help_intro'))}</p>`,
     `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_auth_title'))}</h3><p>${escapeHtml(t('api_help_auth_note'))}</p><p>${escapeHtml(bearerEnabled ? t('api_help_bearer_on') : t('api_help_bearer_off'))}</p><p>${escapeHtml(tokenEnabled ? t('api_help_token_on') : t('api_help_token_off'))}</p><p>${escapeHtml(t('api_help_token_hint'))} (${escapeHtml(masked)})</p></div>`,
-    `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_quick_title'))}</h3><p><strong>${escapeHtml(t('api_help_cmd_workflow'))}</strong></p><pre>${escapeHtml(workflowCmd)}</pre><p><strong>${escapeHtml(t('api_help_cmd_assets'))}</strong></p><pre>${escapeHtml(assetsCmd)}</pre><p><strong>${escapeHtml(t('api_help_cmd_asset_by_id'))}</strong></p><pre>${escapeHtml(oneAssetCmd)}</pre><p><strong>${escapeHtml(t('api_help_cmd_create_collection'))}</strong></p><pre>${escapeHtml(collectionCmd)}</pre></div>`,
+    `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_quick_title'))}</h3><p><strong>${escapeHtml(t('api_help_cmd_assets'))}</strong></p><pre>${escapeHtml(assetsCmd)}</pre><p><strong>${escapeHtml(t('api_help_cmd_asset_by_id'))}</strong></p><pre>${escapeHtml(oneAssetCmd)}</pre><p><strong>${escapeHtml(t('api_help_cmd_create_collection'))}</strong></p><pre>${escapeHtml(collectionCmd)}</pre></div>`,
     `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_postman_title'))}</h3><ul><li>${escapeHtml(t('api_help_postman_step1'))}</li><li>${escapeHtml(postmanUrlStep)}</li><li>${escapeHtml(t('api_help_postman_step3'))}</li><li>${escapeHtml(t('api_help_postman_step4'))}</li></ul></div>`,
     `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_endpoints_title'))}</h3>${endpointSections}</div>`
   ].join('');
@@ -3102,8 +3075,13 @@ async function exportAuditEvents() {
 
 async function loadSettings() {
   const settings = await api('/api/admin/settings');
-  settingsForm.elements.workflowTrackingEnabled.checked = Boolean(settings.workflowTrackingEnabled);
   settingsForm.elements.autoProxyBackfillOnUpload.checked = Boolean(settings.autoProxyBackfillOnUpload);
+  if (settingsForm.elements.newAssetDefaultVisibility) {
+    const defaultVisibility = String(settings.newAssetDefaultVisibility || 'owner_groups').toLowerCase();
+    settingsForm.elements.newAssetDefaultVisibility.value = ['owner_groups', 'public', 'private'].includes(defaultVisibility)
+      ? defaultVisibility
+      : 'owner_groups';
+  }
   {
     const mode = String(settings.playerUiMode || 'vidstack').toLowerCase();
     settingsForm.elements.playerUiMode.value = (mode === 'vidstack' || mode === 'mpegdash') ? mode : 'vidstack';
@@ -3228,7 +3206,7 @@ async function refreshTrackingAndHealth() {
     api('/api/admin/system-health'),
     api('/api/admin/runtime-diagnostics?limit=100').catch(() => null)
   ]);
-  renderWorkflowTracking(tracking);
+  renderAssetTracking(tracking);
   renderHealth(health);
   renderSystemHealth(systemHealth);
   if (diagnostics) renderRuntimeDiagnostics(diagnostics);
@@ -3253,8 +3231,8 @@ async function pollJob() {
 settingsForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const payload = {
-    workflowTrackingEnabled: settingsForm.elements.workflowTrackingEnabled.checked,
     autoProxyBackfillOnUpload: settingsForm.elements.autoProxyBackfillOnUpload.checked,
+    newAssetDefaultVisibility: String(settingsForm.elements.newAssetDefaultVisibility?.value || 'owner_groups'),
     playerUiMode: String(settingsForm.elements.playerUiMode.value || 'vidstack'),
     apiTokenEnabled: settingsForm.elements.apiTokenEnabled.checked,
     apiToken: String(settingsForm.elements.apiToken.value || '').trim(),

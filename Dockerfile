@@ -1,13 +1,8 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:22-bookworm-slim AS deps
+FROM node:22-bookworm-slim AS os-base
 
 ARG TARGETARCH
-ARG INSTALL_LIBREOFFICE=false
-ARG PRELOAD_ML_MODELS=false
-ARG PRELOAD_PADDLE_OCR=false
-ARG WHISPER_MODEL=small
-ARG HF_TOKEN=""
 
 ENV NODE_ENV=production \
   DEBIAN_FRONTEND=noninteractive \
@@ -27,19 +22,26 @@ WORKDIR /app
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,target=/var/lib/apt,sharing=locked \
-  --mount=type=cache,target=/root/.cache/pip,sharing=locked \
   apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates wget gnupg \
   && wget -qO- https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg \
   && echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
   && apt-get update \
   && apt-get install -y --no-install-recommends ffmpeg unzip poppler-utils antiword postgresql-client-16 python3 python3-pip \
-  && if [ "$INSTALL_LIBREOFFICE" = "true" ]; then \
-      apt-get install -y --no-install-recommends libreoffice-core libreoffice-writer libreoffice-calc libreoffice-impress fonts-dejavu fonts-liberation; \
-    fi \
-  && pip3 install --break-system-packages --retries 5 --default-timeout=300 requests faster-whisper==1.1.1 opencv-python-headless==4.10.0.84 numpy==1.26.4 \
-  && pip3 install --break-system-packages --retries 5 --default-timeout=300 torch==2.5.1 torchaudio==2.5.1 whisperx==3.3.1 \
-  && arch="${TARGETARCH}" \
+  && rm -rf /var/lib/apt/lists/*
+
+FROM os-base AS ml-deps
+
+ARG TARGETARCH
+
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+  pip3 install --break-system-packages --retries 5 --default-timeout=300 requests faster-whisper==1.1.1 opencv-python-headless==4.10.0.84 numpy==1.26.4
+
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+  pip3 install --break-system-packages --retries 5 --default-timeout=300 torch==2.5.1 torchaudio==2.5.1 whisperx==3.3.1
+
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+  arch="${TARGETARCH}" \
   && if [ -z "$arch" ]; then arch="$(dpkg --print-architecture 2>/dev/null || true)"; fi \
   && if [ -z "$arch" ]; then arch="$(uname -m)"; fi \
   && echo "Detected arch: $arch" \
@@ -47,7 +49,24 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       pip3 install --break-system-packages --retries 5 --default-timeout=300 paddleocr==3.4.0 paddlepaddle==3.2.2; \
     else \
       echo "Skipping PaddleOCR install on unsupported arch: $arch"; \
+    fi
+
+FROM ml-deps AS deps
+
+ARG INSTALL_LIBREOFFICE=false
+ARG PRELOAD_ML_MODELS=false
+ARG PRELOAD_PADDLE_OCR=false
+ARG WHISPER_MODEL=small
+ARG HF_TOKEN=""
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  if [ "$INSTALL_LIBREOFFICE" = "true" ]; then \
+      apt-get update \
+      && apt-get install -y --no-install-recommends libreoffice-core libreoffice-writer libreoffice-calc libreoffice-impress fonts-dejavu fonts-liberation; \
     fi \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends libheif-examples \
   && rm -rf /var/lib/apt/lists/*
 
 FROM deps
@@ -68,7 +87,7 @@ LABEL org.opencontainers.image.revision="${MAM_GIT_COMMIT}" \
 
 COPY package*.json ./
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
-  npm ci --omit=dev \
+  npm ci --omit=dev --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 \
   && npm cache clean --force
 
 COPY scripts ./scripts

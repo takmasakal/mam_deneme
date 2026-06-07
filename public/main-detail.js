@@ -14,7 +14,6 @@
       highlightMatch,
       dcHighlightSnippet,
       buildInlineFieldMatch,
-      workflowLabel,
       effectiveSearchHighlightClass,
       renderPdfChangeKindLabel,
       cleanVersionNoteText,
@@ -191,7 +190,6 @@
         <h3>${highlightMatch(asset.title, currentSearchHighlightQuery(), searchHighlightClass)}</h3>
         <p>${highlightMatch(asset.description || t('no_description'), currentSearchHighlightQuery(), searchHighlightClass)}</p>
         <div class="asset-meta">${t('owner')}: ${highlightMatch(asset.owner, currentSearchHighlightQuery(), searchHighlightClass)} | ${t('type')}: ${highlightMatch(asset.type, currentSearchHighlightQuery(), searchHighlightClass)} | ${t('duration')}: ${escapeHtml(asset.durationSeconds)}s</div>
-        <div class="asset-meta">${t('status')}: <strong>${escapeHtml(workflowLabel(asset.status))}</strong></div>
         <div class="asset-meta">${t('trash')}: ${trashStatus}</div>
         ${dcHighlightSnippet(asset, currentSearchHighlightQuery(), searchHighlightClass) ? `<div class="asset-meta dc-hit-row">${dcHighlightSnippet(asset, currentSearchHighlightQuery(), searchHighlightClass)}</div>` : ''}
         ${tagsMarkup}
@@ -240,16 +238,6 @@
         </form>
 
         ${visibilitySection}
-
-        <form id="transitionForm" class="inline-grid">
-          <h4>${t('workflow_transition')}</h4>
-          <select name="status">
-            ${workflow
-              .map((status) => `<option value="${escapeHtml(status)}" ${status === asset.status ? 'selected' : ''}>${escapeHtml(workflowLabel(status))}</option>`)
-              .join('')}
-          </select>
-          <button type="submit">${t('move_status')}</button>
-        </form>
       `;
 
       const versionAccess = getVersionSectionAccess(asset);

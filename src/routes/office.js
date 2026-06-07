@@ -34,52 +34,6 @@ function registerOfficeRoutes(app, deps) {
     return { status: 200, row, accessContext };
   }
 
-  async function convertOfficeToLibreOfficePdf(row, inputPath) {
-    const stat = fs.statSync(inputPath);
-    const assetId = String(row.id || '').trim();
-    const revision = `${Math.round(Number(stat.mtimeMs || 0))}-${Math.max(0, Number(stat.size || 0))}`;
-    const outputDir = path.join(uploadsDir, 'previews', 'libreoffice');
-    fs.mkdirSync(outputDir, { recursive: true });
-    const outputName = `${sanitizeFileName(assetId || 'asset')}-${revision}.pdf`;
-    const outputPath = path.join(outputDir, outputName);
-    if (fs.existsSync(outputPath)) return outputPath;
-
-    const tempDir = path.join('/tmp', `mam-lo-${Date.now()}-${nanoid()}`);
-    fs.mkdirSync(tempDir, { recursive: true });
-    const sourceExt = getFileExtension(row.file_name) || getFileExtension(inputPath) || 'docx';
-    const sourceBase = sanitizeFileName(path.basename(String(row.file_name || assetId || 'document'), path.extname(String(row.file_name || '')))) || 'document';
-    const tempInput = path.join(tempDir, `${sourceBase}.${sourceExt}`);
-    fs.copyFileSync(inputPath, tempInput);
-
-    const args = [
-      '--headless',
-      '--nologo',
-      '--nofirststartwizard',
-      '--nodefault',
-      '--norestore',
-      '--convert-to',
-      'pdf',
-      '--outdir',
-      tempDir,
-      tempInput
-    ];
-    let result = await runCommandCapture('libreoffice', args, { env: { HOME: tempDir } });
-    if (!result.ok) {
-      result = await runCommandCapture('soffice', args, { env: { HOME: tempDir } });
-    }
-    const convertedPath = path.join(tempDir, `${sourceBase}.pdf`);
-    if (!result.ok || !fs.existsSync(convertedPath)) {
-      try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (_cleanupError) {}
-      const message = String(result.stderr || result.stdout || 'LibreOffice conversion failed').slice(0, 500);
-      const error = new Error(message);
-      error.statusCode = 503;
-      throw error;
-    }
-    fs.copyFileSync(convertedPath, outputPath);
-    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (_cleanupError) {}
-    return outputPath;
-  }
-
   app.get('/api/assets/:id/office-config', async (req, res) => {
     try {
       const loaded = await loadVisibleAssetRow(req, req.params.id);
@@ -186,11 +140,8 @@ function registerOfficeRoutes(app, deps) {
     }
   });
 
-  app.get('/api/assets/:id/libreoffice-preview.pdf', async (req, res) => {
+  async function sendLibreOfficePreviewPdf(req, res) {
     try {
-      if (officeEditorProvider !== 'libreoffice') {
-        return res.status(404).json({ error: 'LibreOffice preview is not enabled' });
-      }
       const assetId = String(req.params.id || '').trim();
       const loaded = await loadVisibleAssetRow(req, assetId);
       if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
@@ -199,15 +150,7 @@ function registerOfficeRoutes(app, deps) {
         return res.status(400).json({ error: 'LibreOffice preview is supported only for Office assets' });
       }
 
-      let inputPath = String(row.source_path || '').trim();
-      if (!inputPath || !fs.existsSync(inputPath)) {
-        const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
-        if (mediaPath && fs.existsSync(mediaPath)) inputPath = mediaPath;
-      }
-      if (!inputPath || !fs.existsSync(inputPath)) {
-        return res.status(404).json({ error: 'Office source file not found' });
-      }
-      const pdfPath = await convertOfficeToLibreOfficePdf(row, inputPath);
+      const pdfPath = await officeService.ensureOfficePreviewPdf(row);
       res.set('Cache-Control', 'private, max-age=60');
       return res.sendFile(pdfPath);
     } catch (error) {
@@ -215,6 +158,14 @@ function registerOfficeRoutes(app, deps) {
         error: `Failed to build LibreOffice preview: ${String(error?.message || 'unknown error').slice(0, 500)}`
       });
     }
+  }
+
+  app.get('/api/assets/:id/libreoffice-preview.pdf', async (req, res) => {
+    return sendLibreOfficePreviewPdf(req, res);
+  });
+
+  app.get('/api/assets/:id/office-preview.pdf', async (req, res) => {
+    return sendLibreOfficePreviewPdf(req, res);
   });
 
   app.post('/api/assets/:id/office-restore', async (req, res) => {

@@ -18,7 +18,6 @@ const assetTypeFilters = Array.from(document.querySelectorAll('.asset-type-filte
 const panelDetail = document.getElementById('panelDetail');
 const closeDetailBtn = document.getElementById('closeDetailBtn');
 const panelVideoToolsBtn = document.getElementById('panelVideoToolsBtn');
-const statusSelect = searchForm.querySelector('[name="status"]');
 const searchQueryInput = searchForm.querySelector('[name="q"]');
 const searchSuggestList = document.getElementById('searchSuggestList');
 const clearSearchBtn = document.getElementById('clearSearchBtn');
@@ -160,7 +159,6 @@ function updateSearchResultCounter() {
 
 const shellModule = window.createMainShellModule({
   searchForm,
-  statusSelect,
   assetTypeFilters,
   clearSearchBtn,
   ocrQueryInput,
@@ -243,7 +241,7 @@ function showShortcutToast(message) {
 let i18n = {
   en: {
     app_title: 'MAM Console',
-    app_subtitle: 'Dalet-style MVP: ingest, metadata, workflow, versions',
+    app_subtitle: 'Dalet-style MVP: ingest, metadata, versions',
     current_user: 'Current User',
     unknown_user: 'Unknown user',
     logout: 'Logout',
@@ -281,7 +279,6 @@ let i18n = {
     list_view: 'List View',
     thumbnail_view: 'Thumbnail View',
     trash_scope: 'Trash',
-    any_status: 'Any status',
     trash_active: 'Active assets',
     trash_only: 'Trash only',
     trash_all: 'All (active + trash)',
@@ -403,8 +400,6 @@ let i18n = {
     dc_relation: 'DC Relation',
     dc_coverage: 'DC Coverage',
     dc_rights: 'DC Rights',
-    workflow_transition: 'Workflow Transition',
-    move_status: 'Move Status',
     add_version: 'Add Version',
     what_changed: 'What changed',
     create_version: 'Create Version',
@@ -618,7 +613,6 @@ let i18n = {
     list_view: 'Liste Görünümü',
     thumbnail_view: 'Küçük Görsel Görünümü',
     trash_scope: 'Çöp',
-    any_status: 'Tüm durumlar',
     trash_active: 'Aktif varlıklar',
     trash_only: 'Çöp kutusu',
     trash_all: 'Hepsi (aktif + çöp)',
@@ -740,8 +734,6 @@ let i18n = {
     dc_relation: 'DC Iliski',
     dc_coverage: 'DC Kapsam',
     dc_rights: 'DC Haklar',
-    workflow_transition: 'İş Akışı Geçişi',
-    move_status: 'Durumu Taşıt',
     add_version: 'Versiyon Ekle',
     what_changed: 'Ne değişti',
     create_version: 'Versiyon Oluştur',
@@ -1240,17 +1232,6 @@ async function loadCurrentUser() {
   }
 }
 
-function workflowLabel(status) {
-  const map = {
-    Ingested: currentLang === 'tr' ? 'Yüklendi' : 'Ingested',
-    QC: 'QC',
-    Approved: currentLang === 'tr' ? 'Onaylandı' : 'Approved',
-    Published: currentLang === 'tr' ? 'Yayında' : 'Published',
-    Archived: currentLang === 'tr' ? 'Arşivlendi' : 'Archived'
-  };
-  return map[status] || status;
-}
-
 function loadPanelPrefs() {
   try {
     const sizes = JSON.parse(localStorage.getItem(LOCAL_PANEL_SIZE) || '{}');
@@ -1683,7 +1664,6 @@ const assetBrowserModule = window.createMainAssetBrowserModule({
   clipHighlightSnippet,
   effectiveSearchHighlightClass,
   foldSearchText,
-  workflowLabel,
   formatDuration,
   formatDate,
   secondsToTimecode,
@@ -1779,7 +1759,6 @@ detailModule = window.createMainDetailModule({
   highlightMatch,
   dcHighlightSnippet,
   buildInlineFieldMatch,
-  workflowLabel,
   effectiveSearchHighlightClass,
   renderPdfChangeKindLabel,
   cleanVersionNoteText,
@@ -1981,8 +1960,6 @@ const assetsModule = window.createMainAssetsModule({
   api,
   escapeHtml,
   t,
-  statusSelect,
-  workflowLabel,
   serializeForm,
   searchForm,
   assetTypeFilters,
@@ -2243,14 +2220,6 @@ async function openAsset(id, workflow, options = {}) {
     } finally {
       if (saveBtn) saveBtn.disabled = false;
     }
-  });
-
-  document.getElementById('transitionForm').addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const payload = serializeForm(event.target);
-    await api(`/api/assets/${id}/transition`, { method: 'POST', body: JSON.stringify(payload) });
-    await loadAssets();
-    await openAsset(id, workflow);
   });
 
   const versionFormEl = document.getElementById('versionForm');
@@ -2533,7 +2502,7 @@ assetGrid.addEventListener('click', async (event) => {
     if (!id) return;
     if (seekOpenDetailMedia(id, startAtSeconds)) return;
     setSingleSelection(id);
-    const workflow = await api('/api/workflow');
+    const workflow = await loadWorkflow();
     await openAsset(id, workflow, { startAtSeconds, scrollToVideoTop: true });
     return;
   }
@@ -2547,7 +2516,7 @@ assetGrid.addEventListener('click', async (event) => {
     const startAtSeconds = Math.max(0, Number(clipJumpBtn.dataset.startSec || 0));
     if (!id) return;
     setSingleSelection(id);
-    const workflow = await api('/api/workflow');
+    const workflow = await loadWorkflow();
     await openAsset(id, workflow, { startAtSeconds, focusCutId });
     return;
   }
@@ -2561,7 +2530,7 @@ assetGrid.addEventListener('click', async (event) => {
     const focusTag = String(fieldJumpBtn.dataset.focusTag || '').trim();
     if (!id || (!focusFieldName && !focusTag)) return;
     setSingleSelection(id);
-    const workflow = await api('/api/workflow');
+    const workflow = await loadWorkflow();
     await openAsset(id, workflow, { focusFieldName, focusTag });
     return;
   }
@@ -2607,7 +2576,7 @@ assetGrid.addEventListener('click', async (event) => {
     if (selectedAssetIds.size === 1) {
       const onlySelectedId = selectedAssetId || [...selectedAssetIds][0];
       if (!onlySelectedId) return;
-      const workflow = await api('/api/workflow');
+      const workflow = await loadWorkflow();
       openAsset(onlySelectedId, workflow).catch((err) => alert(err.message));
       return;
     }
@@ -2635,7 +2604,7 @@ assetGrid.addEventListener('click', async (event) => {
 
   setSingleSelection(cardId);
 
-  const workflow = await api('/api/workflow');
+  const workflow = await loadWorkflow();
   openAsset(cardId, workflow).catch((err) => alert(err.message));
 });
 
@@ -2740,7 +2709,7 @@ languageSelect?.addEventListener('change', async (event) => {
       return;
     }
     if (selectedAssetId) {
-      const workflow = await api('/api/workflow');
+      const workflow = await loadWorkflow();
       await openAsset(selectedAssetId, workflow);
     } else {
       if (activeDetailPinCleanup) {
@@ -2815,7 +2784,7 @@ window.addEventListener('message', async (event) => {
   const assetId = String(event.data?.assetId || '').trim();
   if (!assetId || assetId !== selectedAssetId) return;
   try {
-    const workflow = await api('/api/workflow');
+    const workflow = await loadWorkflow();
     await loadAssets();
     await openAsset(assetId, workflow);
   } catch (_error) {

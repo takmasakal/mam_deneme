@@ -31,7 +31,7 @@
         <header class="admin-header">
           <div>
             <h1 data-i18n="system_overview">System Overview</h1>
-            <p data-i18n="admin_subtitle">Workflow tracking, proxy generation, and system health.</p>
+            <p data-i18n="admin_subtitle">Proxy generation and system health.</p>
           </div>
           <div class="admin-actions">
             <select id="languageSelectAdmin">
@@ -182,7 +182,6 @@
           <h2 data-i18n="settings">Settings</h2>
           <nav class="settings-subtabs" id="settingsSubtabs">
             <button type="button" class="settings-subtab active" data-settings-tab="general" data-i18n="settings_sub_general">General</button>
-            <button type="button" class="settings-subtab" data-settings-tab="workflow" data-i18n="settings_sub_workflow">Workflow</button>
             <button type="button" class="settings-subtab" data-settings-tab="proxy" data-i18n="settings_sub_proxy">Proxy</button>
             <button type="button" class="settings-subtab" data-settings-tab="ocr" data-i18n="settings_sub_ocr">OCR</button>
             <button type="button" class="settings-subtab" data-settings-tab="subtitle" data-i18n="settings_sub_subtitle">Subtitle</button>
@@ -193,14 +192,18 @@
           <section class="settings-subpanel active" data-settings-panel="general">
             <form id="settingsForm" class="stack">
               <fieldset class="settings-group">
-                <legend data-i18n="settings_group_workflow">Workflow & Player</legend>
-                <label class="toggle-row">
-                  <input type="checkbox" name="workflowTrackingEnabled" />
-                  <span data-i18n="workflow_tracking_enabled">Workflow tracking enabled</span>
-                </label>
+                <legend data-i18n="settings_group_player">Player</legend>
                 <label class="toggle-row">
                   <input type="checkbox" name="autoProxyBackfillOnUpload" />
                   <span data-i18n="auto_proxy_backfill">Auto backfill proxies on upload</span>
+                </label>
+                <label>
+                  <span data-i18n="new_asset_default_visibility">New asset default visibility</span>
+                  <select name="newAssetDefaultVisibility">
+                    <option value="owner_groups" data-i18n="new_asset_visibility_owner_groups">Owner groups</option>
+                    <option value="public" data-i18n="visibility_public">Public</option>
+                    <option value="private" data-i18n="visibility_private">Private</option>
+                  </select>
                 </label>
                 <label>
                   <span data-i18n="player_mode">Player Mode</span>
@@ -269,12 +272,6 @@
               </div>
             </form>
             <div id="settingsMsg" class="admin-note"></div>
-          </section>
-
-          <section class="settings-subpanel" data-settings-panel="workflow">
-            <h3 data-i18n="workflow_tracking">Workflow Tracking</h3>
-            <div id="workflowSummary" class="metrics"></div>
-            <div id="workflowRows" class="rows"></div>
           </section>
 
           <section class="settings-subpanel" data-settings-panel="proxy">
