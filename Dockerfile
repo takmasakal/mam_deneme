@@ -73,6 +73,26 @@ FROM deps
 
 WORKDIR /app
 
+COPY package*.json ./
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+  npm ci --omit=dev --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 \
+  && npm cache clean --force
+
+COPY scripts/prepare_offline_models.py ./scripts/prepare_offline_models.py
+
+RUN mkdir -p /opt/mam-models/huggingface /opt/mam-models/paddle \
+  && if [ "$PRELOAD_ML_MODELS" = "true" ]; then \
+      python3 scripts/prepare_offline_models.py --whisper-model "$WHISPER_MODEL" $(if [ "$PRELOAD_PADDLE_OCR" = "true" ]; then printf '%s' "--paddle-ocr"; else printf '%s' "--skip-paddle-ocr"; fi); \
+    else \
+      echo "Skipping offline model preload. Set PRELOAD_ML_MODELS=true to bake model caches into the image."; \
+    fi
+
+COPY scripts ./scripts
+COPY public ./public
+COPY src ./src
+
+RUN mkdir -p /app/uploads /app/uploads/proxies /app/uploads/thumbnails /app/uploads/subtitles /app/uploads/ocr
+
 ARG MAM_GIT_COMMIT=unknown
 ARG MAM_GIT_BRANCH=unknown
 ARG MAM_BUILD_DATE=unknown
@@ -84,25 +104,6 @@ ENV MAM_GIT_COMMIT=${MAM_GIT_COMMIT} \
 LABEL org.opencontainers.image.revision="${MAM_GIT_COMMIT}" \
   org.opencontainers.image.created="${MAM_BUILD_DATE}" \
   org.opencontainers.image.source_branch="${MAM_GIT_BRANCH}"
-
-COPY package*.json ./
-RUN --mount=type=cache,target=/root/.npm,sharing=locked \
-  npm ci --omit=dev --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 \
-  && npm cache clean --force
-
-COPY scripts ./scripts
-
-RUN mkdir -p /opt/mam-models/huggingface /opt/mam-models/paddle \
-  && if [ "$PRELOAD_ML_MODELS" = "true" ]; then \
-      python3 scripts/prepare_offline_models.py --whisper-model "$WHISPER_MODEL" $(if [ "$PRELOAD_PADDLE_OCR" = "true" ]; then printf '%s' "--paddle-ocr"; else printf '%s' "--skip-paddle-ocr"; fi); \
-    else \
-      echo "Skipping offline model preload. Set PRELOAD_ML_MODELS=true to bake model caches into the image."; \
-    fi
-
-COPY public ./public
-COPY src ./src
-
-RUN mkdir -p /app/uploads /app/uploads/proxies /app/uploads/thumbnails /app/uploads/subtitles /app/uploads/ocr
 
 EXPOSE 3000
 
