@@ -198,6 +198,42 @@ function createAssetAccessService({ pool }) {
     };
   }
 
+  function appendExplicitAssetTypeEditConditions(conditions, values, context, alias = 'assets') {
+    const rules = Array.isArray(context?.assetTypeAccessRules) ? context.assetTypeAccessRules : [];
+    if (!rules.length) return;
+    const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
+    const identifiers = identity.identifiers || [];
+    const groups = identity.groups || [];
+
+    rules.forEach((rule) => {
+      const typeSql = buildAssetTypeGroupSql(rule.typeGroup, alias);
+      if (identifiers.length && rule.editAllowedUsers.length) {
+        values.push(identifiers);
+        const identityIdx = values.length;
+        values.push(rule.editAllowedUsers);
+        const allowedIdx = values.length;
+        let condition = `(${typeSql} AND $${identityIdx}::text[] && $${allowedIdx}::text[]`;
+        if (rule.editDeniedUsers.length) {
+          values.push(rule.editDeniedUsers);
+          condition += ` AND NOT ($${identityIdx}::text[] && $${values.length}::text[])`;
+        }
+        conditions.push(`${condition})`);
+      }
+      if (groups.length && rule.editAllowedGroups.length) {
+        values.push(groups);
+        const identityIdx = values.length;
+        values.push(rule.editAllowedGroups);
+        const allowedIdx = values.length;
+        let condition = `(${typeSql} AND $${identityIdx}::text[] && $${allowedIdx}::text[]`;
+        if (rule.editDeniedGroups.length) {
+          values.push(rule.editDeniedGroups);
+          condition += ` AND NOT ($${identityIdx}::text[] && $${values.length}::text[])`;
+        }
+        conditions.push(`${condition})`);
+      }
+    });
+  }
+
   function appendAssetAccessWhere(where, values, context, alias = 'assets') {
     if (context?.canManageAllAssetVisibility) return;
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
@@ -230,6 +266,7 @@ function createAssetAccessService({ pool }) {
       conditions.push(`${alias}.allowed_groups && $${idx}::text[]`);
       conditions.push(`${alias}.edit_allowed_groups && $${idx}::text[]`);
     }
+    appendExplicitAssetTypeEditConditions(conditions, values, context, alias);
 
     where.push(`(${conditions.join(' OR ')})`);
   }
@@ -323,6 +360,13 @@ function createAssetAccessService({ pool }) {
     return rule.visibility === 'public' || canViewAssetType(row, context);
   }
 
+  function hasExplicitAssetTypeEditGrant(row, context) {
+    const rule = getTypeRuleForAsset(row, context);
+    const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
+    if (identityMatchesAny(identity, rule.editDeniedUsers, rule.editDeniedGroups)) return false;
+    return identityMatchesAny(identity, rule.editAllowedUsers, rule.editAllowedGroups);
+  }
+
   function getAllowedAssetTypeGroups(context = {}) {
     if (context?.canManageAllAssetVisibility) return [...ASSET_TYPE_GROUPS];
     return ASSET_TYPE_GROUPS.filter((typeGroup) => {
@@ -346,6 +390,7 @@ function createAssetAccessService({ pool }) {
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
     if (identityMatchesAny(identity, asset.deniedUsers, asset.deniedGroups)) return false;
     if (!canViewAssetType(row, context)) return false;
+    if (hasExplicitAssetTypeEditGrant(row, context)) return true;
     if (asset.visibility === 'public') return true;
     if (identity.identifiers.some((id) => id && (id === asset.ownerUser || asset.allowedUsers.includes(id)))) return true;
     if (identity.groups.some((group) => asset.ownerGroups.includes(group) || asset.allowedGroups.includes(group))) return true;
@@ -368,6 +413,7 @@ function createAssetAccessService({ pool }) {
     if (!canEditAssetType(row, context)) return false;
     if (context?.canManageAllAssetVisibility) return true;
     if (identityMatchesAny(identity, asset.editAllowedUsers, asset.editAllowedGroups)) return true;
+    if (hasExplicitAssetTypeEditGrant(row, context)) return true;
     return Boolean(context?.canEditMetadata || context?.canAccessAdmin);
   }
 
