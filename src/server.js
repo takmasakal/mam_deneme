@@ -8203,6 +8203,7 @@ registerAdminRoutes(app, {
   isPdfCandidate,
   isDocumentCandidate,
   ensureDocumentThumbnailForRow,
+  imageDerivativeService,
   extractPreviewContentFromFile,
   indexAssetToElastic,
   mapAssetRow,
