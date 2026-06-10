@@ -36,8 +36,10 @@ function mediaViewer(asset, options = {}) {
     return `<div class="empty">${escapeHtml(t('preview_not_supported'))}</div>`;
   }
 
-  const imagePreviewUrl = isImage(asset) ? (asset.proxyUrl || asset.mediaUrl) : asset.mediaUrl;
-  const playbackUrl = escapeHtml(isVideo(asset) ? (asset.proxyUrl || '') : imagePreviewUrl);
+  const playbackSource = isVideo(asset)
+    ? (asset.proxyUrl || '')
+    : (isImage(asset) ? (asset.proxyUrl || asset.mediaUrl) : asset.mediaUrl);
+  const playbackUrl = escapeHtml(playbackSource);
   const proxyStatus = escapeHtml(asset.proxyStatus || 'not_applicable');
   const audioChannelsAttr = Number(asset.audioChannels) > 0 ? ` data-audio-channels="${Number(asset.audioChannels)}"` : '';
   const detailVideoPinned = Boolean(detailVideoPinnedRef && typeof detailVideoPinnedRef.get === 'function' ? detailVideoPinnedRef.get() : false);

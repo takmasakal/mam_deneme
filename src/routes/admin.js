@@ -90,6 +90,7 @@ function registerAdminRoutes(app, deps) {
     isPdfCandidate,
     isDocumentCandidate,
     ensureDocumentThumbnailForRow,
+    imageDerivativeService,
     extractPreviewContentFromFile,
     indexAssetToElastic,
     mapAssetRow,
@@ -104,6 +105,89 @@ function registerAdminRoutes(app, deps) {
     removeAssetFromElastic
   } = deps;
   const resolvedNanoid = typeof providedNanoid === 'function' ? providedNanoid : nanoid;
+
+  function isImageAssetRow(row = {}) {
+    return getAssetFamily({
+      mimeType: row.mime_type,
+      fileName: row.file_name,
+      declaredType: row.type
+    }) === 'image';
+  }
+
+  async function ensureImagePreviewAndThumbnailForRow(row = {}) {
+    if (!imageDerivativeService) throw new Error('Image derivative service is unavailable');
+    if (!isImageAssetRow(row)) throw new Error('Image derivative generation is supported only for image assets');
+    const inputPath = resolveAssetInputPath(row);
+    if (!inputPath || !fs.existsSync(inputPath)) {
+      const err = new Error('Source file not found');
+      err.statusCode = 404;
+      throw err;
+    }
+    if (!imageDerivativeService.isHeicCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+      return {
+        row,
+        previewUrl: resolveStoredUrl(row.proxy_url, 'proxies') || resolveStoredUrl(row.media_url, ''),
+        thumbnailUrl: resolveStoredUrl(row.thumbnail_url, 'thumbnails')
+      };
+    }
+    const derivatives = await imageDerivativeService.ensureImageDerivativesForUpload({
+      mimeType: row.mime_type,
+      fileName: row.file_name,
+      inputPath,
+      createdAt: row.created_at || new Date()
+    });
+    const nowIso = new Date().toISOString();
+    const updated = await pool.query(
+      `
+        UPDATE assets
+        SET proxy_url = $2,
+            proxy_status = 'ready',
+            thumbnail_url = $3,
+            updated_at = $4
+        WHERE id = $1
+        RETURNING *
+      `,
+      [
+        row.id,
+        String(derivatives.proxyUrl || '').trim(),
+        String(derivatives.thumbnailUrl || '').trim(),
+        nowIso
+      ]
+    );
+    const nextRow = updated.rows?.[0] || row;
+    return {
+      row: nextRow,
+      previewUrl: resolveStoredUrl(nextRow.proxy_url, 'proxies'),
+      thumbnailUrl: resolveStoredUrl(nextRow.thumbnail_url, 'thumbnails')
+    };
+  }
+
+  async function regenerateImageThumbnailForRow(row = {}) {
+    if (!imageDerivativeService) throw new Error('Image derivative service is unavailable');
+    if (!isImageAssetRow(row)) throw new Error('Image thumbnail generation is supported only for image assets');
+    if (imageDerivativeService.isHeicCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+      return ensureImagePreviewAndThumbnailForRow(row);
+    }
+    const inputPath = resolveAssetInputPath(row);
+    if (!inputPath || !fs.existsSync(inputPath)) {
+      const err = new Error('Source file not found');
+      err.statusCode = 404;
+      throw err;
+    }
+    const thumbStoredName = `${Date.now()}-${resolvedNanoid()}-image-thumb.jpg`;
+    const thumbOut = buildArtifactPath('thumbnails', thumbStoredName, row.created_at || new Date());
+    await imageDerivativeService.generateImageThumbnail(inputPath, thumbOut.absolutePath);
+    const updated = await pool.query(
+      `UPDATE assets SET thumbnail_url = $2, updated_at = $3 WHERE id = $1 RETURNING *`,
+      [row.id, thumbOut.publicUrl, new Date().toISOString()]
+    );
+    const nextRow = updated.rows?.[0] || row;
+    return {
+      row: nextRow,
+      previewUrl: resolveStoredUrl(nextRow.proxy_url, 'proxies') || resolveStoredUrl(nextRow.media_url, ''),
+      thumbnailUrl: resolveStoredUrl(nextRow.thumbnail_url, 'thumbnails')
+    };
+  }
 app.use('/api/admin', requireScopedAdminAccess);
 
 async function requireSuperAdminRequest(req, res) {
@@ -2235,8 +2319,8 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
     const assetName = String(req.body?.assetName || '').trim();
     const mode = String(req.body?.mode || '').trim().toLowerCase();
     if (!assetName) return res.status(400).json({ error: 'assetName is required' });
-    if (!['thumbnail', 'document_thumbnail', 'preview', 'proxy', 'replace_asset', 'replace_pdf', 'delete_asset'].includes(mode)) {
-      return res.status(400).json({ error: 'mode must be one of: thumbnail, document_thumbnail, preview, proxy, replace_asset, replace_pdf, delete_asset' });
+    if (!['thumbnail', 'image_thumbnail', 'image_preview', 'document_thumbnail', 'preview', 'proxy', 'replace_asset', 'replace_pdf', 'delete_asset'].includes(mode)) {
+      return res.status(400).json({ error: 'mode must be one of: thumbnail, image_thumbnail, image_preview, document_thumbnail, preview, proxy, replace_asset, replace_pdf, delete_asset' });
     }
 
     const like = `%${assetName}%`;
@@ -2413,6 +2497,26 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
         thumbnailUrl: result.thumbnailUrl,
         timecode: result.timecodeSeconds == null ? '' : formatTimecode(result.timecodeSeconds)
       };
+    } else if (mode === 'image_thumbnail') {
+      if (!isImageAssetRow(row)) {
+        return res.status(400).json({ error: 'Image thumbnail generation is supported only for image assets' });
+      }
+      const result = await regenerateImageThumbnailForRow(row);
+      row = result.row;
+      info = {
+        previewUrl: result.previewUrl,
+        thumbnailUrl: result.thumbnailUrl
+      };
+    } else if (mode === 'image_preview') {
+      if (!isImageAssetRow(row)) {
+        return res.status(400).json({ error: 'Image preview generation is supported only for image assets' });
+      }
+      const result = await ensureImagePreviewAndThumbnailForRow(row);
+      row = result.row;
+      info = {
+        previewUrl: result.previewUrl,
+        thumbnailUrl: result.thumbnailUrl
+      };
     } else if (mode === 'document_thumbnail') {
       if (!isDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
         return res.status(400).json({ error: 'Document thumbnail generation is supported only for document assets' });
@@ -2562,14 +2666,9 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
           row = await ensurePdfThumbnailForRow(row);
         } else if (isDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
           row = await ensureDocumentThumbnailForRow(row);
-        } else if (String(row.mime_type || '').toLowerCase().startsWith('image/')) {
-          const nowIso2 = new Date().toISOString();
-          const imageThumb = resolveStoredUrl(row.media_url, 'uploads') || row.media_url || '';
-          const updated = await pool.query(
-            `UPDATE assets SET thumbnail_url = $2, updated_at = $3 WHERE id = $1 RETURNING *`,
-            [row.id, imageThumb, nowIso2]
-          );
-          row = updated.rows?.[0] || row;
+        } else if (isImageAssetRow(row)) {
+          const result = await regenerateImageThumbnailForRow(row);
+          row = result.row;
         }
       }
       if (generatePreview && isDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
@@ -2578,6 +2677,9 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
           const preview = await extractPreviewContentFromFile(row, inputPath);
           previewChars = Math.max(0, String(preview.html || preview.text || '').length);
         }
+      } else if (generatePreview && isImageAssetRow(row)) {
+        const result = await ensureImagePreviewAndThumbnailForRow(row);
+        row = result.row;
       }
       await indexAssetToElastic(row.id).catch(() => {});
       await recordAuditEvent?.(req, {
