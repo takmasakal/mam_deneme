@@ -22,11 +22,13 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD_FILE: /run/secrets/mam_postgres_password
       POSTGRES_DB: mam_mvp
+      KC_TRUSTSTORE_PATHS: /opt/keycloak/conf/truststores
     secrets:
       - mam_postgres_password
     ports:
       - "5432:5432"
     volumes:
+      - ./deploy/certs:/opt/keycloak/conf/truststores:ro
       - pg_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d mam_mvp"]
@@ -247,6 +249,7 @@ services:
       OAUTH2_PROXY_COOKIE_CSRF_PER_REQUEST: "false"
       OAUTH2_PROXY_INSECURE_OIDC_ALLOW_UNVERIFIED_EMAIL: "true"
       OAUTH2_PROXY_UPSTREAM_TIMEOUT: 15m
+      OAUTH2_PROXY_USER_ID_CLAIM: ${OAUTH2_PROXY_USER_ID_CLAIM:-preferred_username}
     entrypoint:
       - /bin/sh
       - /opt/mam/oauth2-proxy-entrypoint.sh

@@ -68,6 +68,10 @@ async function initDb() {
       edit_allowed_groups TEXT[] NOT NULL DEFAULT '{}',
       edit_denied_users TEXT[] NOT NULL DEFAULT '{}',
       edit_denied_groups TEXT[] NOT NULL DEFAULT '{}',
+      download_allowed_users TEXT[] NOT NULL DEFAULT '{}',
+      download_allowed_groups TEXT[] NOT NULL DEFAULT '{}',
+      download_denied_users TEXT[] NOT NULL DEFAULT '{}',
+      download_denied_groups TEXT[] NOT NULL DEFAULT '{}',
       deleted_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL
@@ -118,6 +122,18 @@ async function initDb() {
     ALTER TABLE assets
     ADD COLUMN IF NOT EXISTS edit_denied_groups TEXT[] NOT NULL DEFAULT '{}';
 
+    ALTER TABLE assets
+    ADD COLUMN IF NOT EXISTS download_allowed_users TEXT[] NOT NULL DEFAULT '{}';
+
+    ALTER TABLE assets
+    ADD COLUMN IF NOT EXISTS download_allowed_groups TEXT[] NOT NULL DEFAULT '{}';
+
+    ALTER TABLE assets
+    ADD COLUMN IF NOT EXISTS download_denied_users TEXT[] NOT NULL DEFAULT '{}';
+
+    ALTER TABLE assets
+    ADD COLUMN IF NOT EXISTS download_denied_groups TEXT[] NOT NULL DEFAULT '{}';
+
     UPDATE assets
     SET visibility = 'public'
     WHERE visibility = '';
@@ -142,9 +158,41 @@ async function initDb() {
       edit_allowed_groups TEXT[] NOT NULL DEFAULT '{}',
       edit_denied_users TEXT[] NOT NULL DEFAULT '{}',
       edit_denied_groups TEXT[] NOT NULL DEFAULT '{}',
+      download_allowed_users TEXT[] NOT NULL DEFAULT '{}',
+      download_allowed_groups TEXT[] NOT NULL DEFAULT '{}',
+      download_denied_users TEXT[] NOT NULL DEFAULT '{}',
+      download_denied_groups TEXT[] NOT NULL DEFAULT '{}',
+      upload_allowed_users TEXT[] NOT NULL DEFAULT '{}',
+      upload_allowed_groups TEXT[] NOT NULL DEFAULT '{}',
+      upload_denied_users TEXT[] NOT NULL DEFAULT '{}',
+      upload_denied_groups TEXT[] NOT NULL DEFAULT '{}',
       updated_at TIMESTAMPTZ NOT NULL,
       updated_by TEXT NOT NULL DEFAULT ''
     );
+
+    ALTER TABLE asset_type_access
+    ADD COLUMN IF NOT EXISTS download_allowed_users TEXT[] NOT NULL DEFAULT '{}';
+
+    ALTER TABLE asset_type_access
+    ADD COLUMN IF NOT EXISTS download_allowed_groups TEXT[] NOT NULL DEFAULT '{}';
+
+    ALTER TABLE asset_type_access
+    ADD COLUMN IF NOT EXISTS download_denied_users TEXT[] NOT NULL DEFAULT '{}';
+
+    ALTER TABLE asset_type_access
+    ADD COLUMN IF NOT EXISTS download_denied_groups TEXT[] NOT NULL DEFAULT '{}';
+
+    ALTER TABLE asset_type_access
+    ADD COLUMN IF NOT EXISTS upload_allowed_users TEXT[] NOT NULL DEFAULT '{}';
+
+    ALTER TABLE asset_type_access
+    ADD COLUMN IF NOT EXISTS upload_allowed_groups TEXT[] NOT NULL DEFAULT '{}';
+
+    ALTER TABLE asset_type_access
+    ADD COLUMN IF NOT EXISTS upload_denied_users TEXT[] NOT NULL DEFAULT '{}';
+
+    ALTER TABLE asset_type_access
+    ADD COLUMN IF NOT EXISTS upload_denied_groups TEXT[] NOT NULL DEFAULT '{}';
 
     INSERT INTO asset_type_access (type_group, updated_at)
     SELECT item, NOW()
@@ -324,6 +372,8 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_assets_owner_groups_gin ON assets USING GIN(owner_groups);
     CREATE INDEX IF NOT EXISTS idx_assets_allowed_users_gin ON assets USING GIN(allowed_users);
     CREATE INDEX IF NOT EXISTS idx_assets_allowed_groups_gin ON assets USING GIN(allowed_groups);
+    CREATE INDEX IF NOT EXISTS idx_assets_download_allowed_users_gin ON assets USING GIN(download_allowed_users);
+    CREATE INDEX IF NOT EXISTS idx_assets_download_allowed_groups_gin ON assets USING GIN(download_allowed_groups);
     CREATE INDEX IF NOT EXISTS idx_assets_tags_gin ON assets USING GIN(tags);
     CREATE INDEX IF NOT EXISTS idx_assets_file_hash ON assets(file_hash);
     CREATE INDEX IF NOT EXISTS idx_assets_title_trgm ON assets USING GIN (LOWER(title) gin_trgm_ops);

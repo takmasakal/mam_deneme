@@ -47,32 +47,44 @@ function getUserAccessIdentity(user = {}) {
 function getAssetAccessSnapshot(row = {}) {
   return {
     visibility: normalizeVisibility(row.visibility, 'public'),
-    ownerUser: normalizeAccessName(row.owner_user),
-    ownerGroups: normalizeAccessList(row.owner_groups || []),
-    allowedUsers: normalizeAccessList(row.allowed_users || []),
-    allowedGroups: normalizeAccessList(row.allowed_groups || []),
-    deniedUsers: normalizeAccessList(row.denied_users || []),
-    deniedGroups: normalizeAccessList(row.denied_groups || []),
-    editAllowedUsers: normalizeAccessList(row.edit_allowed_users || []),
-    editAllowedGroups: normalizeAccessList(row.edit_allowed_groups || []),
-    editDeniedUsers: normalizeAccessList(row.edit_denied_users || []),
-    editDeniedGroups: normalizeAccessList(row.edit_denied_groups || [])
+    ownerUser: normalizeAccessName(row.owner_user || row.ownerUser),
+    ownerGroups: normalizeAccessList(row.owner_groups || row.ownerGroups || []),
+    allowedUsers: normalizeAccessList(row.allowed_users || row.allowedUsers || []),
+    allowedGroups: normalizeAccessList(row.allowed_groups || row.allowedGroups || []),
+    deniedUsers: normalizeAccessList(row.denied_users || row.deniedUsers || []),
+    deniedGroups: normalizeAccessList(row.denied_groups || row.deniedGroups || []),
+    editAllowedUsers: normalizeAccessList(row.edit_allowed_users || row.editAllowedUsers || []),
+    editAllowedGroups: normalizeAccessList(row.edit_allowed_groups || row.editAllowedGroups || []),
+    editDeniedUsers: normalizeAccessList(row.edit_denied_users || row.editDeniedUsers || []),
+    editDeniedGroups: normalizeAccessList(row.edit_denied_groups || row.editDeniedGroups || []),
+    downloadAllowedUsers: normalizeAccessList(row.download_allowed_users || row.downloadAllowedUsers || []),
+    downloadAllowedGroups: normalizeAccessList(row.download_allowed_groups || row.downloadAllowedGroups || []),
+    downloadDeniedUsers: normalizeAccessList(row.download_denied_users || row.downloadDeniedUsers || []),
+    downloadDeniedGroups: normalizeAccessList(row.download_denied_groups || row.downloadDeniedGroups || [])
   };
 }
 
 function getTypeAccessSnapshot(row = {}) {
   return {
-    typeGroup: normalizeAssetTypeGroup(row.type_group),
+    typeGroup: normalizeAssetTypeGroup(row.type_group || row.typeGroup),
     visibility: normalizeVisibility(row.visibility, 'public'),
-    ownerGroups: normalizeAccessList(row.owner_groups || []),
-    allowedUsers: normalizeAccessList(row.allowed_users || []),
-    allowedGroups: normalizeAccessList(row.allowed_groups || []),
-    deniedUsers: normalizeAccessList(row.denied_users || []),
-    deniedGroups: normalizeAccessList(row.denied_groups || []),
-    editAllowedUsers: normalizeAccessList(row.edit_allowed_users || []),
-    editAllowedGroups: normalizeAccessList(row.edit_allowed_groups || []),
-    editDeniedUsers: normalizeAccessList(row.edit_denied_users || []),
-    editDeniedGroups: normalizeAccessList(row.edit_denied_groups || []),
+    ownerGroups: normalizeAccessList(row.owner_groups || row.ownerGroups || []),
+    allowedUsers: normalizeAccessList(row.allowed_users || row.allowedUsers || []),
+    allowedGroups: normalizeAccessList(row.allowed_groups || row.allowedGroups || []),
+    deniedUsers: normalizeAccessList(row.denied_users || row.deniedUsers || []),
+    deniedGroups: normalizeAccessList(row.denied_groups || row.deniedGroups || []),
+    editAllowedUsers: normalizeAccessList(row.edit_allowed_users || row.editAllowedUsers || []),
+    editAllowedGroups: normalizeAccessList(row.edit_allowed_groups || row.editAllowedGroups || []),
+    editDeniedUsers: normalizeAccessList(row.edit_denied_users || row.editDeniedUsers || []),
+    editDeniedGroups: normalizeAccessList(row.edit_denied_groups || row.editDeniedGroups || []),
+    downloadAllowedUsers: normalizeAccessList(row.download_allowed_users || row.downloadAllowedUsers || []),
+    downloadAllowedGroups: normalizeAccessList(row.download_allowed_groups || row.downloadAllowedGroups || []),
+    downloadDeniedUsers: normalizeAccessList(row.download_denied_users || row.downloadDeniedUsers || []),
+    downloadDeniedGroups: normalizeAccessList(row.download_denied_groups || row.downloadDeniedGroups || []),
+    uploadAllowedUsers: normalizeAccessList(row.upload_allowed_users || row.uploadAllowedUsers || []),
+    uploadAllowedGroups: normalizeAccessList(row.upload_allowed_groups || row.uploadAllowedGroups || []),
+    uploadDeniedUsers: normalizeAccessList(row.upload_denied_users || row.uploadDeniedUsers || []),
+    uploadDeniedGroups: normalizeAccessList(row.upload_denied_groups || row.uploadDeniedGroups || []),
     updatedAt: row.updated_at || null,
     updatedBy: String(row.updated_by || '')
   };
@@ -169,7 +181,12 @@ function createAssetAccessService({ pool }) {
 
   async function getGroupAdminGroupsForUser(user = {}) {
     const identity = getUserAccessIdentity(user);
-    if (!identity.identifiers.length) return [];
+    const principals = Array.from(new Set([
+      ...(identity.identifiers || []),
+      ...(identity.groups || []),
+      ...(identity.roles || [])
+    ].filter(Boolean)));
+    if (!principals.length) return [];
     const result = await pool.query(
       `
         SELECT group_name
@@ -177,7 +194,7 @@ function createAssetAccessService({ pool }) {
         WHERE username = ANY($1::text[])
         ORDER BY group_name ASC
       `,
-      [identity.identifiers]
+      [principals]
     );
     return normalizeAccessList(result.rows.map((row) => row.group_name));
   }
@@ -194,8 +211,48 @@ function createAssetAccessService({ pool }) {
       accessIdentity: identity,
       groupAdminGroups,
       assetTypeAccessRules,
-      canManageAllAssetVisibility: Boolean(user.isSuperAdmin)
+      canManageAllAssetVisibility: Boolean(user.isSuperAdmin || user.canAccessAdmin)
     };
+  }
+
+  function hasScopedAssetRightsAdminAccess(context = {}) {
+    return normalizeAccessList(context.groupAdminGroups || []).length > 0;
+  }
+
+  function appendExplicitAssetTypeEditConditions(conditions, values, context, alias = 'assets') {
+    const rules = Array.isArray(context?.assetTypeAccessRules) ? context.assetTypeAccessRules : [];
+    if (!rules.length) return;
+    const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
+    const identifiers = identity.identifiers || [];
+    const groups = identity.groups || [];
+
+    rules.forEach((rule) => {
+      const typeSql = buildAssetTypeGroupSql(rule.typeGroup, alias);
+      if (identifiers.length && rule.editAllowedUsers.length) {
+        values.push(identifiers);
+        const identityIdx = values.length;
+        values.push(rule.editAllowedUsers);
+        const allowedIdx = values.length;
+        let condition = `(${typeSql} AND $${identityIdx}::text[] && $${allowedIdx}::text[]`;
+        if (rule.editDeniedUsers.length) {
+          values.push(rule.editDeniedUsers);
+          condition += ` AND NOT ($${identityIdx}::text[] && $${values.length}::text[])`;
+        }
+        conditions.push(`${condition})`);
+      }
+      if (groups.length && rule.editAllowedGroups.length) {
+        values.push(groups);
+        const identityIdx = values.length;
+        values.push(rule.editAllowedGroups);
+        const allowedIdx = values.length;
+        let condition = `(${typeSql} AND $${identityIdx}::text[] && $${allowedIdx}::text[]`;
+        if (rule.editDeniedGroups.length) {
+          values.push(rule.editDeniedGroups);
+          condition += ` AND NOT ($${identityIdx}::text[] && $${values.length}::text[])`;
+        }
+        conditions.push(`${condition})`);
+      }
+    });
   }
 
   function appendAssetAccessWhere(where, values, context, alias = 'assets') {
@@ -230,6 +287,7 @@ function createAssetAccessService({ pool }) {
       conditions.push(`${alias}.allowed_groups && $${idx}::text[]`);
       conditions.push(`${alias}.edit_allowed_groups && $${idx}::text[]`);
     }
+    appendExplicitAssetTypeEditConditions(conditions, values, context, alias);
 
     where.push(`(${conditions.join(' OR ')})`);
   }
@@ -299,7 +357,15 @@ function createAssetAccessService({ pool }) {
       editAllowedUsers: [],
       editAllowedGroups: [],
       editDeniedUsers: [],
-      editDeniedGroups: []
+      editDeniedGroups: [],
+      downloadAllowedUsers: [],
+      downloadAllowedGroups: [],
+      downloadDeniedUsers: [],
+      downloadDeniedGroups: [],
+      uploadAllowedUsers: [],
+      uploadAllowedGroups: [],
+      uploadDeniedUsers: [],
+      uploadDeniedGroups: []
     };
   }
 
@@ -323,6 +389,13 @@ function createAssetAccessService({ pool }) {
     return rule.visibility === 'public' || canViewAssetType(row, context);
   }
 
+  function hasExplicitAssetTypeEditGrant(row, context) {
+    const rule = getTypeRuleForAsset(row, context);
+    const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
+    if (identityMatchesAny(identity, rule.editDeniedUsers, rule.editDeniedGroups)) return false;
+    return identityMatchesAny(identity, rule.editAllowedUsers, rule.editAllowedGroups);
+  }
+
   function getAllowedAssetTypeGroups(context = {}) {
     if (context?.canManageAllAssetVisibility) return [...ASSET_TYPE_GROUPS];
     return ASSET_TYPE_GROUPS.filter((typeGroup) => {
@@ -340,12 +413,34 @@ function createAssetAccessService({ pool }) {
     return getAllowedAssetTypeGroups(context).includes(typeGroup);
   }
 
+  function canUploadAssetType(input = {}, context = {}) {
+    if (context?.canManageAllAssetVisibility) return true;
+    const typeGroup = normalizeAssetTypeGroup(input.typeGroup);
+    const row = {
+      type: typeGroup || input.type || input.declaredType,
+      mime_type: input.mimeType || input.mime_type,
+      file_name: input.fileName || input.file_name
+    };
+    const rule = getTypeRuleForAsset(row, context);
+    const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
+    if (identityMatchesAny(identity, rule.uploadDeniedUsers, rule.uploadDeniedGroups)) return false;
+    const hasExplicitUploadRules = Boolean(rule.uploadAllowedUsers.length || rule.uploadAllowedGroups.length);
+    if (!hasExplicitUploadRules) return canCreateAssetOfType(input, context);
+    return identityMatchesAny(identity, rule.uploadAllowedUsers, rule.uploadAllowedGroups);
+  }
+
+  function getAllowedUploadAssetTypeGroups(context = {}) {
+    if (context?.canManageAllAssetVisibility) return [...ASSET_TYPE_GROUPS];
+    return ASSET_TYPE_GROUPS.filter((typeGroup) => canUploadAssetType({ typeGroup }, context));
+  }
+
   function canViewAsset(row, context) {
     if (context?.canManageAllAssetVisibility) return true;
     const asset = getAssetAccessSnapshot(row);
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
     if (identityMatchesAny(identity, asset.deniedUsers, asset.deniedGroups)) return false;
     if (!canViewAssetType(row, context)) return false;
+    if (hasExplicitAssetTypeEditGrant(row, context)) return true;
     if (asset.visibility === 'public') return true;
     if (identity.identifiers.some((id) => id && (id === asset.ownerUser || asset.allowedUsers.includes(id)))) return true;
     if (identity.groups.some((group) => asset.ownerGroups.includes(group) || asset.allowedGroups.includes(group))) return true;
@@ -360,6 +455,69 @@ function createAssetAccessService({ pool }) {
     return managedGroups.some((group) => asset.ownerGroups.includes(group));
   }
 
+  function canManageAssetTypeAccess(row, context) {
+    if (context?.canManageAllAssetVisibility) return true;
+    const rule = getTypeAccessSnapshot(row);
+    const managedGroups = normalizeAccessList(context?.groupAdminGroups || []);
+    if (!managedGroups.length) return false;
+    const managedTypeGroups = new Set(
+      [
+        rule.ownerGroups,
+        rule.allowedGroups,
+        rule.deniedGroups,
+        rule.editAllowedGroups,
+        rule.editDeniedGroups,
+        rule.downloadAllowedGroups,
+        rule.downloadDeniedGroups,
+        rule.uploadAllowedGroups,
+        rule.uploadDeniedGroups
+      ].flat()
+    );
+    return managedGroups.some((group) => managedTypeGroups.has(group));
+  }
+
+  function appendManageableAssetAccessWhere(where, values, context, alias = 'assets') {
+    if (context?.canManageAllAssetVisibility) return;
+    const managedGroups = normalizeAccessList(context?.groupAdminGroups || []);
+    if (!managedGroups.length) {
+      where.push('FALSE');
+      return;
+    }
+    values.push(managedGroups);
+    where.push(`COALESCE(${alias}.owner_groups, '{}') && $${values.length}::text[]`);
+  }
+
+  function limitGroupsForScopedAdmin(values, context) {
+    const list = normalizeAccessList(values || []);
+    if (context?.canManageAllAssetVisibility) return list;
+    const managed = normalizeAccessList(context?.groupAdminGroups || []);
+    if (!managed.length) return [];
+    return list.filter((group) => managed.includes(group));
+  }
+
+  function canDownloadAsset(row, context) {
+    if (!canViewAsset(row, context)) return false;
+    if (context?.canManageAllAssetVisibility) return true;
+    const asset = getAssetAccessSnapshot(row);
+    const rule = getTypeRuleForAsset(row, context);
+    const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
+    if (identityMatchesAny(identity, asset.downloadDeniedUsers, asset.downloadDeniedGroups)) return false;
+    if (identityMatchesAny(identity, rule.downloadDeniedUsers, rule.downloadDeniedGroups)) return false;
+    const hasExplicitDownloadRules = Boolean(
+      asset.downloadAllowedUsers.length
+      || asset.downloadAllowedGroups.length
+      || rule.downloadAllowedUsers.length
+      || rule.downloadAllowedGroups.length
+    );
+    if (!hasExplicitDownloadRules) return true;
+    if (identity.identifiers.some((id) => id && id === asset.ownerUser)) return true;
+    if (identity.groups.some((group) => asset.ownerGroups.includes(group))) return true;
+    return Boolean(
+      identityMatchesAny(identity, asset.downloadAllowedUsers, asset.downloadAllowedGroups)
+      || identityMatchesAny(identity, rule.downloadAllowedUsers, rule.downloadAllowedGroups)
+    );
+  }
+
   function canEditAsset(row, context) {
     if (!canViewAsset(row, context)) return false;
     const asset = getAssetAccessSnapshot(row);
@@ -368,6 +526,7 @@ function createAssetAccessService({ pool }) {
     if (!canEditAssetType(row, context)) return false;
     if (context?.canManageAllAssetVisibility) return true;
     if (identityMatchesAny(identity, asset.editAllowedUsers, asset.editAllowedGroups)) return true;
+    if (hasExplicitAssetTypeEditGrant(row, context)) return true;
     return Boolean(context?.canEditMetadata || context?.canAccessAdmin);
   }
 
@@ -398,7 +557,11 @@ function createAssetAccessService({ pool }) {
       editAllowedUsers: normalizeAccessList(input.editAllowedUsers || input.edit_allowed_users || []),
       editAllowedGroups: normalizeAccessList(input.editAllowedGroups || input.edit_allowed_groups || []),
       editDeniedUsers: normalizeAccessList(input.editDeniedUsers || input.edit_denied_users || []),
-      editDeniedGroups: normalizeAccessList(input.editDeniedGroups || input.edit_denied_groups || [])
+      editDeniedGroups: normalizeAccessList(input.editDeniedGroups || input.edit_denied_groups || []),
+      downloadAllowedUsers: normalizeAccessList(input.downloadAllowedUsers || input.download_allowed_users || []),
+      downloadAllowedGroups: normalizeAccessList(input.downloadAllowedGroups || input.download_allowed_groups || []),
+      downloadDeniedUsers: normalizeAccessList(input.downloadDeniedUsers || input.download_denied_users || []),
+      downloadDeniedGroups: normalizeAccessList(input.downloadDeniedGroups || input.download_denied_groups || [])
     };
   }
 
@@ -409,52 +572,74 @@ function createAssetAccessService({ pool }) {
     if (!canManageAssetVisibility(row, context)) return { status: 403, error: 'Forbidden' };
 
     const current = getAssetAccessSnapshot(row);
+    const nextOwnerGroups = Object.prototype.hasOwnProperty.call(payload, 'ownerGroups')
+      ? limitGroupsForScopedAdmin(payload.ownerGroups, context)
+      : current.ownerGroups;
     const next = {
       visibility: normalizeVisibility(payload.visibility, current.visibility),
+      ownerGroups: nextOwnerGroups,
       allowedUsers: Object.prototype.hasOwnProperty.call(payload, 'allowedUsers')
         ? normalizeAccessList(payload.allowedUsers)
         : current.allowedUsers,
       allowedGroups: Object.prototype.hasOwnProperty.call(payload, 'allowedGroups')
-        ? normalizeAccessList(payload.allowedGroups)
+        ? limitGroupsForScopedAdmin(payload.allowedGroups, context)
         : current.allowedGroups,
       deniedUsers: Object.prototype.hasOwnProperty.call(payload, 'deniedUsers')
         ? normalizeAccessList(payload.deniedUsers)
         : current.deniedUsers,
       deniedGroups: Object.prototype.hasOwnProperty.call(payload, 'deniedGroups')
-        ? normalizeAccessList(payload.deniedGroups)
+        ? limitGroupsForScopedAdmin(payload.deniedGroups, context)
         : current.deniedGroups,
       editAllowedUsers: Object.prototype.hasOwnProperty.call(payload, 'editAllowedUsers')
         ? normalizeAccessList(payload.editAllowedUsers)
         : current.editAllowedUsers,
       editAllowedGroups: Object.prototype.hasOwnProperty.call(payload, 'editAllowedGroups')
-        ? normalizeAccessList(payload.editAllowedGroups)
+        ? limitGroupsForScopedAdmin(payload.editAllowedGroups, context)
         : current.editAllowedGroups,
       editDeniedUsers: Object.prototype.hasOwnProperty.call(payload, 'editDeniedUsers')
         ? normalizeAccessList(payload.editDeniedUsers)
         : current.editDeniedUsers,
       editDeniedGroups: Object.prototype.hasOwnProperty.call(payload, 'editDeniedGroups')
-        ? normalizeAccessList(payload.editDeniedGroups)
-        : current.editDeniedGroups
+        ? limitGroupsForScopedAdmin(payload.editDeniedGroups, context)
+        : current.editDeniedGroups,
+      downloadAllowedUsers: Object.prototype.hasOwnProperty.call(payload, 'downloadAllowedUsers')
+        ? normalizeAccessList(payload.downloadAllowedUsers)
+        : current.downloadAllowedUsers,
+      downloadAllowedGroups: Object.prototype.hasOwnProperty.call(payload, 'downloadAllowedGroups')
+        ? limitGroupsForScopedAdmin(payload.downloadAllowedGroups, context)
+        : current.downloadAllowedGroups,
+      downloadDeniedUsers: Object.prototype.hasOwnProperty.call(payload, 'downloadDeniedUsers')
+        ? normalizeAccessList(payload.downloadDeniedUsers)
+        : current.downloadDeniedUsers,
+      downloadDeniedGroups: Object.prototype.hasOwnProperty.call(payload, 'downloadDeniedGroups')
+        ? limitGroupsForScopedAdmin(payload.downloadDeniedGroups, context)
+        : current.downloadDeniedGroups
     };
     const updated = await pool.query(
       `
         UPDATE assets
         SET visibility = $2,
-            allowed_users = $3,
-            allowed_groups = $4,
-            denied_users = $5,
-            denied_groups = $6,
-            edit_allowed_users = $7,
-            edit_allowed_groups = $8,
-            edit_denied_users = $9,
-            edit_denied_groups = $10,
-            updated_at = $11
+            owner_groups = $3,
+            allowed_users = $4,
+            allowed_groups = $5,
+            denied_users = $6,
+            denied_groups = $7,
+            edit_allowed_users = $8,
+            edit_allowed_groups = $9,
+            edit_denied_users = $10,
+            edit_denied_groups = $11,
+            download_allowed_users = $12,
+            download_allowed_groups = $13,
+            download_denied_users = $14,
+            download_denied_groups = $15,
+            updated_at = $16
         WHERE id = $1
         RETURNING *
       `,
       [
         assetId,
         next.visibility,
+        next.ownerGroups,
         next.allowedUsers,
         next.allowedGroups,
         next.deniedUsers,
@@ -463,6 +648,10 @@ function createAssetAccessService({ pool }) {
         next.editAllowedGroups,
         next.editDeniedUsers,
         next.editDeniedGroups,
+        next.downloadAllowedUsers,
+        next.downloadAllowedGroups,
+        next.downloadDeniedUsers,
+        next.downloadDeniedGroups,
         new Date().toISOString()
       ]
     );
@@ -481,14 +670,20 @@ function createAssetAccessService({ pool }) {
     getAssetTypeGroup,
     buildAssetTypeGroupSql,
     getAllowedAssetTypeGroups,
+    getAllowedUploadAssetTypeGroups,
     canCreateAssetOfType,
+    canUploadAssetType,
     getGroupAdminGroupsForUser,
     resolveAccessContext,
     appendAssetAccessWhere,
+    appendManageableAssetAccessWhere,
+    hasScopedAssetRightsAdminAccess,
     canViewAsset,
     canEditAsset,
+    canDownloadAsset,
     canDeleteAsset,
     canManageAssetVisibility,
+    canManageAssetTypeAccess,
     buildNewAssetAccess,
     updateAssetVisibility
   };

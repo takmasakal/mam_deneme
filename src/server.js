@@ -4374,6 +4374,10 @@ function mapAssetRow(row) {
     editAllowedGroups: row.edit_allowed_groups || [],
     editDeniedUsers: row.edit_denied_users || [],
     editDeniedGroups: row.edit_denied_groups || [],
+    downloadAllowedUsers: row.download_allowed_users || [],
+    downloadAllowedGroups: row.download_allowed_groups || [],
+    downloadDeniedUsers: row.download_denied_users || [],
+    downloadDeniedGroups: row.download_denied_groups || [],
     dcMetadata,
     audioChannels: Number(dcMetadata.audioChannels) || 0,
     subtitleUrl: String(dcMetadata.subtitleUrl || '').trim(),
@@ -4468,6 +4472,10 @@ async function createAssetRecord(input) {
     editAllowedGroups: assetAccessService.normalizeAccessList(input.editAllowedGroups || input.edit_allowed_groups || []),
     editDeniedUsers: assetAccessService.normalizeAccessList(input.editDeniedUsers || input.edit_denied_users || []),
     editDeniedGroups: assetAccessService.normalizeAccessList(input.editDeniedGroups || input.edit_denied_groups || []),
+    downloadAllowedUsers: assetAccessService.normalizeAccessList(input.downloadAllowedUsers || input.download_allowed_users || []),
+    downloadAllowedGroups: assetAccessService.normalizeAccessList(input.downloadAllowedGroups || input.download_allowed_groups || []),
+    downloadDeniedUsers: assetAccessService.normalizeAccessList(input.downloadDeniedUsers || input.download_denied_users || []),
+    downloadDeniedGroups: assetAccessService.normalizeAccessList(input.downloadDeniedGroups || input.download_denied_groups || []),
     dcMetadata: {
       ...buildDefaultDcMetadata(input),
       ...sanitizeDcMetadata(input.dcMetadata)
@@ -4503,11 +4511,12 @@ async function createAssetRecord(input) {
           media_url, proxy_url, proxy_status, thumbnail_url, file_name, mime_type, dc_metadata, file_hash,
           visibility, owner_user, owner_groups, allowed_users, allowed_groups,
           denied_users, denied_groups, edit_allowed_users, edit_allowed_groups, edit_denied_users, edit_denied_groups,
+          download_allowed_users, download_allowed_groups, download_denied_users, download_denied_groups,
           status, created_at, updated_at
           , deleted_at
         ) VALUES (
           $1,$2,$3,$4,$5,$6,$7,$8,
-          $9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31
+          $9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35
         )
       `,
       [
@@ -4538,6 +4547,10 @@ async function createAssetRecord(input) {
         asset.editAllowedGroups,
         asset.editDeniedUsers,
         asset.editDeniedGroups,
+        asset.downloadAllowedUsers,
+        asset.downloadAllowedGroups,
+        asset.downloadDeniedUsers,
+        asset.downloadDeniedGroups,
         asset.status,
         asset.createdAt,
         asset.updatedAt,
@@ -7054,7 +7067,9 @@ function buildUserContextFromRequest(req) {
   const emailRaw =
     getHeaderString(req, 'x-forwarded-email') ||
     getHeaderString(req, 'x-auth-request-email');
-  const preferred = getHeaderString(req, 'x-forwarded-preferred-username');
+  const preferred =
+    getHeaderString(req, 'x-forwarded-preferred-username') ||
+    getHeaderString(req, 'x-auth-request-preferred-username');
   const groupsRaw =
     getHeaderString(req, 'x-forwarded-groups') ||
     getHeaderString(req, 'x-auth-request-groups');
@@ -7117,6 +7132,50 @@ function keycloakUserIdentityCandidates(user) {
     .filter(Boolean);
 }
 
+async function queryKeycloakUsersByCandidate(realm, candidate, token) {
+  const value = String(candidate || '').trim();
+  if (!realm || !value || !token) return [];
+  const realmEncoded = encodeURIComponent(realm);
+  const paramsList = [];
+  const addParams = (pairs) => {
+    const params = new URLSearchParams();
+    params.set('first', '0');
+    params.set('max', '5');
+    Object.entries(pairs || {}).forEach(([key, val]) => {
+      if (val != null && String(val).trim()) params.set(key, String(val).trim());
+    });
+    paramsList.push(params);
+  };
+
+  addParams({ username: value, exact: 'true' });
+  if (value.includes('@')) addParams({ email: value, exact: 'true' });
+  addParams({ search: value });
+
+  const rows = [];
+  const seen = new Set();
+  for (const params of paramsList) {
+    try {
+      const response = await fetch(`${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!response.ok) continue;
+      const payload = await response.json().catch(() => []);
+      (Array.isArray(payload) ? payload : []).forEach((row) => {
+        const id = String(row?.id || '').trim();
+        const username = String(row?.username || '').trim().toLowerCase();
+        const key = id || username;
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        rows.push(row);
+      });
+      if (rows.length) break;
+    } catch (_error) {
+      // Try next query shape.
+    }
+  }
+  return rows;
+}
+
 async function findKeycloakUserForIdentity(user) {
   const current = user && typeof user === 'object' ? user : {};
   const candidates = [
@@ -7129,16 +7188,21 @@ async function findKeycloakUserForIdentity(user) {
     .filter(Boolean);
   if (!candidates.length) return { user: null, realm: '' };
 
-  const { users, realmByUsername } = await fetchKeycloakUsers();
+  const token = await getKeycloakAdminAccessToken();
   const candidateKeys = new Set(candidates.map((value) => normalizeIdentityKey(value)).filter(Boolean));
-  const match = (Array.isArray(users) ? users : []).find((row) => (
-    keycloakUserIdentityCandidates(row).some((value) => candidateKeys.has(normalizeIdentityKey(value)))
-  ));
-  const username = String(match?.username || '').trim().toLowerCase();
-  return {
-    user: match || null,
-    realm: String(realmByUsername?.get(username) || '').trim()
-  };
+  if (token) {
+    for (const realm of getKeycloakCandidateRealms()) {
+      for (const candidate of candidates) {
+        const rows = await queryKeycloakUsersByCandidate(realm, candidate, token);
+        const match = rows.find((row) => (
+          keycloakUserIdentityCandidates(row).some((value) => candidateKeys.has(normalizeIdentityKey(value)))
+        ));
+        if (match) return { user: match, realm };
+      }
+    }
+  }
+
+  return { user: null, realm: '' };
 }
 
 async function enrichUserDisplayNameFromKeycloak(user) {
@@ -7460,17 +7524,23 @@ app.get('/api/me', async (req, res) => {
       groupAdminGroups: await assetAccessService.getGroupAdminGroupsForUser(effective).catch(() => []),
       isSuperAdmin: Boolean(effective.isSuperAdmin),
       isAdmin: effective.isAdmin,
-      canAccessAdmin: effective.canAccessAdmin,
-      canAccessTextAdmin: effective.canAccessTextAdmin,
-      canEditMetadata: effective.canEditMetadata,
+	      canAccessAdmin: effective.canAccessAdmin,
+	      canAccessTextAdmin: effective.canAccessTextAdmin,
+	      canAccessAssetRightsAdmin: Boolean(effective.canAccessAdmin || assetAccessService.hasScopedAssetRightsAdminAccess(accessContext)),
+	      canEditMetadata: effective.canEditMetadata,
       canEditOffice: effective.canEditOffice,
       canDeleteAssets: effective.canDeleteAssets,
-      canUsePdfAdvancedTools: effective.canUsePdfAdvancedTools,
-      allowedAssetTypes: assetAccessService.getAllowedAssetTypeGroups(accessContext),
-      officeEditorProvider: OFFICE_EDITOR_PROVIDER,
+	      canUsePdfAdvancedTools: effective.canUsePdfAdvancedTools,
+	      allowedAssetTypes: assetAccessService.getAllowedAssetTypeGroups(accessContext),
+	      uploadAllowedAssetTypes: assetAccessService.getAllowedUploadAssetTypeGroups(accessContext),
+	      officeEditorProvider: OFFICE_EDITOR_PROVIDER,
       permissionKeys: effective.permissionKeys
     });
   } catch (_error) {
+    console.warn(JSON.stringify({
+      event: 'api-me-error',
+      message: String(_error?.message || _error || 'Unknown error')
+    }));
     res.status(500).json({ error: 'Failed to resolve user profile' });
   }
 });
@@ -7886,9 +7956,33 @@ async function requireScopedAdminAccess(req, res, next) {
     /^\/subtitle-records(?:\/content)?$/,
     /^\/text-search$/
   ];
+  const assetRightsAdminPaths = [
+    /^\/assets\/access$/,
+    /^\/assets\/access-groups$/,
+    /^\/assets\/[^/]+\/access$/,
+    /^\/asset-types\/access$/,
+    /^\/asset-types\/[^/]+\/access$/
+  ];
   const safePath = String(req.path || '').trim();
   if (textAdminPaths.some((pattern) => pattern.test(safePath))) {
     return requireTextAdminAccess(req, res, next);
+  }
+  if (assetRightsAdminPaths.some((pattern) => pattern.test(safePath))) {
+    try {
+      const effective = await resolveEffectivePermissions(req);
+      if (effective.canAccessAdmin) {
+        req.userPermissions = effective;
+        return next();
+      }
+      const groupAdminGroups = await assetAccessService.getGroupAdminGroupsForUser(effective).catch(() => []);
+      if (Array.isArray(groupAdminGroups) && groupAdminGroups.length) {
+        req.userPermissions = effective;
+        return next();
+      }
+      return res.status(403).json({ error: 'Forbidden' });
+    } catch (_error) {
+      return res.status(500).json({ error: 'Failed to verify admin permissions' });
+    }
   }
   return requireAdminAccess(req, res, next);
 }
