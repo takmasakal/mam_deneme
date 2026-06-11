@@ -48,7 +48,7 @@ function thumbnailMarkup(asset) {
     return '<div class="asset-thumb asset-thumb-file">FILE</div>';
   }
   if (isImage(asset)) {
-    return `<img class="asset-thumb" src="${escapeHtml(asset.thumbnailUrl || asset.mediaUrl || '')}" alt="${escapeHtml(asset.title)}" />`;
+    return `<img class="asset-thumb" src="${escapeHtml(asset.thumbnailUrl || asset.proxyUrl || asset.mediaUrl || '')}" alt="${escapeHtml(asset.title)}" />`;
   }
   if (isVideo(asset)) {
     if (thumbSrc) {

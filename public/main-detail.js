@@ -49,9 +49,11 @@
       const assetIsPdf = String(asset?.mimeType || '').toLowerCase().includes('pdf');
       const assetIsOffice = isOfficeDocument(asset);
       const canEditThisAsset = Boolean(asset?.canEditAsset);
+      const canDownloadThisAsset = asset?.canDownloadAsset !== false;
       return {
         assetIsPdf,
         assetIsOffice,
+        canDownloadAsset: canDownloadThisAsset,
         canViewVersions: Boolean(
           assetIsPdf
             ? (currentUserCanUsePdfAdvancedTools() || canEditThisAsset)
@@ -86,7 +88,7 @@
         actionType,
         canRestorePdf: Boolean(access.canManageVersions && access.assetIsPdf && hasSnapshot),
         canRestoreOffice: Boolean(access.canManageVersions && access.assetIsOffice && hasSnapshot),
-        canDownloadVersion: hasSnapshot,
+        canDownloadVersion: Boolean(hasSnapshot && access.canDownloadAsset),
         canEditVersion: canEditOrDelete,
         canDeleteVersion: canEditOrDelete
       };
@@ -194,8 +196,8 @@
         ${dcHighlightSnippet(asset, currentSearchHighlightQuery(), searchHighlightClass) ? `<div class="asset-meta dc-hit-row">${dcHighlightSnippet(asset, currentSearchHighlightQuery(), searchHighlightClass)}</div>` : ''}
         ${tagsMarkup}
         <div class="timecode-bar">
-          ${asset.mediaUrl ? `<button type="button" id="downloadAssetBtn">${t('download_asset')}</button>` : ''}
-          ${currentUserCanAccessAdmin() && isVideo(asset) && asset.proxyUrl ? `<button type="button" id="downloadProxyBtn">${t('download_proxy')}</button>` : ''}
+          ${asset.mediaUrl && asset.canDownloadAsset !== false ? `<button type="button" id="downloadAssetBtn">${t('download_asset')}</button>` : ''}
+          ${currentUserCanAccessAdmin() && asset.canDownloadAsset !== false && isVideo(asset) && asset.proxyUrl ? `<button type="button" id="downloadProxyBtn">${t('download_proxy')}</button>` : ''}
           ${canDeleteAsset(asset) && !asset.inTrash ? `<button type="button" id="moveToTrashBtn" class="danger">${t('delete_asset')}</button>` : ''}
           ${canDeleteAsset(asset) && asset.inTrash ? `<button type="button" id="restoreAssetBtn">${t('restore')}</button><button type="button" id="deleteAssetBtn" class="danger">${t('delete_permanent')}</button>` : ''}
         </div>
@@ -254,7 +256,8 @@
         ${(
           currentUserCanAccessAdmin()
           && currentUserCanUsePdfAdvancedTools()
-          && assetIsPdf
+	          && asset.canDownloadAsset !== false
+	          && assetIsPdf
         ) ? `
           <div class="timecode-bar" style="margin: 0 0 8px 0;">
             <button type="button" id="restorePdfOriginalBtn">${escapeHtml(t('restore_pdf_original'))}</button>
@@ -263,7 +266,8 @@
         ` : ''}
         ${(
           (currentUserCanEditOffice() || asset.canEditAsset)
-          && assetIsOffice
+	          && asset.canDownloadAsset !== false
+	          && assetIsOffice
         ) ? `
           <div class="timecode-bar" style="margin: 0 0 8px 0;">
             <button type="button" id="restoreOfficeOriginalBtn">${escapeHtml(t('restore_office_original'))}</button>

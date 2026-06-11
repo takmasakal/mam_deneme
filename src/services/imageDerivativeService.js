@@ -20,10 +20,27 @@ function createImageDerivativeService(deps) {
   }
 
   async function generateHeicPreview(inputPath, outputPath) {
-    const result = await runCommandCapture('heif-convert', [inputPath, outputPath]);
-    if (!result.ok || !fs.existsSync(outputPath) || fs.statSync(outputPath).size <= 0) {
+    const heifResult = await runCommandCapture('heif-convert', [inputPath, outputPath]);
+    if (heifResult.ok && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+      return;
+    }
+
+    const ffmpegResult = await runCommandCapture('ffmpeg', [
+      '-y',
+      '-i',
+      inputPath,
+      '-frames:v',
+      '1',
+      '-q:v',
+      '2',
+      outputPath
+    ]);
+    if (!ffmpegResult.ok || !fs.existsSync(outputPath) || fs.statSync(outputPath).size <= 0) {
       throw new Error(
-        compactCommandOutput(result.stderr || result.stdout || 'HEIC preview generation failed')
+        compactCommandOutput([
+          heifResult.stderr || heifResult.stdout || 'heif-convert failed',
+          ffmpegResult.stderr || ffmpegResult.stdout || 'ffmpeg HEIC fallback failed'
+        ].join('\n'))
       );
     }
   }
@@ -64,7 +81,14 @@ function createImageDerivativeService(deps) {
 
     const thumbStoredName = `${Date.now()}-${nanoid()}-image-thumb.jpg`;
     const thumbOut = buildArtifactPath('thumbnails', thumbStoredName, createdAt);
-    await generateImageThumbnail(previewOut.absolutePath, thumbOut.absolutePath);
+    try {
+      await generateImageThumbnail(previewOut.absolutePath, thumbOut.absolutePath);
+    } catch (_error) {
+      return {
+        proxyUrl: previewOut.publicUrl,
+        thumbnailUrl: previewOut.publicUrl
+      };
+    }
 
     return {
       proxyUrl: previewOut.publicUrl,

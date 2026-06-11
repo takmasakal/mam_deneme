@@ -385,6 +385,9 @@ app.post('/api/assets/:id/pdf-restore-original', requireAdminAccess, async (req,
     const loaded = await loadVisibleAssetRow(req, assetId);
     if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
     const currentRow = loaded.row;
+    if (!assetAccessService.canDownloadAsset(currentRow, loaded.accessContext)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     if (!isPdfCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
       return res.status(400).json({ error: 'PDF restore is only supported for PDF assets' });
     }

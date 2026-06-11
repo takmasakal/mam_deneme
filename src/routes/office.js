@@ -177,7 +177,7 @@ function registerOfficeRoutes(app, deps) {
       const loaded = await loadVisibleAssetRow(req, assetId);
       if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
       const currentRow = loaded.row;
-      if (!assetAccessService.canEditAsset(currentRow, loaded.accessContext)) {
+      if (!assetAccessService.canDownloadAsset(currentRow, loaded.accessContext)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
       if (assetEditLockService) {

@@ -35,23 +35,28 @@
     return INGEST_TYPE_VALUE_BY_GROUP[allowedTypes[0]] || '';
   }
 
-  function applyAssetTypeScope({ allowedAssetTypes = null, ingestForm = null, assetTypeFilters = [] } = {}) {
+  function applyAssetTypeScope({ allowedAssetTypes = null, uploadAllowedAssetTypes = null, ingestForm = null, assetTypeFilters = [] } = {}) {
     const hasExplicitAllowedTypes = Array.isArray(allowedAssetTypes);
     const normalizedAllowed = normalizeAllowedAssetTypes(allowedAssetTypes);
     const allowedTypes = hasExplicitAllowedTypes
       ? new Set(normalizedAllowed)
       : null;
+    const hasExplicitUploadAllowedTypes = Array.isArray(uploadAllowedAssetTypes);
+    const normalizedUploadAllowed = normalizeAllowedAssetTypes(uploadAllowedAssetTypes);
+    const uploadAllowedTypes = hasExplicitUploadAllowedTypes
+      ? new Set(normalizedUploadAllowed)
+      : allowedTypes;
     const typeSelect = ingestForm?.querySelector?.('[name="type"]');
     if (typeSelect) {
       Array.from(typeSelect.options || []).forEach((option) => {
         const normalized = String(option.value || '').trim().toLowerCase();
-        const allowed = !allowedTypes || allowedTypes.has(normalized);
+        const allowed = !uploadAllowedTypes || uploadAllowedTypes.has(normalized);
         option.hidden = !allowed;
         option.disabled = !allowed;
       });
       const selected = String(typeSelect.value || '').trim().toLowerCase();
-      if (allowedTypes && !allowedTypes.has(selected)) {
-        typeSelect.value = getDefaultIngestType({ allowedAssetTypes: hasExplicitAllowedTypes ? normalizedAllowed : null });
+      if (uploadAllowedTypes && !uploadAllowedTypes.has(selected)) {
+        typeSelect.value = getDefaultIngestType({ allowedAssetTypes: hasExplicitUploadAllowedTypes ? normalizedUploadAllowed : null });
         typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
       }
     }
@@ -70,9 +75,11 @@
     const current = profile && typeof profile === 'object' ? profile : {};
     const canAccessAdmin = Boolean(current.canAccessAdmin || current.isAdmin);
     const canAccessTextAdmin = Boolean(current.canAccessTextAdmin || canAccessAdmin);
+    const canAccessAssetRightsAdmin = Boolean(current.canAccessAssetRightsAdmin || canAccessAdmin);
     const isSuperAdmin = Boolean(current.isSuperAdmin || current.baseIsSuperAdmin);
-    const isTextOnly = canAccessTextAdmin && !canAccessAdmin;
-    return { canAccessAdmin, canAccessTextAdmin, isSuperAdmin, isTextOnly };
+    const isTextOnly = canAccessTextAdmin && !canAccessAdmin && !canAccessAssetRightsAdmin;
+    const isAssetRightsOnly = canAccessAssetRightsAdmin && !canAccessAdmin && !canAccessTextAdmin;
+    return { canAccessAdmin, canAccessTextAdmin, canAccessAssetRightsAdmin, isSuperAdmin, isTextOnly, isAssetRightsOnly };
   }
 
   function setTabVisibility(items = [], tabKey, dataAttr, visible) {
@@ -91,7 +98,7 @@
 
   function canShowAdminMenu(profile = {}) {
     const access = getAdminAccessMode(profile);
-    return access.canAccessAdmin || access.canAccessTextAdmin;
+    return access.canAccessAdmin || access.canAccessTextAdmin || access.canAccessAssetRightsAdmin;
   }
 
   function applyAdminAccessMode({
@@ -105,13 +112,14 @@
     switchSettingsSubtab = null
   } = {}) {
     const access = getAdminAccessMode(profile);
+    const canShowFullAdminPanels = !access.isTextOnly && !access.isAssetRightsOnly;
     const visibleMainTabs = {
-      apiHelp: !access.isTextOnly,
-      systemHealth: !access.isTextOnly,
-      runtimeDiagnostics: !access.isTextOnly,
-      auditEvents: !access.isTextOnly,
-      assetRights: !access.isTextOnly,
-      settings: true
+      apiHelp: canShowFullAdminPanels,
+      systemHealth: canShowFullAdminPanels,
+      runtimeDiagnostics: canShowFullAdminPanels,
+      auditEvents: canShowFullAdminPanels,
+      assetRights: !access.isTextOnly || access.canAccessAssetRightsAdmin,
+      settings: !access.isAssetRightsOnly
     };
     Object.entries(visibleMainTabs).forEach(([tabName, visible]) => {
       setTabVisibility(adminTabs, tabName, 'tab', visible);
@@ -144,6 +152,8 @@
     if (access.isTextOnly) {
       if (typeof switchTab === 'function') switchTab('settings');
       if (typeof switchSettingsSubtab === 'function') switchSettingsSubtab('ocr');
+    } else if (access.isAssetRightsOnly) {
+      if (typeof switchTab === 'function') switchTab('assetRights');
     }
 
     return access;

@@ -50,10 +50,12 @@ const LOCAL_LANG = 'mam.lang';
 const LOCAL_VIDEO_TOOLS_ORDER = 'mam.video.tools.order';
 const LOCAL_ASSET_VIEW_MODE = 'mam.assets.view.mode';
 const LOCAL_DETAIL_VIDEO_PIN = 'mam.detail.video.pin';
+const LOCAL_PERMISSION_REFRESH = 'mam.permissions.updated';
 const I18N_PATH = '/i18n.json';
 const FALLBACK_LOGOUT_URL = '/oauth2/sign_out?rd=%2Foauth2%2Fstart%3Frd%3D%252F';
 const LOGOUT_URL_TIMEOUT_MS = 1200;
 const DETAIL_PANEL_BASE_MIN_PX = 377;
+const USER_PERMISSION_REFRESH_INTERVAL_MS = 30000;
 const PLAYER_FPS = 25;
 const PANELS = [
   { id: 'panelIngest', defaultSize: 1 },
@@ -89,7 +91,10 @@ let currentOfficeEditorProvider = 'none';
 let currentUsername = '';
 let currentUserGroups = [];
 let currentUserRoles = [];
-let currentUserAllowedAssetTypes = [];
+let currentUserAllowedAssetTypes = null;
+let currentUserUploadAllowedAssetTypes = null;
+let currentUserPermissionSignature = '';
+let currentUserRefreshInFlight = null;
 let searchSuggestModule = null;
 const selectedAssetIds = new Set();
 let lastSelectedAssetId = null;
@@ -243,6 +248,7 @@ let i18n = {
     app_title: 'MAM Console',
     app_subtitle: 'Dalet-style MVP: ingest, metadata, versions',
     current_user: 'Current User',
+    user_loading: 'Loading...',
     unknown_user: 'Unknown user',
     logout: 'Logout',
     language_label: 'Language',
@@ -577,6 +583,7 @@ let i18n = {
     app_title: 'MAM Konsolu',
     app_subtitle: 'Dalet benzeri MVP: ingest, metadata, iş akışı, versiyonlar',
     current_user: 'Giriş yapan',
+    user_loading: 'Yükleniyor...',
     unknown_user: 'Bilinmeyen kullanıcı',
     logout: 'Çıkış Yap',
     language_label: 'Dil',
@@ -1148,7 +1155,7 @@ function applyStaticI18n() {
     if (key) el.setAttribute('aria-label', t(key));
   });
   if (currentUserBtn && !currentUserBtn.dataset.value) {
-    currentUserBtn.textContent = t('unknown_user');
+    currentUserBtn.textContent = t('user_loading');
   }
   if (assetViewThumbBtn) {
     assetViewThumbBtn.removeAttribute('title');
@@ -1170,19 +1177,40 @@ function applyAssetViewModeUI() {
 }
 
 function getDefaultIngestType() {
-  return accessScopeModule.getDefaultIngestType({ allowedAssetTypes: currentUserAllowedAssetTypes });
+  return accessScopeModule.getDefaultIngestType({ allowedAssetTypes: currentUserUploadAllowedAssetTypes });
 }
 
 function applyCurrentUserAssetTypeScope() {
   accessScopeModule.applyAssetTypeScope({
     allowedAssetTypes: currentUserAllowedAssetTypes,
+    uploadAllowedAssetTypes: currentUserUploadAllowedAssetTypes,
     ingestForm,
     assetTypeFilters
   });
 }
 
-async function loadCurrentUser() {
-  if (!currentUserBtn) return;
+function buildCurrentUserPermissionSignature() {
+  return JSON.stringify({
+    username: currentUsername,
+    canAccessAdmin: currentUserCanAccessAdmin,
+    canEditMetadata: currentUserCanEditMetadata,
+    canEditOffice: currentUserCanEditOffice,
+    canDeleteAssets: currentUserCanDeleteAssets,
+    canUsePdfAdvancedTools: currentUserCanUsePdfAdvancedTools,
+    officeEditorProvider: currentOfficeEditorProvider,
+    allowedAssetTypes: currentUserAllowedAssetTypes,
+    uploadAllowedAssetTypes: currentUserUploadAllowedAssetTypes
+  });
+}
+
+async function loadCurrentUser(options = {}) {
+  if (!currentUserBtn) return false;
+  const detectChanges = Boolean(options.detectChanges);
+  const previousSignature = currentUserPermissionSignature || buildCurrentUserPermissionSignature();
+  if (!detectChanges && !currentUserBtn.dataset.value) {
+    currentUserBtn.textContent = t('user_loading');
+    currentUserBtn.title = t('user_loading');
+  }
   try {
     const me = await api('/api/me');
     const username = String(me.username || '').trim();
@@ -1197,6 +1225,7 @@ async function loadCurrentUser() {
     currentUserGroups = Array.isArray(me.groups) ? me.groups : [];
     currentUserRoles = Array.isArray(me.roles) ? me.roles : [];
     currentUserAllowedAssetTypes = accessScopeModule.normalizeAllowedAssetTypes(me.allowedAssetTypes || []);
+    currentUserUploadAllowedAssetTypes = accessScopeModule.normalizeAllowedAssetTypes(me.uploadAllowedAssetTypes || me.allowedAssetTypes || []);
     currentUserCanAccessAdmin = canAccessAdmin;
     currentUserCanEditMetadata = canEditMetadata;
     currentUserCanEditOffice = canEditOffice;
@@ -1214,6 +1243,8 @@ async function loadCurrentUser() {
       adminMenuLink.classList.toggle('hidden', !accessScopeModule.canShowAdminMenu(me));
     }
     applyCurrentUserAssetTypeScope();
+    currentUserPermissionSignature = buildCurrentUserPermissionSignature();
+    return Boolean(detectChanges && previousSignature && currentUserPermissionSignature !== previousSignature);
   } catch (_error) {
     currentUserCanAccessAdmin = false;
     currentUserCanEditMetadata = false;
@@ -1223,12 +1254,35 @@ async function loadCurrentUser() {
     currentOfficeEditorProvider = 'none';
     currentUserGroups = [];
     currentUserRoles = [];
-    currentUserAllowedAssetTypes = [];
+    currentUserAllowedAssetTypes = null;
+    currentUserUploadAllowedAssetTypes = null;
     currentUserBtn.dataset.value = '';
     currentUserBtn.textContent = t('unknown_user');
     currentUserBtn.title = t('unknown_user');
     if (adminMenuLink) adminMenuLink.classList.add('hidden');
     applyCurrentUserAssetTypeScope();
+    currentUserPermissionSignature = buildCurrentUserPermissionSignature();
+    return Boolean(detectChanges && previousSignature && currentUserPermissionSignature !== previousSignature);
+  }
+}
+
+async function refreshCurrentUserPermissions(options = {}) {
+  if (currentUserRefreshInFlight) return currentUserRefreshInFlight;
+  currentUserRefreshInFlight = (async () => {
+    const changed = await loadCurrentUser({ detectChanges: true });
+    if (!changed || !options.refreshOpenAsset || !selectedAssetId) return changed;
+    try {
+      const workflow = await loadWorkflow();
+      await openAsset(selectedAssetId, workflow);
+    } catch (_error) {
+      // Best effort permission UI refresh.
+    }
+    return changed;
+  })();
+  try {
+    return await currentUserRefreshInFlight;
+  } finally {
+    currentUserRefreshInFlight = null;
   }
 }
 
@@ -1694,6 +1748,13 @@ function renderAssets(assets) {
   return assetBrowserModule.renderAssets(assets);
 }
 
+function updateAssetSelectionUi() {
+  assetGrid.querySelectorAll('.asset-card').forEach((card) => {
+    const id = String(card.dataset?.id || '').trim();
+    card.classList.toggle('selected', Boolean(id && selectedAssetIds.has(id)));
+  });
+}
+
 function setSingleSelection(assetId) {
   return assetBrowserModule.setSingleSelection(assetId);
 }
@@ -2056,7 +2117,7 @@ async function openAsset(id, workflow, options = {}) {
   selectedAssetId = id;
   selectedAssetIds.add(id);
   lastSelectedAssetId = id;
-  renderAssets(currentAssets);
+  updateAssetSelectionUi();
 
   if (activePlayerCleanup) {
     activePlayerCleanup();
@@ -2242,7 +2303,7 @@ async function openAsset(id, workflow, options = {}) {
 
   const downloadPdfOriginalBtn = document.getElementById('downloadPdfOriginalBtn');
   downloadPdfOriginalBtn?.addEventListener('click', () => {
-    if (!currentUserCanAccessAdmin || !currentUserCanUsePdfAdvancedTools) return;
+    if (!currentUserCanAccessAdmin || !currentUserCanUsePdfAdvancedTools || asset.canDownloadAsset === false) return;
     const link = document.createElement('a');
     link.href = `/api/assets/${encodeURIComponent(id)}/pdf-original/download`;
     link.setAttribute('download', '');
@@ -2263,7 +2324,7 @@ async function openAsset(id, workflow, options = {}) {
 
   const downloadOfficeOriginalBtn = document.getElementById('downloadOfficeOriginalBtn');
   downloadOfficeOriginalBtn?.addEventListener('click', () => {
-    if (!currentUserCanEditOffice && !asset.canEditAsset) return;
+    if (asset.canDownloadAsset === false || (!currentUserCanEditOffice && !asset.canEditAsset)) return;
     const link = document.createElement('a');
     link.href = `/api/assets/${encodeURIComponent(id)}/office-original/download`;
     link.setAttribute('download', '');
@@ -2389,7 +2450,7 @@ async function openAsset(id, workflow, options = {}) {
       event.preventDefault();
       event.stopPropagation();
       const versionId = String(event.currentTarget?.dataset?.versionId || '').trim();
-      if (!versionId) return;
+      if (!versionId || asset.canDownloadAsset === false) return;
       const link = document.createElement('a');
       link.href = `/api/assets/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/download`;
       link.setAttribute('download', '');
@@ -2436,11 +2497,13 @@ async function openAsset(id, workflow, options = {}) {
   const deleteAssetBtn = document.getElementById('deleteAssetBtn');
 
   downloadBtn?.addEventListener('click', () => {
+    if (asset.canDownloadAsset === false) return;
     // Varlık indir her zaman asıl kaynağı indirir; proxy bunun yerine geçmez.
     openDownloadInNewTab(asset.mediaUrl);
   });
 
   downloadProxyBtn?.addEventListener('click', () => {
+    if (asset.canDownloadAsset === false) return;
     // Proxy indirme yalnızca admin için ek bir kolaylık olarak sunuluyor.
     openDownloadInNewTab(asset.proxyUrl);
   });
@@ -2807,6 +2870,21 @@ logoutBtn?.addEventListener('click', async () => {
   }
 });
 
+function startCurrentUserPermissionRefresh() {
+  window.addEventListener('storage', (event) => {
+    if (event.key !== LOCAL_PERMISSION_REFRESH) return;
+    refreshCurrentUserPermissions({ refreshOpenAsset: true }).catch(() => {});
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    refreshCurrentUserPermissions().catch(() => {});
+  });
+  window.setInterval(() => {
+    if (document.visibilityState === 'hidden') return;
+    refreshCurrentUserPermissions().catch(() => {});
+  }, USER_PERMISSION_REFRESH_INTERVAL_MS);
+}
+
 (async () => {
   try {
     await loadI18nFile();
@@ -2835,6 +2913,7 @@ logoutBtn?.addEventListener('click', async () => {
     initPanelSplitters();
     updateClearSearchButtonState();
     await loadCurrentUser();
+    startCurrentUserPermissionRefresh();
     const workflow = await loadWorkflow();
     applyAssetViewModeUI();
     await loadAssets();

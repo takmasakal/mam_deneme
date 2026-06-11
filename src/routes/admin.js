@@ -107,12 +107,54 @@ function registerAdminRoutes(app, deps) {
 app.use('/api/admin', requireScopedAdminAccess);
 
 async function requireSuperAdminRequest(req, res) {
-  const effective = await resolveEffectivePermissions(req);
+	    const effective = await resolveEffectivePermissions(req);
   if (!effective?.isSuperAdmin) {
     res.status(403).json({ error: 'Super admin permission is required' });
     return null;
   }
-  return effective;
+	  return effective;
+	}
+
+async function requireAssetRightsAdminRequest(req, res) {
+  const context = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+  if (!context?.canManageAllAssetVisibility && !assetAccessService.hasScopedAssetRightsAdminAccess(context)) {
+    res.status(403).json({ error: 'Admin permission is required' });
+    return null;
+  }
+  return context;
+}
+
+function mapTypeAccessPayload(row) {
+  return {
+    typeGroup: row.typeGroup,
+    visibility: row.visibility || 'public',
+    ownerGroups: row.ownerGroups || [],
+    allowedUsers: row.allowedUsers || [],
+    allowedGroups: row.allowedGroups || [],
+    deniedUsers: row.deniedUsers || [],
+    deniedGroups: row.deniedGroups || [],
+    editAllowedUsers: row.editAllowedUsers || [],
+    editAllowedGroups: row.editAllowedGroups || [],
+    editDeniedUsers: row.editDeniedUsers || [],
+    editDeniedGroups: row.editDeniedGroups || [],
+    downloadAllowedUsers: row.downloadAllowedUsers || [],
+    downloadAllowedGroups: row.downloadAllowedGroups || [],
+    downloadDeniedUsers: row.downloadDeniedUsers || [],
+    downloadDeniedGroups: row.downloadDeniedGroups || [],
+    uploadAllowedUsers: row.uploadAllowedUsers || [],
+    uploadAllowedGroups: row.uploadAllowedGroups || [],
+    uploadDeniedUsers: row.uploadDeniedUsers || [],
+    uploadDeniedGroups: row.uploadDeniedGroups || [],
+    updatedAt: row.updatedAt,
+    updatedBy: row.updatedBy || ''
+  };
+}
+
+function limitGroupsForAssetRightsAdmin(values, context) {
+  const list = assetAccessService.normalizeAccessList(values || []);
+  if (context?.canManageAllAssetVisibility) return list;
+  const managed = assetAccessService.normalizeAccessList(context?.groupAdminGroups || []);
+  return list.filter((group) => managed.includes(group));
 }
 
 async function requireFullAdminRequest(req, res) {
@@ -132,9 +174,23 @@ async function collectMamAccessGroups() {
         SELECT unnest(owner_groups) AS group_name FROM assets WHERE cardinality(owner_groups) > 0
         UNION ALL
         SELECT unnest(allowed_groups) AS group_name FROM assets WHERE cardinality(allowed_groups) > 0
-        UNION ALL
-        SELECT group_name FROM group_admins
-      ) groups
+	        UNION ALL
+	        SELECT group_name FROM group_admins
+	        UNION ALL
+	        SELECT unnest(download_allowed_groups) AS group_name FROM assets WHERE cardinality(download_allowed_groups) > 0
+	        UNION ALL
+	        SELECT unnest(download_denied_groups) AS group_name FROM assets WHERE cardinality(download_denied_groups) > 0
+	        UNION ALL
+	        SELECT unnest(owner_groups) AS group_name FROM asset_type_access WHERE cardinality(owner_groups) > 0
+	        UNION ALL
+	        SELECT unnest(allowed_groups) AS group_name FROM asset_type_access WHERE cardinality(allowed_groups) > 0
+	        UNION ALL
+	        SELECT unnest(edit_allowed_groups) AS group_name FROM asset_type_access WHERE cardinality(edit_allowed_groups) > 0
+	        UNION ALL
+	        SELECT unnest(download_allowed_groups) AS group_name FROM asset_type_access WHERE cardinality(download_allowed_groups) > 0
+	        UNION ALL
+	        SELECT unnest(upload_allowed_groups) AS group_name FROM asset_type_access WHERE cardinality(upload_allowed_groups) > 0
+	      ) groups
       WHERE group_name IS NOT NULL AND group_name <> ''
       ORDER BY group_name ASC
     `
@@ -350,15 +406,18 @@ app.get('/api/admin/assets/access', async (req, res) => {
       values.push(visibility);
       where.push(`COALESCE(visibility, 'public') = $${values.length}`);
     }
-    if (lockedOnly) {
+	    if (lockedOnly) {
       where.push(`EXISTS (
         SELECT 1
         FROM asset_edit_locks
         WHERE asset_edit_locks.asset_id = assets.id
           AND asset_edit_locks.expires_at > NOW()
       )`);
-    }
-    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+	    }
+	    const accessContext = await requireAssetRightsAdminRequest(req, res);
+	    if (!accessContext) return null;
+	    assetAccessService.appendManageableAssetAccessWhere(where, values, accessContext, 'assets');
+	    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const countResult = await pool.query(`SELECT COUNT(*)::int AS total FROM assets ${whereSql}`, values);
     const total = Number(countResult.rows?.[0]?.total || 0);
     const totalPages = Math.max(1, Math.ceil(total / limit));
@@ -369,9 +428,10 @@ app.get('/api/admin/assets/access', async (req, res) => {
       `
         SELECT
           assets.id, assets.title, assets.file_name, assets.owner, assets.type, assets.visibility, assets.owner_user, assets.owner_groups,
-          assets.allowed_users, assets.allowed_groups, assets.denied_users, assets.denied_groups,
-          assets.edit_allowed_users, assets.edit_allowed_groups, assets.edit_denied_users, assets.edit_denied_groups,
-          assets.updated_at,
+	          assets.allowed_users, assets.allowed_groups, assets.denied_users, assets.denied_groups,
+	          assets.edit_allowed_users, assets.edit_allowed_groups, assets.edit_denied_users, assets.edit_denied_groups,
+	          assets.download_allowed_users, assets.download_allowed_groups, assets.download_denied_users, assets.download_denied_groups,
+	          assets.updated_at,
           asset_edit_locks.locked_by,
           asset_edit_locks.locked_by_name,
           asset_edit_locks.purpose AS lock_purpose,
@@ -402,10 +462,14 @@ app.get('/api/admin/assets/access', async (req, res) => {
         allowedGroups: row.allowed_groups || [],
         deniedUsers: row.denied_users || [],
         deniedGroups: row.denied_groups || [],
-        editAllowedUsers: row.edit_allowed_users || [],
-        editAllowedGroups: row.edit_allowed_groups || [],
-        editDeniedUsers: row.edit_denied_users || [],
-        editDeniedGroups: row.edit_denied_groups || [],
+	        editAllowedUsers: row.edit_allowed_users || [],
+	        editAllowedGroups: row.edit_allowed_groups || [],
+	        editDeniedUsers: row.edit_denied_users || [],
+	        editDeniedGroups: row.edit_denied_groups || [],
+	        downloadAllowedUsers: row.download_allowed_users || [],
+	        downloadAllowedGroups: row.download_allowed_groups || [],
+	        downloadDeniedUsers: row.download_denied_users || [],
+	        downloadDeniedGroups: row.download_denied_groups || [],
         editLock: row.locked_by ? {
           lockedBy: row.locked_by || '',
           lockedByName: row.locked_by_name || row.locked_by || '',
@@ -422,10 +486,23 @@ app.get('/api/admin/assets/access', async (req, res) => {
   }
 });
 
+app.get('/api/admin/assets/access-groups', async (req, res) => {
+  try {
+    const accessContext = await requireAssetRightsAdminRequest(req, res);
+    if (!accessContext) return null;
+    const groupNames = accessContext.canManageAllAssetVisibility
+      ? await collectMamAccessGroups()
+      : assetAccessService.normalizeAccessList(accessContext.groupAdminGroups || []);
+    return res.json({ groups: groupNames.map((name) => ({ name, path: `/${name}` })), mamGroups: groupNames });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load asset access groups' });
+  }
+});
+
 app.delete('/api/admin/assets/:id/edit-lock', async (req, res) => {
   try {
-    const effective = await requireSuperAdminRequest(req, res);
-    if (!effective) return null;
+	    const effective = await requireAssetRightsAdminRequest(req, res);
+	    if (!effective) return null;
     if (!assetEditLockService) return res.status(503).json({ error: 'Edit lock service is not available' });
     const assetId = String(req.params.id || '').trim();
     if (!assetId) return res.status(400).json({ error: 'assetId is required' });
@@ -473,10 +550,14 @@ app.patch('/api/admin/assets/:id/access', async (req, res) => {
         allowedGroups: result.row.allowed_groups || [],
         deniedUsers: result.row.denied_users || [],
         deniedGroups: result.row.denied_groups || [],
-        editAllowedUsers: result.row.edit_allowed_users || [],
-        editAllowedGroups: result.row.edit_allowed_groups || [],
-        editDeniedUsers: result.row.edit_denied_users || [],
-        editDeniedGroups: result.row.edit_denied_groups || []
+	        editAllowedUsers: result.row.edit_allowed_users || [],
+	        editAllowedGroups: result.row.edit_allowed_groups || [],
+	        editDeniedUsers: result.row.edit_denied_users || [],
+	        editDeniedGroups: result.row.edit_denied_groups || [],
+	        downloadAllowedUsers: result.row.download_allowed_users || [],
+	        downloadAllowedGroups: result.row.download_allowed_groups || [],
+	        downloadDeniedUsers: result.row.download_denied_users || [],
+	        downloadDeniedGroups: result.row.download_denied_groups || []
       }
     });
     return res.json({
@@ -490,38 +571,31 @@ app.patch('/api/admin/assets/:id/access', async (req, res) => {
         allowedGroups: result.row.allowed_groups || [],
         deniedUsers: result.row.denied_users || [],
         deniedGroups: result.row.denied_groups || [],
-        editAllowedUsers: result.row.edit_allowed_users || [],
-        editAllowedGroups: result.row.edit_allowed_groups || [],
-        editDeniedUsers: result.row.edit_denied_users || [],
-        editDeniedGroups: result.row.edit_denied_groups || []
-      }
-    });
+	        editAllowedUsers: result.row.edit_allowed_users || [],
+	        editAllowedGroups: result.row.edit_allowed_groups || [],
+	        editDeniedUsers: result.row.edit_denied_users || [],
+	        editDeniedGroups: result.row.edit_denied_groups || [],
+	        downloadAllowedUsers: result.row.download_allowed_users || [],
+	        downloadAllowedGroups: result.row.download_allowed_groups || [],
+	        downloadDeniedUsers: result.row.download_denied_users || [],
+	        downloadDeniedGroups: result.row.download_denied_groups || []
+	      }
+	    });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to update asset access' });
   }
 });
 
-app.get('/api/admin/asset-types/access', async (_req, res) => {
-  try {
-    const rows = await assetAccessService.getAssetTypeAccessRows();
-    return res.json({
-      types: rows.map((row) => ({
-        typeGroup: row.typeGroup,
-        visibility: row.visibility || 'public',
-        ownerGroups: row.ownerGroups || [],
-        allowedUsers: row.allowedUsers || [],
-        allowedGroups: row.allowedGroups || [],
-        deniedUsers: row.deniedUsers || [],
-        deniedGroups: row.deniedGroups || [],
-        editAllowedUsers: row.editAllowedUsers || [],
-        editAllowedGroups: row.editAllowedGroups || [],
-        editDeniedUsers: row.editDeniedUsers || [],
-        editDeniedGroups: row.editDeniedGroups || [],
-        updatedAt: row.updatedAt,
-        updatedBy: row.updatedBy || ''
-      })),
-      pagination: { page: 1, limit: 5, total: rows.length, totalPages: 1 }
-    });
+	app.get('/api/admin/asset-types/access', async (req, res) => {
+	  try {
+	    const accessContext = await requireAssetRightsAdminRequest(req, res);
+	    if (!accessContext) return null;
+	    const rows = (await assetAccessService.getAssetTypeAccessRows())
+	      .filter((row) => assetAccessService.canManageAssetTypeAccess(row, accessContext));
+	    return res.json({
+	      types: rows.map(mapTypeAccessPayload),
+	      pagination: { page: 1, limit: 5, total: rows.length, totalPages: 1 }
+	    });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to load asset type access rows' });
   }
@@ -529,33 +603,49 @@ app.get('/api/admin/asset-types/access', async (_req, res) => {
 
 app.patch('/api/admin/asset-types/:typeGroup/access', async (req, res) => {
   try {
-    const effective = await requireSuperAdminRequest(req, res);
-    if (!effective) return null;
-    const typeGroup = assetAccessService.normalizeAssetTypeGroup(req.params.typeGroup || '');
-    if (!typeGroup) return res.status(400).json({ error: 'Invalid asset type group' });
-    const payload = req.body || {};
-    const actor = String(effective.displayName || effective.username || '').trim();
-    const next = {
-      visibility: assetAccessService.normalizeVisibility(payload.visibility, 'public'),
-      ownerGroups: assetAccessService.normalizeAccessList(payload.ownerGroups),
-      allowedUsers: assetAccessService.normalizeAccessList(payload.allowedUsers),
-      allowedGroups: assetAccessService.normalizeAccessList(payload.allowedGroups),
-      deniedUsers: assetAccessService.normalizeAccessList(payload.deniedUsers),
-      deniedGroups: assetAccessService.normalizeAccessList(payload.deniedGroups),
-      editAllowedUsers: assetAccessService.normalizeAccessList(payload.editAllowedUsers),
-      editAllowedGroups: assetAccessService.normalizeAccessList(payload.editAllowedGroups),
-      editDeniedUsers: assetAccessService.normalizeAccessList(payload.editDeniedUsers),
-      editDeniedGroups: assetAccessService.normalizeAccessList(payload.editDeniedGroups)
-    };
-    const result = await pool.query(
+	    const effective = await requireAssetRightsAdminRequest(req, res);
+	    if (!effective) return null;
+	    const typeGroup = assetAccessService.normalizeAssetTypeGroup(req.params.typeGroup || '');
+	    if (!typeGroup) return res.status(400).json({ error: 'Invalid asset type group' });
+	    const currentRows = await assetAccessService.getAssetTypeAccessRows();
+	    const currentRow = currentRows.find((row) => row.typeGroup === typeGroup);
+	    if (!currentRow || !assetAccessService.canManageAssetTypeAccess(currentRow, effective)) {
+	      return res.status(403).json({ error: 'Forbidden' });
+	    }
+	    const payload = req.body || {};
+	    const actor = String(effective.displayName || effective.username || '').trim();
+	    const next = {
+	      visibility: assetAccessService.normalizeVisibility(payload.visibility, 'public'),
+	      ownerGroups: limitGroupsForAssetRightsAdmin(payload.ownerGroups, effective),
+	      allowedUsers: assetAccessService.normalizeAccessList(payload.allowedUsers),
+	      allowedGroups: limitGroupsForAssetRightsAdmin(payload.allowedGroups, effective),
+	      deniedUsers: assetAccessService.normalizeAccessList(payload.deniedUsers),
+	      deniedGroups: limitGroupsForAssetRightsAdmin(payload.deniedGroups, effective),
+	      editAllowedUsers: assetAccessService.normalizeAccessList(payload.editAllowedUsers),
+	      editAllowedGroups: limitGroupsForAssetRightsAdmin(payload.editAllowedGroups, effective),
+	      editDeniedUsers: assetAccessService.normalizeAccessList(payload.editDeniedUsers),
+	      editDeniedGroups: limitGroupsForAssetRightsAdmin(payload.editDeniedGroups, effective),
+	      downloadAllowedUsers: assetAccessService.normalizeAccessList(payload.downloadAllowedUsers),
+	      downloadAllowedGroups: limitGroupsForAssetRightsAdmin(payload.downloadAllowedGroups, effective),
+	      downloadDeniedUsers: assetAccessService.normalizeAccessList(payload.downloadDeniedUsers),
+	      downloadDeniedGroups: limitGroupsForAssetRightsAdmin(payload.downloadDeniedGroups, effective),
+	      uploadAllowedUsers: assetAccessService.normalizeAccessList(payload.uploadAllowedUsers),
+	      uploadAllowedGroups: limitGroupsForAssetRightsAdmin(payload.uploadAllowedGroups, effective),
+	      uploadDeniedUsers: assetAccessService.normalizeAccessList(payload.uploadDeniedUsers),
+	      uploadDeniedGroups: limitGroupsForAssetRightsAdmin(payload.uploadDeniedGroups, effective)
+	    };
+	    const result = await pool.query(
       `
         INSERT INTO asset_type_access (
-          type_group, visibility, owner_groups, allowed_users, allowed_groups,
-          denied_users, denied_groups, edit_allowed_users, edit_allowed_groups,
-          edit_denied_users, edit_denied_groups, updated_at, updated_by
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-        ON CONFLICT (type_group) DO UPDATE
+	          type_group, visibility, owner_groups, allowed_users, allowed_groups,
+	          denied_users, denied_groups, edit_allowed_users, edit_allowed_groups,
+	          edit_denied_users, edit_denied_groups,
+	          download_allowed_users, download_allowed_groups, download_denied_users, download_denied_groups,
+	          upload_allowed_users, upload_allowed_groups, upload_denied_users, upload_denied_groups,
+	          updated_at, updated_by
+	        )
+	        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+	        ON CONFLICT (type_group) DO UPDATE
         SET visibility = EXCLUDED.visibility,
             owner_groups = EXCLUDED.owner_groups,
             allowed_users = EXCLUDED.allowed_users,
@@ -563,10 +653,18 @@ app.patch('/api/admin/asset-types/:typeGroup/access', async (req, res) => {
             denied_users = EXCLUDED.denied_users,
             denied_groups = EXCLUDED.denied_groups,
             edit_allowed_users = EXCLUDED.edit_allowed_users,
-            edit_allowed_groups = EXCLUDED.edit_allowed_groups,
-            edit_denied_users = EXCLUDED.edit_denied_users,
-            edit_denied_groups = EXCLUDED.edit_denied_groups,
-            updated_at = EXCLUDED.updated_at,
+	            edit_allowed_groups = EXCLUDED.edit_allowed_groups,
+	            edit_denied_users = EXCLUDED.edit_denied_users,
+	            edit_denied_groups = EXCLUDED.edit_denied_groups,
+	            download_allowed_users = EXCLUDED.download_allowed_users,
+	            download_allowed_groups = EXCLUDED.download_allowed_groups,
+	            download_denied_users = EXCLUDED.download_denied_users,
+	            download_denied_groups = EXCLUDED.download_denied_groups,
+	            upload_allowed_users = EXCLUDED.upload_allowed_users,
+	            upload_allowed_groups = EXCLUDED.upload_allowed_groups,
+	            upload_denied_users = EXCLUDED.upload_denied_users,
+	            upload_denied_groups = EXCLUDED.upload_denied_groups,
+	            updated_at = EXCLUDED.updated_at,
             updated_by = EXCLUDED.updated_by
         RETURNING *
       `,
@@ -579,11 +677,19 @@ app.patch('/api/admin/asset-types/:typeGroup/access', async (req, res) => {
         next.deniedUsers,
         next.deniedGroups,
         next.editAllowedUsers,
-        next.editAllowedGroups,
-        next.editDeniedUsers,
-        next.editDeniedGroups,
-        new Date().toISOString(),
-        actor
+	        next.editAllowedGroups,
+	        next.editDeniedUsers,
+	        next.editDeniedGroups,
+	        next.downloadAllowedUsers,
+	        next.downloadAllowedGroups,
+	        next.downloadDeniedUsers,
+	        next.downloadDeniedGroups,
+	        next.uploadAllowedUsers,
+	        next.uploadAllowedGroups,
+	        next.uploadDeniedUsers,
+	        next.uploadDeniedGroups,
+	        new Date().toISOString(),
+	        actor
       ]
     );
     await recordAuditEvent?.(req, {
@@ -594,7 +700,7 @@ app.patch('/api/admin/asset-types/:typeGroup/access', async (req, res) => {
       details: { source: 'admin_rights_panel', ...next }
     });
     const row = assetAccessService.getTypeAccessSnapshot(result.rows[0]);
-    return res.json({ type: row });
+	    return res.json({ type: mapTypeAccessPayload(row) });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to update asset type access' });
   }

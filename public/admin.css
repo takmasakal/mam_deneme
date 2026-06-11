@@ -1926,8 +1926,8 @@ body {
 }
 
 .asset-rights-table {
-  width: 1860px;
-  min-width: 1860px;
+  width: 2440px;
+  min-width: 2440px;
   border: 0;
   border-radius: 0;
   overflow: visible;
@@ -1941,10 +1941,25 @@ body {
     220px
     120px
     150px
-    repeat(8, 145px)
+    repeat(12, 145px)
     92px;
   gap: 4px;
   align-items: center;
+}
+
+.asset-rights-table--type {
+  width: 3020px;
+  min-width: 3020px;
+}
+
+.asset-rights-table--type .asset-rights-table-head,
+.asset-rights-table--type .asset-rights-row {
+  grid-template-columns:
+    220px
+    120px
+    150px
+    repeat(16, 145px)
+    92px;
 }
 
 .asset-rights-table-head > :first-child,

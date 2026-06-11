@@ -35,6 +35,36 @@
     let allUserPermissionUsers = [];
     let userPermissionsPage = 1;
     let userPermissionsPagination = { page: 1, limit: 20, total: 0, totalPages: 1 };
+    let userPermissionsMsgTimer = null;
+
+    function setUserPermissionsMessage(message, options = {}) {
+      if (!userPermissionsMsg) return;
+      const text = String(message || '');
+      userPermissionsMsg.textContent = text;
+      if (userPermissionsMsgTimer) {
+        clearTimeout(userPermissionsMsgTimer);
+        userPermissionsMsgTimer = null;
+      }
+      if (!text || !options.autoClear) return;
+      const timeoutMs = Math.max(800, Number(options.timeoutMs || 3200));
+      userPermissionsMsgTimer = setTimeout(() => {
+        if (userPermissionsMsg && userPermissionsMsg.textContent === text) {
+          userPermissionsMsg.textContent = '';
+        }
+        userPermissionsMsgTimer = null;
+      }, timeoutMs);
+    }
+
+    function notifyUserPermissionChange(username) {
+      try {
+        localStorage.setItem('mam.permissions.updated', JSON.stringify({
+          username: String(username || '').trim().toLowerCase(),
+          at: Date.now()
+        }));
+      } catch (_error) {
+        // Best effort cross-tab permission refresh signal.
+      }
+    }
 
     function getUserPermissionSearchQuery() {
       return String(userPermissionsSearchInput?.value || '').trim().toLowerCase();
@@ -133,11 +163,20 @@
               permissionKeys.includes(definition.key)
             ])
           );
-          await api(`/api/admin/user-permissions/${encodeURIComponent(username)}`, {
-            method: 'PATCH',
-            body: JSON.stringify({ permissionKeys, ...legacyFlags })
-          });
-          if (userPermissionsMsg) userPermissionsMsg.textContent = t('user_permissions_saved');
+          btn.disabled = true;
+          try {
+            await api(`/api/admin/user-permissions/${encodeURIComponent(username)}`, {
+              method: 'PATCH',
+              body: JSON.stringify({ permissionKeys, ...legacyFlags })
+            });
+            notifyUserPermissionChange(username);
+            await loadUserPermissions();
+            setUserPermissionsMessage(t('user_permissions_saved'), { autoClear: true });
+          } catch (error) {
+            setUserPermissionsMessage(String(error.message || 'Request failed'));
+          } finally {
+            btn.disabled = false;
+          }
         });
       });
     }
@@ -161,28 +200,28 @@
     userPermissionsSearchInput?.addEventListener('input', () => {
       userPermissionsPage = 1;
       loadUserPermissions().catch((error) => {
-        if (userPermissionsMsg) userPermissionsMsg.textContent = String(error.message || 'Request failed');
+        setUserPermissionsMessage(String(error.message || 'Request failed'));
       });
     });
 
     userPermissionsPageSize?.addEventListener('change', () => {
       userPermissionsPage = 1;
       loadUserPermissions().catch((error) => {
-        if (userPermissionsMsg) userPermissionsMsg.textContent = String(error.message || 'Request failed');
+        setUserPermissionsMessage(String(error.message || 'Request failed'));
       });
     });
 
     userPermissionsPrevPage?.addEventListener('click', () => {
       userPermissionsPage = Math.max(1, userPermissionsPage - 1);
       loadUserPermissions().catch((error) => {
-        if (userPermissionsMsg) userPermissionsMsg.textContent = String(error.message || 'Request failed');
+        setUserPermissionsMessage(String(error.message || 'Request failed'));
       });
     });
 
     userPermissionsNextPage?.addEventListener('click', () => {
       userPermissionsPage += 1;
       loadUserPermissions().catch((error) => {
-        if (userPermissionsMsg) userPermissionsMsg.textContent = String(error.message || 'Request failed');
+        setUserPermissionsMessage(String(error.message || 'Request failed'));
       });
     });
 

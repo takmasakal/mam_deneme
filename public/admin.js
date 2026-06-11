@@ -2113,7 +2113,7 @@ function collectIdentityGroupNames(result = {}) {
 
 async function loadAssetRightsGroupNames() {
   if (Array.isArray(assetRightsGroupNamesCache)) return assetRightsGroupNamesCache;
-  const result = await api('/api/admin/identity/overview');
+  const result = await api('/api/admin/assets/access-groups');
   assetRightsGroupNamesCache = collectIdentityGroupNames(result);
   return assetRightsGroupNamesCache;
 }
@@ -2692,6 +2692,14 @@ const ASSET_RIGHTS_TABLE_LABELS = {
     editAllowedUsers: 'Editable users',
     editDeniedGroups: 'Edit denied groups',
     editDeniedUsers: 'Edit denied users',
+    downloadAllowedGroups: 'Download groups',
+    downloadAllowedUsers: 'Download users',
+    downloadDeniedGroups: 'Download denied groups',
+    downloadDeniedUsers: 'Download denied users',
+    uploadAllowedGroups: 'Upload groups',
+    uploadAllowedUsers: 'Upload users',
+    uploadDeniedGroups: 'Upload denied groups',
+    uploadDeniedUsers: 'Upload denied users',
     lockedItems: 'Locked',
     empty: 'No asset found.',
     save: 'Save',
@@ -2715,6 +2723,14 @@ const ASSET_RIGHTS_TABLE_LABELS = {
     editAllowedUsers: 'Değiştirebilen kullanıcılar',
     editDeniedGroups: 'Değiştiremeyen gruplar',
     editDeniedUsers: 'Değiştiremeyen kullanıcılar',
+    downloadAllowedGroups: 'İndirebilen gruplar',
+    downloadAllowedUsers: 'İndirebilen kullanıcılar',
+    downloadDeniedGroups: 'İndiremeyen gruplar',
+    downloadDeniedUsers: 'İndiremeyen kullanıcılar',
+    uploadAllowedGroups: 'Yükleyebilen gruplar',
+    uploadAllowedUsers: 'Yükleyebilen kullanıcılar',
+    uploadDeniedGroups: 'Yükleyemeyen gruplar',
+    uploadDeniedUsers: 'Yükleyemeyen kullanıcılar',
     lockedItems: 'Kilitliler',
     empty: 'Varlık bulunamadı.',
     save: 'Kaydet',
@@ -2821,6 +2837,16 @@ function renderAssetRightsHeader(labels) {
       <span data-asset-rights-label="editAllowedUsers">${escapeHtml(labels.editAllowedUsers)}</span>
       <span data-asset-rights-label="editDeniedGroups">${escapeHtml(labels.editDeniedGroups)}</span>
       <span data-asset-rights-label="editDeniedUsers">${escapeHtml(labels.editDeniedUsers)}</span>
+      <span data-asset-rights-label="downloadAllowedGroups">${escapeHtml(labels.downloadAllowedGroups)}</span>
+      <span data-asset-rights-label="downloadAllowedUsers">${escapeHtml(labels.downloadAllowedUsers)}</span>
+      <span data-asset-rights-label="downloadDeniedGroups">${escapeHtml(labels.downloadDeniedGroups)}</span>
+      <span data-asset-rights-label="downloadDeniedUsers">${escapeHtml(labels.downloadDeniedUsers)}</span>
+      ${assetRightsMode === 'type' ? `
+        <span data-asset-rights-label="uploadAllowedGroups">${escapeHtml(labels.uploadAllowedGroups)}</span>
+        <span data-asset-rights-label="uploadAllowedUsers">${escapeHtml(labels.uploadAllowedUsers)}</span>
+        <span data-asset-rights-label="uploadDeniedGroups">${escapeHtml(labels.uploadDeniedGroups)}</span>
+        <span data-asset-rights-label="uploadDeniedUsers">${escapeHtml(labels.uploadDeniedUsers)}</span>
+      ` : ''}
       <label class="asset-rights-locked-filter">
         <input id="assetRightsLockedOnlyCheck" type="checkbox" ${assetRightsLockedOnly ? 'checked' : ''} ${assetRightsMode === 'type' ? 'disabled' : ''} />
         <span data-asset-rights-locked-label>${escapeHtml(labels.lockedItems)}</span>
@@ -2843,7 +2869,7 @@ function renderAssetRightsRows(assets = []) {
   };
   const header = renderAssetRightsHeader(labels);
   if (!list.length) {
-    assetRightsRows.innerHTML = `<div class="asset-rights-table">${header}<div class="empty asset-rights-empty-row" data-asset-rights-empty="true">${escapeHtml(labels.empty)}</div></div>`;
+    assetRightsRows.innerHTML = `<div class="asset-rights-table asset-rights-table--${escapeHtml(assetRightsMode === 'type' ? 'type' : 'asset')}">${header}<div class="empty asset-rights-empty-row" data-asset-rights-empty="true">${escapeHtml(labels.empty)}</div></div>`;
     syncAssetRightsTableLanguage();
     return;
   }
@@ -2863,6 +2889,14 @@ function renderAssetRightsRows(assets = []) {
     const editAllowedUsers = Array.isArray(asset.editAllowedUsers) ? asset.editAllowedUsers.join(', ') : '';
     const editDeniedGroups = Array.isArray(asset.editDeniedGroups) ? asset.editDeniedGroups.join(', ') : '';
     const editDeniedUsers = Array.isArray(asset.editDeniedUsers) ? asset.editDeniedUsers.join(', ') : '';
+    const downloadAllowedGroups = Array.isArray(asset.downloadAllowedGroups) ? asset.downloadAllowedGroups.join(', ') : '';
+    const downloadAllowedUsers = Array.isArray(asset.downloadAllowedUsers) ? asset.downloadAllowedUsers.join(', ') : '';
+    const downloadDeniedGroups = Array.isArray(asset.downloadDeniedGroups) ? asset.downloadDeniedGroups.join(', ') : '';
+    const downloadDeniedUsers = Array.isArray(asset.downloadDeniedUsers) ? asset.downloadDeniedUsers.join(', ') : '';
+    const uploadAllowedGroups = Array.isArray(asset.uploadAllowedGroups) ? asset.uploadAllowedGroups.join(', ') : '';
+    const uploadAllowedUsers = Array.isArray(asset.uploadAllowedUsers) ? asset.uploadAllowedUsers.join(', ') : '';
+    const uploadDeniedGroups = Array.isArray(asset.uploadDeniedGroups) ? asset.uploadDeniedGroups.join(', ') : '';
+    const uploadDeniedUsers = Array.isArray(asset.uploadDeniedUsers) ? asset.uploadDeniedUsers.join(', ') : '';
     const title = isTypeMode ? getAssetTypeGroupLabel(asset.typeGroup) : (asset.title || asset.id || '');
     const meta = isTypeMode ? labels.type : [asset.type || '-', asset.owner || '-'].filter(Boolean).join(' · ');
     const lock = !isTypeMode && asset.editLock && typeof asset.editLock === 'object' ? asset.editLock : null;
@@ -2919,6 +2953,40 @@ function renderAssetRightsRows(assets = []) {
           <span data-asset-rights-label="editDeniedUsers">${escapeHtml(labels.editDeniedUsers)}</span>
           <input name="editDeniedUsers" value="${escapeHtml(editDeniedUsers)}" placeholder="user@example.com" />
         </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="downloadAllowedGroups" data-label="${escapeHtml(labels.downloadAllowedGroups)}">
+          <span data-asset-rights-label="downloadAllowedGroups">${escapeHtml(labels.downloadAllowedGroups)}</span>
+          <input name="downloadAllowedGroups" value="${escapeHtml(downloadAllowedGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="downloadAllowedUsers" data-label="${escapeHtml(labels.downloadAllowedUsers)}">
+          <span data-asset-rights-label="downloadAllowedUsers">${escapeHtml(labels.downloadAllowedUsers)}</span>
+          <input name="downloadAllowedUsers" value="${escapeHtml(downloadAllowedUsers)}" placeholder="user@example.com" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="downloadDeniedGroups" data-label="${escapeHtml(labels.downloadDeniedGroups)}">
+          <span data-asset-rights-label="downloadDeniedGroups">${escapeHtml(labels.downloadDeniedGroups)}</span>
+          <input name="downloadDeniedGroups" value="${escapeHtml(downloadDeniedGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="downloadDeniedUsers" data-label="${escapeHtml(labels.downloadDeniedUsers)}">
+          <span data-asset-rights-label="downloadDeniedUsers">${escapeHtml(labels.downloadDeniedUsers)}</span>
+          <input name="downloadDeniedUsers" value="${escapeHtml(downloadDeniedUsers)}" placeholder="user@example.com" />
+        </label>
+        ${isTypeMode ? `
+          <label class="asset-rights-cell" data-asset-rights-cell-label="uploadAllowedGroups" data-label="${escapeHtml(labels.uploadAllowedGroups)}">
+            <span data-asset-rights-label="uploadAllowedGroups">${escapeHtml(labels.uploadAllowedGroups)}</span>
+            <input name="uploadAllowedGroups" value="${escapeHtml(uploadAllowedGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />
+          </label>
+          <label class="asset-rights-cell" data-asset-rights-cell-label="uploadAllowedUsers" data-label="${escapeHtml(labels.uploadAllowedUsers)}">
+            <span data-asset-rights-label="uploadAllowedUsers">${escapeHtml(labels.uploadAllowedUsers)}</span>
+            <input name="uploadAllowedUsers" value="${escapeHtml(uploadAllowedUsers)}" placeholder="user@example.com" />
+          </label>
+          <label class="asset-rights-cell" data-asset-rights-cell-label="uploadDeniedGroups" data-label="${escapeHtml(labels.uploadDeniedGroups)}">
+            <span data-asset-rights-label="uploadDeniedGroups">${escapeHtml(labels.uploadDeniedGroups)}</span>
+            <input name="uploadDeniedGroups" value="${escapeHtml(uploadDeniedGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />
+          </label>
+          <label class="asset-rights-cell" data-asset-rights-cell-label="uploadDeniedUsers" data-label="${escapeHtml(labels.uploadDeniedUsers)}">
+            <span data-asset-rights-label="uploadDeniedUsers">${escapeHtml(labels.uploadDeniedUsers)}</span>
+            <input name="uploadDeniedUsers" value="${escapeHtml(uploadDeniedUsers)}" placeholder="user@example.com" />
+          </label>
+        ` : ''}
         <div class="asset-rights-actions">
           ${lock ? `<button type="button" class="asset-lock-unlock-btn" data-unlock-asset-id="${escapeHtml(asset.id || '')}">${escapeHtml(t('asset_lock_unlock'))}</button>` : ''}
           <button type="submit" data-asset-rights-label="save">${escapeHtml(labels.save)}</button>
@@ -2927,7 +2995,7 @@ function renderAssetRightsRows(assets = []) {
     `;
   }).join('');
 
-  assetRightsRows.innerHTML = `<div class="asset-rights-table">${header}${rows}</div>`;
+  assetRightsRows.innerHTML = `<div class="asset-rights-table asset-rights-table--${escapeHtml(assetRightsMode === 'type' ? 'type' : 'asset')}">${header}${rows}</div>`;
   syncAssetRightsTableLanguage();
 }
 
@@ -3862,8 +3930,18 @@ assetRightsRows?.addEventListener('submit', async (event) => {
       editAllowedGroups: parseAccessList(data.get('editAllowedGroups')),
       editAllowedUsers: parseAccessList(data.get('editAllowedUsers')),
       editDeniedGroups: parseAccessList(data.get('editDeniedGroups')),
-      editDeniedUsers: parseAccessList(data.get('editDeniedUsers'))
+      editDeniedUsers: parseAccessList(data.get('editDeniedUsers')),
+      downloadAllowedGroups: parseAccessList(data.get('downloadAllowedGroups')),
+      downloadAllowedUsers: parseAccessList(data.get('downloadAllowedUsers')),
+      downloadDeniedGroups: parseAccessList(data.get('downloadDeniedGroups')),
+      downloadDeniedUsers: parseAccessList(data.get('downloadDeniedUsers'))
     };
+    if (accessMode === 'type') {
+      payload.uploadAllowedGroups = parseAccessList(data.get('uploadAllowedGroups'));
+      payload.uploadAllowedUsers = parseAccessList(data.get('uploadAllowedUsers'));
+      payload.uploadDeniedGroups = parseAccessList(data.get('uploadDeniedGroups'));
+      payload.uploadDeniedUsers = parseAccessList(data.get('uploadDeniedUsers'));
+    }
     const endpoint = accessMode === 'type'
       ? `/api/admin/asset-types/${encodeURIComponent(typeGroup)}/access`
       : `/api/admin/assets/${encodeURIComponent(assetId)}/access`;
@@ -3997,14 +4075,14 @@ document.addEventListener('keydown', onLanguageShortcut, true);
   try {
     const me = await api('/api/me');
     const access = applyAdminAccessMode(me);
-    if (!access.canAccessAdmin && !access.canAccessTextAdmin) {
+    if (!access.canAccessAdmin && !access.canAccessTextAdmin && !access.canAccessAssetRightsAdmin) {
       window.location.href = '/';
       return;
     }
     await loadI18nFile();
     applyAdminLanguage(currentLang);
     updateProxyToolUi();
-    if (!access.isTextOnly) {
+    if (!access.isTextOnly && !access.isAssetRightsOnly) {
       await loadSettings();
       await refreshTrackingAndHealth();
       if (access.isSuperAdmin) {
@@ -4012,10 +4090,14 @@ document.addEventListener('keydown', onLanguageShortcut, true);
         await loadIdentityOverview();
         await loadGroupAdmins();
       }
+    } else if (access.isAssetRightsOnly) {
+      await loadAssetRightsRows();
     }
-    await loadOcrRecords();
-    await loadSubtitleRecords();
-    switchSettingsSubtab(access.isTextOnly ? 'ocr' : 'general');
+    if (!access.isAssetRightsOnly) {
+      await loadOcrRecords();
+      await loadSubtitleRecords();
+    }
+    if (!access.isAssetRightsOnly) switchSettingsSubtab(access.isTextOnly ? 'ocr' : 'general');
   } catch (error) {
     ffmpegHealthEl.textContent = error.message;
   }

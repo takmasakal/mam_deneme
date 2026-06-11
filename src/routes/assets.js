@@ -93,10 +93,68 @@ function registerAssetRoutes(app, deps) {
     return { status: 200, accessContext, row };
   }
 
+  function resolveAssetSourcePath(row = {}) {
+    const sourcePath = String(row.source_path || '').trim();
+    if (sourcePath && fs.existsSync(sourcePath)) return sourcePath;
+    const mediaPath = publicUploadUrlToAbsolutePath(resolveStoredUrl(row.media_url, ''));
+    if (mediaPath && fs.existsSync(mediaPath)) return mediaPath;
+    return '';
+  }
+
+  async function ensureHeicDerivativesForRow(row = {}) {
+    if (!imageDerivativeService?.isHeicCandidate({
+      mimeType: row.mime_type,
+      fileName: row.file_name
+    })) {
+      return row;
+    }
+
+    const existingProxy = resolveStoredUrl(row.proxy_url, 'proxies');
+    const existingThumbnail = resolveStoredUrl(row.thumbnail_url, 'thumbnails');
+    if (existingProxy && existingThumbnail) return row;
+
+    if (existingProxy && !existingThumbnail) {
+      const updated = await pool.query(
+        `UPDATE assets SET thumbnail_url = $2, updated_at = $3 WHERE id = $1 RETURNING *`,
+        [row.id, existingProxy, new Date().toISOString()]
+      );
+      return updated.rows?.[0] || { ...row, thumbnail_url: existingProxy };
+    }
+
+    const inputPath = resolveAssetSourcePath(row);
+    if (!inputPath) return row;
+
+    const derivatives = await imageDerivativeService.ensureImageDerivativesForUpload({
+      mimeType: row.mime_type,
+      fileName: row.file_name,
+      inputPath,
+      createdAt: row.created_at || new Date()
+    });
+    const updated = await pool.query(
+      `
+        UPDATE assets
+        SET proxy_url = $2,
+            proxy_status = 'ready',
+            thumbnail_url = $3,
+            updated_at = $4
+        WHERE id = $1
+        RETURNING *
+      `,
+      [
+        row.id,
+        String(derivatives.proxyUrl || '').trim(),
+        String(derivatives.thumbnailUrl || derivatives.proxyUrl || '').trim(),
+        new Date().toISOString()
+      ]
+    );
+    return updated.rows?.[0] || row;
+  }
+
   function mapAssetRowForUser(row, accessContext) {
     const mapped = mapAssetRow(row);
     mapped.canManageVisibility = assetAccessService.canManageAssetVisibility(row, accessContext);
     mapped.canEditAsset = assetAccessService.canEditAsset(row, accessContext);
+    mapped.canDownloadAsset = assetAccessService.canDownloadAsset(row, accessContext);
     mapped.canDeleteAsset = assetAccessService.canDeleteAsset(row, accessContext);
     return mapped;
   }
@@ -562,11 +620,21 @@ function registerAssetRoutes(app, deps) {
       const pagedRows = totalOverride == null && pageLimit ? rows.slice(pageOffset, pageOffset + pageLimit) : rows;
       const hydratedRows = [];
       for (const row of pagedRows) {
+        let nextRow = row;
+        try {
+          nextRow = await ensureHeicDerivativesForRow(nextRow);
+        } catch (error) {
+          console.warn('HEIC derivative repair failed', {
+            assetId: nextRow?.id,
+            fileName: nextRow?.file_name,
+            error: String(error?.message || error || '')
+          });
+        }
         if (!ensurePreview) {
-          hydratedRows.push(row);
+          hydratedRows.push(nextRow);
           continue;
         }
-        const withPdfThumb = await ensurePdfThumbnailForRow(row);
+        const withPdfThumb = await ensurePdfThumbnailForRow(nextRow);
         hydratedRows.push(await ensureDocumentThumbnailForRow(withPdfThumb));
       }
       res.json({
@@ -814,9 +882,11 @@ function registerAssetRoutes(app, deps) {
   
   app.post('/api/assets', async (req, res) => {
     try {
-      const effective = await resolveEffectivePermissions(req).catch(() => null);
-      const context = effective || buildUserContextFromRequest(req);
-      const typeAllowed = assetAccessService.canCreateAssetOfType({
+      const context = await resolveAssetAccessContext(req).catch(async () => {
+        const effective = await resolveEffectivePermissions(req).catch(() => null);
+        return effective || buildUserContextFromRequest(req);
+      });
+      const typeAllowed = assetAccessService.canUploadAssetType({
         type: req.body?.type,
         mimeType: req.body?.mimeType,
         fileName: req.body?.fileName
@@ -891,9 +961,11 @@ function registerAssetRoutes(app, deps) {
       });
     }
   
-    const effective = await resolveEffectivePermissions(req).catch(() => null);
-    const context = effective || buildUserContextFromRequest(req);
-    const typeAllowed = assetAccessService.canCreateAssetOfType({
+    const context = await resolveAssetAccessContext(req).catch(async () => {
+      const effective = await resolveEffectivePermissions(req).catch(() => null);
+      return effective || buildUserContextFromRequest(req);
+    });
+    const typeAllowed = assetAccessService.canUploadAssetType({
       type: metadata.type,
       mimeType,
       fileName: safeName
@@ -1030,7 +1102,10 @@ function registerAssetRoutes(app, deps) {
       } catch (_error) {
         thumbnailUrl = '';
       }
-    } else if (String(mimeType || '').toLowerCase().startsWith('image/')) {
+    } else if (
+      String(mimeType || '').toLowerCase().startsWith('image/') ||
+      imageDerivativeService?.isHeicCandidate({ mimeType, fileName: safeName })
+    ) {
       if (imageDerivativeService?.isHeicCandidate({ mimeType, fileName: safeName })) {
         try {
           const derivatives = await imageDerivativeService.ensureImageDerivativesForUpload({
@@ -1114,6 +1189,13 @@ function registerAssetRoutes(app, deps) {
         ingestSucceededWithWarnings: ingestWarnings.length > 0
       });
     } catch (_error) {
+      console.warn(JSON.stringify({
+        event: 'asset-upload-record-error',
+        message: String(_error?.message || _error || 'Unknown error'),
+        code: String(_error?.code || ''),
+        fileName: safeName,
+        mimeType: String(mimeType || '')
+      }));
       return res.status(500).json({ error: 'Failed to create uploaded asset record' });
     }
   });
@@ -1124,7 +1206,16 @@ function registerAssetRoutes(app, deps) {
       if (loaded.status !== 200) {
         return res.status(loaded.status).json({ error: loaded.error });
       }
-      const row = loaded.row;
+      let row = loaded.row;
+      try {
+        row = await ensureHeicDerivativesForRow(row);
+      } catch (error) {
+        console.warn('HEIC derivative repair failed', {
+          assetId: row?.id,
+          fileName: row?.file_name,
+          error: String(error?.message || error || '')
+        });
+      }
   
       const versionsResult = await pool.query(
         'SELECT * FROM asset_versions WHERE asset_id = $1 ORDER BY created_at DESC',
@@ -1629,6 +1720,9 @@ function registerAssetRoutes(app, deps) {
 
       const loaded = await loadVisibleAssetRow(req, assetId);
       if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      if (!assetAccessService.canDownloadAsset(loaded.row, loaded.accessContext)) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
 
       const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
       const versionRow = versionResult.rows[0];
