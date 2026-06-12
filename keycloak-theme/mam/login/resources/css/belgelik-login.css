@@ -7,7 +7,7 @@
 }
 
 :root {
-  --belgelik-login-brand-size: 120px;
+  --belgelik-login-brand-size: 96px;
   --belgelik-login-brand-gap: 0.28em;
 }
 
@@ -184,8 +184,27 @@ body.login-pf,
   display: flex;
   align-items: stretch;
   border-radius: 14px !important;
+  border: 1px solid #3a3f4b !important;
   background: #23262e !important;
   overflow: hidden !important;
+  box-shadow: none !important;
+}
+
+.pf-c-input-group__item,
+.pf-v5-c-input-group__item,
+.pf-c-input-group__item.pf-m-fill,
+.pf-v5-c-input-group__item.pf-m-fill {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #23262e !important;
+  display: flex !important;
+  align-items: stretch !important;
+}
+
+.pf-c-input-group__item.pf-m-fill,
+.pf-v5-c-input-group__item.pf-m-fill {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
 }
 
 .pf-c-input-group .pf-c-form-control,
@@ -193,18 +212,54 @@ body.login-pf,
 .pf-c-input-group input,
 .pf-v5-c-input-group input {
   border-radius: 14px 0 0 14px !important;
-  border-right: 0 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  min-width: 0 !important;
 }
 
 .pf-c-input-group button,
 .pf-v5-c-input-group button,
 #kc-form-wrapper button[aria-label],
 #kc-form-wrapper button[type='button'] {
-  border: 1px solid #3a3f4b !important;
-  border-left: 0 !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  width: 48px !important;
+  min-width: 48px !important;
+  height: auto !important;
+  min-height: 46px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-left: 1px solid #3a3f4b !important;
   border-radius: 0 14px 14px 0 !important;
   background: #23262e !important;
+  background-clip: padding-box !important;
   color: #e7ebf2 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-shadow: none !important;
+  outline: 0 !important;
+}
+
+.pf-c-input-group button::before,
+.pf-c-input-group button::after,
+.pf-v5-c-input-group button::before,
+.pf-v5-c-input-group button::after,
+#kc-form-wrapper button[aria-label]::before,
+#kc-form-wrapper button[aria-label]::after,
+#kc-form-wrapper button[type='button']::before,
+#kc-form-wrapper button[type='button']::after {
+  box-shadow: none !important;
+  border: 0 !important;
+  background: transparent !important;
+  content: none !important;
+}
+
+#kc-form-wrapper button[type='button'] svg,
+#kc-form-wrapper button[aria-label] svg {
+  display: block !important;
+  margin: auto !important;
 }
 
 #kc-locale {
@@ -225,13 +280,24 @@ body.login-pf,
 #kc-locale button {
   display: inline-flex !important;
   align-items: center !important;
-  min-height: 44px !important;
-  padding: 0 18px !important;
-  border-radius: 10px !important;
+  min-height: 30px !important;
+  padding: 0 8px !important;
+  border-radius: 8px !important;
   border: 0 !important;
   background: #d71920 !important;
   color: #ffffff !important;
-  font-weight: 800 !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+}
+
+#kc-locale-dropdown > a[aria-label*='English'],
+#kc-locale-dropdown > a:lang(en),
+#kc-current-locale-link[lang='en'],
+#kc-current-locale-link[data-locale='en'],
+html[lang='en'] #kc-current-locale-link,
+html[lang='en'] #kc-locale button {
+  background: #005eb8 !important;
+  color: #ffffff !important;
 }
 
 .alert-error,
@@ -258,14 +324,14 @@ body.login-pf,
 #kc-locale-links {
   position: absolute !important;
   left: 0 !important;
-  top: calc(100% + 8px) !important;
+  top: calc(100% + 6px) !important;
   min-width: 100% !important;
-  border: 0 !important;
+  border: 1px solid #3a3f4b !important;
   border-radius: 10px !important;
-  background: transparent !important;
-  padding: 0 !important;
+  background: #1f2128 !important;
+  padding: 4px !important;
   margin: 0 !important;
-  gap: 6px !important;
+  gap: 4px !important;
   z-index: 20 !important;
 }
 
@@ -279,12 +345,18 @@ body.login-pf,
 #kc-locale-links a {
   display: inline-flex !important;
   align-items: center !important;
-  justify-content: center !important;
-  min-height: 44px !important;
-  min-width: 120px !important;
-  padding: 0 18px !important;
-  border-radius: 10px !important;
-  background: #005eb8 !important;
+  justify-content: flex-start !important;
+  min-height: 30px !important;
+  min-width: 86px !important;
+  padding: 0 8px !important;
+  border-radius: 8px !important;
+  background: transparent !important;
   color: #ffffff !important;
-  font-weight: 800 !important;
+  font-weight: 700 !important;
+}
+
+#kc-locale li a:hover,
+#kc-locale-links a:hover {
+  background: #e2a63b !important;
+  color: #1f2937 !important;
 }
