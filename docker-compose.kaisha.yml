@@ -40,6 +40,9 @@ services:
       - start
       - --http-port=8080
       - --import-realm
+      - --spi-theme-cache-themes=false
+      - --spi-theme-cache-templates=false
+      - --spi-theme-static-max-age=-1
     environment:
       KC_HOSTNAME: ${PUBLIC_KEYCLOAK_HOST}
       KC_HOSTNAME_STRICT: ${KC_HOSTNAME_STRICT:-true}

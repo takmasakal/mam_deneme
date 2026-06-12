@@ -177,7 +177,7 @@ services:
     entrypoint:
       - /bin/sh
       - /opt/keycloak/mam-keycloak-entrypoint.sh
-    command: ["start-dev", "--http-port=8080", "--import-realm"]
+    command: ["start-dev", "--http-port=8080", "--import-realm", "--spi-theme-cache-themes=false", "--spi-theme-cache-templates=false", "--spi-theme-static-max-age=-1"]
     ports:
       - "8081:8080"
     volumes:
