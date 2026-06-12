@@ -107,7 +107,7 @@ Usage:
   ./deploy/mam-kaisha.sh build
   ./deploy/mam-kaisha.sh up
   ./deploy/mam-kaisha.sh down
-  ./deploy/mam-kaisha.sh restart
+  ./deploy/mam-kaisha.sh restart        # restart existing images; does not rebuild
   ./deploy/mam-kaisha.sh ps
   ./deploy/mam-kaisha.sh logs [SERVICE...]
   ./deploy/mam-kaisha.sh urls
@@ -147,13 +147,12 @@ case "${cmd}" in
   restart)
     ensure_init
     ensure_external_volumes
-    export_build_metadata
-    echo "Restarting MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
+    echo "Restarting MAM app with existing images; no rebuild will be attempted."
     dc down
     dc up -d postgres keycloak-postgres
     DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-postgres-password.sh --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}"
     DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-keycloak-postgres-password.sh --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}"
-    up_stack_with_current_image_cache
+    dc up -d --no-build
     KEYCLOAK_CONTAINER=kaisha-keycloak ENV_FILE="${ENV_FILE}" ./deploy/keycloak-sync-defaults.sh
     print_running_version
     ;;
