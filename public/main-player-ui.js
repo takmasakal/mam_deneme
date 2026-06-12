@@ -198,7 +198,7 @@
       const onPinToggle = () => {
         const next = !detailVideoPinnedRef.get();
         detailVideoPinnedRef.set(next);
-        localStorage.setItem('mam.detailVideoPinned', next ? '1' : '0');
+        localStorage.setItem('mam.detail.video.pin', next ? '1' : '0');
         applyPinUi();
       };
 

@@ -50,6 +50,7 @@ const LOCAL_LANG = 'mam.lang';
 const LOCAL_VIDEO_TOOLS_ORDER = 'mam.video.tools.order';
 const LOCAL_ASSET_VIEW_MODE = 'mam.assets.view.mode';
 const LOCAL_DETAIL_VIDEO_PIN = 'mam.detail.video.pin';
+const SESSION_CURRENT_USER_LABEL = 'mam.current.user.label';
 const LOCAL_PERMISSION_REFRESH = 'mam.permissions.updated';
 const I18N_PATH = '/i18n.json';
 const FALLBACK_LOGOUT_URL = '/oauth2/sign_out?rd=%2Foauth2%2Fstart%3Frd%3D%252F';
@@ -77,7 +78,7 @@ let subtitleStyleSettings = {
   horizontalPadding: 16,
   maxWidth: 82
 };
-let detailVideoPinned = localStorage.getItem(LOCAL_DETAIL_VIDEO_PIN) === '1';
+let detailVideoPinned = localStorage.getItem(LOCAL_DETAIL_VIDEO_PIN) !== '0';
 let commonModule = null;
 let detailModule = null;
 let ingestModule = null;
@@ -1155,7 +1156,9 @@ function applyStaticI18n() {
     if (key) el.setAttribute('aria-label', t(key));
   });
   if (currentUserBtn && !currentUserBtn.dataset.value) {
-    currentUserBtn.textContent = t('user_loading');
+    const cachedLabel = String(sessionStorage.getItem(SESSION_CURRENT_USER_LABEL) || '').trim();
+    currentUserBtn.textContent = cachedLabel || t('user_loading');
+    currentUserBtn.title = cachedLabel || t('user_loading');
   }
   if (assetViewThumbBtn) {
     assetViewThumbBtn.removeAttribute('title');
@@ -1208,8 +1211,9 @@ async function loadCurrentUser(options = {}) {
   const detectChanges = Boolean(options.detectChanges);
   const previousSignature = currentUserPermissionSignature || buildCurrentUserPermissionSignature();
   if (!detectChanges && !currentUserBtn.dataset.value) {
-    currentUserBtn.textContent = t('user_loading');
-    currentUserBtn.title = t('user_loading');
+    const cachedLabel = String(sessionStorage.getItem(SESSION_CURRENT_USER_LABEL) || '').trim();
+    currentUserBtn.textContent = cachedLabel || t('user_loading');
+    currentUserBtn.title = cachedLabel || t('user_loading');
   }
   try {
     const me = await api('/api/me');
@@ -1239,6 +1243,7 @@ async function loadCurrentUser(options = {}) {
     currentUserBtn.dataset.value = value;
     currentUserBtn.textContent = value;
     currentUserBtn.title = value;
+    sessionStorage.setItem(SESSION_CURRENT_USER_LABEL, value);
     if (adminMenuLink) {
       adminMenuLink.classList.toggle('hidden', !accessScopeModule.canShowAdminMenu(me));
     }
@@ -2857,6 +2862,7 @@ window.addEventListener('message', async (event) => {
 
 logoutBtn?.addEventListener('click', async () => {
   userMenu?.classList.add('hidden');
+  sessionStorage.removeItem(SESSION_CURRENT_USER_LABEL);
   try {
     const logoutEndpoint = `/api/logout-url?ts=${Date.now()}`;
     const payload = await fetchJsonWithTimeout(logoutEndpoint, {

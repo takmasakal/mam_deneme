@@ -443,7 +443,7 @@
           pinBtn.click();
         } else {
           setDetailVideoPinned(false);
-          localStorage.setItem('mam.detailVideoPinned', '0');
+          localStorage.setItem('mam.detail.video.pin', '0');
           root.classList.remove('detail-video-pinned', 'detail-video-show-overlay-controls');
         }
         wasPinned = false;

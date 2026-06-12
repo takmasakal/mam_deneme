@@ -1137,6 +1137,7 @@ function initCollapsibleSections(root = document) {
   const cleanups = [];
   const isVideoToolsModal = Boolean(root.querySelector('.video-tools-modal-body'));
   const defaultCollapsedInVideoTools = new Set(['subtitles', 'ocr', 'clips']);
+  const defaultCollapsedInDetail = new Set(['subtitles', 'clips']);
   rows.forEach((section) => {
     const check = section.querySelector('.section-hide-check');
     const head = section.querySelector('.collapsible-head');
@@ -1154,6 +1155,8 @@ function initCollapsibleSections(root = document) {
       }
     };
     if (isVideoToolsModal && defaultCollapsedInVideoTools.has(sectionKey)) {
+      setCollapsed(true);
+    } else if (!isVideoToolsModal && defaultCollapsedInDetail.has(sectionKey)) {
       setCollapsed(true);
     } else if (check) {
       setCollapsed(Boolean(check.checked));
