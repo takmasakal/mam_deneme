@@ -63,6 +63,37 @@ print_running_version() {
   dc exec -T app node -e "console.log(JSON.stringify({gitCommit:process.env.MAM_GIT_COMMIT||'unknown',gitBranch:process.env.MAM_GIT_BRANCH||'unknown',buildDate:process.env.MAM_BUILD_DATE||'unknown'}, null, 2))" 2>/dev/null || echo "  app service is not running yet."
 }
 
+tracked_worktree_is_dirty() {
+  ! git diff --quiet --ignore-submodules -- 2>/dev/null || ! git diff --cached --quiet --ignore-submodules -- 2>/dev/null
+}
+
+app_image_matches_current_commit() {
+  if tracked_worktree_is_dirty; then
+    echo "Tracked working tree changes detected; app image rebuild is required."
+    return 1
+  fi
+
+  local image_id image_commit
+  image_id="$(dc images -q app 2>/dev/null | tail -n1 || true)"
+  if [[ -z "${image_id}" ]]; then
+    return 1
+  fi
+
+  # shellcheck disable=SC2086
+  image_commit="$(${DOCKER_CMD} image inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${image_id}" 2>/dev/null || true)"
+  [[ "${image_commit}" == "${MAM_GIT_COMMIT}" ]]
+}
+
+up_stack_with_current_image_cache() {
+  if app_image_matches_current_commit; then
+    echo "App image already matches ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT}; starting without rebuild."
+    dc up -d
+  else
+    echo "Building app image for ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT}."
+    dc up -d --build
+  fi
+}
+
 ensure_init() {
   if [[ ! -f "${ENV_FILE}" ]]; then
     ./deploy/init-kaisha.sh "${1:-}"
@@ -106,7 +137,7 @@ case "${cmd}" in
     dc up -d postgres keycloak-postgres
     DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-postgres-password.sh --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}"
     DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-keycloak-postgres-password.sh --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}"
-    dc up -d --build
+    up_stack_with_current_image_cache
     KEYCLOAK_CONTAINER=kaisha-keycloak ENV_FILE="${ENV_FILE}" ./deploy/keycloak-sync-defaults.sh
     print_running_version
     ;;
@@ -122,7 +153,7 @@ case "${cmd}" in
     dc up -d postgres keycloak-postgres
     DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-postgres-password.sh --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}"
     DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-keycloak-postgres-password.sh --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}"
-    dc up -d --build
+    up_stack_with_current_image_cache
     KEYCLOAK_CONTAINER=kaisha-keycloak ENV_FILE="${ENV_FILE}" ./deploy/keycloak-sync-defaults.sh
     print_running_version
     ;;
