@@ -6,6 +6,15 @@
   --muted: #aab1c1;
   --accent: #39d38f;
   --accent-dark: #2eb57a;
+  --brand-gold: #e2a63b;
+}
+
+@font-face {
+  font-family: "Bakbak One";
+  src: url("/fonts/BakbakOne-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
 }
 
 * {
@@ -338,6 +347,19 @@ body.video-tools-page-mode #assetDetail {
 
 .top-row h1 {
   margin: 0;
+}
+
+.top-row .app-brand {
+  font-family: "Bakbak One", "IBM Plex Sans", "Segoe UI", sans-serif;
+  font-size: 36px;
+  line-height: 1;
+  font-weight: 400;
+  letter-spacing: 0.2px;
+  color: #ffffff;
+}
+
+.top-row .app-brand span:last-child {
+  color: var(--brand-gold);
 }
 
 .top-controls {
