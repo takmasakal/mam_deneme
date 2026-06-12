@@ -281,10 +281,12 @@ const OIDC_JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
 const oidcJwksCache = new Map();
 const pdfOcrCache = new Map();
 const KEYCLOAK_ADMIN_CACHE_TTL_MS = Math.max(5, Number(process.env.KEYCLOAK_ADMIN_CACHE_TTL_SECONDS) || 60) * 1000;
+const KEYCLOAK_ADMIN_REQUEST_TIMEOUT_MS = Math.max(1000, Number(process.env.KEYCLOAK_ADMIN_REQUEST_TIMEOUT_MS) || 3500);
 const SYSTEM_HEALTH_CACHE_TTL_MS = Math.max(5, Number(process.env.SYSTEM_HEALTH_CACHE_TTL_SECONDS) || 30) * 1000;
 let keycloakUsersCache = { expiresAt: 0, value: null };
 let keycloakGroupsCache = { expiresAt: 0, value: null };
 const keycloakPermissionDefaultsCache = new Map();
+const keycloakUserProfileCache = new Map();
 let systemHealthCache = { expiresAt: 0, value: null };
 const runtimeErrorLogs = [];
 const activeUserSessions = new Map();
@@ -6994,6 +6996,28 @@ function normalizeIdentityKey(value) {
     .replace(/ü/g, 'u');
 }
 
+async function fetchKeycloakAdminJson(url, token, options = {}) {
+  if (!url || !token) return null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), KEYCLOAK_ADMIN_REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        Authorization: `Bearer ${token}`
+      },
+      signal: controller.signal
+    });
+    if (!response.ok) return null;
+    return await response.json().catch(() => null);
+  } catch (_error) {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function getPermissionOverrideForUser(settings, user) {
   const entries = settings && typeof settings === 'object' ? settings : {};
   const candidates = [
@@ -7159,24 +7183,19 @@ async function queryKeycloakUsersByCandidate(realm, candidate, token) {
   const rows = [];
   const seen = new Set();
   for (const params of paramsList) {
-    try {
-      const response = await fetch(`${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (!response.ok) continue;
-      const payload = await response.json().catch(() => []);
-      (Array.isArray(payload) ? payload : []).forEach((row) => {
-        const id = String(row?.id || '').trim();
-        const username = String(row?.username || '').trim().toLowerCase();
-        const key = id || username;
-        if (!key || seen.has(key)) return;
-        seen.add(key);
-        rows.push(row);
-      });
-      if (rows.length) break;
-    } catch (_error) {
-      // Try next query shape.
-    }
+    const payload = await fetchKeycloakAdminJson(
+      `${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users?${params.toString()}`,
+      token
+    );
+    (Array.isArray(payload) ? payload : []).forEach((row) => {
+      const id = String(row?.id || '').trim();
+      const username = String(row?.username || '').trim().toLowerCase();
+      const key = id || username;
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      rows.push(row);
+    });
+    if (rows.length) break;
   }
   return rows;
 }
@@ -7210,24 +7229,75 @@ async function findKeycloakUserForIdentity(user) {
   return { user: null, realm: '' };
 }
 
-async function enrichUserDisplayNameFromKeycloak(user) {
+function buildKeycloakProfileCacheKey(user) {
   const current = user && typeof user === 'object' ? user : {};
-
-  try {
-    const { user: match } = await findKeycloakUserForIdentity(current);
-    const fullName = keycloakUserFullName(match);
-    if (!fullName) return current;
-    return {
-      ...current,
-      displayName: fullName
-    };
-  } catch (_error) {
-    return current;
-  }
+  const candidates = [
+    current.username,
+    current.email,
+    String(current.email || '').includes('@') ? String(current.email).split('@')[0] : '',
+    current.displayName
+  ]
+    .map((value) => normalizeIdentityKey(value))
+    .filter(Boolean)
+    .sort();
+  return candidates.join('|');
 }
 
-async function enrichUserPrincipalsFromKeycloak(user) {
+function extractKeycloakRoleNames(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((item) => String(item?.name || '').trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function extractKeycloakGroupNames(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((item) => String(item?.path || item?.name || '').trim().toLowerCase())
+    .filter(Boolean);
+}
+
+async function fetchPrivilegedKeycloakGroupsForUser({ realmName, token, user, candidates }) {
+  if (!realmName || !token) return [];
+  const realmEncoded = encodeURIComponent(realmName);
+  const groupRows = await fetchKeycloakAdminJson(
+    `${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/groups?search=superadmin&briefRepresentation=false`,
+    token
+  );
+  const superadminGroups = flattenKeycloakGroups(Array.isArray(groupRows) ? groupRows : [], realmName)
+    .filter((group) => normalizeIdentityKey(String(group.path || group.name || '').split('/').filter(Boolean).pop()) === 'superadmin');
+  if (!superadminGroups.length) return [];
+
+  const identityKeys = new Set(
+    [
+      ...(Array.isArray(candidates) ? candidates : []),
+      ...keycloakUserIdentityCandidates(user)
+    ]
+      .map((value) => normalizeIdentityKey(value))
+      .filter(Boolean)
+  );
+
+  const matchedGroups = [];
+  for (const group of superadminGroups) {
+    const groupId = String(group.id || '').trim();
+    if (!groupId) continue;
+    const members = await fetchKeycloakAdminJson(
+      `${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/groups/${encodeURIComponent(groupId)}/members?first=0&max=200&briefRepresentation=true`,
+      token
+    );
+    const hasUser = (Array.isArray(members) ? members : []).some((member) => (
+      keycloakUserIdentityCandidates(member).some((value) => identityKeys.has(normalizeIdentityKey(value)))
+    ));
+    if (hasUser) matchedGroups.push(String(group.path || group.name || '/superadmin').trim().toLowerCase());
+  }
+  return matchedGroups;
+}
+
+async function enrichUserProfileFromKeycloak(user) {
   const current = user && typeof user === 'object' ? user : {};
+  const cacheKey = buildKeycloakProfileCacheKey(current);
+  const now = Date.now();
+  const cached = cacheKey ? keycloakUserProfileCache.get(cacheKey) : null;
+  if (cached && cached.expiresAt > now) return { ...current, ...cached.value };
+
   try {
     const { user: match, realm } = await findKeycloakUserForIdentity(current);
     const userId = String(match?.id || '').trim();
@@ -7237,36 +7307,65 @@ async function enrichUserPrincipalsFromKeycloak(user) {
     if (!token || !userId || !realmName) return current;
 
     const realmEncoded = encodeURIComponent(realmName);
-    const [rolesRes, groupsRes] = await Promise.all([
-      fetch(`${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users/${encodeURIComponent(userId)}/role-mappings/realm`, {
-        headers: { Authorization: `Bearer ${token}` }
-      }).catch(() => null),
-      fetch(`${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users/${encodeURIComponent(userId)}/groups`, {
-        headers: { Authorization: `Bearer ${token}` }
-      }).catch(() => null)
+    const [roles, effectiveRoles, groups] = await Promise.all([
+      fetchKeycloakAdminJson(
+        `${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users/${encodeURIComponent(userId)}/role-mappings/realm`,
+        token
+      ),
+      fetchKeycloakAdminJson(
+        `${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users/${encodeURIComponent(userId)}/role-mappings/realm/composite`,
+        token
+      ),
+      fetchKeycloakAdminJson(
+        `${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users/${encodeURIComponent(userId)}/groups`,
+        token
+      )
     ]);
-    const roles = rolesRes && rolesRes.ok ? await rolesRes.json().catch(() => []) : [];
-    const groups = groupsRes && groupsRes.ok ? await groupsRes.json().catch(() => []) : [];
-    const roleNames = (Array.isArray(roles) ? roles : [])
-      .map((item) => String(item?.name || '').trim().toLowerCase())
-      .filter(Boolean);
-    const groupNames = (Array.isArray(groups) ? groups : [])
-      .map((item) => String(item?.path || item?.name || '').trim().toLowerCase())
-      .filter(Boolean);
-    const resolved = resolvePermissionKeysFromPrincipals({
+    const roleNames = Array.from(new Set([
+      ...extractKeycloakRoleNames(roles),
+      ...extractKeycloakRoleNames(effectiveRoles)
+    ]));
+    const groupNames = Array.from(new Set(extractKeycloakGroupNames(groups)));
+    let resolved = resolvePermissionKeysFromPrincipals({
       username,
       groups: groupNames,
       roles: roleNames
     });
-    return {
-      ...current,
+    if (!resolved.isSuperAdmin) {
+      const fallbackGroups = await fetchPrivilegedKeycloakGroupsForUser({
+        realmName,
+        token,
+        user: match,
+        candidates: [current.username, current.email, current.displayName]
+      });
+      fallbackGroups.forEach((groupName) => {
+        if (groupName && !groupNames.includes(groupName)) groupNames.push(groupName);
+      });
+      if (fallbackGroups.length) {
+        resolved = resolvePermissionKeysFromPrincipals({
+          username,
+          groups: groupNames,
+          roles: roleNames
+        });
+      }
+    }
+    const fullName = keycloakUserFullName(match);
+    const enriched = {
       username: current.username || username,
+      displayName: fullName || current.displayName,
       groups: Array.from(new Set([...(current.groups || []), ...groupNames])),
       roles: Array.from(new Set([...(current.roles || []), ...roleNames])),
       baseIsAdmin: current.baseIsAdmin || resolved.permissionKeys.includes('admin.access'),
       basePermissionKeys: Array.from(new Set([...(current.basePermissionKeys || []), ...resolved.permissionKeys])),
       baseIsSuperAdmin: Boolean(current.baseIsSuperAdmin || resolved.isSuperAdmin)
     };
+    if (cacheKey) {
+      keycloakUserProfileCache.set(cacheKey, {
+        expiresAt: now + KEYCLOAK_ADMIN_CACHE_TTL_MS,
+        value: enriched
+      });
+    }
+    return { ...current, ...enriched };
   } catch (_error) {
     return current;
   }
@@ -7476,9 +7575,7 @@ async function fetchKeycloakUserPermissionDefaults(users) {
 }
 
 async function resolveEffectivePermissions(req) {
-  const user = await enrichUserPrincipalsFromKeycloak(
-    await enrichUserDisplayNameFromKeycloak(buildUserContextFromRequest(req))
-  );
+  const user = await enrichUserProfileFromKeycloak(buildUserContextFromRequest(req));
   const settings = await getUserPermissionsSettings();
   const override = getPermissionOverrideForUser(settings, user);
   const basePermissionKeys = user.baseIsSuperAdmin

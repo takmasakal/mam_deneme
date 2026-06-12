@@ -1155,10 +1155,12 @@ function applyStaticI18n() {
     const key = el.getAttribute('data-i18n-aria');
     if (key) el.setAttribute('aria-label', t(key));
   });
-  if (currentUserBtn && !currentUserBtn.dataset.value) {
+  if (currentUserBtn) {
+    const currentLabel = String(currentUserBtn.dataset.value || '').trim();
     const cachedLabel = String(sessionStorage.getItem(SESSION_CURRENT_USER_LABEL) || '').trim();
-    currentUserBtn.textContent = cachedLabel || t('user_loading');
-    currentUserBtn.title = cachedLabel || t('user_loading');
+    const label = currentLabel || cachedLabel || t('user_loading');
+    currentUserBtn.textContent = label;
+    currentUserBtn.title = label;
   }
   if (assetViewThumbBtn) {
     assetViewThumbBtn.removeAttribute('title');

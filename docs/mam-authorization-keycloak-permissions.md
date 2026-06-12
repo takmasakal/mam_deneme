@@ -10,7 +10,7 @@ MAM does not define permissions for individual hardcoded users in JavaScript or 
 
 Relevant code:
 
-- `src/server.js:7068-7084`
+- `src/server.js:7092-7108`
   - Reads:
     - `x-forwarded-user`
     - `x-auth-request-user`
@@ -22,7 +22,7 @@ Relevant code:
     - `x-auth-request-groups`
     - access token headers or bearer token
 
-- `src/server.js:7085-7106`
+- `src/server.js:7109-7130`
   - Decodes token claims:
     - `preferred_username`
     - `email`
@@ -31,7 +31,7 @@ Relevant code:
     - `realm_access.roles`
     - `resource_access.*.roles`
 
-- `src/server.js:7107-7121`
+- `src/server.js:7131-7145`
   - Converts those groups/roles into base permission keys.
 
 ## Keycloak Group and Role Mapping
@@ -40,13 +40,16 @@ The central mapping is in `src/permissions.js`.
 
 Relevant code:
 
-- `src/permissions.js:35-42`
+- `src/permissions.js:35-45`
 
 Current mappings:
 
 | Keycloak group or role | MAM permission result |
 | --- | --- |
 | `superadmin` | all MAM permission keys |
+| `super admin` | all MAM permission keys |
+| `super-admin` | all MAM permission keys |
+| `super_admin` | all MAM permission keys |
 | `admin` | `admin.access` |
 | `standart yönetici` | `admin.access` |
 | `standart yonetici` | `admin.access` |
@@ -57,7 +60,7 @@ MAM also normalizes group paths.
 
 Relevant code:
 
-- `src/permissions.js:44-57`
+- `src/permissions.js:47-60`
 
 Examples that all match `superadmin`:
 
@@ -73,14 +76,26 @@ If headers/token claims do not contain enough group information, MAM tries to en
 
 Relevant code:
 
-- `src/server.js:7130-7182`
+- `src/server.js:7154-7200`
   - Builds identity candidates and searches Keycloak users.
 
-- `src/server.js:7184-7210`
+- `src/server.js:7203-7229`
   - Finds the Keycloak user matching username, email, local email part, or display name.
 
-- `src/server.js:7229-7270`
-  - Fetches direct realm roles and groups for the matched Keycloak user.
+- `src/server.js:7232-7244`
+  - Builds a short-lived per-user profile cache key so repeated `/api/me` calls do not re-query Keycloak immediately.
+
+- `src/server.js:7246-7255`
+  - Extracts Keycloak role and group names into normalized arrays.
+
+- `src/server.js:7258-7292`
+  - Fallback for LDAP users whose direct group endpoint does not expose membership reliably:
+    - searches only the Keycloak `superadmin` group
+    - checks whether the matched user is in that group members list
+    - adds only that privileged group path when membership is confirmed
+
+- `src/server.js:7294-7372`
+  - Fetches direct realm roles, effective/composite realm roles, and groups for the matched Keycloak user.
   - Merges fetched groups/roles into the current user context.
   - Computes `basePermissionKeys` and `baseIsSuperAdmin`.
 
@@ -90,16 +105,17 @@ The final permission object is produced by `resolveEffectivePermissions()`.
 
 Relevant code:
 
-- `src/server.js:7478-7502`
+- `src/server.js:7577-7605`
 
 Order of precedence:
 
 1. Build identity from proxy headers and token claims.
-2. Enrich display name from Keycloak.
-3. Enrich groups and roles from Keycloak Admin API.
-4. Load MAM admin-page user permission settings.
-5. Apply saved user permission overrides.
-6. Preserve Keycloak superadmin as a non-droppable permission floor.
+2. Resolve the Keycloak user once and cache that profile briefly.
+3. Enrich display name, direct roles, effective roles, and groups from Keycloak Admin API.
+4. If direct role/group enrichment still does not produce superadmin, check only the Keycloak `superadmin` group membership as a fallback.
+5. Load MAM admin-page user permission settings.
+6. Apply saved user permission overrides.
+7. Preserve Keycloak superadmin as a non-droppable permission floor.
 
 The superadmin floor means:
 
@@ -112,7 +128,7 @@ The frontend learns the current permissions from `/api/me`.
 
 Relevant code:
 
-- `src/server.js:7522-7543`
+- `src/server.js:7619-7645`
 
 Important response fields:
 
@@ -181,4 +197,3 @@ If this does not happen, check:
 3. oauth2-proxy passes user headers.
 4. Keycloak Admin API credentials configured in MAM can read user groups.
 5. `/api/me` response includes expected `groups`.
-

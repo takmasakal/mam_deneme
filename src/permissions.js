@@ -34,6 +34,9 @@ const PERMISSION_DEFINITIONS = [
 const PERMISSION_KEYS = PERMISSION_DEFINITIONS.map((item) => item.key);
 const PRINCIPAL_PERMISSION_MAP = {
   superadmin: PERMISSION_KEYS,
+  'super admin': PERMISSION_KEYS,
+  'super-admin': PERMISSION_KEYS,
+  super_admin: PERMISSION_KEYS,
   admin: ['admin.access'],
   'standart yönetici': ['admin.access'],
   'standart yonetici': ['admin.access'],

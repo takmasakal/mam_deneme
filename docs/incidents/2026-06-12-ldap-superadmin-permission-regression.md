@@ -18,6 +18,8 @@ Two permission-resolution assumptions were too narrow:
 
 1. Principal normalization accepted `/superadmin` and `superadmin`, but did not preserve the final path segment for nested Keycloak paths such as `/some-parent/superadmin`.
 2. `resolveEffectivePermissions()` let saved MAM user-permission overrides fully replace Keycloak-derived permission defaults. If an LDAP user had a saved empty or partial override, Keycloak `/superadmin` membership could be reduced by the application override.
+3. LDAP-backed users can require an extra Keycloak lookup path: direct group claims or `/users/{id}/groups` may not be enough in every deployment, and repeated display-name plus permission enrichment made `/api/me` slow.
+4. Language switching rewrote the current-user button through static `data-i18n` text before restoring the cached username, so the user could see `Yükleniyor...` until slow permission refreshes completed.
 
 ## Fix
 
@@ -28,15 +30,19 @@ Two permission-resolution assumptions were too narrow:
 - `src/server.js` now treats Keycloak-derived `baseIsSuperAdmin` as a non-droppable floor:
   - if Keycloak resolves the user as superadmin, all permission keys are restored after override normalization
   - local admin overrides cannot accidentally downgrade a Keycloak superadmin
+- `src/server.js` now resolves the Keycloak user profile once per `/api/me` call path, uses a short-lived cache, reads effective/composite realm roles, and falls back to checking only the `superadmin` group membership when direct role/group data did not produce superadmin.
+- `public/main.js` now preserves the existing current-user label while applying static i18n text, so language changes do not temporarily replace the name with `Yükleniyor...`.
 
 ## Code References
 
-- `src/permissions.js:35-42`: group/role names that map to permission keys.
-- `src/permissions.js:44-57`: principal normalization, including nested group path handling.
-- `src/permissions.js:68-78`: principal-to-permission resolution.
-- `src/server.js:7068-7121`: initial user context from oauth2-proxy headers and token claims.
-- `src/server.js:7229-7270`: Keycloak Admin API enrichment for roles and groups.
-- `src/server.js:7478-7502`: final effective permission calculation and superadmin floor.
+- `src/permissions.js:35-45`: group/role names that map to permission keys.
+- `src/permissions.js:47-60`: principal normalization, including nested group path handling.
+- `src/permissions.js:71-81`: principal-to-permission resolution.
+- `src/server.js:7092-7145`: initial user context from oauth2-proxy headers and token claims.
+- `src/server.js:7258-7292`: LDAP-safe `superadmin` group membership fallback.
+- `src/server.js:7294-7372`: Keycloak Admin API enrichment for display name, roles, effective roles, and groups.
+- `src/server.js:7577-7605`: final effective permission calculation and superadmin floor.
+- `public/main.js:1158-1164`: current-user label preservation during language changes.
 
 ## Verification
 
@@ -49,7 +55,11 @@ const { resolvePermissionKeysFromPrincipals, PERMISSION_KEYS } = require('./src/
 for (const input of [
   { groups: ['/superadmin'] },
   { groups: ['superadmin'] },
+  { groups: ['super admin'] },
+  { groups: ['super-admin'] },
+  { groups: ['super_admin'] },
   { groups: ['/TRT/superadmin'] },
+  { roles: ['superadmin'] },
   { groups: ['/standart yönetici'] },
 ]) {
   const out = resolvePermissionKeysFromPrincipals(input);
@@ -61,7 +71,7 @@ NODE
 
 Expected result:
 
-- `/superadmin`, `superadmin`, and `/TRT/superadmin` all resolve as `isSuperAdmin: true`.
+- `/superadmin`, `superadmin`, `super admin`, `super-admin`, `super_admin`, `/TRT/superadmin`, and role `superadmin` all resolve as `isSuperAdmin: true`.
 - `/standart yönetici` resolves as admin access only, not superadmin.
 
 ## Follow-Up
@@ -71,4 +81,3 @@ Expected result:
   - `"isSuperAdmin": true`
   - `"canAccessAdmin": true`
   - all permission keys listed under `permissionKeys`
-
