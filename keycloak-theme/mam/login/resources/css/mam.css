@@ -1,7 +1,15 @@
+@font-face {
+  font-family: 'Bakbak One';
+  src: url('../fonts/BakbakOne-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 .login-pf body {
-  background: linear-gradient(115deg, rgba(10, 20, 33, 0.88), rgba(20, 35, 58, 0.72)),
-    url('../img/login-bg.jpg') center center / cover no-repeat fixed,
-    url('../img/login-bg.svg') center center / cover no-repeat fixed;
+  background: radial-gradient(circle at 18% 14%, #2b2f3a 0%, #1f2128 42%, #16181f 100%);
+  color: #e7ebf2;
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   min-height: 100vh;
 }
 
@@ -17,40 +25,60 @@
 
 .card-pf {
   max-width: 420px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 14px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
-  background: rgba(7, 16, 28, 0.78);
-  backdrop-filter: blur(4px);
+  border: 1.6px solid #ffffff;
+  border-radius: 28px;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.25);
+  background: #2a2d36;
+  color: #e7ebf2;
 }
 
 #kc-header-wrapper {
-  color: #eaf2ff;
-  font-size: 28px;
-  letter-spacing: 0.08em;
-  font-weight: 700;
-  text-transform: uppercase;
+  color: #ffffff;
+  font-family: 'Bakbak One', 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  font-size: 40px;
+  line-height: 1;
+  letter-spacing: 0.2px;
+  font-weight: 400;
+  text-transform: none;
   text-align: center;
   position: static;
   z-index: 2;
 }
 
+.mam-brand-accent {
+  color: #e2a63b;
+}
+
 #kc-form-wrapper .pf-c-form-control {
-  border-radius: 8px;
-  border: 1px solid rgba(198, 216, 255, 0.35);
-  background: rgba(255, 255, 255, 0.94);
+  min-height: 46px;
+  border-radius: 14px;
+  border: 1px solid #3a3f4b;
+  background: #23262e;
+  color: #e7ebf2;
+  box-shadow: none;
+}
+
+#kc-form-wrapper .pf-c-form-control:focus {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 1px #ffffff;
+}
+
+#kc-form-wrapper .pf-c-form-control::placeholder {
+  color: #7f8798;
 }
 
 #kc-form-buttons input[type='submit'] {
-  border-radius: 999px;
+  min-height: 48px;
+  border-radius: 14px;
   border: 0;
-  background: linear-gradient(90deg, #0b2c56, #0f4a88);
-  color: #fff;
+  background: #ffffff;
+  color: #1f2937;
   font-weight: 700;
 }
 
 #kc-form-buttons input[type='submit']:hover {
-  filter: brightness(1.1);
+  background: #f2f3f5;
+  filter: none;
 }
 
 #kc-page-title,
@@ -58,7 +86,45 @@
 #kc-form-options,
 #kc-form-options a,
 .pf-c-form__label-text {
-  color: #d9e8ff;
+  color: #e7ebf2;
+}
+
+#kc-page-title {
+  color: #aab1c1;
+  font-weight: 600;
+}
+
+#kc-form-options a,
+#kc-registration a,
+#kc-reset-password-form a,
+#kc-info-wrapper a {
+  color: #39d38f;
+}
+
+#kc-form-options label,
+#kc-remember-me,
+#kc-form-login label {
+  color: #aab1c1;
+}
+
+#kc-form-options input[type='checkbox'] {
+  accent-color: #39d38f;
+}
+
+#kc-locale {
+  color: #e7ebf2;
+}
+
+#kc-locale a,
+#kc-locale button {
+  color: #39d38f;
+}
+
+.alert-error,
+.pf-c-alert.pf-m-danger {
+  border-color: #9a4854;
+  background: #4c2429;
+  color: #ffcdd5;
 }
 
 /* Keep language menu closed by default; only show when explicitly expanded. */

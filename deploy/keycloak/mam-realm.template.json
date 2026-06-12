@@ -4,7 +4,7 @@
   "displayName": "MAM",
   "registrationAllowed": false,
   "resetPasswordAllowed": true,
-  "rememberMe": false,
+  "rememberMe": true,
   "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 28800,
   "clientSessionIdleTimeout": 1800,
