@@ -47,7 +47,12 @@ function normalizePrincipalNames(values) {
     .flatMap((value) => {
       const normalized = String(value || '').trim().toLowerCase();
       const withoutSlash = normalized.replace(/^\/+/, '');
-      return normalized && withoutSlash !== normalized ? [normalized, withoutSlash] : [normalized];
+      const lastPathSegment = withoutSlash.split('/').filter(Boolean).pop() || '';
+      return Array.from(new Set([
+        normalized,
+        withoutSlash,
+        lastPathSegment
+      ])).filter(Boolean);
     })
     .filter(Boolean);
 }

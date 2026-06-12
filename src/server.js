@@ -7481,7 +7481,14 @@ async function resolveEffectivePermissions(req) {
   );
   const settings = await getUserPermissionsSettings();
   const override = getPermissionOverrideForUser(settings, user);
-  const effective = normalizePermissionEntry(override, user.basePermissionKeys || []);
+  const basePermissionKeys = user.baseIsSuperAdmin
+    ? PERMISSION_KEYS
+    : (user.basePermissionKeys || []);
+  const effective = normalizePermissionEntry(override, basePermissionKeys);
+  if (user.baseIsSuperAdmin) {
+    effective.permissionKeys = PERMISSION_KEYS;
+    Object.assign(effective, permissionKeysToLegacyFlags(PERMISSION_KEYS));
+  }
   const isSuperAdmin = PERMISSION_KEYS.every((key) => effective.permissionKeys.includes(key));
   const canAccessAdmin = Boolean(effective.adminPageAccess);
   const canAccessTextAdmin = Boolean(effective.textAdminAccess || canAccessAdmin);
