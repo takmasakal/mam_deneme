@@ -150,19 +150,21 @@ General app permissions and asset rights are related but separate.
 
 Relevant code:
 
-- `src/services/assetAccessService.js:202-215`
+- `src/services/assetAccessService.js:202-216`
 
 `resolveAccessContext()` uses the effective user permission object and then adds:
 
 - normalized user identity
 - group-admin groups
 - asset-type access rules
+- `canBypassAssetTypeAccess`
 - `canManageAllAssetVisibility`
 
-`canManageAllAssetVisibility` is true when:
+`canBypassAssetTypeAccess` and `canManageAllAssetVisibility` are true only when:
 
-- `user.isSuperAdmin` is true, or
-- `user.canAccessAdmin` is true
+- `user.isSuperAdmin` is true
+
+This is intentional: admin-page access does not bypass asset type visibility. A scoped document manager, for example, must still pass the document/video/photo type rules before public asset visibility is considered.
 
 ## Operational Checks
 

@@ -211,7 +211,8 @@ function createAssetAccessService({ pool }) {
       accessIdentity: identity,
       groupAdminGroups,
       assetTypeAccessRules,
-      canManageAllAssetVisibility: Boolean(user.isSuperAdmin || user.canAccessAdmin)
+      canBypassAssetTypeAccess: Boolean(user.isSuperAdmin),
+      canManageAllAssetVisibility: Boolean(user.isSuperAdmin)
     };
   }
 
@@ -256,7 +257,7 @@ function createAssetAccessService({ pool }) {
   }
 
   function appendAssetAccessWhere(where, values, context, alias = 'assets') {
-    if (context?.canManageAllAssetVisibility) return;
+    if (context?.canBypassAssetTypeAccess) return;
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
     const identifiers = identity.identifiers || [];
     const groups = identity.groups || [];
@@ -271,6 +272,7 @@ function createAssetAccessService({ pool }) {
       where.push(`NOT (COALESCE(${alias}.denied_groups, '{}') && $${idx}::text[])`);
     }
     appendAssetTypeAccessWhere(where, values, context, alias);
+    if (context?.canManageAllAssetVisibility) return;
     const conditions = [`${alias}.visibility = 'public'`];
 
     if (identifiers.length) {
@@ -397,7 +399,7 @@ function createAssetAccessService({ pool }) {
   }
 
   function getAllowedAssetTypeGroups(context = {}) {
-    if (context?.canManageAllAssetVisibility) return [...ASSET_TYPE_GROUPS];
+    if (context?.canBypassAssetTypeAccess) return [...ASSET_TYPE_GROUPS];
     return ASSET_TYPE_GROUPS.filter((typeGroup) => {
       const row = { type: typeGroup, mime_type: '', file_name: '' };
       return canViewAssetType(row, context);
@@ -414,7 +416,7 @@ function createAssetAccessService({ pool }) {
   }
 
   function canUploadAssetType(input = {}, context = {}) {
-    if (context?.canManageAllAssetVisibility) return true;
+    if (context?.canBypassAssetTypeAccess) return true;
     const typeGroup = normalizeAssetTypeGroup(input.typeGroup);
     const row = {
       type: typeGroup || input.type || input.declaredType,
@@ -430,16 +432,17 @@ function createAssetAccessService({ pool }) {
   }
 
   function getAllowedUploadAssetTypeGroups(context = {}) {
-    if (context?.canManageAllAssetVisibility) return [...ASSET_TYPE_GROUPS];
+    if (context?.canBypassAssetTypeAccess) return [...ASSET_TYPE_GROUPS];
     return ASSET_TYPE_GROUPS.filter((typeGroup) => canUploadAssetType({ typeGroup }, context));
   }
 
   function canViewAsset(row, context) {
-    if (context?.canManageAllAssetVisibility) return true;
+    if (context?.canBypassAssetTypeAccess) return true;
     const asset = getAssetAccessSnapshot(row);
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
     if (identityMatchesAny(identity, asset.deniedUsers, asset.deniedGroups)) return false;
     if (!canViewAssetType(row, context)) return false;
+    if (context?.canManageAllAssetVisibility) return true;
     if (hasExplicitAssetTypeEditGrant(row, context)) return true;
     if (asset.visibility === 'public') return true;
     if (identity.identifiers.some((id) => id && (id === asset.ownerUser || asset.allowedUsers.includes(id)))) return true;
