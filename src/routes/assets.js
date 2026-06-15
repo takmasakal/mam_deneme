@@ -101,6 +101,27 @@ function registerAssetRoutes(app, deps) {
     return '';
   }
 
+  function resolveAssetFilePath(row = {}) {
+    const sourcePath = resolveAssetSourcePath(row);
+    if (sourcePath) return sourcePath;
+    const proxyPath = publicUploadUrlToAbsolutePath(resolveStoredUrl(row.proxy_url, 'proxies'));
+    if (proxyPath && fs.existsSync(proxyPath)) return proxyPath;
+    return '';
+  }
+
+  function sendStoredAssetFile(res, filePath, row = {}) {
+    if (!filePath || !fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Asset file not found' });
+    }
+    const fileName = String(row.file_name || path.basename(filePath) || 'asset.bin').trim();
+    const mimeType = String(row.mime_type || '').trim();
+    if (mimeType) res.type(mimeType);
+    res.set('Accept-Ranges', 'bytes');
+    res.set('Cache-Control', 'private, no-store');
+    res.set('Content-Disposition', `inline; filename="${sanitizeFileName(fileName)}"`);
+    return res.sendFile(filePath);
+  }
+
   async function ensureHeicDerivativesForRow(row = {}) {
     if (!imageDerivativeService?.isHeicCandidate({
       mimeType: row.mime_type,
@@ -1247,7 +1268,19 @@ function registerAssetRoutes(app, deps) {
       res.status(500).json({ error: 'Failed to load asset' });
     }
   });
-  
+
+  app.get('/api/assets/:id/file', async (req, res) => {
+    try {
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
+      }
+      return sendStoredAssetFile(res, resolveAssetFilePath(loaded.row), loaded.row);
+    } catch (_error) {
+      return res.status(500).json({ error: 'Failed to load asset file' });
+    }
+  });
+
   app.get('/api/assets/:id/technical', async (req, res) => {
     try {
       const loaded = await loadVisibleAssetRow(req, req.params.id);
