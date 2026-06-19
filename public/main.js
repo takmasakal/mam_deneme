@@ -259,6 +259,9 @@ let i18n = {
     clear_search_fields: 'Clear all search fields',
     search_upload_tag: 'SEARCH / UPLOAD',
     assets_title: 'Assets',
+    asset_page_size: 'Per page',
+    previous_page: 'Previous page',
+    next_page: 'Next page',
     asset_detail_title: 'Detail',
     select_asset: 'Select an asset.',
     ph_title: 'Title',
@@ -594,6 +597,9 @@ let i18n = {
     clear_search_fields: 'Tüm arama alanlarını temizle',
     search_upload_tag: 'ARA / YUKLE',
     assets_title: 'Varlıklar',
+    asset_page_size: 'Sayfa başına',
+    previous_page: 'Önceki sayfa',
+    next_page: 'Sonraki sayfa',
     asset_detail_title: 'Detay',
     select_asset: 'Bir varlık seçin.',
     ph_title: 'Başlık',
@@ -1755,6 +1761,10 @@ function renderAssets(assets) {
   return assetBrowserModule.renderAssets(assets);
 }
 
+function renderAssetsPage(assets, options = {}) {
+  return assetBrowserModule.renderAssets(assets, options);
+}
+
 function updateAssetSelectionUi() {
   assetGrid.querySelectorAll('.asset-card').forEach((card) => {
     const id = String(card.dataset?.id || '').trim();
@@ -1819,6 +1829,7 @@ detailModule = window.createMainDetailModule({
   tf,
   deleteApi,
   escapeHtml,
+  isImage,
   isVideo,
   isOfficeDocument,
   mediaViewer,
@@ -1850,7 +1861,7 @@ detailModule = window.createMainDetailModule({
   setPanelVisible,
   resetDetailPanelDynamicMinWidth,
   setSingleSelection,
-  renderAssets,
+  renderAssets: renderAssetsPage,
   setPanelVideoToolsButtonState,
   loadAssets,
   openAsset,
@@ -2033,7 +2044,7 @@ const assetsModule = window.createMainAssetsModule({
   assetTypeFilters,
   syncOcrQueryInputs,
   ocrQueryInput,
-  renderAssets,
+  renderAssets: renderAssetsPage,
   currentAssetsRef: {
     get value() { return currentAssets; },
     set value(next) { currentAssets = next; }

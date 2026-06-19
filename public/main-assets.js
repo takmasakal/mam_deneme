@@ -43,7 +43,7 @@
       if (selectedTypes.length === 0) {
         if (!searchStateRef.currentSearchQuery && !searchStateRef.currentOcrQuery && !searchStateRef.currentSubtitleQuery) {
           currentAssetsRef.value = [];
-          renderAssets(currentAssetsRef.value);
+          renderAssets(currentAssetsRef.value, { resetPage: true });
           return;
         }
       }
@@ -87,7 +87,7 @@
       if (!selectedAssetIdsRef.value.size) {
         lastSelectedAssetIdRef.value = null;
       }
-      renderAssets(currentAssetsRef.value);
+      renderAssets(currentAssetsRef.value, { resetPage: true });
     }
 
     return { loadWorkflow, loadAssets };

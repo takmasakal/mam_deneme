@@ -6,6 +6,7 @@
       api,
       deleteApi,
       escapeHtml,
+      isImage,
       isVideo,
       isOfficeDocument,
       mediaViewer,
@@ -135,6 +136,7 @@
 
     function detailMarkup(asset, workflow) {
       const dc = asset.dcMetadata || {};
+      const isImageAsset = Boolean(isImage?.(asset));
       const hasPlayableVideoProxy = isVideo(asset) && Boolean(String(asset.proxyUrl || '').trim());
       const trashStatus = asset.inTrash ? `<strong>${t('in_trash')}</strong>` : t('active');
       const searchHighlightClass = effectiveSearchHighlightClass(currentSearchQuery(), currentSearchHighlightQuery(), currentSearchFuzzyUsed());
@@ -162,6 +164,10 @@
         ? ''
         : `<div class="asset-meta metadata-lock-note">${escapeHtml(t('metadata_edit_locked'))}</div>`;
       const metadataFieldsetOpen = canEditMetadata ? '<fieldset class="metadata-fieldset">' : '<fieldset class="metadata-fieldset" disabled>';
+      const durationMeta = isImageAsset ? '' : ` | ${t('duration')}: ${escapeHtml(asset.durationSeconds)}s`;
+      const durationField = isImageAsset
+        ? ''
+        : `<label>${t('duration')}<input name="durationSeconds" type="number" min="0" value="${escapeHtml(asset.durationSeconds)}" />${buildInlineFieldMatch(asset.durationSeconds ? `${asset.durationSeconds}s` : '', currentSearchHighlightQuery(), searchHighlightClass)}</label>`;
       const accessListText = (values) => (Array.isArray(values) ? values : [])
         .map((value) => String(value || '').trim())
         .filter(Boolean)
@@ -191,7 +197,7 @@
       const metadataTopSection = `
         <h3>${highlightMatch(asset.title, currentSearchHighlightQuery(), searchHighlightClass)}</h3>
         <p>${highlightMatch(asset.description || t('no_description'), currentSearchHighlightQuery(), searchHighlightClass)}</p>
-        <div class="asset-meta">${t('owner')}: ${highlightMatch(asset.owner, currentSearchHighlightQuery(), searchHighlightClass)} | ${t('type')}: ${highlightMatch(asset.type, currentSearchHighlightQuery(), searchHighlightClass)} | ${t('duration')}: ${escapeHtml(asset.durationSeconds)}s</div>
+        <div class="asset-meta">${t('owner')}: ${highlightMatch(asset.owner, currentSearchHighlightQuery(), searchHighlightClass)} | ${t('type')}: ${highlightMatch(asset.type, currentSearchHighlightQuery(), searchHighlightClass)}${durationMeta}</div>
         <div class="asset-meta">${t('trash')}: ${trashStatus}</div>
         ${dcHighlightSnippet(asset, currentSearchHighlightQuery(), searchHighlightClass) ? `<div class="asset-meta dc-hit-row">${dcHighlightSnippet(asset, currentSearchHighlightQuery(), searchHighlightClass)}</div>` : ''}
         ${tagsMarkup}
@@ -216,7 +222,7 @@
             <label>${t('owner')}<input name="owner" value="${escapeHtml(asset.owner)}" required />${buildInlineFieldMatch(asset.owner, currentSearchHighlightQuery(), searchHighlightClass)}</label>
             <label>${t('tags')}<input name="tags" value="${escapeHtml(asset.tags.join(', '))}" placeholder="${escapeHtml(t('ph_inline_tags'))}" />${buildInlineFieldMatch(asset.tags.join(', '), currentSearchHighlightQuery(), searchHighlightClass)}</label>
             <label>${t('description')}<textarea name="description">${escapeHtml(asset.description || '')}</textarea>${buildInlineFieldMatch(asset.description || '', currentSearchHighlightQuery(), searchHighlightClass)}</label>
-            <label>${t('duration')}<input name="durationSeconds" type="number" min="0" value="${escapeHtml(asset.durationSeconds)}" />${buildInlineFieldMatch(asset.durationSeconds ? `${asset.durationSeconds}s` : '', currentSearchHighlightQuery(), searchHighlightClass)}</label>
+            ${durationField}
             <h4>${t('dublin_core')}</h4>
             <div class="dc-grid">
               <label>${t('dc_title')}<input name="dcTitle" value="${escapeHtml(dc.title || '')}" />${buildInlineFieldMatch(dc.title || '', currentSearchHighlightQuery(), searchHighlightClass)}</label>
