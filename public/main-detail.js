@@ -8,6 +8,7 @@
       escapeHtml,
       isImage,
       isVideo,
+      isAudio,
       isOfficeDocument,
       mediaViewer,
       tagColorStyle,
@@ -164,10 +165,12 @@
         ? ''
         : `<div class="asset-meta metadata-lock-note">${escapeHtml(t('metadata_edit_locked'))}</div>`;
       const metadataFieldsetOpen = canEditMetadata ? '<fieldset class="metadata-fieldset">' : '<fieldset class="metadata-fieldset" disabled>';
-      const durationMeta = isImageAsset ? '' : ` | ${t('duration')}: ${escapeHtml(asset.durationSeconds)}s`;
-      const durationField = isImageAsset
-        ? ''
-        : `<label>${t('duration')}<input name="durationSeconds" type="number" min="0" value="${escapeHtml(asset.durationSeconds)}" />${buildInlineFieldMatch(asset.durationSeconds ? `${asset.durationSeconds}s` : '', currentSearchHighlightQuery(), searchHighlightClass)}</label>`;
+      const durationSeconds = Number(asset.durationSeconds) || 0;
+      const hasDuration = (isVideo(asset) || (typeof isAudio === 'function' && isAudio(asset))) && durationSeconds > 0;
+      const durationMeta = hasDuration ? ` | ${t('duration')}: ${escapeHtml(durationSeconds)}s` : '';
+      const durationField = hasDuration
+        ? `<label>${t('duration')}<input name="durationSeconds" type="number" min="0" value="${escapeHtml(durationSeconds)}" />${buildInlineFieldMatch(`${durationSeconds}s`, currentSearchHighlightQuery(), searchHighlightClass)}</label>`
+        : '';
       const accessListText = (values) => (Array.isArray(values) ? values : [])
         .map((value) => String(value || '').trim())
         .filter(Boolean)

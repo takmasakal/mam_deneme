@@ -1831,6 +1831,7 @@ detailModule = window.createMainDetailModule({
   escapeHtml,
   isImage,
   isVideo,
+  isAudio,
   isOfficeDocument,
   mediaViewer,
   tagColorStyle,
