@@ -625,13 +625,39 @@ body {
   gap: 6px;
 }
 
+.user-settings-head {
+  flex-wrap: wrap;
+}
+
 .settings-section-head h3 {
   margin: 10px 0 8px;
 }
 
 .user-settings-search {
-  width: min(320px, 42%);
-  margin-top: 2px;
+  flex: 1 1 260px;
+  width: auto;
+  min-width: 180px;
+  margin-top: 0;
+}
+
+.user-settings-search-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 min(520px, 100%);
+  max-width: 560px;
+}
+
+.user-settings-search-button {
+  width: auto;
+  min-width: 86px;
+  min-height: 36px;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+
+.user-permissions-rows {
+  margin-top: 12px;
 }
 
 .user-perm-identity {
@@ -1746,6 +1772,11 @@ body {
   .settings-section-head {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .user-settings-search-form {
+    max-width: none;
+    width: 100%;
   }
 
   .user-settings-search {

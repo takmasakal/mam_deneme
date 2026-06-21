@@ -2260,6 +2260,7 @@ const adminRecordsModule = window.createAdminRecordsModule({
   highlightSuggestion,
   openTextEditorModal,
   userPermissionsSearchInput,
+  userPermissionsSearchButton: document.getElementById('userPermissionsSearchButton'),
   userPermissionsRows,
   userPermissionsMsg,
   userPermissionsPageSize: document.getElementById('userPermissionsPageSize'),

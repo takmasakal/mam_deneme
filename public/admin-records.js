@@ -7,6 +7,7 @@
       highlightSuggestion,
       openTextEditorModal,
       userPermissionsSearchInput,
+      userPermissionsSearchButton,
       userPermissionsRows,
       userPermissionsMsg,
       userPermissionsPageSize,
@@ -197,11 +198,25 @@
       renderUserPermissionsPager();
     }
 
-    userPermissionsSearchInput?.addEventListener('input', () => {
+    function refreshUserPermissionSearch() {
       userPermissionsPage = 1;
       loadUserPermissions().catch((error) => {
         setUserPermissionsMessage(String(error.message || 'Request failed'));
       });
+    }
+
+    userPermissionsSearchInput?.addEventListener('input', () => {
+      refreshUserPermissionSearch();
+    });
+
+    userPermissionsSearchInput?.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      refreshUserPermissionSearch();
+    });
+
+    userPermissionsSearchButton?.addEventListener('click', () => {
+      refreshUserPermissionSearch();
     });
 
     userPermissionsPageSize?.addEventListener('change', () => {
