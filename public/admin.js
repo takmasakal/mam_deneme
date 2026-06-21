@@ -39,6 +39,7 @@ const adminTabs = Array.from(document.querySelectorAll('.admin-tab'));
 const adminPanels = Array.from(document.querySelectorAll('.admin-panel'));
 const settingsSubTabs = Array.from(document.querySelectorAll('.settings-subtab'));
 const settingsSubPanels = Array.from(document.querySelectorAll('.settings-subpanel'));
+const userPermissionsSearchInput = document.getElementById('userPermissionsSearchInput');
 const userPermissionsRows = document.getElementById('userPermissionsRows');
 const userPermissionsMsg = document.getElementById('userPermissionsMsg');
 const ocrAdminSearchInput = document.getElementById('ocrAdminSearchInput');
@@ -1687,6 +1688,8 @@ const adminRecordsModule = window.createAdminRecordsModule({
   escapeHtml,
   highlightSuggestion,
   openTextEditorModal,
+  userPermissionsSearchInput,
+  userPermissionsSearchButton: document.getElementById('userPermissionsSearchButton'),
   userPermissionsRows,
   userPermissionsMsg,
   ocrAdminSearchInput,

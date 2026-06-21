@@ -459,6 +459,48 @@ body {
   color: #aab1c1;
 }
 
+.settings-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.user-settings-head {
+  flex-wrap: wrap;
+}
+
+.settings-section-head h3 {
+  margin: 10px 0 8px;
+}
+
+.user-settings-search-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 min(520px, 100%);
+  max-width: 560px;
+}
+
+.user-settings-search {
+  flex: 1 1 260px;
+  width: auto;
+  min-width: 180px;
+  margin-top: 0;
+}
+
+.user-settings-search-button {
+  width: auto;
+  min-width: 86px;
+  min-height: 36px;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+
+.user-permissions-rows {
+  margin-top: 12px;
+}
+
 .user-perm-row {
   display: grid;
   grid-template-columns: minmax(160px, 220px) minmax(0, 1fr) auto;
@@ -1439,6 +1481,15 @@ body {
 
   .user-perm-row {
     grid-template-columns: 1fr;
+  }
+
+  .user-settings-search-form {
+    max-width: none;
+    width: 100%;
+  }
+
+  .user-settings-search {
+    width: 100%;
   }
 
   .user-perm-options {

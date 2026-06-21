@@ -6,6 +6,8 @@
       escapeHtml,
       highlightSuggestion,
       openTextEditorModal,
+      userPermissionsSearchInput,
+      userPermissionsSearchButton,
       userPermissionsRows,
       userPermissionsMsg,
       ocrAdminSearchInput,
@@ -27,6 +29,25 @@
     let ocrRecordsTimer = null;
     let subtitleRecordsTimer = null;
     let availableUserPermissions = [];
+    let allUserPermissionUsers = [];
+
+    function getUserPermissionSearchQuery() {
+      return String(userPermissionsSearchInput?.value || '').trim().toLowerCase();
+    }
+
+    function filterUserPermissions(users = []) {
+      const q = getUserPermissionSearchQuery();
+      if (!q) return Array.isArray(users) ? users : [];
+      return (Array.isArray(users) ? users : []).filter((user) => [
+        user.username,
+        user.displayName,
+        user.email
+      ].some((value) => String(value || '').toLowerCase().includes(q)));
+    }
+
+    function refreshUserPermissionSearch() {
+      renderUserPermissions(filterUserPermissions(allUserPermissionUsers), availableUserPermissions);
+    }
 
     function formatPermissionLabel(definition) {
       const labelKey = String(definition?.labelKey || '').trim();
@@ -55,6 +76,10 @@
           { key: 'pdf.advanced', legacyField: 'pdfAdvancedTools', labelKey: 'perm_pdf_advanced' },
           { key: 'text.admin', legacyField: 'textAdminAccess', labelKey: 'perm_text_admin' }
         ];
+      if (!list.length) {
+        userPermissionsRows.innerHTML = `<div class="empty">${escapeHtml(t(getUserPermissionSearchQuery() ? 'user_search_no_match' : 'user_permissions_empty'))}</div>`;
+        return;
+      }
       userPermissionsRows.innerHTML = list.map((user) => {
         const uname = escapeHtml(user.username || '');
         const activeKeys = new Set(Array.isArray(user.permissionKeys) ? user.permissionKeys : []);
@@ -111,8 +136,23 @@
     async function loadUserPermissions() {
       const result = await api('/api/admin/user-permissions');
       availableUserPermissions = Array.isArray(result.availablePermissions) ? result.availablePermissions : [];
-      renderUserPermissions(result.users || [], availableUserPermissions);
+      allUserPermissionUsers = Array.isArray(result.users) ? result.users : [];
+      renderUserPermissions(filterUserPermissions(allUserPermissionUsers), availableUserPermissions);
     }
+
+    userPermissionsSearchInput?.addEventListener('input', () => {
+      refreshUserPermissionSearch();
+    });
+
+    userPermissionsSearchInput?.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      refreshUserPermissionSearch();
+    });
+
+    userPermissionsSearchButton?.addEventListener('click', () => {
+      refreshUserPermissionSearch();
+    });
 
     function renderOcrRecords(records) {
       if (!ocrRecordsRows) return;
