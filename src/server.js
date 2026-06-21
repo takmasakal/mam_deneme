@@ -12,13 +12,14 @@ const {
   getPermissionDefinitionsPayload,
   resolvePermissionKeysFromPrincipals,
   permissionKeysToLegacyFlags,
-  normalizePermissionEntry,
-  isAdminName,
-  isAdminByGroupsOrRoles
+  normalizePermissionEntry
 } = require('./permissions');
 const { createOfficeService } = require('./services/officeService');
 const { createSearchService } = require('./services/searchService');
 const { createAssetDeletionService } = require('./services/assetDeletionService');
+const { createAssetAccessService } = require('./services/assetAccessService');
+const { createAssetEditLockService } = require('./services/assetEditLockService');
+const { createImageDerivativeService } = require('./services/imageDerivativeService');
 const {
   normalizeOcrText,
   normalizeOcrLine,
@@ -57,11 +58,22 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const APP_BUILD_INFO = {
+  name: 'mam_deneme',
+  version: '0.1.0',
+  gitCommit: String(process.env.MAM_GIT_COMMIT || 'unknown').trim() || 'unknown',
+  gitBranch: String(process.env.MAM_GIT_BRANCH || 'unknown').trim() || 'unknown',
+  buildDate: String(process.env.MAM_BUILD_DATE || 'unknown').trim() || 'unknown',
+  nodeEnv: String(process.env.NODE_ENV || '').trim() || 'development'
+};
+const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || process.env.MAM_JSON_BODY_LIMIT || '1500mb';
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
 const PROXIES_DIR = path.join(UPLOADS_DIR, 'proxies');
 const THUMBNAILS_DIR = path.join(UPLOADS_DIR, 'thumbnails');
 const SUBTITLES_DIR = path.join(UPLOADS_DIR, 'subtitles');
 const OCR_DIR = path.join(UPLOADS_DIR, 'ocr');
+const AUDIT_EXPORTS_DIR = path.join(UPLOADS_DIR, '_audit_exports');
+const DEFAULT_BACKUP_DIR = process.env.MAM_BACKUP_DIR || path.join(UPLOADS_DIR, '_backups');
 const OCR_FRAMES_DIR = path.join(OCR_DIR, '_frames');
 const OCR_FRAME_CACHE_DIR = path.join(OCR_FRAMES_DIR, '_cache');
 const OCR_FRAME_CACHE_ENABLED = String(process.env.OCR_FRAME_CACHE_ENABLE || 'false').trim().toLowerCase() === 'true';
@@ -75,15 +87,36 @@ const WHISPER_MODEL_CACHE = process.env.WHISPER_MODEL_CACHE || HF_HOME;
 const PADDLE_CACHE_DIR = process.env.PADDLE_PDX_CACHE_HOME || path.join(MAM_MODEL_CACHE_DIR, 'paddle');
 const DOWNLOAD_AUDIT_THROTTLE_MS = Math.max(60_000, Math.min(3_600_000, Number(process.env.DOWNLOAD_AUDIT_THROTTLE_MS) || 300_000));
 const recentDownloadAuditKeys = new Map();
-app.use(express.json({ limit: '300mb' }));
+app.use(express.json({ limit: JSON_BODY_LIMIT }));
+app.get('/api/health', (_req, res) => {
+  res.json({
+    ok: true,
+    service: APP_BUILD_INFO.name,
+    gitCommit: APP_BUILD_INFO.gitCommit,
+    gitBranch: APP_BUILD_INFO.gitBranch,
+    buildDate: APP_BUILD_INFO.buildDate
+  });
+});
 app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use('/uploads', secureUploadAssetAccess);
 app.use('/uploads', auditUploadDownloadRequest);
 app.use('/uploads', express.static(UPLOADS_DIR));
+app.use((error, _req, res, next) => {
+  if (error?.type === 'entity.too.large' || Number(error?.status || 0) === 413) {
+    return res.status(413).json({
+      error: `Upload payload is too large. Current JSON body limit is ${JSON_BODY_LIMIT}.`,
+      code: 'upload_payload_too_large',
+      limit: JSON_BODY_LIMIT
+    });
+  }
+  return next(error);
+});
 
 const WORKFLOW = ['Ingested', 'QC', 'Approved', 'Published', 'Archived'];
 const DEFAULT_ADMIN_SETTINGS = {
   workflowTrackingEnabled: true,
   autoProxyBackfillOnUpload: false,
+  newAssetDefaultVisibility: 'owner_groups',
   playerUiMode: 'vidstack',
   ocrDefaultAdvancedMode: true,
   ocrDefaultTurkishAiCorrect: true,
@@ -101,9 +134,26 @@ const DEFAULT_ADMIN_SETTINGS = {
     maxWidth: 82
   },
   auditRetentionDays: 180,
+  mediaJobRetentionDays: 30,
+  authSession: {
+    rememberMe: false,
+    ssoIdleMinutes: 30,
+    ssoMaxHours: 8,
+    clientIdleMinutes: 30,
+    clientMaxHours: 8
+  },
+  backup: {
+    enabled: false,
+    directory: DEFAULT_BACKUP_DIR,
+    dailyHour: 2,
+    includeMamDb: true,
+    includeKeycloakDb: false,
+    includeUploadsArchive: false,
+    retentionDays: 14
+  },
   apiTokenEnabled: false,
   apiToken: '',
-  oidcBearerEnabled: false,
+  oidcBearerEnabled: true,
   oidcIssuerUrl: process.env.OIDC_ISSUER_URL || 'http://keycloak:8080/realms/mam',
   oidcJwksUrl: process.env.OIDC_JWKS_URL || 'http://keycloak:8080/realms/mam/protocol/openid-connect/certs',
   oidcAudience: process.env.OIDC_AUDIENCE || ''
@@ -113,6 +163,13 @@ function normalizePlayerUiMode(value) {
   const mode = String(value || '').trim().toLowerCase();
   if (mode === 'vidstack' || mode === 'mpegdash') return mode;
   return 'vidstack';
+}
+
+function normalizeNewAssetDefaultVisibility(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'public' || normalized === 'private' || normalized === 'owner_groups') return normalized;
+  if (normalized === 'group' || normalized === 'groups') return 'owner_groups';
+  return 'owner_groups';
 }
 
 function clampNumber(value, min, max, fallback) {
@@ -147,6 +204,50 @@ function normalizeSubtitleStyle(value = {}) {
 function normalizeAuditRetentionDays(value) {
   return clampNumber(value, 1, 3650, DEFAULT_ADMIN_SETTINGS.auditRetentionDays);
 }
+
+function normalizeMediaJobRetentionDays(value) {
+  return clampNumber(value, 1, 3650, DEFAULT_ADMIN_SETTINGS.mediaJobRetentionDays);
+}
+
+function normalizeAuthSessionSettings(value = {}) {
+  const defaults = DEFAULT_ADMIN_SETTINGS.authSession;
+  const input = value && typeof value === 'object' ? value : {};
+  return {
+    rememberMe: Object.prototype.hasOwnProperty.call(input, 'rememberMe') ? Boolean(input.rememberMe) : defaults.rememberMe,
+    ssoIdleMinutes: clampNumber(input.ssoIdleMinutes, 1, 1440, defaults.ssoIdleMinutes),
+    ssoMaxHours: clampNumber(input.ssoMaxHours, 1, 720, defaults.ssoMaxHours),
+    clientIdleMinutes: clampNumber(input.clientIdleMinutes, 1, 1440, defaults.clientIdleMinutes),
+    clientMaxHours: clampNumber(input.clientMaxHours, 1, 720, defaults.clientMaxHours)
+  };
+}
+
+function normalizeBackupSettings(value = {}) {
+  const defaults = DEFAULT_ADMIN_SETTINGS.backup;
+  const input = value && typeof value === 'object' ? value : {};
+  const rawDirectory = String(input.directory || defaults.directory).trim();
+  return {
+    enabled: Object.prototype.hasOwnProperty.call(input, 'enabled') ? Boolean(input.enabled) : defaults.enabled,
+    directory: rawDirectory || defaults.directory,
+    dailyHour: clampNumber(input.dailyHour, 0, 23, defaults.dailyHour),
+    includeMamDb: Object.prototype.hasOwnProperty.call(input, 'includeMamDb') ? Boolean(input.includeMamDb) : defaults.includeMamDb,
+    includeKeycloakDb: Object.prototype.hasOwnProperty.call(input, 'includeKeycloakDb') ? Boolean(input.includeKeycloakDb) : defaults.includeKeycloakDb,
+    includeUploadsArchive: Object.prototype.hasOwnProperty.call(input, 'includeUploadsArchive') ? Boolean(input.includeUploadsArchive) : defaults.includeUploadsArchive,
+    retentionDays: clampNumber(input.retentionDays, 1, 3650, defaults.retentionDays)
+  };
+}
+function readSecretFile(filePath) {
+  if (!filePath) return '';
+  try {
+    return fs.readFileSync(filePath, 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+function readEnvOrFile(name) {
+  const direct = process.env[name];
+  if (direct) return direct;
+  return readSecretFile(process.env[`${name}_FILE`]);
+}
 const DEFAULT_USER_PERMISSIONS = {};
 const ELASTIC_URL = process.env.ELASTIC_URL || 'http://localhost:9200';
 const ELASTIC_INDEX = process.env.ELASTIC_INDEX || 'mam_assets';
@@ -162,9 +263,12 @@ const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM || 'mam';
 const KEYCLOAK_REALMS = String(process.env.KEYCLOAK_REALMS || '').trim();
 const KEYCLOAK_ADMIN_REALM = process.env.KEYCLOAK_ADMIN_REALM || 'master';
 const KEYCLOAK_ADMIN_USERNAME = process.env.KEYCLOAK_ADMIN_USERNAME || process.env.KEYCLOAK_ADMIN || '';
-const KEYCLOAK_ADMIN_PASSWORD = process.env.KEYCLOAK_ADMIN_PASSWORD || '';
+const KEYCLOAK_ADMIN_PASSWORD = readEnvOrFile('KEYCLOAK_ADMIN_PASSWORD');
 const KEYCLOAK_ADMIN_CLIENT_ID = process.env.KEYCLOAK_ADMIN_CLIENT_ID || 'admin-cli';
+const OAUTH2_PROXY_CLIENT_ID = process.env.OAUTH2_PROXY_CLIENT_ID || 'mam-web';
 const USE_OAUTH2_PROXY = String(process.env.USE_OAUTH2_PROXY || 'false').trim().toLowerCase() === 'true';
+const DIRECT_APP_PORT = String(process.env.DIRECT_APP_PORT || process.env.MAM_DIRECT_APP_PORT || '3001').trim();
+const DIRECT_API_TOKEN_REQUIRED = String(process.env.MAM_DIRECT_API_TOKEN_REQUIRED ?? 'true').trim().toLowerCase() !== 'false';
 const OFFICE_EDITOR_PROVIDER = ['onlyoffice', 'libreoffice'].includes(String(process.env.OFFICE_EDITOR_PROVIDER || '').trim().toLowerCase())
   ? String(process.env.OFFICE_EDITOR_PROVIDER || '').trim().toLowerCase()
   : 'none';
@@ -177,9 +281,12 @@ const OIDC_JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
 const oidcJwksCache = new Map();
 const pdfOcrCache = new Map();
 const KEYCLOAK_ADMIN_CACHE_TTL_MS = Math.max(5, Number(process.env.KEYCLOAK_ADMIN_CACHE_TTL_SECONDS) || 60) * 1000;
+const KEYCLOAK_ADMIN_REQUEST_TIMEOUT_MS = Math.max(1000, Number(process.env.KEYCLOAK_ADMIN_REQUEST_TIMEOUT_MS) || 3500);
 const SYSTEM_HEALTH_CACHE_TTL_MS = Math.max(5, Number(process.env.SYSTEM_HEALTH_CACHE_TTL_SECONDS) || 30) * 1000;
 let keycloakUsersCache = { expiresAt: 0, value: null };
+let keycloakGroupsCache = { expiresAt: 0, value: null };
 const keycloakPermissionDefaultsCache = new Map();
+const keycloakUserProfileCache = new Map();
 let systemHealthCache = { expiresAt: 0, value: null };
 const runtimeErrorLogs = [];
 const activeUserSessions = new Map();
@@ -331,9 +438,16 @@ function getRequestDerivedOidcSettings(settings, req) {
 
 function buildLogoutUrl(req) {
   if (!USE_OAUTH2_PROXY) return '/';
-  // Force return to oauth2 start page after local sign_out.
-  // oauth2-proxy will also call backend logout URL (Keycloak) with id_token_hint.
-  return '/oauth2/sign_out?rd=%2Foauth2%2Fstart%3Frd%3D%252F';
+  const requestOrigin = `${resolveRequestProtocol(req)}://${resolveRequestHost(req)}`.replace(/\/+$/, '');
+  const postLogoutRedirectUri = `${requestOrigin}/oauth2/start?rd=%2F`;
+  const keycloakPublicBaseUrl = trimTrailingSlashes(KEYCLOAK_PUBLIC_URL)
+    || `${resolveRequestProtocol(req)}://${hostWithoutPort(resolveRequestHost(req))}:${String(process.env.KEYCLOAK_PUBLIC_PORT || '8081').trim() || '8081'}`;
+  const keycloakLogoutUrl = `${buildRealmIssuerUrl(keycloakPublicBaseUrl)}/protocol/openid-connect/logout`
+    + `?client_id=${encodeURIComponent(OAUTH2_PROXY_CLIENT_ID)}`
+    + `&post_logout_redirect_uri=${encodeURIComponent(postLogoutRedirectUri)}`;
+
+  // First clear oauth2-proxy cookies, then clear Keycloak and return directly to the login flow.
+  return `/oauth2/sign_out?rd=${encodeURIComponent(keycloakLogoutUrl)}`;
 }
 
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -350,6 +464,9 @@ if (!fs.existsSync(SUBTITLES_DIR)) {
 }
 if (!fs.existsSync(OCR_DIR)) {
   fs.mkdirSync(OCR_DIR, { recursive: true });
+}
+if (!fs.existsSync(AUDIT_EXPORTS_DIR)) {
+  fs.mkdirSync(AUDIT_EXPORTS_DIR, { recursive: true });
 }
 if (!fs.existsSync(OCR_FRAMES_DIR)) {
   fs.mkdirSync(OCR_FRAMES_DIR, { recursive: true });
@@ -404,6 +521,7 @@ function parseSearchTokens(value, normalizeFn = (input) => String(input || '').t
   const optional = [];
   const optionalExact = [];
   let hasOperators = false;
+  let sawOrOperator = false;
 
   const matcher = /([+-]?)"([^"]+)"|(\S+)/g;
   let match = null;
@@ -426,6 +544,10 @@ function parseSearchTokens(value, normalizeFn = (input) => String(input || '').t
       if (!bucket.includes(valueToPush)) bucket.push(valueToPush);
     };
 
+    if (!isQuoted && prefix !== '+' && prefix !== '-' && normalizedToken.toLowerCase() === 'or') {
+      sawOrOperator = true;
+      continue;
+    }
     if (prefix === '+') {
       hasOperators = true;
       pushUnique(isQuoted ? mustIncludeExact : mustInclude, normalizedToken);
@@ -443,9 +565,14 @@ function parseSearchTokens(value, normalizeFn = (input) => String(input || '').t
     }
     pushUnique(optional, normalizedToken);
   }
+  if (sawOrOperator && (optional.length + optionalExact.length + mustInclude.length + mustIncludeExact.length) > 1) {
+    hasOperators = true;
+  }
 
   return {
-    raw: normalizeFn(raw),
+    raw: sawOrOperator
+      ? [...mustInclude, ...mustIncludeExact, ...mustExclude, ...mustExcludeExact, ...optional, ...optionalExact].join(' ').trim()
+      : normalizeFn(raw),
     hasOperators,
     mustInclude,
     mustIncludeExact,
@@ -708,6 +835,18 @@ function listOcrFilesRecursive(dirPath) {
   return out;
 }
 
+function listUploadArtifactFilesRecursive(folderName, extension) {
+  const safeFolder = String(folderName || '').trim();
+  const safeExt = String(extension || '').trim().toLowerCase();
+  if (!safeFolder || !safeExt) return [];
+  return listOcrFilesRecursive(UPLOADS_DIR)
+    .filter((filePath) => {
+      const resolvedPath = path.resolve(filePath);
+      if (!resolvedPath.toLowerCase().endsWith(safeExt)) return false;
+      return resolvedPath.split(path.sep).includes(safeFolder);
+    });
+}
+
 function getCandidateOcrFilePathsForRow(row) {
   const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
   const directUrl = pickLatestVideoOcrUrlFromDc(dc);
@@ -719,11 +858,14 @@ function getCandidateOcrFilePathsForRow(row) {
   const titleSlug = sanitizeFileName(String(row?.title || '').trim().toLowerCase());
   const fileSlug = sanitizeFileName(path.basename(String(row?.file_name || ''), path.extname(String(row?.file_name || ''))).toLowerCase());
   const createdDay = getDatePart(row?.created_at);
-  const allTxt = listOcrFilesRecursive(OCR_DIR);
+  const allTxt = Array.from(new Set([
+    ...listOcrFilesRecursive(OCR_DIR),
+    ...listUploadArtifactFilesRecursive('ocr', '.txt')
+  ]));
   const ranked = allTxt
     .map((p) => {
       const base = path.basename(p).toLowerCase();
-      const rel = path.relative(OCR_DIR, p).replace(/\\/g, '/');
+      const rel = path.relative(UPLOADS_DIR, p).replace(/\\/g, '/');
       const hasFile = fileSlug && fileSlug.length >= 4 && base.includes(fileSlug);
       const hasTitle = titleSlug && titleSlug.length >= 5 && base.includes(titleSlug);
       const inSameDay = createdDay && rel.startsWith(`${createdDay}/`);
@@ -2612,7 +2754,7 @@ async function syncOcrSegmentIndexForAsset(assetId, ocrUrl, options = {}) {
   if (!safeAssetId || !safeOcrUrl) return 0;
   const ocrPath = publicUploadUrlToAbsolutePath(safeOcrUrl);
   await pool.query('DELETE FROM asset_ocr_segments WHERE asset_id = $1 AND ocr_url = $2', [safeAssetId, safeOcrUrl]);
-  if (!ocrPath || !ocrPath.startsWith(OCR_DIR) || !fs.existsSync(ocrPath)) return 0;
+  if (!ocrPath || !isUploadArtifactPath(ocrPath, 'ocr') || !fs.existsSync(ocrPath)) return 0;
   let raw = '';
   try {
     raw = fs.readFileSync(ocrPath, 'utf8');
@@ -3067,13 +3209,13 @@ function normalizeTypeFolder(typeValue, mimeType, fileName) {
 
   if (isVideoMime(mimeType) || isVideoByExtension(fileName)) return 'video';
   if (String(mimeType || '').toLowerCase().startsWith('audio/')) return 'audio';
-  if (String(mimeType || '').toLowerCase().startsWith('image/')) return 'photo';
+  if (String(mimeType || '').toLowerCase().startsWith('image/') || isImageByExtension(fileName)) return 'photo';
   if (isPdfCandidate({ mimeType, fileName }) || String(mimeType || '').toLowerCase().startsWith('text/')) return 'document';
   return 'other';
 }
 
 function getIngestStoragePath({ type, mimeType, fileName }) {
-  const datePart = new Date().toISOString().slice(0, 10);
+  const datePart = getUploadDateDir();
   const typePart = normalizeTypeFolder(type, mimeType, fileName);
   const relativeDir = path.join(datePart, typePart);
   const absoluteDir = path.join(UPLOADS_DIR, relativeDir);
@@ -3087,8 +3229,7 @@ function inferAssetStorageSubdir(input = {}) {
 
 function getDatePart(value) {
   const d = value ? new Date(value) : new Date();
-  if (!Number.isFinite(d.getTime())) return new Date().toISOString().slice(0, 10);
-  return d.toISOString().slice(0, 10);
+  return getUploadDateDir(Number.isFinite(d.getTime()) ? d : new Date());
 }
 
 function artifactRoot(kind) {
@@ -3099,13 +3240,32 @@ function artifactRoot(kind) {
   throw new Error(`Unknown artifact kind: ${kind}`);
 }
 
+function getUploadDateDir(value = new Date()) {
+  const d = value instanceof Date ? value : new Date(value);
+  const safeDate = Number.isFinite(d.getTime()) ? d : new Date();
+  const year = String(safeDate.getUTCFullYear());
+  const month = String(safeDate.getUTCMonth() + 1);
+  const day = String(safeDate.getUTCDate());
+  return path.join(year, month, day);
+}
+
+function artifactFolder(kind) {
+  if (kind === 'proxies') return 'previews';
+  if (kind === 'thumbnails') return 'thumbnails';
+  if (kind === 'subtitles') return 'subtitles';
+  if (kind === 'ocr') return 'ocr';
+  if (kind === 'attachments') return 'attachments';
+  throw new Error(`Unknown artifact kind: ${kind}`);
+}
+
 function buildArtifactPath(kind, storedName, dateValue) {
   const datePart = getDatePart(dateValue);
   const safeName = sanitizeFileName(storedName);
-  const dir = path.join(artifactRoot(kind), datePart);
+  const folder = artifactFolder(kind);
+  const dir = path.join(UPLOADS_DIR, datePart, folder);
   fs.mkdirSync(dir, { recursive: true });
   const absolutePath = path.join(dir, safeName);
-  const publicUrl = `/uploads/${kind}/${datePart}/${safeName}`;
+  const publicUrl = `/uploads/${datePart.replace(/\\/g, '/')}/${folder}/${safeName}`;
   return { absolutePath, publicUrl, datePart };
 }
 
@@ -3286,12 +3446,12 @@ function updateOcrFrameCacheFromWorkDir({ assetId, intervalSec, workDir }) {
   });
 }
 
-function inferAssetType(inputType, mimeType) {
+function inferAssetType(inputType, mimeType, fileName = '') {
   if (inputType && inputType.trim()) return inputType.trim();
   const mime = String(mimeType || '').toLowerCase();
   if (mime.startsWith('video/')) return 'Video';
   if (mime.startsWith('audio/')) return 'Audio';
-  if (mime.startsWith('image/')) return 'Image';
+  if (mime.startsWith('image/') || isImageByExtension(fileName)) return 'Image';
   if (
     mime.startsWith('application/') ||
     mime.startsWith('text/') ||
@@ -3312,6 +3472,11 @@ function isVideoMime(mimeType) {
 function isVideoByExtension(fileName) {
   const ext = path.extname(String(fileName || '')).toLowerCase();
   return ['.mp4', '.mov', '.m4v', '.mkv', '.avi', '.webm', '.mpeg', '.mpg'].includes(ext);
+}
+
+function isImageByExtension(fileName) {
+  const ext = path.extname(String(fileName || '')).toLowerCase();
+  return ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tif', '.tiff', '.heic', '.heif'].includes(ext);
 }
 
 function isVideoCandidate({ mimeType, fileName, declaredType }) {
@@ -3335,6 +3500,15 @@ const TEXT_DOC_EXTENSIONS = new Set([
   'conf', 'sh', 'bash', 'zsh'
 ]);
 
+const ARCHIVE_EXTENSIONS = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz', 'zst', 'iso']);
+const ARCHIVE_MIME_PARTS = ['zip', 'rar', 'x-7z', 'x-tar', 'gzip', 'x-gzip', 'bzip2', 'x-xz', 'zstd'];
+
+function isArchiveCandidate({ mimeType, fileName }) {
+  const mime = String(mimeType || '').toLowerCase();
+  const ext = getFileExtension(fileName);
+  return ARCHIVE_EXTENSIONS.has(ext) || ARCHIVE_MIME_PARTS.some((part) => mime.includes(part));
+}
+
 function isTextDocumentCandidate({ mimeType, fileName }) {
   const mime = String(mimeType || '').toLowerCase();
   if (mime.startsWith('text/')) return true;
@@ -3343,6 +3517,7 @@ function isTextDocumentCandidate({ mimeType, fileName }) {
 
 function isDocumentCandidate({ mimeType, fileName, declaredType }) {
   const type = String(declaredType || '').trim().toLowerCase();
+  if (isArchiveCandidate({ mimeType, fileName })) return false;
   if (type === 'document') return true;
   if (type === 'video' || type === 'audio' || type === 'photo' || type === 'image') return false;
 
@@ -3379,7 +3554,7 @@ function isOfficeDocumentCandidate({ mimeType, fileName }) {
 function getAssetFamily({ mimeType, fileName, declaredType }) {
   if (isVideoCandidate({ mimeType, fileName, declaredType })) return 'video';
   if (String(mimeType || '').toLowerCase().startsWith('audio/')) return 'audio';
-  if (String(mimeType || '').toLowerCase().startsWith('image/')) return 'image';
+  if (String(mimeType || '').toLowerCase().startsWith('image/') || isImageByExtension(fileName)) return 'image';
   if (isDocumentCandidate({ mimeType, fileName, declaredType })) return 'document';
   return 'unknown';
 }
@@ -3500,6 +3675,7 @@ async function ensureDocumentThumbnailForRow(row) {
       'UPDATE assets SET thumbnail_url = $2, updated_at = $3 WHERE id = $1',
       [row.id, thumbnailUrl, new Date().toISOString()]
     );
+    await cleanupReplacedUploadUrls(row.id, existing);
     return { ...row, thumbnail_url: thumbnailUrl };
   } catch (_error) {
     return row;
@@ -3554,6 +3730,7 @@ async function ensurePdfThumbnailForRow(row) {
     'UPDATE assets SET thumbnail_url = $2, updated_at = $3 WHERE id = $1',
     [row.id, thumbnailUrl, new Date().toISOString()]
   );
+  await cleanupReplacedUploadUrls(row.id, existing);
   return { ...row, thumbnail_url: thumbnailUrl };
 }
 
@@ -3562,6 +3739,16 @@ function publicUploadUrlToAbsolutePath(publicUrl) {
   if (!url.startsWith('/uploads/')) return '';
   const rel = url.replace('/uploads/', '');
   return path.join(UPLOADS_DIR, rel);
+}
+
+function isUploadArtifactPath(filePath, folderName) {
+  const safePath = String(filePath || '').trim();
+  const safeFolder = String(folderName || '').trim();
+  if (!safePath || !safeFolder) return false;
+  const resolvedPath = path.resolve(safePath);
+  const uploadsRoot = path.resolve(UPLOADS_DIR);
+  if (resolvedPath !== uploadsRoot && !resolvedPath.startsWith(`${uploadsRoot}${path.sep}`)) return false;
+  return resolvedPath.split(path.sep).includes(safeFolder);
 }
 
 function pruneDownloadAuditCache(now = Date.now()) {
@@ -3612,17 +3799,55 @@ async function findAssetForPublicUploadUrl(publicUrl) {
   if (!safeUrl.startsWith('/uploads/')) return null;
   const result = await pool.query(
     `
-      SELECT id, title, file_name, media_url, proxy_url
-      FROM assets
-      WHERE media_url = $1
-         OR proxy_url = $1
-         OR CONCAT('/uploads/proxies/', proxy_url) = $1
-      ORDER BY updated_at DESC
+      SELECT *
+      FROM (
+        SELECT assets.*, 0 AS match_rank
+        FROM assets
+        WHERE media_url = $1
+           OR proxy_url = $1
+           OR thumbnail_url = $1
+           OR CONCAT('/uploads/proxies/', proxy_url) = $1
+           OR dc_metadata->>'subtitleUrl' = $1
+           OR dc_metadata->>'videoOcrUrl' = $1
+           OR EXISTS (
+             SELECT 1
+             FROM jsonb_array_elements(COALESCE(dc_metadata->'subtitleItems', '[]'::jsonb)) item
+             WHERE item->>'subtitleUrl' = $1
+           )
+           OR EXISTS (
+             SELECT 1
+             FROM jsonb_array_elements(COALESCE(dc_metadata->'videoOcrItems', '[]'::jsonb)) item
+             WHERE item->>'ocrUrl' = $1
+           )
+        UNION ALL
+        SELECT assets.*, 1 AS match_rank
+        FROM assets
+        JOIN asset_versions ON asset_versions.asset_id = assets.id
+        WHERE asset_versions.snapshot_media_url = $1
+           OR asset_versions.snapshot_thumbnail_url = $1
+      ) matched
+      ORDER BY match_rank ASC, updated_at DESC
       LIMIT 1
     `,
     [safeUrl]
   );
   return result.rows?.[0] || null;
+}
+
+async function secureUploadAssetAccess(req, res, next) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  const publicUrl = `/uploads/${String(req.path || '').replace(/^\/+/, '')}`;
+  try {
+    const row = await findAssetForPublicUploadUrl(publicUrl);
+    if (!row) return res.status(404).json({ error: 'Upload file is not attached to an accessible asset' });
+    const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+    if (!assetAccessService.canViewAsset(row, accessContext)) {
+      return res.status(404).json({ error: 'Upload file is not attached to an accessible asset' });
+    }
+    return next();
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to authorize upload file access' });
+  }
 }
 
 function auditUploadDownloadRequest(req, res, next) {
@@ -3825,6 +4050,18 @@ function hasStoredFile(value, defaultSubdir) {
   }
 }
 
+async function cleanupReplacedUploadUrls(assetId, publicUrls = []) {
+  if (typeof cleanupUnreferencedAssetFiles !== 'function') return;
+  const safeAssetId = String(assetId || '').trim();
+  const targets = Array.from(new Set(
+    (Array.isArray(publicUrls) ? publicUrls : [publicUrls])
+      .map((url) => publicUploadUrlToAbsolutePath(String(url || '').trim()))
+      .filter(Boolean)
+  ));
+  if (!targets.length) return;
+  await cleanupUnreferencedAssetFiles(targets, { assetId: safeAssetId });
+}
+
 function isPathInsideRoot(filePath, rootDir) {
   const safePath = String(filePath || '').trim();
   const safeRoot = String(rootDir || '').trim();
@@ -3851,6 +4088,7 @@ const assetDeletionService = createAssetDeletionService({
 const {
   collectAssetCleanupPaths,
   cleanupAssetFiles,
+  cleanupUnreferencedAssetFiles,
   removeAssetFromCollections,
   deleteAssetFromElastic
 } = assetDeletionService;
@@ -4123,7 +4361,7 @@ function buildDefaultDcMetadata(input) {
     publisher: '',
     contributor: '',
     date: new Date().toISOString(),
-    type: String(inferAssetType(input.type, input.mimeType) || '').trim(),
+    type: String(inferAssetType(input.type, input.mimeType, input.fileName) || '').trim(),
     format: String(input.mimeType || '').trim(),
     identifier: String(input.fileName || '').trim(),
     source: String(input.sourcePath || '').trim(),
@@ -4190,6 +4428,21 @@ function mapAssetRow(row) {
     thumbnailUrl,
     fileName: row.file_name,
     mimeType: row.mime_type,
+    visibility: row.visibility || 'public',
+    ownerUser: row.owner_user || '',
+    ownerGroups: row.owner_groups || [],
+    allowedUsers: row.allowed_users || [],
+    allowedGroups: row.allowed_groups || [],
+    deniedUsers: row.denied_users || [],
+    deniedGroups: row.denied_groups || [],
+    editAllowedUsers: row.edit_allowed_users || [],
+    editAllowedGroups: row.edit_allowed_groups || [],
+    editDeniedUsers: row.edit_denied_users || [],
+    editDeniedGroups: row.edit_denied_groups || [],
+    downloadAllowedUsers: row.download_allowed_users || [],
+    downloadAllowedGroups: row.download_allowed_groups || [],
+    downloadDeniedUsers: row.download_denied_users || [],
+    downloadDeniedGroups: row.download_denied_groups || [],
     dcMetadata,
     audioChannels: Number(dcMetadata.audioChannels) || 0,
     subtitleUrl: String(dcMetadata.subtitleUrl || '').trim(),
@@ -4261,7 +4514,7 @@ async function createAssetRecord(input) {
     id: nanoid(),
     title: input.title?.trim() || 'Untitled Asset',
     description: input.description?.trim() || '',
-    type: inferAssetType(input.type, input.mimeType),
+    type: inferAssetType(input.type, input.mimeType, input.fileName),
     tags: toTags(input.tags),
     owner: input.owner?.trim() || 'Unknown',
     durationSeconds: Number(input.durationSeconds) || 0,
@@ -4273,6 +4526,21 @@ async function createAssetRecord(input) {
     fileName: input.fileName?.trim() || '',
     mimeType: input.mimeType?.trim() || '',
     fileHash: input.fileHash?.trim().toLowerCase() || '',
+    visibility: assetAccessService.normalizeVisibility(input.visibility, 'public'),
+    ownerUser: assetAccessService.normalizeAccessName(input.ownerUser || input.owner_user || ''),
+    ownerGroups: assetAccessService.normalizeAccessList(input.ownerGroups || input.owner_groups || []),
+    allowedUsers: assetAccessService.normalizeAccessList(input.allowedUsers || input.allowed_users || []),
+    allowedGroups: assetAccessService.normalizeAccessList(input.allowedGroups || input.allowed_groups || []),
+    deniedUsers: assetAccessService.normalizeAccessList(input.deniedUsers || input.denied_users || []),
+    deniedGroups: assetAccessService.normalizeAccessList(input.deniedGroups || input.denied_groups || []),
+    editAllowedUsers: assetAccessService.normalizeAccessList(input.editAllowedUsers || input.edit_allowed_users || []),
+    editAllowedGroups: assetAccessService.normalizeAccessList(input.editAllowedGroups || input.edit_allowed_groups || []),
+    editDeniedUsers: assetAccessService.normalizeAccessList(input.editDeniedUsers || input.edit_denied_users || []),
+    editDeniedGroups: assetAccessService.normalizeAccessList(input.editDeniedGroups || input.edit_denied_groups || []),
+    downloadAllowedUsers: assetAccessService.normalizeAccessList(input.downloadAllowedUsers || input.download_allowed_users || []),
+    downloadAllowedGroups: assetAccessService.normalizeAccessList(input.downloadAllowedGroups || input.download_allowed_groups || []),
+    downloadDeniedUsers: assetAccessService.normalizeAccessList(input.downloadDeniedUsers || input.download_denied_users || []),
+    downloadDeniedGroups: assetAccessService.normalizeAccessList(input.downloadDeniedGroups || input.download_denied_groups || []),
     dcMetadata: {
       ...buildDefaultDcMetadata(input),
       ...sanitizeDcMetadata(input.dcMetadata)
@@ -4305,11 +4573,15 @@ async function createAssetRecord(input) {
       `
         INSERT INTO assets (
           id, title, description, type, tags, owner, duration_seconds, source_path,
-          media_url, proxy_url, proxy_status, thumbnail_url, file_name, mime_type, dc_metadata, file_hash, status, created_at, updated_at
+          media_url, proxy_url, proxy_status, thumbnail_url, file_name, mime_type, dc_metadata, file_hash,
+          visibility, owner_user, owner_groups, allowed_users, allowed_groups,
+          denied_users, denied_groups, edit_allowed_users, edit_allowed_groups, edit_denied_users, edit_denied_groups,
+          download_allowed_users, download_allowed_groups, download_denied_users, download_denied_groups,
+          status, created_at, updated_at
           , deleted_at
         ) VALUES (
           $1,$2,$3,$4,$5,$6,$7,$8,
-          $9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
+          $9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35
         )
       `,
       [
@@ -4329,6 +4601,21 @@ async function createAssetRecord(input) {
         asset.mimeType,
         JSON.stringify(asset.dcMetadata),
         asset.fileHash,
+        asset.visibility,
+        asset.ownerUser,
+        asset.ownerGroups,
+        asset.allowedUsers,
+        asset.allowedGroups,
+        asset.deniedUsers,
+        asset.deniedGroups,
+        asset.editAllowedUsers,
+        asset.editAllowedGroups,
+        asset.editDeniedUsers,
+        asset.editDeniedGroups,
+        asset.downloadAllowedUsers,
+        asset.downloadAllowedGroups,
+        asset.downloadDeniedUsers,
+        asset.downloadDeniedGroups,
         asset.status,
         asset.createdAt,
         asset.updatedAt,
@@ -4555,6 +4842,24 @@ function runCommandCapture(cmd, args, options = {}) {
   });
 }
 
+function compactCommandOutput(value, maxLength = 1200) {
+  const text = String(value || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(' | ');
+  if (!text) return 'Command failed';
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+const imageDerivativeService = createImageDerivativeService({
+  runCommandCapture,
+  buildArtifactPath,
+  nanoid,
+  getFileExtension
+});
+
 function runCommandQuiet(cmd, args) {
   return new Promise((resolve) => {
     const p = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -4569,6 +4874,46 @@ function runCommandQuiet(cmd, args) {
       resolve({ ok: code === 0, code: code ?? -1, stderr });
     });
   });
+}
+
+function stripBenignTranscriptionWarnings(value = '') {
+  return String(value || '')
+    .split(/\r?\n/)
+    .filter((line) => {
+      const normalized = String(line || '').toLowerCase();
+      if (!normalized.trim()) return false;
+      if (normalized.includes('onnxruntime') && normalized.includes('cpuid_info warning')) return false;
+      if (normalized.includes('unknown cpu vendor') || normalized.includes('cpuinfo_vendor')) return false;
+      if (normalized.includes('gpu device discovery failed')) return false;
+      if (normalized.includes('device_discovery.cc')) return false;
+      return true;
+    })
+    .join('\n')
+    .trim();
+}
+
+function compactTranscriptionError(result) {
+  return stripBenignTranscriptionWarnings(`${String(result?.stderr || '')}\n${String(result?.stdout || '')}`)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function countGeneratedSubtitleCues(outputPath) {
+  try {
+    if (!outputPath || !fs.existsSync(outputPath)) return 0;
+    return parseSubtitleCues(fs.readFileSync(outputPath, 'utf8')).length;
+  } catch (_error) {
+    return 0;
+  }
+}
+
+function buildEmptySubtitleError(job = {}) {
+  const channel = Number.isFinite(Number(job.audioChannelIndex)) ? ` channel ${Number(job.audioChannelIndex)}` : '';
+  const stream = Number.isFinite(Number(job.audioStreamIndex)) ? ` stream ${Number(job.audioStreamIndex)}` : '';
+  const source = `${stream}${channel}`.trim();
+  return source
+    ? `No subtitle cues were generated from selected audio ${source}. Check the selected audio stream/channel or choose another language.`
+    : 'No subtitle cues were generated. Check the selected audio/language settings.';
 }
 
 async function transcribeMediaToVtt(inputPath, outputPath, options = {}) {
@@ -4612,7 +4957,8 @@ async function transcribeMediaToVtt(inputPath, outputPath, options = {}) {
         TRANSFORMERS_CACHE,
         HF_HUB_OFFLINE: MAM_OFFLINE_MODE ? '1' : (process.env.HF_HUB_OFFLINE || '0'),
         TRANSFORMERS_OFFLINE: MAM_OFFLINE_MODE ? '1' : (process.env.TRANSFORMERS_OFFLINE || '0'),
-        WHISPER_MODEL_CACHE
+        WHISPER_MODEL_CACHE,
+        ORT_LOG_SEVERITY_LEVEL: process.env.ORT_LOG_SEVERITY_LEVEL || '3'
       }
     });
   } finally {
@@ -5403,7 +5749,7 @@ function queueSubtitleGenerationJob(row, options = {}) {
     });
 
     try {
-      const inputPath = resolveAssetInputPath(row);
+      const inputPath = resolvePlaybackInputPath(row);
       if (!inputPath) throw new Error('Source media not found for transcription');
       const storedName = `${Date.now()}-${nanoid()}-auto-${sanitizeFileName(row.id)}.vtt`;
       const subtitleOut = buildArtifactPath('subtitles', storedName, row.created_at);
@@ -5415,12 +5761,10 @@ function queueSubtitleGenerationJob(row, options = {}) {
         audioStreamIndex,
         audioChannelIndex
       });
-      let subtitleReady = transcription.ok && fs.existsSync(subtitleOut.absolutePath) && fs.statSync(subtitleOut.absolutePath).size >= 16;
+      let generatedCueCount = countGeneratedSubtitleCues(subtitleOut.absolutePath);
+      let subtitleReady = transcription.ok && generatedCueCount > 0;
       if (!subtitleReady && usedSubtitleBackend === 'whisperx') {
-        const whisperxError = String(transcription.stderr || transcription.stdout || '')
-          .replace(/\s+/g, ' ')
-          .trim()
-          .slice(0, 240);
+        const whisperxError = compactTranscriptionError(transcription).slice(0, 240);
         usedSubtitleBackend = 'whisper';
         transcription = await transcribeMediaToVtt(inputPath, subtitleOut.absolutePath, {
           lang: subtitleLang,
@@ -5429,7 +5773,8 @@ function queueSubtitleGenerationJob(row, options = {}) {
           audioStreamIndex,
           audioChannelIndex
         });
-        subtitleReady = transcription.ok && fs.existsSync(subtitleOut.absolutePath) && fs.statSync(subtitleOut.absolutePath).size >= 16;
+        generatedCueCount = countGeneratedSubtitleCues(subtitleOut.absolutePath);
+        subtitleReady = transcription.ok && generatedCueCount > 0;
         if (subtitleReady) {
           running.warning = whisperxError
             ? `WhisperX failed (${whisperxError}); subtitle was generated with faster-whisper fallback.`
@@ -5437,7 +5782,11 @@ function queueSubtitleGenerationJob(row, options = {}) {
         }
       }
       if (!subtitleReady) {
-        throw new Error(String(transcription.stderr || transcription.stdout || 'Subtitle transcription failed'));
+        const transcriptionError = compactTranscriptionError(transcription);
+        const emptySubtitleError = transcription.ok && fs.existsSync(subtitleOut.absolutePath)
+          ? buildEmptySubtitleError(running)
+          : '';
+        throw new Error(emptySubtitleError || transcriptionError || 'Subtitle transcription failed');
       }
       running.subtitleBackend = usedSubtitleBackend;
       if (subtitleLang.startsWith('tr')) {
@@ -5519,8 +5868,12 @@ async function getAdminSettings() {
   return {
     ...DEFAULT_ADMIN_SETTINGS,
     ...value,
+    newAssetDefaultVisibility: normalizeNewAssetDefaultVisibility(value.newAssetDefaultVisibility),
     subtitleStyle: normalizeSubtitleStyle(value.subtitleStyle),
-    auditRetentionDays: normalizeAuditRetentionDays(value.auditRetentionDays)
+    auditRetentionDays: normalizeAuditRetentionDays(value.auditRetentionDays),
+    mediaJobRetentionDays: normalizeMediaJobRetentionDays(value.mediaJobRetentionDays),
+    authSession: normalizeAuthSessionSettings(value.authSession),
+    backup: normalizeBackupSettings(value.backup)
   };
 }
 
@@ -5538,12 +5891,310 @@ async function saveAdminSettings(settings) {
   return settings;
 }
 
+let backupInProgress = false;
+let lastBackupRunDate = '';
+
+function backupDateStamp(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  return safeDate.toISOString().replace(/[:.]/g, '-');
+}
+
+function getDbConnectionConfig(prefix = 'MAM') {
+  if (prefix === 'KEYCLOAK') {
+    return {
+      host: process.env.KEYCLOAK_DB_URL_HOST || process.env.KEYCLOAK_DB_HOST || 'keycloak-postgres',
+      port: process.env.KEYCLOAK_DB_PORT || '5432',
+      user: process.env.KEYCLOAK_DB_USERNAME || process.env.KEYCLOAK_DB_USER || 'keycloak',
+      database: process.env.KEYCLOAK_DB_URL_DATABASE || process.env.KEYCLOAK_DB_NAME || 'keycloak',
+      password: readEnvOrFile('KEYCLOAK_DB_PASSWORD')
+    };
+  }
+  return {
+    host: process.env.MAM_DB_HOST || 'postgres',
+    port: process.env.MAM_DB_PORT || '5432',
+    user: process.env.MAM_DB_USER || process.env.POSTGRES_USER || 'postgres',
+    database: process.env.MAM_DB_NAME || process.env.POSTGRES_DB || 'mam_mvp',
+    password: readEnvOrFile('MAM_DB_PASSWORD') || readEnvOrFile('POSTGRES_PASSWORD')
+  };
+}
+
+async function runPgDumpBackup(targetPath, dbConfig) {
+  const args = [
+    '-h', String(dbConfig.host || 'postgres'),
+    '-p', String(dbConfig.port || '5432'),
+    '-U', String(dbConfig.user || 'postgres'),
+    '-d', String(dbConfig.database || 'mam_mvp'),
+    '-Fc',
+    '-f', targetPath
+  ];
+  const result = await runCommandCapture('pg_dump', args, {
+    env: {
+      PGPASSWORD: String(dbConfig.password || '')
+    }
+  });
+  if (!result.ok) {
+    throw new Error(compactCommandOutput(result.stderr || result.stdout || 'pg_dump failed'));
+  }
+  return targetPath;
+}
+
+async function runTarArchiveBackup(targetPath, sourcePath) {
+  const parentDir = path.dirname(sourcePath);
+  const baseName = path.basename(sourcePath);
+  const result = await runCommandCapture('tar', ['-czf', targetPath, '--exclude', '_backups', '-C', parentDir, baseName]);
+  if (!result.ok) {
+    throw new Error(compactCommandOutput(result.stderr || result.stdout || 'uploads archive failed'));
+  }
+  return targetPath;
+}
+
+async function cleanupExpiredBackupFiles(directory, retentionDays) {
+  const days = clampNumber(retentionDays, 1, 3650, DEFAULT_ADMIN_SETTINGS.backup.retentionDays);
+  const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+  let deleted = 0;
+  try {
+    const entries = await fs.promises.readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      if (!/^mam-backup-/.test(entry.name)) continue;
+      const filePath = path.join(directory, entry.name);
+      const stat = await fs.promises.stat(filePath).catch(() => null);
+      if (stat && stat.mtimeMs < cutoff) {
+        await fs.promises.unlink(filePath).catch(() => {});
+        deleted += 1;
+      }
+    }
+  } catch (_error) {
+    // Missing backup directory is not a cleanup failure.
+  }
+  return deleted;
+}
+
+async function listBackupFiles(settings = DEFAULT_ADMIN_SETTINGS.backup) {
+  const backup = normalizeBackupSettings(settings);
+  const directory = path.resolve(backup.directory || DEFAULT_BACKUP_DIR);
+  try {
+    const entries = await fs.promises.readdir(directory, { withFileTypes: true });
+    const files = [];
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      if (!/^mam-backup-/.test(entry.name)) continue;
+      const filePath = path.join(directory, entry.name);
+      const stat = await fs.promises.stat(filePath).catch(() => null);
+      files.push({
+        fileName: entry.name,
+        path: filePath,
+        size: stat ? Number(stat.size || 0) : 0,
+        updatedAt: stat ? stat.mtime.toISOString() : ''
+      });
+    }
+    files.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+    return { directory, files };
+  } catch (_error) {
+    return { directory, files: [] };
+  }
+}
+
+async function runSystemBackup(settings = DEFAULT_ADMIN_SETTINGS.backup, requestedBy = '') {
+  if (backupInProgress) {
+    const error = new Error('Backup is already running');
+    error.code = 'backup_in_progress';
+    throw error;
+  }
+  const backup = normalizeBackupSettings(settings);
+  const directory = path.resolve(backup.directory || DEFAULT_BACKUP_DIR);
+  backupInProgress = true;
+  const startedAt = new Date();
+  const stamp = backupDateStamp(startedAt);
+  const result = {
+    startedAt: startedAt.toISOString(),
+    finishedAt: '',
+    directory,
+    requestedBy: String(requestedBy || '').trim(),
+    files: [],
+    errors: []
+  };
+  try {
+    await fs.promises.mkdir(directory, { recursive: true });
+    if (backup.includeMamDb) {
+      const filePath = path.join(directory, `mam-backup-${stamp}-mam-db.dump`);
+      await runPgDumpBackup(filePath, getDbConnectionConfig('MAM'));
+      const stat = await fs.promises.stat(filePath).catch(() => null);
+      result.files.push({ type: 'mam_db', path: filePath, size: stat ? Number(stat.size || 0) : 0 });
+    }
+    if (backup.includeKeycloakDb) {
+      const filePath = path.join(directory, `mam-backup-${stamp}-keycloak-db.dump`);
+      await runPgDumpBackup(filePath, getDbConnectionConfig('KEYCLOAK'));
+      const stat = await fs.promises.stat(filePath).catch(() => null);
+      result.files.push({ type: 'keycloak_db', path: filePath, size: stat ? Number(stat.size || 0) : 0 });
+    }
+    if (backup.includeUploadsArchive) {
+      const filePath = path.join(directory, `mam-backup-${stamp}-uploads.tar.gz`);
+      await runTarArchiveBackup(filePath, UPLOADS_DIR);
+      const stat = await fs.promises.stat(filePath).catch(() => null);
+      result.files.push({ type: 'uploads_archive', path: filePath, size: stat ? Number(stat.size || 0) : 0 });
+    }
+    await cleanupExpiredBackupFiles(directory, backup.retentionDays);
+    result.finishedAt = new Date().toISOString();
+    return result;
+  } finally {
+    backupInProgress = false;
+  }
+}
+
+function scheduleSystemBackups() {
+  const runIfDue = async () => {
+    const settings = await getAdminSettings().catch(() => DEFAULT_ADMIN_SETTINGS);
+    const backup = normalizeBackupSettings(settings.backup);
+    if (!backup.enabled) return;
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    if (lastBackupRunDate === today) return;
+    if (now.getHours() !== backup.dailyHour) return;
+    lastBackupRunDate = today;
+    try {
+      const result = await runSystemBackup(backup, 'scheduler');
+      console.log(`System backup completed: ${result.files.map((file) => file.path).join(', ')}`);
+    } catch (error) {
+      lastBackupRunDate = '';
+      console.error(`System backup failed: ${error?.message || error}`);
+    }
+  };
+  setInterval(() => {
+    runIfDue().catch(() => {});
+  }, 10 * 60 * 1000);
+}
+
+let auditCleanupInProgress = false;
+
 async function cleanupAuditEvents(retentionDays = DEFAULT_ADMIN_SETTINGS.auditRetentionDays) {
+  if (auditCleanupInProgress) return;
+  auditCleanupInProgress = true;
   const days = normalizeAuditRetentionDays(retentionDays);
-  await pool.query(
-    "DELETE FROM audit_events WHERE created_at < NOW() - ($1::int * INTERVAL '1 day')",
+  try {
+    for (let i = 0; i < 20; i += 1) {
+      const archived = await archiveExpiredAuditEvents(days);
+      if (!archived || archived.count < 50000) return;
+    }
+  } finally {
+    auditCleanupInProgress = false;
+  }
+}
+
+function safeAuditArchiveCell(value) {
+  let text = value == null ? '' : String(value);
+  if (/^[=+\-@]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function auditDetailsArchiveText(details) {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return '';
+  return Object.entries(details)
+    .map(([key, value]) => {
+      const formatted = Array.isArray(value)
+        ? value.join(', ')
+        : typeof value === 'object' && value !== null
+          ? JSON.stringify(value)
+          : String(value ?? '');
+      return `${key}: ${formatted}`;
+    })
+    .join(' | ');
+}
+
+function auditArchiveDateStamp(value) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return new Date().toISOString().replace(/[:.]/g, '-');
+  return date.toISOString().replace(/[:.]/g, '-');
+}
+
+async function archiveExpiredAuditEvents(retentionDays) {
+  const days = normalizeAuditRetentionDays(retentionDays);
+  const result = await pool.query(
+    `
+      SELECT id, created_at, actor, action, target_type, target_id, target_title,
+             client_medium, details, ip, user_agent
+      FROM audit_events
+      WHERE created_at < NOW() - ($1::int * INTERVAL '1 day')
+      ORDER BY created_at ASC
+      LIMIT 50000
+    `,
     [days]
   );
+  if (!result.rowCount) return null;
+
+  await fs.promises.mkdir(AUDIT_EXPORTS_DIR, { recursive: true });
+  const headers = ['Created At', 'Actor', 'Action', 'Target Type', 'Target ID', 'Target Title', 'Client', 'IP', 'Details', 'User Agent'];
+  const rows = result.rows.map((row) => [
+    row.created_at ? new Date(row.created_at).toISOString() : '',
+    row.actor || '',
+    row.action || '',
+    row.target_type || '',
+    row.target_id || '',
+    row.target_title || '',
+    row.client_medium || '',
+    row.ip || '',
+    auditDetailsArchiveText(row.details || {}),
+    row.user_agent || ''
+  ]);
+  const csv = [
+    headers.map(safeAuditArchiveCell).join(','),
+    ...rows.map((row) => row.map(safeAuditArchiveCell).join(','))
+  ].join('\r\n');
+  const first = result.rows[0]?.created_at;
+  const last = result.rows[result.rows.length - 1]?.created_at;
+  const filename = `audit-events-${auditArchiveDateStamp(first)}--${auditArchiveDateStamp(last)}-${nanoid(8)}.csv`;
+  const archivePath = path.join(AUDIT_EXPORTS_DIR, filename);
+  await fs.promises.writeFile(archivePath, `\uFEFF${csv}`, 'utf8');
+
+  const ids = result.rows.map((row) => row.id).filter(Boolean);
+  if (ids.length) {
+    await pool.query('DELETE FROM audit_events WHERE id = ANY($1::text[])', [ids]);
+  }
+  console.log(`Archived ${ids.length} audit events to ${archivePath}`);
+  return { archivePath, count: ids.length };
+}
+
+function scheduleAuditCleanup() {
+  const run = async () => {
+    const settings = await getAdminSettings().catch(() => DEFAULT_ADMIN_SETTINGS);
+    await cleanupAuditEvents(settings.auditRetentionDays);
+  };
+  run().catch(() => {});
+  setInterval(() => {
+    run().catch(() => {});
+  }, 24 * 60 * 60 * 1000);
+}
+
+let mediaJobCleanupInProgress = false;
+
+async function cleanupMediaProcessingJobs(retentionDays = DEFAULT_ADMIN_SETTINGS.mediaJobRetentionDays) {
+  if (mediaJobCleanupInProgress) return 0;
+  mediaJobCleanupInProgress = true;
+  const days = normalizeMediaJobRetentionDays(retentionDays);
+  try {
+    const result = await pool.query(
+      `
+        DELETE FROM media_processing_jobs
+        WHERE updated_at < NOW() - ($1::int * INTERVAL '1 day')
+      `,
+      [days]
+    );
+    return Number(result.rowCount || 0);
+  } finally {
+    mediaJobCleanupInProgress = false;
+  }
+}
+
+function scheduleMediaJobCleanup() {
+  const run = async () => {
+    const settings = await getAdminSettings().catch(() => DEFAULT_ADMIN_SETTINGS);
+    await cleanupMediaProcessingJobs(settings.mediaJobRetentionDays);
+  };
+  run().catch(() => {});
+  setInterval(() => {
+    run().catch(() => {});
+  }, 24 * 60 * 60 * 1000);
 }
 
 async function recordAuditEvent(req, event = {}) {
@@ -5621,7 +6272,7 @@ function getBearerFromRequest(req) {
 }
 
 function getApiKeyFromRequest(req) {
-  return getHeaderString(req, 'x-api-token');
+  return getHeaderString(req, 'x-api-token') || getHeaderString(req, 'x-mam-api-token');
 }
 
 function hasAuthenticatedUpstreamUser(req) {
@@ -5629,6 +6280,45 @@ function hasAuthenticatedUpstreamUser(req) {
     getHeaderString(req, 'x-forwarded-user') ||
     getHeaderString(req, 'x-auth-request-user')
   );
+}
+
+function getRawRequestHost(req) {
+  return String(req.get?.('host') || req.headers?.host || '').trim();
+}
+
+function getHostPort(host) {
+  const raw = String(host || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('[')) {
+    const closingBracket = raw.indexOf(']');
+    return closingBracket >= 0 && raw[closingBracket + 1] === ':' ? raw.slice(closingBracket + 2) : '';
+  }
+  const parts = raw.split(':');
+  return parts.length > 1 ? parts.pop() : '';
+}
+
+function normalizeRemoteAddress(address) {
+  return String(address || '')
+    .replace(/^::ffff:/, '')
+    .replace(/^::1$/, '127.0.0.1')
+    .trim();
+}
+
+function isDockerGatewayAddress(address) {
+  const remote = normalizeRemoteAddress(address);
+  if (!remote) return false;
+  if (remote === '127.0.0.1') return true;
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d+\.1$/.test(remote)) return true;
+  if (/^10\.\d+\.\d+\.1$/.test(remote)) return true;
+  if (/^192\.168\.\d+\.1$/.test(remote)) return true;
+  return false;
+}
+
+function isDirectAppRequest(req) {
+  if (!DIRECT_API_TOKEN_REQUIRED) return false;
+  const rawHostPort = getHostPort(getRawRequestHost(req));
+  if (DIRECT_APP_PORT && rawHostPort === DIRECT_APP_PORT) return true;
+  return isDockerGatewayAddress(req.socket?.remoteAddress);
 }
 
 function decodeJwtPart(part) {
@@ -5752,12 +6442,15 @@ async function verifyOidcBearerToken(token, settings) {
 async function maybeRequireApiToken(req, res, next) {
   if (!req.path.startsWith('/api/')) return next();
   if (!USE_OAUTH2_PROXY) return next();
-  if (/^\/api\/assets\/[^/]+\/office-config$/.test(req.path)) return next();
+  const directAppRequest = isDirectAppRequest(req);
+  if (!directAppRequest && /^\/api\/assets\/[^/]+\/office-config$/.test(req.path)) return next();
+  if (/^\/api\/assets\/[^/]+\/office-document$/.test(req.path)) return next();
   if (/^\/api\/assets\/[^/]+\/office-callback$/.test(req.path)) return next();
   try {
     const settings = await getAdminSettings();
-    if (!settings.apiTokenEnabled) return next();
-    if (hasAuthenticatedUpstreamUser(req)) return next();
+    const tokenProtectionEnabled = Boolean(settings.apiTokenEnabled) || directAppRequest;
+    if (!tokenProtectionEnabled) return next();
+    if (!directAppRequest && hasAuthenticatedUpstreamUser(req)) return next();
 
     const bearer = String(getBearerFromRequest(req) || '');
     if (settings.oidcBearerEnabled && bearer && bearer.includes('.')) {
@@ -6181,6 +6874,7 @@ async function regenerateVideoThumbnailForAsset(row, options = {}) {
   await generateVideoThumbnail(inputPath, thumbOut.absolutePath, { seekSeconds: timecodeSeconds });
 
   const now = new Date().toISOString();
+  const previousThumbnailUrl = resolveStoredUrl(row.thumbnail_url, 'thumbnails');
   const updated = await pool.query(
     `
       UPDATE assets
@@ -6191,6 +6885,7 @@ async function regenerateVideoThumbnailForAsset(row, options = {}) {
     `,
     [row.id, thumbOut.publicUrl, now]
   );
+  await cleanupReplacedUploadUrls(row.id, previousThumbnailUrl);
   return {
     row: updated.rows[0],
     thumbnailUrl: thumbOut.publicUrl,
@@ -6252,18 +6947,12 @@ async function ensureVideoProxyAndThumbnail(row, options = {}) {
   let proxyUrl = resolveStoredUrl(row.proxy_url, 'proxies');
   let proxyStatus = row.proxy_status || 'not_applicable';
   let thumbnailUrl = resolveStoredUrl(row.thumbnail_url, 'thumbnails');
+  const previousProxyUrl = proxyUrl;
+  const previousThumbnailUrl = thumbnailUrl;
   let detectedAudioChannels = Number(row?.dc_metadata?.audioChannels) || 0;
   const now = new Date().toISOString();
 
   if (forceProxy && proxyUrl) {
-    const prev = publicUploadUrlToAbsolutePath(proxyUrl);
-    if (prev && fs.existsSync(prev)) {
-      try {
-        fs.unlinkSync(prev);
-      } catch (_error) {
-        // Ignore cleanup failure and continue with new proxy generation.
-      }
-    }
     proxyUrl = '';
     proxyStatus = 'pending';
   }
@@ -6304,6 +6993,10 @@ async function ensureVideoProxyAndThumbnail(row, options = {}) {
     `,
     [row.id, proxyUrl, proxyStatus, thumbnailUrl, Math.max(0, Number(detectedAudioChannels) || 0), now]
   );
+  const replaced = [];
+  if (previousProxyUrl && previousProxyUrl !== proxyUrl) replaced.push(previousProxyUrl);
+  if (previousThumbnailUrl && previousThumbnailUrl !== thumbnailUrl) replaced.push(previousThumbnailUrl);
+  await cleanupReplacedUploadUrls(row.id, replaced);
   return updated.rows[0];
 }
 
@@ -6311,16 +7004,21 @@ function getHeaderString(req, name) {
   const value = req.headers?.[name];
   const raw = Array.isArray(value) ? String(value[0] || '').trim() : String(value || '').trim();
   if (!raw) return '';
-  const maybeUtf8 = Buffer.from(raw, 'latin1').toString('utf8');
-  const hasMojibake = /[ÃÂâÅ]/.test(raw);
+  const repairMojibake = (input) => {
+    let current = String(input || '');
+    for (let i = 0; i < 2 && /[ÃÂâÅÄ]/.test(current); i += 1) {
+      const repaired = Buffer.from(current, 'latin1').toString('utf8');
+      if (!repaired || repaired.includes('�') || repaired === current) break;
+      current = repaired;
+    }
+    return current;
+  };
   try {
     // Some providers send UTF-8 names URL-encoded in headers.
     const decoded = decodeURIComponent(raw);
-    if (hasMojibake && /[^\u0000-\u007f]/.test(maybeUtf8)) return maybeUtf8.normalize('NFC');
-    return decoded.normalize('NFC');
+    return repairMojibake(decoded).normalize('NFC');
   } catch (_error) {
-    if (hasMojibake && /[^\u0000-\u007f]/.test(maybeUtf8)) return maybeUtf8.normalize('NFC');
-    return raw.normalize('NFC');
+    return repairMojibake(raw).normalize('NFC');
   }
 }
 
@@ -6354,6 +7052,28 @@ function normalizeIdentityKey(value) {
     .replace(/ö/g, 'o')
     .replace(/ş/g, 's')
     .replace(/ü/g, 'u');
+}
+
+async function fetchKeycloakAdminJson(url, token, options = {}) {
+  if (!url || !token) return null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), KEYCLOAK_ADMIN_REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        Authorization: `Bearer ${token}`
+      },
+      signal: controller.signal
+    });
+    if (!response.ok) return null;
+    return await response.json().catch(() => null);
+  } catch (_error) {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function getPermissionOverrideForUser(settings, user) {
@@ -6413,11 +7133,18 @@ const officeService = createOfficeService({
   normalizePublicUploadUrl,
   getIngestStoragePath,
   sanitizeFileName,
+  uploadsDir: UPLOADS_DIR,
   runCommandCapture,
   computeBufferSha256,
   getAssetStoredFileHash,
   indexAssetToElastic,
   sanitizeOnlyOfficeUserId
+});
+
+const assetAccessService = createAssetAccessService({ pool });
+const assetEditLockService = createAssetEditLockService({
+  pool,
+  ttlSeconds: Number(process.env.ASSET_EDIT_LOCK_TTL_SECONDS || 900)
 });
 
 function buildUserContextFromRequest(req) {
@@ -6427,7 +7154,9 @@ function buildUserContextFromRequest(req) {
   const emailRaw =
     getHeaderString(req, 'x-forwarded-email') ||
     getHeaderString(req, 'x-auth-request-email');
-  const preferred = getHeaderString(req, 'x-forwarded-preferred-username');
+  const preferred =
+    getHeaderString(req, 'x-forwarded-preferred-username') ||
+    getHeaderString(req, 'x-auth-request-preferred-username');
   const groupsRaw =
     getHeaderString(req, 'x-forwarded-groups') ||
     getHeaderString(req, 'x-auth-request-groups');
@@ -6466,10 +7195,238 @@ function buildUserContextFromRequest(req) {
     username,
     displayName,
     email: effectiveEmail || '',
+    groups,
+    roles: allRoles,
     baseIsAdmin: resolved.permissionKeys.includes('admin.access'),
     basePermissionKeys: resolved.permissionKeys,
     baseIsSuperAdmin: resolved.isSuperAdmin
   };
+}
+
+function keycloakUserFullName(user) {
+  const firstName = String(user?.firstName || '').trim();
+  const lastName = String(user?.lastName || '').trim();
+  return [firstName, lastName].filter(Boolean).join(' ').trim();
+}
+
+function keycloakUserIdentityCandidates(user) {
+  const username = String(user?.username || '').trim();
+  const email = String(user?.email || '').trim();
+  const fullName = keycloakUserFullName(user);
+  const localEmail = email.includes('@') ? email.split('@')[0] : '';
+  return [username, email, localEmail, fullName]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+}
+
+async function queryKeycloakUsersByCandidate(realm, candidate, token) {
+  const value = String(candidate || '').trim();
+  if (!realm || !value || !token) return [];
+  const realmEncoded = encodeURIComponent(realm);
+  const paramsList = [];
+  const addParams = (pairs) => {
+    const params = new URLSearchParams();
+    params.set('first', '0');
+    params.set('max', '5');
+    Object.entries(pairs || {}).forEach(([key, val]) => {
+      if (val != null && String(val).trim()) params.set(key, String(val).trim());
+    });
+    paramsList.push(params);
+  };
+
+  addParams({ username: value, exact: 'true' });
+  if (value.includes('@')) addParams({ email: value, exact: 'true' });
+  addParams({ search: value });
+
+  const rows = [];
+  const seen = new Set();
+  for (const params of paramsList) {
+    const payload = await fetchKeycloakAdminJson(
+      `${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users?${params.toString()}`,
+      token
+    );
+    (Array.isArray(payload) ? payload : []).forEach((row) => {
+      const id = String(row?.id || '').trim();
+      const username = String(row?.username || '').trim().toLowerCase();
+      const key = id || username;
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      rows.push(row);
+    });
+    if (rows.length) break;
+  }
+  return rows;
+}
+
+async function findKeycloakUserForIdentity(user) {
+  const current = user && typeof user === 'object' ? user : {};
+  const candidates = [
+    current.username,
+    current.email,
+    String(current.email || '').includes('@') ? String(current.email).split('@')[0] : '',
+    current.displayName
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  if (!candidates.length) return { user: null, realm: '' };
+
+  const token = await getKeycloakAdminAccessToken();
+  const candidateKeys = new Set(candidates.map((value) => normalizeIdentityKey(value)).filter(Boolean));
+  if (token) {
+    for (const realm of getKeycloakCandidateRealms()) {
+      for (const candidate of candidates) {
+        const rows = await queryKeycloakUsersByCandidate(realm, candidate, token);
+        const match = rows.find((row) => (
+          keycloakUserIdentityCandidates(row).some((value) => candidateKeys.has(normalizeIdentityKey(value)))
+        ));
+        if (match) return { user: match, realm };
+      }
+    }
+  }
+
+  return { user: null, realm: '' };
+}
+
+function buildKeycloakProfileCacheKey(user) {
+  const current = user && typeof user === 'object' ? user : {};
+  const candidates = [
+    current.username,
+    current.email,
+    String(current.email || '').includes('@') ? String(current.email).split('@')[0] : '',
+    current.displayName
+  ]
+    .map((value) => normalizeIdentityKey(value))
+    .filter(Boolean)
+    .sort();
+  return candidates.join('|');
+}
+
+function extractKeycloakRoleNames(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((item) => String(item?.name || '').trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function extractKeycloakGroupNames(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((item) => String(item?.path || item?.name || '').trim().toLowerCase())
+    .filter(Boolean);
+}
+
+async function fetchPrivilegedKeycloakGroupsForUser({ realmName, token, user, candidates }) {
+  if (!realmName || !token) return [];
+  const realmEncoded = encodeURIComponent(realmName);
+  const groupRows = await fetchKeycloakAdminJson(
+    `${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/groups?search=superadmin&briefRepresentation=false`,
+    token
+  );
+  const superadminGroups = flattenKeycloakGroups(Array.isArray(groupRows) ? groupRows : [], realmName)
+    .filter((group) => normalizeIdentityKey(String(group.path || group.name || '').split('/').filter(Boolean).pop()) === 'superadmin');
+  if (!superadminGroups.length) return [];
+
+  const identityKeys = new Set(
+    [
+      ...(Array.isArray(candidates) ? candidates : []),
+      ...keycloakUserIdentityCandidates(user)
+    ]
+      .map((value) => normalizeIdentityKey(value))
+      .filter(Boolean)
+  );
+
+  const matchedGroups = [];
+  for (const group of superadminGroups) {
+    const groupId = String(group.id || '').trim();
+    if (!groupId) continue;
+    const members = await fetchKeycloakAdminJson(
+      `${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/groups/${encodeURIComponent(groupId)}/members?first=0&max=200&briefRepresentation=true`,
+      token
+    );
+    const hasUser = (Array.isArray(members) ? members : []).some((member) => (
+      keycloakUserIdentityCandidates(member).some((value) => identityKeys.has(normalizeIdentityKey(value)))
+    ));
+    if (hasUser) matchedGroups.push(String(group.path || group.name || '/superadmin').trim().toLowerCase());
+  }
+  return matchedGroups;
+}
+
+async function enrichUserProfileFromKeycloak(user) {
+  const current = user && typeof user === 'object' ? user : {};
+  const cacheKey = buildKeycloakProfileCacheKey(current);
+  const now = Date.now();
+  const cached = cacheKey ? keycloakUserProfileCache.get(cacheKey) : null;
+  if (cached && cached.expiresAt > now) return { ...current, ...cached.value };
+
+  try {
+    const { user: match, realm } = await findKeycloakUserForIdentity(current);
+    const userId = String(match?.id || '').trim();
+    const username = String(match?.username || current.username || '').trim().toLowerCase();
+    const realmName = String(realm || getKeycloakCandidateRealms()[0] || KEYCLOAK_REALM).trim();
+    const token = await getKeycloakAdminAccessToken();
+    if (!token || !userId || !realmName) return current;
+
+    const realmEncoded = encodeURIComponent(realmName);
+    const [roles, effectiveRoles, groups] = await Promise.all([
+      fetchKeycloakAdminJson(
+        `${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users/${encodeURIComponent(userId)}/role-mappings/realm`,
+        token
+      ),
+      fetchKeycloakAdminJson(
+        `${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users/${encodeURIComponent(userId)}/role-mappings/realm/composite`,
+        token
+      ),
+      fetchKeycloakAdminJson(
+        `${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users/${encodeURIComponent(userId)}/groups`,
+        token
+      )
+    ]);
+    const roleNames = Array.from(new Set([
+      ...extractKeycloakRoleNames(roles),
+      ...extractKeycloakRoleNames(effectiveRoles)
+    ]));
+    const groupNames = Array.from(new Set(extractKeycloakGroupNames(groups)));
+    let resolved = resolvePermissionKeysFromPrincipals({
+      username,
+      groups: groupNames,
+      roles: roleNames
+    });
+    if (!resolved.isSuperAdmin) {
+      const fallbackGroups = await fetchPrivilegedKeycloakGroupsForUser({
+        realmName,
+        token,
+        user: match,
+        candidates: [current.username, current.email, current.displayName]
+      });
+      fallbackGroups.forEach((groupName) => {
+        if (groupName && !groupNames.includes(groupName)) groupNames.push(groupName);
+      });
+      if (fallbackGroups.length) {
+        resolved = resolvePermissionKeysFromPrincipals({
+          username,
+          groups: groupNames,
+          roles: roleNames
+        });
+      }
+    }
+    const fullName = keycloakUserFullName(match);
+    const enriched = {
+      username: current.username || username,
+      displayName: fullName || current.displayName,
+      groups: Array.from(new Set([...(current.groups || []), ...groupNames])),
+      roles: Array.from(new Set([...(current.roles || []), ...roleNames])),
+      baseIsAdmin: current.baseIsAdmin || resolved.permissionKeys.includes('admin.access'),
+      basePermissionKeys: Array.from(new Set([...(current.basePermissionKeys || []), ...resolved.permissionKeys])),
+      baseIsSuperAdmin: Boolean(current.baseIsSuperAdmin || resolved.isSuperAdmin)
+    };
+    if (cacheKey) {
+      keycloakUserProfileCache.set(cacheKey, {
+        expiresAt: now + KEYCLOAK_ADMIN_CACHE_TTL_MS,
+        value: enriched
+      });
+    }
+    return { ...current, ...enriched };
+  } catch (_error) {
+    return current;
+  }
 }
 
 function getKeycloakCandidateRealms() {
@@ -6553,16 +7510,108 @@ async function fetchKeycloakUsers() {
   return value;
 }
 
+async function applyKeycloakAuthSessionSettings(settings) {
+  const normalized = normalizeAuthSessionSettings(settings);
+  const token = await getKeycloakAdminAccessToken();
+  if (!token) {
+    throw new Error('Keycloak admin token could not be obtained');
+  }
+  const realms = getKeycloakCandidateRealms();
+  const payload = {
+    rememberMe: normalized.rememberMe,
+    ssoSessionIdleTimeout: normalized.ssoIdleMinutes * 60,
+    ssoSessionMaxLifespan: normalized.ssoMaxHours * 60 * 60,
+    clientSessionIdleTimeout: normalized.clientIdleMinutes * 60,
+    clientSessionMaxLifespan: normalized.clientMaxHours * 60 * 60
+  };
+  const applied = [];
+  for (const realm of realms) {
+    const response = await fetch(`${KEYCLOAK_INTERNAL_URL}/admin/realms/${encodeURIComponent(realm)}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+    if (response.ok) {
+      applied.push(realm);
+      continue;
+    }
+    if (response.status !== 404) {
+      const body = await response.text().catch(() => '');
+      throw new Error(body || `Keycloak session settings update failed for realm ${realm}`);
+    }
+  }
+  if (!applied.length) {
+    throw new Error('No Keycloak realm was updated');
+  }
+  return { settings: normalized, realms: applied };
+}
+
+function flattenKeycloakGroups(rows, realm, parentPath = '') {
+  const out = [];
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const name = String(row?.name || '').trim();
+    const pathValue = String(row?.path || '').trim();
+    const pathName = pathValue || `${parentPath}/${name}`.replace(/\/+/g, '/');
+    if (name) {
+      out.push({
+        id: String(row?.id || '').trim(),
+        name,
+        path: pathName,
+        realm: String(realm || '').trim()
+      });
+    }
+    out.push(...flattenKeycloakGroups(row?.subGroups || [], realm, pathName));
+  });
+  return out;
+}
+
+async function fetchKeycloakGroups() {
+  const now = Date.now();
+  if (keycloakGroupsCache.value && keycloakGroupsCache.expiresAt > now) {
+    return keycloakGroupsCache.value;
+  }
+  const token = await getKeycloakAdminAccessToken();
+  if (!token) return { groups: [], realmByGroupPath: new Map() };
+  const realms = getKeycloakCandidateRealms();
+  const groups = [];
+  const realmByGroupPath = new Map();
+  const seen = new Set();
+  for (const realm of realms) {
+    try {
+      const response = await fetch(`${KEYCLOAK_INTERNAL_URL}/admin/realms/${encodeURIComponent(realm)}/groups?briefRepresentation=false`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!response.ok) continue;
+      const rows = await response.json().catch(() => []);
+      flattenKeycloakGroups(rows, realm).forEach((group) => {
+        const key = `${String(group.realm || '').toLowerCase()}:${String(group.path || group.name || '').toLowerCase()}`;
+        if (!group.name || seen.has(key)) return;
+        seen.add(key);
+        groups.push(group);
+        realmByGroupPath.set(String(group.path || group.name || '').toLowerCase(), realm);
+      });
+    } catch (_error) {
+      // Try next realm candidate.
+    }
+  }
+  groups.sort((a, b) => String(a.path || a.name).localeCompare(String(b.path || b.name)));
+  const value = { groups, realmByGroupPath };
+  keycloakGroupsCache = { expiresAt: now + KEYCLOAK_ADMIN_CACHE_TTL_MS, value };
+  return value;
+}
+
 function isVisibleKeycloakUser(user) {
   const username = String(user?.username || '').trim().toLowerCase();
   if (!username) return false;
   if (username.startsWith('service-account-')) return false;
-  if (username === 'admin' || username === 'mamadmin') return false;
   if (user && Object.prototype.hasOwnProperty.call(user, 'enabled') && user.enabled === false) return false;
   return true;
 }
 
-async function fetchKeycloakUserPermissionDefaults(users, realmByUsername) {
+async function fetchKeycloakUserPermissionDefaults(users) {
   const cacheKey = (Array.isArray(users) ? users : [])
     .map((user) => `${String(user?.id || '').trim()}:${String(user?.username || '').trim().toLowerCase()}`)
     .sort()
@@ -6571,40 +7620,11 @@ async function fetchKeycloakUserPermissionDefaults(users, realmByUsername) {
   const cached = keycloakPermissionDefaultsCache.get(cacheKey);
   if (cached && cached.expiresAt > now) return new Map(cached.value);
 
-  const token = await getKeycloakAdminAccessToken();
-  if (!token) return new Map();
-  const candidateRealms = getKeycloakCandidateRealms();
-  const defaultRealm = candidateRealms[0] || KEYCLOAK_REALM;
   const results = new Map();
-  await Promise.all(
-    (Array.isArray(users) ? users : []).map(async (user) => {
-      const userId = String(user?.id || '').trim();
-      const username = String(user?.username || '').trim().toLowerCase();
-      if (!userId || !username) return;
-      const realm = String(realmByUsername?.get(username) || defaultRealm || KEYCLOAK_REALM).trim();
-      const realmEncoded = encodeURIComponent(realm);
-      const [rolesRes, groupsRes] = await Promise.all([
-        fetch(`${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users/${encodeURIComponent(userId)}/role-mappings/realm`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }).catch(() => null),
-        fetch(`${KEYCLOAK_INTERNAL_URL}/admin/realms/${realmEncoded}/users/${encodeURIComponent(userId)}/groups`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }).catch(() => null)
-      ]);
-      const roles = rolesRes && rolesRes.ok ? await rolesRes.json().catch(() => []) : [];
-      const groups = groupsRes && groupsRes.ok ? await groupsRes.json().catch(() => []) : [];
-      const roleNames = (Array.isArray(roles) ? roles : []).map((item) => String(item?.name || '').trim());
-      const groupNames = (Array.isArray(groups) ? groups : [])
-        .map((item) => String(item?.path || item?.name || '').trim())
-        .filter(Boolean);
-      const defaults = resolvePermissionKeysFromPrincipals({
-        username,
-        groups: groupNames,
-        roles: roleNames
-      });
-      results.set(username, defaults.permissionKeys);
-    })
-  );
+  (Array.isArray(users) ? users : []).forEach((user) => {
+    const username = String(user?.username || '').trim().toLowerCase();
+    if (username) results.set(username, []);
+  });
   keycloakPermissionDefaultsCache.set(cacheKey, {
     expiresAt: now + KEYCLOAK_ADMIN_CACHE_TTL_MS,
     value: Array.from(results.entries())
@@ -6613,15 +7633,24 @@ async function fetchKeycloakUserPermissionDefaults(users, realmByUsername) {
 }
 
 async function resolveEffectivePermissions(req) {
-  const user = buildUserContextFromRequest(req);
+  const user = await enrichUserProfileFromKeycloak(buildUserContextFromRequest(req));
   const settings = await getUserPermissionsSettings();
   const override = getPermissionOverrideForUser(settings, user);
-  const effective = normalizePermissionEntry(override, user.basePermissionKeys || []);
+  const basePermissionKeys = user.baseIsSuperAdmin
+    ? PERMISSION_KEYS
+    : (user.basePermissionKeys || []);
+  const effective = normalizePermissionEntry(override, basePermissionKeys);
+  if (user.baseIsSuperAdmin) {
+    effective.permissionKeys = PERMISSION_KEYS;
+    Object.assign(effective, permissionKeysToLegacyFlags(PERMISSION_KEYS));
+  }
+  const isSuperAdmin = PERMISSION_KEYS.every((key) => effective.permissionKeys.includes(key));
   const canAccessAdmin = Boolean(effective.adminPageAccess);
   const canAccessTextAdmin = Boolean(effective.textAdminAccess || canAccessAdmin);
   const canEditOffice = Boolean(effective.officeEdit || canAccessAdmin);
   return {
     ...user,
+    isSuperAdmin,
     isAdmin: canAccessAdmin,
     canAccessAdmin,
     canAccessTextAdmin,
@@ -6638,6 +7667,13 @@ app.get('/api/workflow', (_req, res) => {
   res.json(WORKFLOW);
 });
 
+app.get('/api/version', (_req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  res.json(APP_BUILD_INFO);
+});
+
 app.get('/api/me', async (req, res) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.set('Pragma', 'no-cache');
@@ -6645,21 +7681,33 @@ app.get('/api/me', async (req, res) => {
   res.set('Surrogate-Control', 'no-store');
   try {
     const effective = await resolveEffectivePermissions(req);
+    const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
     res.json({
       username: effective.username,
       displayName: effective.displayName,
       email: effective.email || '',
+      groups: effective.groups || [],
+      roles: effective.roles || [],
+      groupAdminGroups: await assetAccessService.getGroupAdminGroupsForUser(effective).catch(() => []),
+      isSuperAdmin: Boolean(effective.isSuperAdmin),
       isAdmin: effective.isAdmin,
-      canAccessAdmin: effective.canAccessAdmin,
-      canAccessTextAdmin: effective.canAccessTextAdmin,
-      canEditMetadata: effective.canEditMetadata,
+	      canAccessAdmin: effective.canAccessAdmin,
+	      canAccessTextAdmin: effective.canAccessTextAdmin,
+	      canAccessAssetRightsAdmin: Boolean(effective.canAccessAdmin || assetAccessService.hasScopedAssetRightsAdminAccess(accessContext)),
+	      canEditMetadata: effective.canEditMetadata,
       canEditOffice: effective.canEditOffice,
       canDeleteAssets: effective.canDeleteAssets,
-      canUsePdfAdvancedTools: effective.canUsePdfAdvancedTools,
-      officeEditorProvider: OFFICE_EDITOR_PROVIDER,
+	      canUsePdfAdvancedTools: effective.canUsePdfAdvancedTools,
+	      allowedAssetTypes: assetAccessService.getAllowedAssetTypeGroups(accessContext),
+	      uploadAllowedAssetTypes: assetAccessService.getAllowedUploadAssetTypeGroups(accessContext),
+	      officeEditorProvider: OFFICE_EDITOR_PROVIDER,
       permissionKeys: effective.permissionKeys
     });
   } catch (_error) {
+    console.warn(JSON.stringify({
+      event: 'api-me-error',
+      message: String(_error?.message || _error || 'Unknown error')
+    }));
     res.status(500).json({ error: 'Failed to resolve user profile' });
   }
 });
@@ -6765,6 +7813,17 @@ function mapAssetSuggestionRow(row) {
     inTrash: Boolean(row.deleted_at),
     updatedAt: row.updated_at
   };
+}
+
+async function loadVisibleAssetRowForRequest(req, assetId) {
+  const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+  const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+  const row = assetResult.rows[0] || null;
+  if (!row) return { status: 404, error: 'Asset not found', row: null, accessContext };
+  if (!assetAccessService.canViewAsset(row, accessContext)) {
+    return { status: 404, error: 'Asset not found', row: null, accessContext };
+  }
+  return { status: 200, row, accessContext };
 }
 
 function buildAssetOrderClause({ hasRelevance, sortBy, rankedParamAlias }) {
@@ -6965,12 +8024,12 @@ async function queryAssetSuggestions(options = {}) {
 
 app.get('/api/assets/:id/preview-text', async (req, res) => {
   try {
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-    if (!assetResult.rowCount) {
-      return res.status(404).json({ error: 'Asset not found' });
+    const loaded = await loadVisibleAssetRowForRequest(req, req.params.id);
+    if (loaded.status !== 200) {
+      return res.status(loaded.status).json({ error: loaded.error });
     }
 
-    const row = assetResult.rows[0];
+    const row = loaded.row;
     let inputPath = row.source_path;
     if (!inputPath || !fs.existsSync(inputPath)) {
       const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
@@ -6993,12 +8052,12 @@ app.get('/api/assets/:id/preview-text', async (req, res) => {
 
 app.post('/api/assets/:id/ensure-proxy', async (req, res) => {
   try {
-    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-    if (!assetResult.rowCount) {
-      return res.status(404).json({ error: 'Asset not found' });
+    const loaded = await loadVisibleAssetRowForRequest(req, req.params.id);
+    if (loaded.status !== 200) {
+      return res.status(loaded.status).json({ error: loaded.error });
     }
 
-    const row = await ensureVideoProxyAndThumbnail(assetResult.rows[0], {
+    const row = await ensureVideoProxyAndThumbnail(loaded.row, {
       forceProxy: Boolean(req.body?.force)
     });
     return res.json(mapAssetRow(row));
@@ -7064,9 +8123,33 @@ async function requireScopedAdminAccess(req, res, next) {
     /^\/subtitle-records(?:\/content)?$/,
     /^\/text-search$/
   ];
+  const assetRightsAdminPaths = [
+    /^\/assets\/access$/,
+    /^\/assets\/access-groups$/,
+    /^\/assets\/[^/]+\/access$/,
+    /^\/asset-types\/access$/,
+    /^\/asset-types\/[^/]+\/access$/
+  ];
   const safePath = String(req.path || '').trim();
   if (textAdminPaths.some((pattern) => pattern.test(safePath))) {
     return requireTextAdminAccess(req, res, next);
+  }
+  if (assetRightsAdminPaths.some((pattern) => pattern.test(safePath))) {
+    try {
+      const effective = await resolveEffectivePermissions(req);
+      if (effective.canAccessAdmin) {
+        req.userPermissions = effective;
+        return next();
+      }
+      const groupAdminGroups = await assetAccessService.getGroupAdminGroupsForUser(effective).catch(() => []);
+      if (Array.isArray(groupAdminGroups) && groupAdminGroups.length) {
+        req.userPermissions = effective;
+        return next();
+      }
+      return res.status(403).json({ error: 'Forbidden' });
+    } catch (_error) {
+      return res.status(500).json({ error: 'Failed to verify admin permissions' });
+    }
   }
   return requireAdminAccess(req, res, next);
 }
@@ -7220,6 +8303,7 @@ registerAdminRoutes(app, {
   resolveEffectivePermissions,
   getUserPermissionsSettings,
   fetchKeycloakUsers,
+  fetchKeycloakGroups,
   isVisibleKeycloakUser,
   fetchKeycloakUserPermissionDefaults,
   resolvePermissionKeysFromPrincipals,
@@ -7229,12 +8313,20 @@ registerAdminRoutes(app, {
   saveUserPermissionsSettings,
   getAdminSettings,
   saveAdminSettings,
+  normalizeBackupSettings,
+  runSystemBackup,
+  listBackupFiles,
   getRuntimeErrorLogs,
   getActiveUsers,
   normalizePlayerUiMode,
+  normalizeNewAssetDefaultVisibility,
   normalizeSubtitleStyle,
   normalizeAuditRetentionDays,
+  normalizeMediaJobRetentionDays,
+  normalizeAuthSessionSettings,
+  applyKeycloakAuthSessionSettings,
   cleanupAuditEvents,
+  cleanupMediaProcessingJobs,
   recordAuditEvent,
   generateApiToken,
   systemHealthCache,
@@ -7258,6 +8350,7 @@ registerAdminRoutes(app, {
   hasStoredFile,
   collectAssetCleanupPaths,
   cleanupAssetFiles,
+  cleanupUnreferencedAssetFiles,
   deleteAssetFromElastic,
   removeAssetFromCollections,
   ensureVideoProxyAndThumbnail,
@@ -7278,6 +8371,7 @@ registerAdminRoutes(app, {
   isPdfCandidate,
   isDocumentCandidate,
   ensureDocumentThumbnailForRow,
+  imageDerivativeService,
   extractPreviewContentFromFile,
   indexAssetToElastic,
   mapAssetRow,
@@ -7286,7 +8380,11 @@ registerAdminRoutes(app, {
   syncSubtitleCueIndexForAssetRow,
   formatTimecode,
   getAssetFamily,
+  assetAccessService,
+  assetEditLockService,
   recordAuditEvent,
+  getAdminSettings,
+  normalizeNewAssetDefaultVisibility,
   nanoid,
   removeAssetFromElastic
 });
@@ -7327,6 +8425,8 @@ registerTextProcessingRoutes(app, {
   formatTimecode,
   normalizeOcrPreset,
   normalizeOcrEngine,
+  assetAccessService,
+  resolveEffectivePermissions,
   nanoid
 });
 
@@ -7338,6 +8438,7 @@ registerAssetRoutes(app, {
   resolveEffectivePermissions,
   collectAssetCleanupPaths,
   cleanupAssetFiles,
+  cleanupUnreferencedAssetFiles,
   removeAssetFromCollections,
   removeAssetFromElastic: deleteAssetFromElastic,
   indexAssetToElastic,
@@ -7384,6 +8485,7 @@ registerAssetRoutes(app, {
   generatePdfFallbackThumbnail,
   isDocumentCandidate,
   generateDocumentThumbnail,
+  imageDerivativeService,
   getFileExtension,
   isTextDocumentCandidate,
   getVideoDurationSeconds,
@@ -7392,10 +8494,12 @@ registerAssetRoutes(app, {
   probeMediaTechnicalInfo,
   publicUploadUrlToAbsolutePath,
   resolveStoredUrl,
-  buildVersionSnapshotFromRow,
-  canCreateVersionForAsset,
-  canManageVersionRow,
-  mapVersionRow,
+    buildVersionSnapshotFromRow,
+    canCreateVersionForAsset,
+    canManageVersionRow,
+    assetAccessService,
+    assetEditLockService,
+    mapVersionRow,
   recordAuditEvent,
   nanoid
 });
@@ -7459,10 +8563,10 @@ registerOfficeRoutes(app, {
   findOriginalVersionSnapshot,
   sendSnapshotDownload,
   getFileExtension,
+  sanitizeFileName,
   officeEditorProvider: OFFICE_EDITOR_PROVIDER,
-  uploadsDir: UPLOADS_DIR,
-  runCommandCapture,
-  sanitizeFileName
+  assetAccessService,
+  assetEditLockService
 });
 
 registerPdfRoutes(app, {
@@ -7470,6 +8574,7 @@ registerPdfRoutes(app, {
   requirePdfAdvancedTools,
   requireAdminAccess,
   isPdfCandidate,
+  isOfficeDocumentCandidate,
   extractPdfPagesText,
   getPdfPageCount,
   renderPdfPageJpegBuffer,
@@ -7486,7 +8591,11 @@ registerPdfRoutes(app, {
   ensurePdfThumbnailForRow,
   mapAssetRow,
   findOriginalVersionSnapshot,
-  sendSnapshotDownload
+  sendSnapshotDownload,
+  officeService,
+  assetAccessService,
+  assetEditLockService,
+  resolveEffectivePermissions
 });
 
 loadTurkishWordSet();
@@ -7498,8 +8607,11 @@ initDb()
     ensureElasticIndex()
       .then(() => backfillElasticIndex().catch(() => {}))
       .catch(() => {});
+    scheduleAuditCleanup();
+    scheduleMediaJobCleanup();
+    scheduleSystemBackups();
     app.listen(PORT, () => {
-      console.log(`MAM MVP running on http://localhost:${PORT}`);
+      console.log(`MAM MVP running on http://localhost:${PORT} (${APP_BUILD_INFO.gitBranch}@${APP_BUILD_INFO.gitCommit}, built ${APP_BUILD_INFO.buildDate})`);
     });
   })
   .catch((error) => {

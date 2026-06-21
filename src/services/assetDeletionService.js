@@ -112,6 +112,74 @@ function createAssetDeletionService({
     return { removed, failed };
   }
 
+  function publicUrlForUploadPath(filePath) {
+    const uploadsRoot = uploadRoots?.uploads || '';
+    const safePath = String(filePath || '').trim();
+    if (!safePath || !uploadsRoot || !isPathInsideRoot(safePath, uploadsRoot)) return '';
+    const relative = path.relative(uploadsRoot, safePath).replace(/\\/g, '/');
+    if (!relative || relative.startsWith('..')) return '';
+    return `/uploads/${relative}`;
+  }
+
+  async function isUploadPathReferenced(filePath, options = {}) {
+    const safePath = String(filePath || '').trim();
+    const publicUrl = publicUrlForUploadPath(safePath);
+    if (!publicUrl) return false;
+    const assetId = String(options.assetId || '').trim();
+    const versionId = String(options.versionId || '').trim();
+    const result = await pool.query(
+      `
+        SELECT
+          (
+            SELECT COUNT(*)::int
+            FROM assets
+            WHERE ($2 = '' OR id <> $2)
+              AND (
+                media_url = $1
+                OR proxy_url = $1
+                OR thumbnail_url = $1
+                OR source_path = $3
+              )
+          ) +
+          (
+            SELECT COUNT(*)::int
+            FROM asset_versions
+            WHERE ($4 = '' OR version_id <> $4)
+              AND (
+                snapshot_media_url = $1
+                OR snapshot_thumbnail_url = $1
+                OR snapshot_source_path = $3
+              )
+          ) AS ref_count
+      `,
+      [publicUrl, assetId, safePath, versionId]
+    );
+    return Number(result.rows?.[0]?.ref_count || 0) > 0;
+  }
+
+  async function cleanupUnreferencedAssetFiles(paths = [], options = {}) {
+    const removed = [];
+    const failed = [];
+    for (const filePath of paths) {
+      const safePath = String(filePath || '').trim();
+      if (!safePath || !isSafeAssetCleanupPath(safePath)) continue;
+      try {
+        if (!fs.existsSync(safePath)) continue;
+        const stat = fs.statSync(safePath);
+        if (!stat.isFile()) continue;
+        if (await isUploadPathReferenced(safePath, options)) continue;
+        fs.unlinkSync(safePath);
+        removed.push(safePath);
+      } catch (error) {
+        failed.push({
+          path: safePath,
+          message: error?.message || 'unlink failed'
+        });
+      }
+    }
+    return { removed, failed };
+  }
+
   async function removeAssetFromCollections(assetId) {
     const safeAssetId = String(assetId || '').trim();
     if (!safeAssetId) return;
@@ -134,6 +202,7 @@ function createAssetDeletionService({
   return {
     collectAssetCleanupPaths,
     cleanupAssetFiles,
+    cleanupUnreferencedAssetFiles,
     removeAssetFromCollections,
     deleteAssetFromElastic
   };

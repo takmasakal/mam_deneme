@@ -23,6 +23,7 @@ function registerAdminRoutes(app, deps) {
     resolveEffectivePermissions,
     getUserPermissionsSettings,
     fetchKeycloakUsers,
+    fetchKeycloakGroups,
     isVisibleKeycloakUser,
     fetchKeycloakUserPermissionDefaults,
     resolvePermissionKeysFromPrincipals,
@@ -32,12 +33,20 @@ function registerAdminRoutes(app, deps) {
     saveUserPermissionsSettings,
     getAdminSettings,
     saveAdminSettings,
+    normalizeBackupSettings,
+    runSystemBackup,
+    listBackupFiles,
     getRuntimeErrorLogs,
     getActiveUsers,
     normalizePlayerUiMode,
+    normalizeNewAssetDefaultVisibility,
     normalizeSubtitleStyle,
     normalizeAuditRetentionDays,
+    normalizeMediaJobRetentionDays,
+    normalizeAuthSessionSettings,
+    applyKeycloakAuthSessionSettings,
     cleanupAuditEvents,
+    cleanupMediaProcessingJobs,
     recordAuditEvent,
     generateApiToken,
     systemHealthCache,
@@ -48,7 +57,6 @@ function registerAdminRoutes(app, deps) {
     mapVideoOcrJobFromDbRow,
     OCR_DIR,
     UPLOADS_DIR,
-    SUBTITLES_DIR,
     normalizeVttContent,
     resolveStoredUrl,
     pickLatestVideoOcrUrlFromDc,
@@ -61,6 +69,7 @@ function registerAdminRoutes(app, deps) {
     hasStoredFile,
     collectAssetCleanupPaths,
     cleanupAssetFiles,
+    cleanupUnreferencedAssetFiles,
     deleteAssetFromElastic,
     removeAssetFromCollections,
     ensureVideoProxyAndThumbnail,
@@ -81,6 +90,7 @@ function registerAdminRoutes(app, deps) {
     isPdfCandidate,
     isDocumentCandidate,
     ensureDocumentThumbnailForRow,
+    imageDerivativeService,
     extractPreviewContentFromFile,
     indexAssetToElastic,
     mapAssetRow,
@@ -89,11 +99,732 @@ function registerAdminRoutes(app, deps) {
     syncSubtitleCueIndexForAssetRow,
     formatTimecode,
     getAssetFamily,
+    assetAccessService,
+    assetEditLockService,
     nanoid: providedNanoid,
     removeAssetFromElastic
   } = deps;
   const resolvedNanoid = typeof providedNanoid === 'function' ? providedNanoid : nanoid;
+
+  function resolveSubtitleFilePath(subtitleUrl) {
+    const filePath = publicUploadUrlToAbsolutePath(String(subtitleUrl || '').trim());
+    if (!filePath) return '';
+    const resolvedPath = path.resolve(filePath);
+    const uploadsRoot = path.resolve(UPLOADS_DIR);
+    if (resolvedPath !== uploadsRoot && !resolvedPath.startsWith(`${uploadsRoot}${path.sep}`)) return '';
+    if (!resolvedPath.split(path.sep).includes('subtitles')) return '';
+    return resolvedPath;
+  }
+
+  function resolveOcrFilePath(ocrUrl) {
+    const filePath = publicUploadUrlToAbsolutePath(String(ocrUrl || '').trim());
+    if (!filePath) return '';
+    const resolvedPath = path.resolve(filePath);
+    const uploadsRoot = path.resolve(UPLOADS_DIR);
+    if (resolvedPath !== uploadsRoot && !resolvedPath.startsWith(`${uploadsRoot}${path.sep}`)) return '';
+    if (!resolvedPath.split(path.sep).includes('ocr')) return '';
+    return resolvedPath;
+  }
+
+  async function cleanupReplacedUploadUrls(assetId, publicUrls = []) {
+    if (typeof cleanupUnreferencedAssetFiles !== 'function') return;
+    const targets = Array.from(new Set(
+      (Array.isArray(publicUrls) ? publicUrls : [publicUrls])
+        .map((url) => publicUploadUrlToAbsolutePath(String(url || '').trim()))
+        .filter(Boolean)
+    ));
+    if (!targets.length) return;
+    await cleanupUnreferencedAssetFiles(targets, { assetId: String(assetId || '').trim() });
+  }
+
+  function isImageAssetRow(row = {}) {
+    return getAssetFamily({
+      mimeType: row.mime_type,
+      fileName: row.file_name,
+      declaredType: row.type
+    }) === 'image';
+  }
+
+  async function ensureImagePreviewAndThumbnailForRow(row = {}) {
+    if (!imageDerivativeService) throw new Error('Image derivative service is unavailable');
+    if (!isImageAssetRow(row)) throw new Error('Image derivative generation is supported only for image assets');
+    const inputPath = resolveAssetInputPath(row);
+    if (!inputPath || !fs.existsSync(inputPath)) {
+      const err = new Error('Source file not found');
+      err.statusCode = 404;
+      throw err;
+    }
+    if (!imageDerivativeService.isHeicCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+      return {
+        row,
+        previewUrl: resolveStoredUrl(row.proxy_url, 'proxies') || resolveStoredUrl(row.media_url, ''),
+        thumbnailUrl: resolveStoredUrl(row.thumbnail_url, 'thumbnails')
+      };
+    }
+    const derivatives = await imageDerivativeService.ensureImageDerivativesForUpload({
+      mimeType: row.mime_type,
+      fileName: row.file_name,
+      inputPath,
+      createdAt: row.created_at || new Date()
+    });
+    const previousProxyUrl = resolveStoredUrl(row.proxy_url, 'proxies');
+    const previousThumbnailUrl = resolveStoredUrl(row.thumbnail_url, 'thumbnails');
+    const nowIso = new Date().toISOString();
+    const updated = await pool.query(
+      `
+        UPDATE assets
+        SET proxy_url = $2,
+            proxy_status = 'ready',
+            thumbnail_url = $3,
+            updated_at = $4
+        WHERE id = $1
+        RETURNING *
+      `,
+      [
+        row.id,
+        String(derivatives.proxyUrl || '').trim(),
+        String(derivatives.thumbnailUrl || '').trim(),
+        nowIso
+      ]
+    );
+    const nextRow = updated.rows?.[0] || row;
+    await cleanupReplacedUploadUrls(row.id, [previousProxyUrl, previousThumbnailUrl]);
+    return {
+      row: nextRow,
+      previewUrl: resolveStoredUrl(nextRow.proxy_url, 'proxies'),
+      thumbnailUrl: resolveStoredUrl(nextRow.thumbnail_url, 'thumbnails')
+    };
+  }
+
+  async function regenerateImageThumbnailForRow(row = {}) {
+    if (!imageDerivativeService) throw new Error('Image derivative service is unavailable');
+    if (!isImageAssetRow(row)) throw new Error('Image thumbnail generation is supported only for image assets');
+    if (imageDerivativeService.isHeicCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+      return ensureImagePreviewAndThumbnailForRow(row);
+    }
+    const inputPath = resolveAssetInputPath(row);
+    if (!inputPath || !fs.existsSync(inputPath)) {
+      const err = new Error('Source file not found');
+      err.statusCode = 404;
+      throw err;
+    }
+    const thumbStoredName = `${Date.now()}-${resolvedNanoid()}-image-thumb.jpg`;
+    const thumbOut = buildArtifactPath('thumbnails', thumbStoredName, row.created_at || new Date());
+    await imageDerivativeService.generateImageThumbnail(inputPath, thumbOut.absolutePath);
+    const previousThumbnailUrl = resolveStoredUrl(row.thumbnail_url, 'thumbnails');
+    const updated = await pool.query(
+      `UPDATE assets SET thumbnail_url = $2, updated_at = $3 WHERE id = $1 RETURNING *`,
+      [row.id, thumbOut.publicUrl, new Date().toISOString()]
+    );
+    const nextRow = updated.rows?.[0] || row;
+    await cleanupReplacedUploadUrls(row.id, previousThumbnailUrl);
+    return {
+      row: nextRow,
+      previewUrl: resolveStoredUrl(nextRow.proxy_url, 'proxies') || resolveStoredUrl(nextRow.media_url, ''),
+      thumbnailUrl: resolveStoredUrl(nextRow.thumbnail_url, 'thumbnails')
+    };
+  }
 app.use('/api/admin', requireScopedAdminAccess);
+
+async function requireSuperAdminRequest(req, res) {
+	    const effective = await resolveEffectivePermissions(req);
+  if (!effective?.isSuperAdmin) {
+    res.status(403).json({ error: 'Super admin permission is required' });
+    return null;
+  }
+	  return effective;
+	}
+
+async function requireAssetRightsAdminRequest(req, res) {
+  const context = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+  if (!context?.canManageAllAssetVisibility && !assetAccessService.hasScopedAssetRightsAdminAccess(context)) {
+    res.status(403).json({ error: 'Admin permission is required' });
+    return null;
+  }
+  return context;
+}
+
+function mapTypeAccessPayload(row) {
+  return {
+    typeGroup: row.typeGroup,
+    visibility: row.visibility || 'public',
+    ownerGroups: row.ownerGroups || [],
+    allowedUsers: row.allowedUsers || [],
+    allowedGroups: row.allowedGroups || [],
+    deniedUsers: row.deniedUsers || [],
+    deniedGroups: row.deniedGroups || [],
+    editAllowedUsers: row.editAllowedUsers || [],
+    editAllowedGroups: row.editAllowedGroups || [],
+    editDeniedUsers: row.editDeniedUsers || [],
+    editDeniedGroups: row.editDeniedGroups || [],
+    downloadAllowedUsers: row.downloadAllowedUsers || [],
+    downloadAllowedGroups: row.downloadAllowedGroups || [],
+    downloadDeniedUsers: row.downloadDeniedUsers || [],
+    downloadDeniedGroups: row.downloadDeniedGroups || [],
+    uploadAllowedUsers: row.uploadAllowedUsers || [],
+    uploadAllowedGroups: row.uploadAllowedGroups || [],
+    uploadDeniedUsers: row.uploadDeniedUsers || [],
+    uploadDeniedGroups: row.uploadDeniedGroups || [],
+    updatedAt: row.updatedAt,
+    updatedBy: row.updatedBy || ''
+  };
+}
+
+function limitGroupsForAssetRightsAdmin(values, context) {
+  const list = assetAccessService.normalizeAccessList(values || []);
+  if (context?.canManageAllAssetVisibility) return list;
+  const managed = assetAccessService.normalizeAccessList(context?.groupAdminGroups || []);
+  return list.filter((group) => managed.includes(group));
+}
+
+async function requireFullAdminRequest(req, res) {
+  const effective = await resolveEffectivePermissions(req);
+  if (!effective?.canAccessAdmin) {
+    res.status(403).json({ error: 'Admin permission is required' });
+    return null;
+  }
+  return effective;
+}
+
+async function collectMamAccessGroups() {
+  const result = await pool.query(
+    `
+      SELECT DISTINCT group_name
+      FROM (
+        SELECT unnest(owner_groups) AS group_name FROM assets WHERE cardinality(owner_groups) > 0
+        UNION ALL
+        SELECT unnest(allowed_groups) AS group_name FROM assets WHERE cardinality(allowed_groups) > 0
+	        UNION ALL
+	        SELECT group_name FROM group_admins
+	        UNION ALL
+	        SELECT unnest(download_allowed_groups) AS group_name FROM assets WHERE cardinality(download_allowed_groups) > 0
+	        UNION ALL
+	        SELECT unnest(download_denied_groups) AS group_name FROM assets WHERE cardinality(download_denied_groups) > 0
+	        UNION ALL
+	        SELECT unnest(owner_groups) AS group_name FROM asset_type_access WHERE cardinality(owner_groups) > 0
+	        UNION ALL
+	        SELECT unnest(allowed_groups) AS group_name FROM asset_type_access WHERE cardinality(allowed_groups) > 0
+	        UNION ALL
+	        SELECT unnest(edit_allowed_groups) AS group_name FROM asset_type_access WHERE cardinality(edit_allowed_groups) > 0
+	        UNION ALL
+	        SELECT unnest(download_allowed_groups) AS group_name FROM asset_type_access WHERE cardinality(download_allowed_groups) > 0
+	        UNION ALL
+	        SELECT unnest(upload_allowed_groups) AS group_name FROM asset_type_access WHERE cardinality(upload_allowed_groups) > 0
+	      ) groups
+      WHERE group_name IS NOT NULL AND group_name <> ''
+      ORDER BY group_name ASC
+    `
+  );
+  return result.rows.map((row) => String(row.group_name || '').trim()).filter(Boolean);
+}
+
+app.get('/api/admin/identity/overview', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const [kcData, kcGroupsData, mamGroups, groupAdminsResult] = await Promise.all([
+      fetchKeycloakUsers(),
+      typeof fetchKeycloakGroups === 'function' ? fetchKeycloakGroups() : Promise.resolve({ groups: [] }),
+      collectMamAccessGroups(),
+      pool.query(
+        `
+          SELECT id, group_name, username, created_at, created_by
+          FROM group_admins
+          ORDER BY group_name ASC, username ASC
+        `
+      )
+    ]);
+    const kcUsersAll = Array.isArray(kcData?.users) ? kcData.users : [];
+    const kcUsers = kcUsersAll.filter((row) => isVisibleKeycloakUser(row));
+    const permissionDefaultsByUser = await fetchKeycloakUserPermissionDefaults(kcUsers, kcData?.realmByUsername);
+    const users = kcUsers
+      .map((user) => {
+        const username = String(user?.username || '').trim().toLowerCase();
+        const defaults = permissionDefaultsByUser.get(username) || [];
+        return {
+          id: String(user?.id || '').trim(),
+          username,
+          displayName: [user?.firstName, user?.lastName].map((item) => String(item || '').trim()).filter(Boolean).join(' '),
+          email: String(user?.email || '').trim(),
+          enabled: user?.enabled !== false,
+          realm: String(kcData?.realmByUsername?.get(username) || '').trim(),
+          permissionKeys: defaults
+        };
+      })
+      .filter((row) => row.username)
+      .sort((a, b) => a.username.localeCompare(b.username));
+    const groups = Array.isArray(kcGroupsData?.groups) ? kcGroupsData.groups : [];
+    const keycloakGroupNames = new Set(
+      groups.flatMap((group) => [group.name, group.path]).map((item) => String(item || '').trim().toLowerCase()).filter(Boolean)
+    );
+    const mamOnlyGroups = mamGroups.filter((group) => !keycloakGroupNames.has(group.toLowerCase()));
+    return res.json({
+      source: users.length || groups.length ? 'keycloak' : 'empty',
+      users,
+      groups,
+      mamGroups,
+      mamOnlyGroups,
+      groupAdmins: groupAdminsResult.rows.map((row) => ({
+        id: row.id,
+        groupName: row.group_name,
+        username: row.username,
+        createdAt: row.created_at,
+        createdBy: row.created_by || ''
+      }))
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load identity overview' });
+  }
+});
+
+app.get('/api/admin/group-admins', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const result = await pool.query(
+      `
+        SELECT id, group_name, username, created_at, created_by
+        FROM group_admins
+        ORDER BY group_name ASC, username ASC
+      `
+    );
+    return res.json({
+      groupAdmins: result.rows.map((row) => ({
+        id: row.id,
+        groupName: row.group_name,
+        username: row.username,
+        createdAt: row.created_at,
+        createdBy: row.created_by || ''
+      }))
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load group admins' });
+  }
+});
+
+app.post('/api/admin/group-admins', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const groupName = assetAccessService.normalizeAccessName(req.body?.groupName || req.body?.group || '');
+    const username = assetAccessService.normalizeAccessName(req.body?.username || req.body?.user || '');
+    if (!groupName || !username) {
+      return res.status(400).json({ error: 'groupName and username are required' });
+    }
+    const now = new Date().toISOString();
+    const createdBy = String(effective.username || effective.displayName || '').trim();
+    const result = await pool.query(
+      `
+        INSERT INTO group_admins (id, group_name, username, created_at, created_by)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (group_name, username)
+        DO UPDATE SET created_by = EXCLUDED.created_by
+        RETURNING *
+      `,
+      [resolvedNanoid(), groupName, username, now, createdBy]
+    );
+    await recordAuditEvent?.(req, {
+      action: 'group_admin.saved',
+      targetType: 'group_admin',
+      targetId: result.rows[0].id,
+      targetTitle: `${groupName}:${username}`,
+      details: { groupName, username }
+    });
+    return res.status(201).json({ groupAdmin: result.rows[0] });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to save group admin' });
+  }
+});
+
+app.delete('/api/admin/group-admins/:id', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const result = await pool.query('DELETE FROM group_admins WHERE id = $1 RETURNING *', [req.params.id]);
+    if (!result.rowCount) return res.status(404).json({ error: 'Group admin not found' });
+    await recordAuditEvent?.(req, {
+      action: 'group_admin.deleted',
+      targetType: 'group_admin',
+      targetId: result.rows[0].id,
+      targetTitle: `${result.rows[0].group_name}:${result.rows[0].username}`,
+      details: { groupName: result.rows[0].group_name, username: result.rows[0].username }
+    });
+    return res.status(204).send();
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to delete group admin' });
+  }
+});
+
+app.get('/api/admin/assets/access', async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim().toLowerCase();
+    const requestedTypeGroups = (Array.isArray(req.query.typeGroup) ? req.query.typeGroup : [req.query.typeGroup])
+      .map((item) => String(item || '').trim().toLowerCase())
+      .filter((item) => ['video', 'audio', 'photo', 'document', 'other'].includes(item));
+    const visibility = String(req.query.visibility || '').trim().toLowerCase();
+    const lockedOnly = ['1', 'true', 'yes', 'on'].includes(String(req.query.lockedOnly || '').trim().toLowerCase());
+    const limit = Number(req.query.limit) === 50 ? 50 : 20;
+    const requestedPage = Math.max(1, Number(req.query.page) || 1);
+    const values = [];
+    const where = [];
+    if (q) {
+      values.push(`%${q}%`);
+      where.push(`(LOWER(title) LIKE $${values.length} OR LOWER(file_name) LIKE $${values.length} OR LOWER(owner) LIKE $${values.length})`);
+    }
+    if (requestedTypeGroups.length) {
+      const typeConditions = [];
+      if (requestedTypeGroups.includes('video')) {
+        typeConditions.push(`(LOWER(COALESCE(type, '')) = 'video' OR LOWER(COALESCE(mime_type, '')) LIKE 'video/%')`);
+      }
+      if (requestedTypeGroups.includes('audio')) {
+        typeConditions.push(`(LOWER(COALESCE(type, '')) IN ('audio', 'sound') OR LOWER(COALESCE(mime_type, '')) LIKE 'audio/%')`);
+      }
+      if (requestedTypeGroups.includes('photo')) {
+        typeConditions.push(`(
+          LOWER(COALESCE(type, '')) IN ('photo', 'image', 'picture')
+          OR LOWER(COALESCE(mime_type, '')) LIKE 'image/%'
+          OR LOWER(COALESCE(file_name, '')) ~ '\\.(jpg|jpeg|png|gif|webp|tif|tiff|bmp|heic|heif)$'
+        )`);
+      }
+      if (requestedTypeGroups.includes('document')) {
+        typeConditions.push(`(
+          LOWER(COALESCE(type, '')) IN ('document', 'pdf', 'office', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx')
+          OR LOWER(COALESCE(mime_type, '')) IN (
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+          )
+          OR LOWER(COALESCE(file_name, '')) ~ '\\.(pdf|doc|docx|xls|xlsx|ppt|pptx|odt|ods|odp)$'
+        )`);
+      }
+      if (requestedTypeGroups.includes('other')) {
+        typeConditions.push(`NOT (
+          LOWER(COALESCE(type, '')) IN ('video', 'audio', 'sound', 'document', 'pdf', 'office', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx')
+          OR LOWER(COALESCE(mime_type, '')) LIKE 'video/%'
+          OR LOWER(COALESCE(mime_type, '')) LIKE 'audio/%'
+          OR LOWER(COALESCE(type, '')) IN ('photo', 'image', 'picture')
+          OR LOWER(COALESCE(mime_type, '')) LIKE 'image/%'
+          OR LOWER(COALESCE(mime_type, '')) IN (
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+          )
+          OR LOWER(COALESCE(file_name, '')) ~ '\\.(pdf|doc|docx|xls|xlsx|ppt|pptx|odt|ods|odp|jpg|jpeg|png|gif|webp|tif|tiff|bmp|heic|heif)$'
+        )`);
+      }
+      if (typeConditions.length) where.push(`(${typeConditions.join(' OR ')})`);
+    }
+    if (['private', 'group', 'groups', 'public'].includes(visibility)) {
+      values.push(visibility);
+      where.push(`COALESCE(visibility, 'public') = $${values.length}`);
+    }
+	    if (lockedOnly) {
+      where.push(`EXISTS (
+        SELECT 1
+        FROM asset_edit_locks
+        WHERE asset_edit_locks.asset_id = assets.id
+          AND asset_edit_locks.expires_at > NOW()
+      )`);
+	    }
+	    const accessContext = await requireAssetRightsAdminRequest(req, res);
+	    if (!accessContext) return null;
+	    assetAccessService.appendManageableAssetAccessWhere(where, values, accessContext, 'assets');
+	    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const countResult = await pool.query(`SELECT COUNT(*)::int AS total FROM assets ${whereSql}`, values);
+    const total = Number(countResult.rows?.[0]?.total || 0);
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const page = Math.min(requestedPage, totalPages);
+    const offset = (page - 1) * limit;
+    const pageValues = [...values, limit, offset];
+    const result = await pool.query(
+      `
+        SELECT
+          assets.id, assets.title, assets.file_name, assets.owner, assets.type, assets.visibility, assets.owner_user, assets.owner_groups,
+	          assets.allowed_users, assets.allowed_groups, assets.denied_users, assets.denied_groups,
+	          assets.edit_allowed_users, assets.edit_allowed_groups, assets.edit_denied_users, assets.edit_denied_groups,
+	          assets.download_allowed_users, assets.download_allowed_groups, assets.download_denied_users, assets.download_denied_groups,
+	          assets.updated_at,
+          asset_edit_locks.locked_by,
+          asset_edit_locks.locked_by_name,
+          asset_edit_locks.purpose AS lock_purpose,
+          asset_edit_locks.created_at AS lock_created_at,
+          asset_edit_locks.expires_at AS lock_expires_at
+        FROM assets
+        LEFT JOIN asset_edit_locks
+          ON asset_edit_locks.asset_id = assets.id
+         AND asset_edit_locks.expires_at > NOW()
+        ${whereSql}
+        ORDER BY assets.updated_at DESC
+        LIMIT $${pageValues.length - 1}
+        OFFSET $${pageValues.length}
+      `,
+      pageValues
+    );
+    return res.json({
+      assets: result.rows.map((row) => ({
+        id: row.id,
+        title: row.title || row.file_name || row.id,
+        fileName: row.file_name || '',
+        owner: row.owner || '',
+        type: row.type || '',
+        visibility: row.visibility || 'public',
+        ownerUser: row.owner_user || '',
+        ownerGroups: row.owner_groups || [],
+        allowedUsers: row.allowed_users || [],
+        allowedGroups: row.allowed_groups || [],
+        deniedUsers: row.denied_users || [],
+        deniedGroups: row.denied_groups || [],
+	        editAllowedUsers: row.edit_allowed_users || [],
+	        editAllowedGroups: row.edit_allowed_groups || [],
+	        editDeniedUsers: row.edit_denied_users || [],
+	        editDeniedGroups: row.edit_denied_groups || [],
+	        downloadAllowedUsers: row.download_allowed_users || [],
+	        downloadAllowedGroups: row.download_allowed_groups || [],
+	        downloadDeniedUsers: row.download_denied_users || [],
+	        downloadDeniedGroups: row.download_denied_groups || [],
+        editLock: row.locked_by ? {
+          lockedBy: row.locked_by || '',
+          lockedByName: row.locked_by_name || row.locked_by || '',
+          purpose: row.lock_purpose || '',
+          lockedAt: row.lock_created_at,
+          expiresAt: row.lock_expires_at
+        } : null,
+        updatedAt: row.updated_at
+      })),
+      pagination: { page, limit, total, totalPages }
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load asset access rows' });
+  }
+});
+
+app.get('/api/admin/assets/access-groups', async (req, res) => {
+  try {
+    const accessContext = await requireAssetRightsAdminRequest(req, res);
+    if (!accessContext) return null;
+    const groupNames = accessContext.canManageAllAssetVisibility
+      ? await collectMamAccessGroups()
+      : assetAccessService.normalizeAccessList(accessContext.groupAdminGroups || []);
+    return res.json({ groups: groupNames.map((name) => ({ name, path: `/${name}` })), mamGroups: groupNames });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load asset access groups' });
+  }
+});
+
+app.delete('/api/admin/assets/:id/edit-lock', async (req, res) => {
+  try {
+	    const effective = await requireAssetRightsAdminRequest(req, res);
+	    if (!effective) return null;
+    if (!assetEditLockService) return res.status(503).json({ error: 'Edit lock service is not available' });
+    const assetId = String(req.params.id || '').trim();
+    if (!assetId) return res.status(400).json({ error: 'assetId is required' });
+    const assetResult = await pool.query('SELECT id, title, file_name FROM assets WHERE id = $1', [assetId]);
+    const assetRow = assetResult.rows[0] || null;
+    if (!assetRow) return res.status(404).json({ error: 'Asset not found' });
+    const result = await assetEditLockService.releaseAsset(assetId);
+    await recordAuditEvent?.(req, {
+      action: 'asset.edit_lock_released',
+      targetType: 'asset',
+      targetId: assetId,
+      targetTitle: String(assetRow.title || assetRow.file_name || assetId),
+      details: {
+        source: 'admin_rights_panel',
+        forced: true,
+        released: Boolean(result.released),
+        lock: result.lock || null
+      }
+    });
+    return res.json({ released: Boolean(result.released), lock: result.lock || null });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to release edit lock' });
+  }
+});
+
+app.patch('/api/admin/assets/:id/access', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+    const result = await assetAccessService.updateAssetVisibility(req.params.id, req.body || {}, accessContext);
+    if (result.status !== 200) {
+      return res.status(result.status).json({ error: result.error });
+    }
+    await indexAssetToElastic(req.params.id).catch(() => {});
+    await recordAuditEvent?.(req, {
+      action: 'asset.visibility_updated',
+      targetType: 'asset',
+      targetId: result.row.id,
+      targetTitle: result.row.title,
+      details: {
+        source: 'admin_rights_panel',
+        visibility: result.row.visibility,
+        allowedUsers: result.row.allowed_users || [],
+        allowedGroups: result.row.allowed_groups || [],
+        deniedUsers: result.row.denied_users || [],
+        deniedGroups: result.row.denied_groups || [],
+	        editAllowedUsers: result.row.edit_allowed_users || [],
+	        editAllowedGroups: result.row.edit_allowed_groups || [],
+	        editDeniedUsers: result.row.edit_denied_users || [],
+	        editDeniedGroups: result.row.edit_denied_groups || [],
+	        downloadAllowedUsers: result.row.download_allowed_users || [],
+	        downloadAllowedGroups: result.row.download_allowed_groups || [],
+	        downloadDeniedUsers: result.row.download_denied_users || [],
+	        downloadDeniedGroups: result.row.download_denied_groups || []
+      }
+    });
+    return res.json({
+      asset: {
+        id: result.row.id,
+        title: result.row.title || result.row.file_name || result.row.id,
+        visibility: result.row.visibility || 'public',
+        ownerUser: result.row.owner_user || '',
+        ownerGroups: result.row.owner_groups || [],
+        allowedUsers: result.row.allowed_users || [],
+        allowedGroups: result.row.allowed_groups || [],
+        deniedUsers: result.row.denied_users || [],
+        deniedGroups: result.row.denied_groups || [],
+	        editAllowedUsers: result.row.edit_allowed_users || [],
+	        editAllowedGroups: result.row.edit_allowed_groups || [],
+	        editDeniedUsers: result.row.edit_denied_users || [],
+	        editDeniedGroups: result.row.edit_denied_groups || [],
+	        downloadAllowedUsers: result.row.download_allowed_users || [],
+	        downloadAllowedGroups: result.row.download_allowed_groups || [],
+	        downloadDeniedUsers: result.row.download_denied_users || [],
+	        downloadDeniedGroups: result.row.download_denied_groups || []
+	      }
+	    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to update asset access' });
+  }
+});
+
+	app.get('/api/admin/asset-types/access', async (req, res) => {
+	  try {
+	    const accessContext = await requireAssetRightsAdminRequest(req, res);
+	    if (!accessContext) return null;
+	    const rows = (await assetAccessService.getAssetTypeAccessRows())
+	      .filter((row) => assetAccessService.canManageAssetTypeAccess(row, accessContext));
+	    return res.json({
+	      types: rows.map(mapTypeAccessPayload),
+	      pagination: { page: 1, limit: 5, total: rows.length, totalPages: 1 }
+	    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load asset type access rows' });
+  }
+});
+
+app.patch('/api/admin/asset-types/:typeGroup/access', async (req, res) => {
+  try {
+	    const effective = await requireAssetRightsAdminRequest(req, res);
+	    if (!effective) return null;
+	    const typeGroup = assetAccessService.normalizeAssetTypeGroup(req.params.typeGroup || '');
+	    if (!typeGroup) return res.status(400).json({ error: 'Invalid asset type group' });
+	    const currentRows = await assetAccessService.getAssetTypeAccessRows();
+	    const currentRow = currentRows.find((row) => row.typeGroup === typeGroup);
+	    if (!currentRow || !assetAccessService.canManageAssetTypeAccess(currentRow, effective)) {
+	      return res.status(403).json({ error: 'Forbidden' });
+	    }
+	    const payload = req.body || {};
+	    const actor = String(effective.displayName || effective.username || '').trim();
+	    const next = {
+	      visibility: assetAccessService.normalizeVisibility(payload.visibility, 'public'),
+	      ownerGroups: limitGroupsForAssetRightsAdmin(payload.ownerGroups, effective),
+	      allowedUsers: assetAccessService.normalizeAccessList(payload.allowedUsers),
+	      allowedGroups: limitGroupsForAssetRightsAdmin(payload.allowedGroups, effective),
+	      deniedUsers: assetAccessService.normalizeAccessList(payload.deniedUsers),
+	      deniedGroups: limitGroupsForAssetRightsAdmin(payload.deniedGroups, effective),
+	      editAllowedUsers: assetAccessService.normalizeAccessList(payload.editAllowedUsers),
+	      editAllowedGroups: limitGroupsForAssetRightsAdmin(payload.editAllowedGroups, effective),
+	      editDeniedUsers: assetAccessService.normalizeAccessList(payload.editDeniedUsers),
+	      editDeniedGroups: limitGroupsForAssetRightsAdmin(payload.editDeniedGroups, effective),
+	      downloadAllowedUsers: assetAccessService.normalizeAccessList(payload.downloadAllowedUsers),
+	      downloadAllowedGroups: limitGroupsForAssetRightsAdmin(payload.downloadAllowedGroups, effective),
+	      downloadDeniedUsers: assetAccessService.normalizeAccessList(payload.downloadDeniedUsers),
+	      downloadDeniedGroups: limitGroupsForAssetRightsAdmin(payload.downloadDeniedGroups, effective),
+	      uploadAllowedUsers: assetAccessService.normalizeAccessList(payload.uploadAllowedUsers),
+	      uploadAllowedGroups: limitGroupsForAssetRightsAdmin(payload.uploadAllowedGroups, effective),
+	      uploadDeniedUsers: assetAccessService.normalizeAccessList(payload.uploadDeniedUsers),
+	      uploadDeniedGroups: limitGroupsForAssetRightsAdmin(payload.uploadDeniedGroups, effective)
+	    };
+	    const result = await pool.query(
+      `
+        INSERT INTO asset_type_access (
+	          type_group, visibility, owner_groups, allowed_users, allowed_groups,
+	          denied_users, denied_groups, edit_allowed_users, edit_allowed_groups,
+	          edit_denied_users, edit_denied_groups,
+	          download_allowed_users, download_allowed_groups, download_denied_users, download_denied_groups,
+	          upload_allowed_users, upload_allowed_groups, upload_denied_users, upload_denied_groups,
+	          updated_at, updated_by
+	        )
+	        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+	        ON CONFLICT (type_group) DO UPDATE
+        SET visibility = EXCLUDED.visibility,
+            owner_groups = EXCLUDED.owner_groups,
+            allowed_users = EXCLUDED.allowed_users,
+            allowed_groups = EXCLUDED.allowed_groups,
+            denied_users = EXCLUDED.denied_users,
+            denied_groups = EXCLUDED.denied_groups,
+            edit_allowed_users = EXCLUDED.edit_allowed_users,
+	            edit_allowed_groups = EXCLUDED.edit_allowed_groups,
+	            edit_denied_users = EXCLUDED.edit_denied_users,
+	            edit_denied_groups = EXCLUDED.edit_denied_groups,
+	            download_allowed_users = EXCLUDED.download_allowed_users,
+	            download_allowed_groups = EXCLUDED.download_allowed_groups,
+	            download_denied_users = EXCLUDED.download_denied_users,
+	            download_denied_groups = EXCLUDED.download_denied_groups,
+	            upload_allowed_users = EXCLUDED.upload_allowed_users,
+	            upload_allowed_groups = EXCLUDED.upload_allowed_groups,
+	            upload_denied_users = EXCLUDED.upload_denied_users,
+	            upload_denied_groups = EXCLUDED.upload_denied_groups,
+	            updated_at = EXCLUDED.updated_at,
+            updated_by = EXCLUDED.updated_by
+        RETURNING *
+      `,
+      [
+        typeGroup,
+        next.visibility,
+        next.ownerGroups,
+        next.allowedUsers,
+        next.allowedGroups,
+        next.deniedUsers,
+        next.deniedGroups,
+        next.editAllowedUsers,
+	        next.editAllowedGroups,
+	        next.editDeniedUsers,
+	        next.editDeniedGroups,
+	        next.downloadAllowedUsers,
+	        next.downloadAllowedGroups,
+	        next.downloadDeniedUsers,
+	        next.downloadDeniedGroups,
+	        next.uploadAllowedUsers,
+	        next.uploadAllowedGroups,
+	        next.uploadDeniedUsers,
+	        next.uploadDeniedGroups,
+	        new Date().toISOString(),
+	        actor
+      ]
+    );
+    await recordAuditEvent?.(req, {
+      action: 'asset_type.visibility_updated',
+      targetType: 'asset_type',
+      targetId: typeGroup,
+      targetTitle: typeGroup,
+      details: { source: 'admin_rights_panel', ...next }
+    });
+    const row = assetAccessService.getTypeAccessSnapshot(result.rows[0]);
+	    return res.json({ type: mapTypeAccessPayload(row) });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to update asset type access' });
+  }
+});
 
 app.get('/api/admin/turkish-corrections', async (_req, res) => {
   try {
@@ -197,9 +928,13 @@ function getOcrItemsFromDc(dcMetadata = {}, fallbackDate = '') {
 function ocrAbsolutePathToPublicUrl(absPath) {
   const safe = String(absPath || '');
   if (!safe) return '';
-  const rel = path.relative(OCR_DIR, safe).replace(/\\/g, '/');
+  const resolvedPath = path.resolve(safe);
+  const uploadsRoot = path.resolve(UPLOADS_DIR);
+  if (resolvedPath !== uploadsRoot && !resolvedPath.startsWith(`${uploadsRoot}${path.sep}`)) return '';
+  if (!resolvedPath.split(path.sep).includes('ocr')) return '';
+  const rel = path.relative(UPLOADS_DIR, resolvedPath).replace(/\\/g, '/');
   if (!rel || rel.startsWith('..')) return '';
-  return `/uploads/ocr/${rel}`;
+  return `/uploads/${rel}`;
 }
 
 function resolveAdminOcrItemForAssetRow(row, itemId) {
@@ -382,10 +1117,8 @@ app.delete('/api/admin/ocr-records', async (req, res) => {
     );
 
     if (deleteFile) {
-      const filePath = publicUploadUrlToAbsolutePath(String(target.ocrUrl || '').trim());
-      if (filePath && filePath.startsWith(OCR_DIR) && fs.existsSync(filePath)) {
-        try { fs.unlinkSync(filePath); } catch (_error) {}
-      }
+      const filePath = resolveOcrFilePath(target.ocrUrl);
+      if (filePath) cleanupAssetFiles([filePath]);
     }
     return res.json({ ok: true, removedFile: deleteFile });
   } catch (_error) {
@@ -418,8 +1151,8 @@ app.get('/api/admin/ocr-records/content', async (req, res) => {
     const resolved = resolveAdminOcrItemForAssetRow(row, itemId);
     const item = resolved.item;
     if (!item) return res.status(404).json({ error: 'OCR record not found' });
-    const filePath = publicUploadUrlToAbsolutePath(String(item.ocrUrl || '').trim());
-    if (!filePath || !filePath.startsWith(OCR_DIR) || !fs.existsSync(filePath)) {
+    const filePath = resolveOcrFilePath(item.ocrUrl);
+    if (!filePath || !fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'OCR file not found' });
     }
     const content = fs.readFileSync(filePath, 'utf8');
@@ -444,8 +1177,8 @@ app.patch('/api/admin/ocr-records/content', async (req, res) => {
     if (!target) return res.status(404).json({ error: 'OCR record not found' });
     const items = getOcrItemsFromDc(dc, row.updated_at || row.created_at || '');
     let idx = items.findIndex((it) => String(it.id || '') === itemId);
-    const filePath = publicUploadUrlToAbsolutePath(String(target.ocrUrl || '').trim());
-    if (!filePath || !filePath.startsWith(OCR_DIR) || !fs.existsSync(filePath)) {
+    const filePath = resolveOcrFilePath(target.ocrUrl);
+    if (!filePath || !fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'OCR file not found' });
     }
     fs.writeFileSync(filePath, content, 'utf8');
@@ -645,10 +1378,8 @@ app.delete('/api/admin/subtitle-records', async (req, res) => {
     } catch (_error) {}
 
     if (deleteFile) {
-      const filePath = publicUploadUrlToAbsolutePath(String(target.subtitleUrl || '').trim());
-      if (filePath && filePath.startsWith(SUBTITLES_DIR) && fs.existsSync(filePath)) {
-        try { fs.unlinkSync(filePath); } catch (_error) {}
-      }
+      const filePath = resolveSubtitleFilePath(target.subtitleUrl);
+      if (filePath) cleanupAssetFiles([filePath]);
     }
     return res.json({ ok: true, removedFile: deleteFile });
   } catch (_error) {
@@ -668,8 +1399,8 @@ app.get('/api/admin/subtitle-records/content', async (req, res) => {
     const items = getSubtitleItemsFromDc(dc);
     const item = items.find((it) => String(it.id || '') === itemId);
     if (!item) return res.status(404).json({ error: 'Subtitle record not found' });
-    const filePath = publicUploadUrlToAbsolutePath(String(item.subtitleUrl || '').trim());
-    if (!filePath || !filePath.startsWith(SUBTITLES_DIR) || !fs.existsSync(filePath)) {
+    const filePath = resolveSubtitleFilePath(item.subtitleUrl);
+    if (!filePath || !fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'Subtitle file not found' });
     }
     const content = fs.readFileSync(filePath, 'utf8');
@@ -693,8 +1424,8 @@ app.patch('/api/admin/subtitle-records/content', async (req, res) => {
     const idx = items.findIndex((it) => String(it.id || '') === itemId);
     if (idx < 0) return res.status(404).json({ error: 'Subtitle record not found' });
     const item = items[idx];
-    const filePath = publicUploadUrlToAbsolutePath(String(item.subtitleUrl || '').trim());
-    if (!filePath || !filePath.startsWith(SUBTITLES_DIR) || !fs.existsSync(filePath)) {
+    const filePath = resolveSubtitleFilePath(item.subtitleUrl);
+    if (!filePath || !fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'Subtitle file not found' });
     }
     const ext = path.extname(filePath).toLowerCase();
@@ -857,6 +1588,10 @@ app.get('/api/admin/settings', async (_req, res) => {
 
 app.patch('/api/admin/settings', async (req, res) => {
   try {
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'backup')) {
+      const effective = await requireFullAdminRequest(req, res);
+      if (!effective) return null;
+    }
     const current = await getAdminSettings();
     const next = {
       ...current,
@@ -866,6 +1601,9 @@ app.patch('/api/admin/settings', async (req, res) => {
       autoProxyBackfillOnUpload: Object.prototype.hasOwnProperty.call(req.body, 'autoProxyBackfillOnUpload')
         ? Boolean(req.body.autoProxyBackfillOnUpload)
         : current.autoProxyBackfillOnUpload,
+      newAssetDefaultVisibility: Object.prototype.hasOwnProperty.call(req.body, 'newAssetDefaultVisibility')
+        ? normalizeNewAssetDefaultVisibility(req.body.newAssetDefaultVisibility)
+        : normalizeNewAssetDefaultVisibility(current.newAssetDefaultVisibility),
       playerUiMode: Object.prototype.hasOwnProperty.call(req.body, 'playerUiMode')
         ? normalizePlayerUiMode(req.body.playerUiMode)
         : normalizePlayerUiMode(current.playerUiMode),
@@ -890,6 +1628,15 @@ app.patch('/api/admin/settings', async (req, res) => {
       auditRetentionDays: Object.prototype.hasOwnProperty.call(req.body, 'auditRetentionDays')
         ? normalizeAuditRetentionDays(req.body.auditRetentionDays)
         : normalizeAuditRetentionDays(current.auditRetentionDays),
+      mediaJobRetentionDays: Object.prototype.hasOwnProperty.call(req.body, 'mediaJobRetentionDays')
+        ? normalizeMediaJobRetentionDays(req.body.mediaJobRetentionDays)
+        : normalizeMediaJobRetentionDays(current.mediaJobRetentionDays),
+      authSession: Object.prototype.hasOwnProperty.call(req.body, 'authSession')
+        ? normalizeAuthSessionSettings(req.body.authSession)
+        : normalizeAuthSessionSettings(current.authSession),
+      backup: Object.prototype.hasOwnProperty.call(req.body, 'backup')
+        ? normalizeBackupSettings(req.body.backup)
+        : normalizeBackupSettings(current.backup),
       apiTokenEnabled: Object.prototype.hasOwnProperty.call(req.body, 'apiTokenEnabled')
         ? Boolean(req.body.apiTokenEnabled)
         : current.apiTokenEnabled,
@@ -911,52 +1658,131 @@ app.patch('/api/admin/settings', async (req, res) => {
     };
     const saved = await saveAdminSettings(next);
     cleanupAuditEvents?.(saved.auditRetentionDays).catch(() => {});
+    cleanupMediaProcessingJobs?.(saved.mediaJobRetentionDays).catch(() => {});
+    if (systemHealthCache) {
+      systemHealthCache.expiresAt = 0;
+      systemHealthCache.value = null;
+    }
     return res.json(saved);
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to save settings' });
   }
 });
 
+app.patch('/api/admin/identity/session-settings', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const current = await getAdminSettings();
+    const authSession = normalizeAuthSessionSettings(req.body?.authSession || req.body || {});
+    const next = {
+      ...current,
+      authSession
+    };
+    const applied = await applyKeycloakAuthSessionSettings(authSession);
+    const saved = await saveAdminSettings(next);
+    await recordAuditEvent(req, {
+      action: 'admin.settings.auth_session',
+      targetType: 'settings',
+      targetId: 'authSession',
+      targetTitle: 'Authentication session settings',
+      details: {
+        authSession: saved.authSession,
+        realms: applied.realms
+      }
+    });
+    return res.json({
+      authSession: saved.authSession,
+      realms: applied.realms
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error?.message || 'Failed to save authentication session settings' });
+  }
+});
+
+app.get('/api/admin/backups', async (req, res) => {
+  try {
+    const effective = await requireFullAdminRequest(req, res);
+    if (!effective) return null;
+    const settings = await getAdminSettings();
+    const backup = normalizeBackupSettings(settings.backup);
+    const listed = await listBackupFiles(backup);
+    return res.json({
+      settings: backup,
+      directory: listed.directory,
+      files: listed.files
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load backups' });
+  }
+});
+
+app.post('/api/admin/backups/run', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const settings = await getAdminSettings();
+    const backup = normalizeBackupSettings(
+      req.body && Object.keys(req.body).length ? req.body : settings.backup
+    );
+    const result = await runSystemBackup(backup, effective.username || effective.displayName || 'admin');
+    await recordAuditEvent?.(req, {
+      action: 'backup.created',
+      targetType: 'system',
+      targetId: 'backup',
+      targetTitle: result.directory,
+      details: {
+        files: result.files.map((file) => ({ type: file.type, path: file.path, size: file.size })),
+        requestedBy: result.requestedBy
+      }
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    const status = error?.code === 'backup_in_progress' ? 409 : 500;
+    return res.status(status).json({ error: String(error?.message || 'Failed to run backup') });
+  }
+});
+
+app.delete('/api/admin/backups/:fileName', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const fileName = path.basename(String(req.params.fileName || '').trim());
+    if (!/^mam-backup-[A-Za-z0-9_.-]+$/.test(fileName)) {
+      return res.status(400).json({ error: 'Invalid backup file name' });
+    }
+    const settings = await getAdminSettings();
+    const backup = normalizeBackupSettings(settings.backup);
+    const listed = await listBackupFiles(backup);
+    const target = (listed.files || []).find((file) => file.fileName === fileName);
+    if (!target) return res.status(404).json({ error: 'Backup file not found' });
+    const directory = path.resolve(listed.directory);
+    const filePath = path.resolve(directory, fileName);
+    if (!filePath.startsWith(`${directory}${path.sep}`)) {
+      return res.status(400).json({ error: 'Invalid backup file path' });
+    }
+    await fs.promises.unlink(filePath);
+    await recordAuditEvent?.(req, {
+      action: 'backup.deleted',
+      targetType: 'system',
+      targetId: fileName,
+      targetTitle: fileName,
+      details: {
+        path: filePath,
+        deletedBy: effective.username || effective.displayName || 'admin'
+      }
+    });
+    return res.json({ ok: true, fileName });
+  } catch (error) {
+    return res.status(500).json({ error: String(error?.message || 'Failed to delete backup') });
+  }
+});
+
 app.get('/api/admin/audit-events', async (req, res) => {
   try {
+    const { where, values } = await buildAuditEventFilters(req);
+
     const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 100));
-    const where = [];
-    const values = [];
-    const action = String(req.query.action || '').trim();
-    const actor = String(req.query.actor || '').trim();
-    const target = String(req.query.target || '').trim();
-    const from = String(req.query.from || '').trim();
-    const to = String(req.query.to || '').trim();
-
-    if (action) {
-      values.push(action);
-      where.push(`action = $${values.length}`);
-    }
-    if (actor) {
-      values.push(`%${actor.toLowerCase()}%`);
-      where.push(`LOWER(actor) LIKE $${values.length}`);
-    }
-    if (target) {
-      const elasticTargetIds = await suggestAssetIdsElastic?.(target, 100).catch(() => null);
-      const targetConditions = [];
-      values.push(`%${target.toLowerCase()}%`);
-      targetConditions.push(`LOWER(target_id) LIKE $${values.length}`);
-      targetConditions.push(`LOWER(target_title) LIKE $${values.length}`);
-      if (Array.isArray(elasticTargetIds) && elasticTargetIds.length) {
-        values.push(elasticTargetIds);
-        targetConditions.push(`target_id = ANY($${values.length}::text[])`);
-      }
-      where.push(`(${targetConditions.join(' OR ')})`);
-    }
-    if (from) {
-      values.push(from);
-      where.push(`created_at >= $${values.length}`);
-    }
-    if (to) {
-      values.push(to);
-      where.push(`created_at < ($${values.length}::date + INTERVAL '1 day')`);
-    }
-
     values.push(limit);
     const result = await pool.query(
       `
@@ -989,8 +1815,108 @@ app.get('/api/admin/audit-events', async (req, res) => {
   }
 });
 
+async function buildAuditEventFilters(req) {
+  const where = [];
+  const values = [];
+  const action = String(req.query.action || '').trim();
+  const actor = String(req.query.actor || '').trim();
+  const target = String(req.query.target || '').trim();
+  const from = String(req.query.from || '').trim();
+  const to = String(req.query.to || '').trim();
+
+  if (action) {
+    values.push(action);
+    where.push(`action = $${values.length}`);
+  }
+  if (actor) {
+    values.push(`%${actor.toLowerCase()}%`);
+    where.push(`LOWER(actor) LIKE $${values.length}`);
+  }
+  if (target) {
+    const elasticTargetIds = await suggestAssetIdsElastic?.(target, 100).catch(() => null);
+    const targetConditions = [];
+    values.push(`%${target.toLowerCase()}%`);
+    targetConditions.push(`LOWER(target_id) LIKE $${values.length}`);
+    targetConditions.push(`LOWER(target_title) LIKE $${values.length}`);
+    if (Array.isArray(elasticTargetIds) && elasticTargetIds.length) {
+      values.push(elasticTargetIds);
+      targetConditions.push(`target_id = ANY($${values.length}::text[])`);
+    }
+    where.push(`(${targetConditions.join(' OR ')})`);
+  }
+  if (from) {
+    values.push(from);
+    where.push(`created_at >= $${values.length}`);
+  }
+  if (to) {
+    values.push(to);
+    where.push(`created_at < ($${values.length}::date + INTERVAL '1 day')`);
+  }
+
+  return { where, values };
+}
+
+function safeCsvCell(value) {
+  let text = value == null ? '' : String(value);
+  if (/^[=+\-@]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function auditDetailsForExport(details) {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return '';
+  return Object.entries(details)
+    .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value ?? '')}`)
+    .join(' | ');
+}
+
+app.get('/api/admin/audit-events/export', async (req, res) => {
+  try {
+    const { where, values } = await buildAuditEventFilters(req);
+    const limit = Math.max(1, Math.min(5000, Number(req.query.limit) || 5000));
+    values.push(limit);
+    const result = await pool.query(
+      `
+        SELECT created_at, actor, action, target_type, target_id, target_title, client_medium, details, ip, user_agent
+        FROM audit_events
+        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY created_at DESC
+        LIMIT $${values.length}
+      `,
+      values
+    );
+    const headers = ['Created At', 'Actor', 'Action', 'Target Type', 'Target ID', 'Target Title', 'Client', 'IP', 'Details', 'User Agent'];
+    const rows = result.rows.map((row) => [
+      row.created_at ? new Date(row.created_at).toISOString() : '',
+      row.actor || '',
+      row.action || '',
+      row.target_type || '',
+      row.target_id || '',
+      row.target_title || '',
+      row.client_medium || '',
+      row.ip || '',
+      auditDetailsForExport(row.details || {}),
+      row.user_agent || ''
+    ]);
+    const csv = [
+      headers.map(safeCsvCell).join(','),
+      ...rows.map((row) => row.map(safeCsvCell).join(','))
+    ].join('\r\n');
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="audit-events-${stamp}.csv"`);
+    return res.send(`\uFEFF${csv}`);
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to export audit events' });
+  }
+});
+
 app.get('/api/admin/user-permissions', async (req, res) => {
   try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const q = String(req.query.q || '').trim().toLowerCase();
+    const limit = Number(req.query.limit) === 50 ? 50 : 20;
+    const requestedPage = Math.max(1, Number(req.query.page) || 1);
     const saved = await getUserPermissionsSettings();
     const kcData = await fetchKeycloakUsers();
     const kcUsersAll = Array.isArray(kcData?.users) ? kcData.users : [];
@@ -999,10 +1925,13 @@ app.get('/api/admin/user-permissions', async (req, res) => {
       return res.status(503).json({ error: 'Failed to fetch users from Keycloak' });
     }
     const permissionDefaultsByUser = await fetchKeycloakUserPermissionDefaults(kcUsers, kcData?.realmByUsername);
+    const keycloakUserByUsername = new Map();
     const usernames = new Set();
     kcUsers.forEach((row) => {
       const username = String(row?.username || '').trim().toLowerCase();
-      if (username) usernames.add(username);
+      if (!username) return;
+      usernames.add(username);
+      keycloakUserByUsername.set(username, row);
     });
     Object.keys(saved || {}).forEach((k) => {
       const username = String(k || '').trim().toLowerCase();
@@ -1010,15 +1939,18 @@ app.get('/api/admin/user-permissions', async (req, res) => {
       if (usernames.has(username)) usernames.add(username);
     });
 
-    const users = Array.from(usernames)
+    const allUsers = Array.from(usernames)
       .sort((a, b) => a.localeCompare(b))
       .map((username) => {
+        const kcUser = keycloakUserByUsername.get(username) || {};
         const defaults = permissionDefaultsByUser.has(username)
           ? permissionDefaultsByUser.get(username)
-          : resolvePermissionKeysFromPrincipals({ username }).permissionKeys;
+          : [];
         const effective = normalizePermissionEntry(saved?.[username], defaults);
         return {
           username,
+          displayName: [kcUser?.firstName, kcUser?.lastName].map((item) => String(item || '').trim()).filter(Boolean).join(' '),
+          email: String(kcUser?.email || '').trim(),
           permissionKeys: effective.permissionKeys,
           adminPageAccess: effective.adminPageAccess,
           textAdminAccess: effective.textAdminAccess,
@@ -1027,9 +1959,18 @@ app.get('/api/admin/user-permissions', async (req, res) => {
           pdfAdvancedTools: effective.pdfAdvancedTools
         };
       });
+    const filteredUsers = q.length >= 2
+      ? allUsers.filter((user) => [user.username, user.displayName, user.email].map((item) => String(item || '').toLowerCase()).join(' ').includes(q))
+      : allUsers;
+    const total = filteredUsers.length;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const page = Math.min(requestedPage, totalPages);
+    const offset = (page - 1) * limit;
+    const users = filteredUsers.slice(offset, offset + limit);
     return res.json({
       users,
       availablePermissions: getPermissionDefinitionsPayload(),
+      pagination: { page, limit, total, totalPages },
       source: kcUsers.length ? 'keycloak' : 'fallback'
     });
   } catch (_error) {
@@ -1039,6 +1980,8 @@ app.get('/api/admin/user-permissions', async (req, res) => {
 
 app.patch('/api/admin/user-permissions/:username', async (req, res) => {
   try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
     const username = String(req.params.username || '').trim().toLowerCase();
     if (!username) return res.status(400).json({ error: 'username is required' });
     const kcData = await fetchKeycloakUsers();
@@ -1065,7 +2008,7 @@ app.patch('/api/admin/user-permissions/:username', async (req, res) => {
         assetDelete: req.body?.assetDelete,
         pdfAdvancedTools: req.body?.pdfAdvancedTools
       },
-      resolvePermissionKeysFromPrincipals({ username }).permissionKeys
+      []
     );
     const next = {
       ...current,
@@ -1203,6 +2146,9 @@ app.get('/api/admin/system-health', async (req, res) => {
         segmentCount: jobType === 'video_ocr' ? Number(mapped.segmentCount || 0) : 0
       };
     };
+    const settings = await getAdminSettings().catch(() => ({ mediaJobRetentionDays: 30 }));
+    const mediaJobRetentionDays = normalizeMediaJobRetentionDays(settings.mediaJobRetentionDays);
+    cleanupMediaProcessingJobs?.(mediaJobRetentionDays).catch(() => {});
 
     const [proxyRunning, proxyFailed] = [
       Array.from(proxyJobs.values()).filter((job) => ['running', 'queued'].includes(String(job.status || ''))).length,
@@ -1213,8 +2159,10 @@ app.get('/api/admin/system-health', async (req, res) => {
         SELECT job_type, status, COUNT(*)::int AS count
         FROM media_processing_jobs
         WHERE job_type IN ('subtitle', 'video_ocr')
+          AND updated_at >= NOW() - ($1::int * INTERVAL '1 day')
         GROUP BY job_type, status
-      `
+      `,
+      [mediaJobRetentionDays]
     );
     const mediaCounts = {};
     mediaJobsStats.rows.forEach((row) => {
@@ -1263,9 +2211,11 @@ app.get('/api/admin/system-health', async (req, res) => {
         FROM media_processing_jobs mpj
         LEFT JOIN assets a ON a.id = mpj.asset_id
         WHERE mpj.job_type IN ('subtitle', 'video_ocr')
+          AND mpj.updated_at >= NOW() - ($1::int * INTERVAL '1 day')
         ORDER BY mpj.updated_at DESC
         LIMIT 200
-      `
+      `,
+      [mediaJobRetentionDays]
     );
     const recentJobs = {
       subtitle: { active: null, latestCompleted: null, latestFailed: null },
@@ -1315,7 +2265,8 @@ app.get('/api/admin/system-health', async (req, res) => {
         missingSubtitle,
         missingOcr
       },
-      recentJobs
+      recentJobs,
+      mediaJobRetentionDays
     };
     systemHealthCache.expiresAt = Date.now() + SYSTEM_HEALTH_CACHE_TTL_MS;
     systemHealthCache.value = payload;
@@ -1404,8 +2355,8 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
     const assetName = String(req.body?.assetName || '').trim();
     const mode = String(req.body?.mode || '').trim().toLowerCase();
     if (!assetName) return res.status(400).json({ error: 'assetName is required' });
-    if (!['thumbnail', 'preview', 'proxy', 'replace_asset', 'replace_pdf', 'delete_asset'].includes(mode)) {
-      return res.status(400).json({ error: 'mode must be one of: thumbnail, preview, proxy, replace_asset, replace_pdf, delete_asset' });
+    if (!['thumbnail', 'image_thumbnail', 'image_preview', 'document_thumbnail', 'preview', 'proxy', 'replace_asset', 'replace_pdf', 'delete_asset'].includes(mode)) {
+      return res.status(400).json({ error: 'mode must be one of: thumbnail, image_thumbnail, image_preview, document_thumbnail, preview, proxy, replace_asset, replace_pdf, delete_asset' });
     }
 
     const like = `%${assetName}%`;
@@ -1429,6 +2380,10 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
 
     let row = match.rows[0];
     let info = {};
+    if (assetEditLockService) {
+      const lockResult = await assetEditLockService.assertWritable(req, row.id);
+      if (!lockResult.ok) return assetEditLockService.sendLocked(res, lockResult);
+    }
 
     if (mode === 'delete_asset') {
       const actor = String(req.userPermissions?.displayName || req.userPermissions?.username || 'admin').trim() || 'admin';
@@ -1578,6 +2533,40 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
         thumbnailUrl: result.thumbnailUrl,
         timecode: result.timecodeSeconds == null ? '' : formatTimecode(result.timecodeSeconds)
       };
+    } else if (mode === 'image_thumbnail') {
+      if (!isImageAssetRow(row)) {
+        return res.status(400).json({ error: 'Image thumbnail generation is supported only for image assets' });
+      }
+      const result = await regenerateImageThumbnailForRow(row);
+      row = result.row;
+      info = {
+        previewUrl: result.previewUrl,
+        thumbnailUrl: result.thumbnailUrl
+      };
+    } else if (mode === 'image_preview') {
+      if (!isImageAssetRow(row)) {
+        return res.status(400).json({ error: 'Image preview generation is supported only for image assets' });
+      }
+      const result = await ensureImagePreviewAndThumbnailForRow(row);
+      row = result.row;
+      info = {
+        previewUrl: result.previewUrl,
+        thumbnailUrl: result.thumbnailUrl
+      };
+    } else if (mode === 'document_thumbnail') {
+      if (!isDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+        return res.status(400).json({ error: 'Document thumbnail generation is supported only for document assets' });
+      }
+      const inputPath = resolveAssetInputPath(row);
+      if (!inputPath || !fs.existsSync(inputPath)) return res.status(404).json({ error: 'Source file not found' });
+      if (isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+        row = await ensurePdfThumbnailForRow(row);
+      } else {
+        row = await ensureDocumentThumbnailForRow(row);
+      }
+      info = {
+        thumbnailUrl: resolveStoredUrl(row.thumbnail_url, 'thumbnails')
+      };
     } else if (mode === 'preview') {
       if (!isDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
         return res.status(400).json({ error: 'Preview generation is supported for document assets in this tool' });
@@ -1713,14 +2702,9 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
           row = await ensurePdfThumbnailForRow(row);
         } else if (isDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
           row = await ensureDocumentThumbnailForRow(row);
-        } else if (String(row.mime_type || '').toLowerCase().startsWith('image/')) {
-          const nowIso2 = new Date().toISOString();
-          const imageThumb = resolveStoredUrl(row.media_url, 'uploads') || row.media_url || '';
-          const updated = await pool.query(
-            `UPDATE assets SET thumbnail_url = $2, updated_at = $3 WHERE id = $1 RETURNING *`,
-            [row.id, imageThumb, nowIso2]
-          );
-          row = updated.rows?.[0] || row;
+        } else if (isImageAssetRow(row)) {
+          const result = await regenerateImageThumbnailForRow(row);
+          row = result.row;
         }
       }
       if (generatePreview && isDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
@@ -1729,6 +2713,9 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
           const preview = await extractPreviewContentFromFile(row, inputPath);
           previewChars = Math.max(0, String(preview.html || preview.text || '').length);
         }
+      } else if (generatePreview && isImageAssetRow(row)) {
+        const result = await ensureImagePreviewAndThumbnailForRow(row);
+        row = result.row;
       }
       await indexAssetToElastic(row.id).catch(() => {});
       await recordAuditEvent?.(req, {
