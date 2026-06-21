@@ -9,6 +9,7 @@ function registerAssetRoutes(app, deps) {
     resolveEffectivePermissions,
     collectAssetCleanupPaths,
     cleanupAssetFiles,
+    cleanupUnreferencedAssetFiles,
     removeAssetFromCollections,
     removeAssetFromElastic,
     indexAssetToElastic,
@@ -1806,7 +1807,11 @@ function registerAssetRoutes(app, deps) {
       if (String(row.action_type || '').trim().toLowerCase() === 'pdf_original') {
         return res.status(400).json({ error: 'Protected version cannot be deleted' });
       }
+      const cleanupTargets = collectAssetCleanupPaths({}, [row]);
       await pool.query('DELETE FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
+      if (typeof cleanupUnreferencedAssetFiles === 'function') {
+        await cleanupUnreferencedAssetFiles(cleanupTargets, { assetId, versionId });
+      }
       return res.json({ deleted: true, versionId });
     } catch (_error) {
       return res.status(500).json({ error: 'Failed to delete version' });

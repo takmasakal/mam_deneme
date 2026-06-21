@@ -153,7 +153,7 @@ const DEFAULT_ADMIN_SETTINGS = {
   },
   apiTokenEnabled: false,
   apiToken: '',
-  oidcBearerEnabled: false,
+  oidcBearerEnabled: true,
   oidcIssuerUrl: process.env.OIDC_ISSUER_URL || 'http://keycloak:8080/realms/mam',
   oidcJwksUrl: process.env.OIDC_JWKS_URL || 'http://keycloak:8080/realms/mam/protocol/openid-connect/certs',
   oidcAudience: process.env.OIDC_AUDIENCE || ''
@@ -835,6 +835,18 @@ function listOcrFilesRecursive(dirPath) {
   return out;
 }
 
+function listUploadArtifactFilesRecursive(folderName, extension) {
+  const safeFolder = String(folderName || '').trim();
+  const safeExt = String(extension || '').trim().toLowerCase();
+  if (!safeFolder || !safeExt) return [];
+  return listOcrFilesRecursive(UPLOADS_DIR)
+    .filter((filePath) => {
+      const resolvedPath = path.resolve(filePath);
+      if (!resolvedPath.toLowerCase().endsWith(safeExt)) return false;
+      return resolvedPath.split(path.sep).includes(safeFolder);
+    });
+}
+
 function getCandidateOcrFilePathsForRow(row) {
   const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
   const directUrl = pickLatestVideoOcrUrlFromDc(dc);
@@ -846,11 +858,14 @@ function getCandidateOcrFilePathsForRow(row) {
   const titleSlug = sanitizeFileName(String(row?.title || '').trim().toLowerCase());
   const fileSlug = sanitizeFileName(path.basename(String(row?.file_name || ''), path.extname(String(row?.file_name || ''))).toLowerCase());
   const createdDay = getDatePart(row?.created_at);
-  const allTxt = listOcrFilesRecursive(OCR_DIR);
+  const allTxt = Array.from(new Set([
+    ...listOcrFilesRecursive(OCR_DIR),
+    ...listUploadArtifactFilesRecursive('ocr', '.txt')
+  ]));
   const ranked = allTxt
     .map((p) => {
       const base = path.basename(p).toLowerCase();
-      const rel = path.relative(OCR_DIR, p).replace(/\\/g, '/');
+      const rel = path.relative(UPLOADS_DIR, p).replace(/\\/g, '/');
       const hasFile = fileSlug && fileSlug.length >= 4 && base.includes(fileSlug);
       const hasTitle = titleSlug && titleSlug.length >= 5 && base.includes(titleSlug);
       const inSameDay = createdDay && rel.startsWith(`${createdDay}/`);
@@ -2739,7 +2754,7 @@ async function syncOcrSegmentIndexForAsset(assetId, ocrUrl, options = {}) {
   if (!safeAssetId || !safeOcrUrl) return 0;
   const ocrPath = publicUploadUrlToAbsolutePath(safeOcrUrl);
   await pool.query('DELETE FROM asset_ocr_segments WHERE asset_id = $1 AND ocr_url = $2', [safeAssetId, safeOcrUrl]);
-  if (!ocrPath || !ocrPath.startsWith(OCR_DIR) || !fs.existsSync(ocrPath)) return 0;
+  if (!ocrPath || !isUploadArtifactPath(ocrPath, 'ocr') || !fs.existsSync(ocrPath)) return 0;
   let raw = '';
   try {
     raw = fs.readFileSync(ocrPath, 'utf8');
@@ -3660,6 +3675,7 @@ async function ensureDocumentThumbnailForRow(row) {
       'UPDATE assets SET thumbnail_url = $2, updated_at = $3 WHERE id = $1',
       [row.id, thumbnailUrl, new Date().toISOString()]
     );
+    await cleanupReplacedUploadUrls(row.id, existing);
     return { ...row, thumbnail_url: thumbnailUrl };
   } catch (_error) {
     return row;
@@ -3714,6 +3730,7 @@ async function ensurePdfThumbnailForRow(row) {
     'UPDATE assets SET thumbnail_url = $2, updated_at = $3 WHERE id = $1',
     [row.id, thumbnailUrl, new Date().toISOString()]
   );
+  await cleanupReplacedUploadUrls(row.id, existing);
   return { ...row, thumbnail_url: thumbnailUrl };
 }
 
@@ -3722,6 +3739,16 @@ function publicUploadUrlToAbsolutePath(publicUrl) {
   if (!url.startsWith('/uploads/')) return '';
   const rel = url.replace('/uploads/', '');
   return path.join(UPLOADS_DIR, rel);
+}
+
+function isUploadArtifactPath(filePath, folderName) {
+  const safePath = String(filePath || '').trim();
+  const safeFolder = String(folderName || '').trim();
+  if (!safePath || !safeFolder) return false;
+  const resolvedPath = path.resolve(safePath);
+  const uploadsRoot = path.resolve(UPLOADS_DIR);
+  if (resolvedPath !== uploadsRoot && !resolvedPath.startsWith(`${uploadsRoot}${path.sep}`)) return false;
+  return resolvedPath.split(path.sep).includes(safeFolder);
 }
 
 function pruneDownloadAuditCache(now = Date.now()) {
@@ -4023,6 +4050,18 @@ function hasStoredFile(value, defaultSubdir) {
   }
 }
 
+async function cleanupReplacedUploadUrls(assetId, publicUrls = []) {
+  if (typeof cleanupUnreferencedAssetFiles !== 'function') return;
+  const safeAssetId = String(assetId || '').trim();
+  const targets = Array.from(new Set(
+    (Array.isArray(publicUrls) ? publicUrls : [publicUrls])
+      .map((url) => publicUploadUrlToAbsolutePath(String(url || '').trim()))
+      .filter(Boolean)
+  ));
+  if (!targets.length) return;
+  await cleanupUnreferencedAssetFiles(targets, { assetId: safeAssetId });
+}
+
 function isPathInsideRoot(filePath, rootDir) {
   const safePath = String(filePath || '').trim();
   const safeRoot = String(rootDir || '').trim();
@@ -4049,6 +4088,7 @@ const assetDeletionService = createAssetDeletionService({
 const {
   collectAssetCleanupPaths,
   cleanupAssetFiles,
+  cleanupUnreferencedAssetFiles,
   removeAssetFromCollections,
   deleteAssetFromElastic
 } = assetDeletionService;
@@ -6834,6 +6874,7 @@ async function regenerateVideoThumbnailForAsset(row, options = {}) {
   await generateVideoThumbnail(inputPath, thumbOut.absolutePath, { seekSeconds: timecodeSeconds });
 
   const now = new Date().toISOString();
+  const previousThumbnailUrl = resolveStoredUrl(row.thumbnail_url, 'thumbnails');
   const updated = await pool.query(
     `
       UPDATE assets
@@ -6844,6 +6885,7 @@ async function regenerateVideoThumbnailForAsset(row, options = {}) {
     `,
     [row.id, thumbOut.publicUrl, now]
   );
+  await cleanupReplacedUploadUrls(row.id, previousThumbnailUrl);
   return {
     row: updated.rows[0],
     thumbnailUrl: thumbOut.publicUrl,
@@ -6905,18 +6947,12 @@ async function ensureVideoProxyAndThumbnail(row, options = {}) {
   let proxyUrl = resolveStoredUrl(row.proxy_url, 'proxies');
   let proxyStatus = row.proxy_status || 'not_applicable';
   let thumbnailUrl = resolveStoredUrl(row.thumbnail_url, 'thumbnails');
+  const previousProxyUrl = proxyUrl;
+  const previousThumbnailUrl = thumbnailUrl;
   let detectedAudioChannels = Number(row?.dc_metadata?.audioChannels) || 0;
   const now = new Date().toISOString();
 
   if (forceProxy && proxyUrl) {
-    const prev = publicUploadUrlToAbsolutePath(proxyUrl);
-    if (prev && fs.existsSync(prev)) {
-      try {
-        fs.unlinkSync(prev);
-      } catch (_error) {
-        // Ignore cleanup failure and continue with new proxy generation.
-      }
-    }
     proxyUrl = '';
     proxyStatus = 'pending';
   }
@@ -6957,6 +6993,10 @@ async function ensureVideoProxyAndThumbnail(row, options = {}) {
     `,
     [row.id, proxyUrl, proxyStatus, thumbnailUrl, Math.max(0, Number(detectedAudioChannels) || 0), now]
   );
+  const replaced = [];
+  if (previousProxyUrl && previousProxyUrl !== proxyUrl) replaced.push(previousProxyUrl);
+  if (previousThumbnailUrl && previousThumbnailUrl !== thumbnailUrl) replaced.push(previousThumbnailUrl);
+  await cleanupReplacedUploadUrls(row.id, replaced);
   return updated.rows[0];
 }
 
@@ -8310,6 +8350,7 @@ registerAdminRoutes(app, {
   hasStoredFile,
   collectAssetCleanupPaths,
   cleanupAssetFiles,
+  cleanupUnreferencedAssetFiles,
   deleteAssetFromElastic,
   removeAssetFromCollections,
   ensureVideoProxyAndThumbnail,
@@ -8397,6 +8438,7 @@ registerAssetRoutes(app, {
   resolveEffectivePermissions,
   collectAssetCleanupPaths,
   cleanupAssetFiles,
+  cleanupUnreferencedAssetFiles,
   removeAssetFromCollections,
   removeAssetFromElastic: deleteAssetFromElastic,
   indexAssetToElastic,

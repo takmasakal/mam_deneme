@@ -28,7 +28,7 @@ function registerTextProcessingRoutes(app, deps) {
     saveAssetVideoOcrMetadata,
     publicUploadUrlToAbsolutePath,
     safeRmDir,
-    SUBTITLES_DIR,
+    cleanupAssetFiles,
     syncSubtitleCueIndexForAssetRow,
     searchSubtitleMatchesForAssetRow,
     searchOcrMatchesForAssetRow,
@@ -669,13 +669,16 @@ function registerTextProcessingRoutes(app, deps) {
         await syncSubtitleCueIndexForAssetRow(updatedResult.rows[0]);
       } catch (_error) {}
   
+      let removedFile = false;
       const filePath = publicUploadUrlToAbsolutePath(subtitleUrl);
-      if (filePath && filePath.startsWith(SUBTITLES_DIR) && fs.existsSync(filePath)) {
-        try { fs.unlinkSync(filePath); } catch (_error) {}
+      if (filePath && typeof cleanupAssetFiles === 'function') {
+        const cleanup = cleanupAssetFiles([filePath]);
+        removedFile = Array.isArray(cleanup?.removed) && cleanup.removed.length > 0;
       }
   
       return res.json({
         removed: subtitleUrl,
+        removedFile,
         subtitleCuesCleared: !nextActive,
         asset: mapAssetRow(updatedResult.rows[0])
       });

@@ -57,7 +57,6 @@ function registerAdminRoutes(app, deps) {
     mapVideoOcrJobFromDbRow,
     OCR_DIR,
     UPLOADS_DIR,
-    SUBTITLES_DIR,
     normalizeVttContent,
     resolveStoredUrl,
     pickLatestVideoOcrUrlFromDc,
@@ -70,6 +69,7 @@ function registerAdminRoutes(app, deps) {
     hasStoredFile,
     collectAssetCleanupPaths,
     cleanupAssetFiles,
+    cleanupUnreferencedAssetFiles,
     deleteAssetFromElastic,
     removeAssetFromCollections,
     ensureVideoProxyAndThumbnail,
@@ -106,6 +106,37 @@ function registerAdminRoutes(app, deps) {
   } = deps;
   const resolvedNanoid = typeof providedNanoid === 'function' ? providedNanoid : nanoid;
 
+  function resolveSubtitleFilePath(subtitleUrl) {
+    const filePath = publicUploadUrlToAbsolutePath(String(subtitleUrl || '').trim());
+    if (!filePath) return '';
+    const resolvedPath = path.resolve(filePath);
+    const uploadsRoot = path.resolve(UPLOADS_DIR);
+    if (resolvedPath !== uploadsRoot && !resolvedPath.startsWith(`${uploadsRoot}${path.sep}`)) return '';
+    if (!resolvedPath.split(path.sep).includes('subtitles')) return '';
+    return resolvedPath;
+  }
+
+  function resolveOcrFilePath(ocrUrl) {
+    const filePath = publicUploadUrlToAbsolutePath(String(ocrUrl || '').trim());
+    if (!filePath) return '';
+    const resolvedPath = path.resolve(filePath);
+    const uploadsRoot = path.resolve(UPLOADS_DIR);
+    if (resolvedPath !== uploadsRoot && !resolvedPath.startsWith(`${uploadsRoot}${path.sep}`)) return '';
+    if (!resolvedPath.split(path.sep).includes('ocr')) return '';
+    return resolvedPath;
+  }
+
+  async function cleanupReplacedUploadUrls(assetId, publicUrls = []) {
+    if (typeof cleanupUnreferencedAssetFiles !== 'function') return;
+    const targets = Array.from(new Set(
+      (Array.isArray(publicUrls) ? publicUrls : [publicUrls])
+        .map((url) => publicUploadUrlToAbsolutePath(String(url || '').trim()))
+        .filter(Boolean)
+    ));
+    if (!targets.length) return;
+    await cleanupUnreferencedAssetFiles(targets, { assetId: String(assetId || '').trim() });
+  }
+
   function isImageAssetRow(row = {}) {
     return getAssetFamily({
       mimeType: row.mime_type,
@@ -136,6 +167,8 @@ function registerAdminRoutes(app, deps) {
       inputPath,
       createdAt: row.created_at || new Date()
     });
+    const previousProxyUrl = resolveStoredUrl(row.proxy_url, 'proxies');
+    const previousThumbnailUrl = resolveStoredUrl(row.thumbnail_url, 'thumbnails');
     const nowIso = new Date().toISOString();
     const updated = await pool.query(
       `
@@ -155,6 +188,7 @@ function registerAdminRoutes(app, deps) {
       ]
     );
     const nextRow = updated.rows?.[0] || row;
+    await cleanupReplacedUploadUrls(row.id, [previousProxyUrl, previousThumbnailUrl]);
     return {
       row: nextRow,
       previewUrl: resolveStoredUrl(nextRow.proxy_url, 'proxies'),
@@ -177,11 +211,13 @@ function registerAdminRoutes(app, deps) {
     const thumbStoredName = `${Date.now()}-${resolvedNanoid()}-image-thumb.jpg`;
     const thumbOut = buildArtifactPath('thumbnails', thumbStoredName, row.created_at || new Date());
     await imageDerivativeService.generateImageThumbnail(inputPath, thumbOut.absolutePath);
+    const previousThumbnailUrl = resolveStoredUrl(row.thumbnail_url, 'thumbnails');
     const updated = await pool.query(
       `UPDATE assets SET thumbnail_url = $2, updated_at = $3 WHERE id = $1 RETURNING *`,
       [row.id, thumbOut.publicUrl, new Date().toISOString()]
     );
     const nextRow = updated.rows?.[0] || row;
+    await cleanupReplacedUploadUrls(row.id, previousThumbnailUrl);
     return {
       row: nextRow,
       previewUrl: resolveStoredUrl(nextRow.proxy_url, 'proxies') || resolveStoredUrl(nextRow.media_url, ''),
@@ -892,9 +928,13 @@ function getOcrItemsFromDc(dcMetadata = {}, fallbackDate = '') {
 function ocrAbsolutePathToPublicUrl(absPath) {
   const safe = String(absPath || '');
   if (!safe) return '';
-  const rel = path.relative(OCR_DIR, safe).replace(/\\/g, '/');
+  const resolvedPath = path.resolve(safe);
+  const uploadsRoot = path.resolve(UPLOADS_DIR);
+  if (resolvedPath !== uploadsRoot && !resolvedPath.startsWith(`${uploadsRoot}${path.sep}`)) return '';
+  if (!resolvedPath.split(path.sep).includes('ocr')) return '';
+  const rel = path.relative(UPLOADS_DIR, resolvedPath).replace(/\\/g, '/');
   if (!rel || rel.startsWith('..')) return '';
-  return `/uploads/ocr/${rel}`;
+  return `/uploads/${rel}`;
 }
 
 function resolveAdminOcrItemForAssetRow(row, itemId) {
@@ -1077,10 +1117,8 @@ app.delete('/api/admin/ocr-records', async (req, res) => {
     );
 
     if (deleteFile) {
-      const filePath = publicUploadUrlToAbsolutePath(String(target.ocrUrl || '').trim());
-      if (filePath && filePath.startsWith(OCR_DIR) && fs.existsSync(filePath)) {
-        try { fs.unlinkSync(filePath); } catch (_error) {}
-      }
+      const filePath = resolveOcrFilePath(target.ocrUrl);
+      if (filePath) cleanupAssetFiles([filePath]);
     }
     return res.json({ ok: true, removedFile: deleteFile });
   } catch (_error) {
@@ -1113,8 +1151,8 @@ app.get('/api/admin/ocr-records/content', async (req, res) => {
     const resolved = resolveAdminOcrItemForAssetRow(row, itemId);
     const item = resolved.item;
     if (!item) return res.status(404).json({ error: 'OCR record not found' });
-    const filePath = publicUploadUrlToAbsolutePath(String(item.ocrUrl || '').trim());
-    if (!filePath || !filePath.startsWith(OCR_DIR) || !fs.existsSync(filePath)) {
+    const filePath = resolveOcrFilePath(item.ocrUrl);
+    if (!filePath || !fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'OCR file not found' });
     }
     const content = fs.readFileSync(filePath, 'utf8');
@@ -1139,8 +1177,8 @@ app.patch('/api/admin/ocr-records/content', async (req, res) => {
     if (!target) return res.status(404).json({ error: 'OCR record not found' });
     const items = getOcrItemsFromDc(dc, row.updated_at || row.created_at || '');
     let idx = items.findIndex((it) => String(it.id || '') === itemId);
-    const filePath = publicUploadUrlToAbsolutePath(String(target.ocrUrl || '').trim());
-    if (!filePath || !filePath.startsWith(OCR_DIR) || !fs.existsSync(filePath)) {
+    const filePath = resolveOcrFilePath(target.ocrUrl);
+    if (!filePath || !fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'OCR file not found' });
     }
     fs.writeFileSync(filePath, content, 'utf8');
@@ -1340,10 +1378,8 @@ app.delete('/api/admin/subtitle-records', async (req, res) => {
     } catch (_error) {}
 
     if (deleteFile) {
-      const filePath = publicUploadUrlToAbsolutePath(String(target.subtitleUrl || '').trim());
-      if (filePath && filePath.startsWith(SUBTITLES_DIR) && fs.existsSync(filePath)) {
-        try { fs.unlinkSync(filePath); } catch (_error) {}
-      }
+      const filePath = resolveSubtitleFilePath(target.subtitleUrl);
+      if (filePath) cleanupAssetFiles([filePath]);
     }
     return res.json({ ok: true, removedFile: deleteFile });
   } catch (_error) {
@@ -1363,8 +1399,8 @@ app.get('/api/admin/subtitle-records/content', async (req, res) => {
     const items = getSubtitleItemsFromDc(dc);
     const item = items.find((it) => String(it.id || '') === itemId);
     if (!item) return res.status(404).json({ error: 'Subtitle record not found' });
-    const filePath = publicUploadUrlToAbsolutePath(String(item.subtitleUrl || '').trim());
-    if (!filePath || !filePath.startsWith(SUBTITLES_DIR) || !fs.existsSync(filePath)) {
+    const filePath = resolveSubtitleFilePath(item.subtitleUrl);
+    if (!filePath || !fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'Subtitle file not found' });
     }
     const content = fs.readFileSync(filePath, 'utf8');
@@ -1388,8 +1424,8 @@ app.patch('/api/admin/subtitle-records/content', async (req, res) => {
     const idx = items.findIndex((it) => String(it.id || '') === itemId);
     if (idx < 0) return res.status(404).json({ error: 'Subtitle record not found' });
     const item = items[idx];
-    const filePath = publicUploadUrlToAbsolutePath(String(item.subtitleUrl || '').trim());
-    if (!filePath || !filePath.startsWith(SUBTITLES_DIR) || !fs.existsSync(filePath)) {
+    const filePath = resolveSubtitleFilePath(item.subtitleUrl);
+    if (!filePath || !fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'Subtitle file not found' });
     }
     const ext = path.extname(filePath).toLowerCase();
