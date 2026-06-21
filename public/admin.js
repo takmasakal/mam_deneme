@@ -10,6 +10,12 @@ const ocrSettingsForm = document.getElementById('ocrSettingsForm');
 const ocrSettingsMsg = document.getElementById('ocrSettingsMsg');
 const subtitleSettingsForm = document.getElementById('subtitleSettingsForm');
 const subtitleSettingsMsg = document.getElementById('subtitleSettingsMsg');
+const backupSettingsForm = document.getElementById('backupSettingsForm');
+const backupSettingsMsg = document.getElementById('backupSettingsMsg');
+const backupFilesRows = document.getElementById('backupFilesRows');
+const runBackupNowBtn = document.getElementById('runBackupNowBtn');
+const authSessionSettingsForm = document.getElementById('authSessionSettingsForm');
+const authSessionSettingsMsg = document.getElementById('authSessionSettingsMsg');
 const apiTokenInput = document.getElementById('apiTokenInput');
 const oidcIssuerUrlInput = document.getElementById('oidcIssuerUrlInput');
 const oidcJwksUrlInput = document.getElementById('oidcJwksUrlInput');
@@ -18,8 +24,6 @@ const rotateApiTokenBtn = document.getElementById('rotateApiTokenBtn');
 const copyApiTokenBtn = document.getElementById('copyApiTokenBtn');
 const apiHelpBox = document.getElementById('apiHelpBox');
 const apiGuideDoc = document.getElementById('apiGuideDoc');
-const workflowSummary = document.getElementById('workflowSummary');
-const workflowRows = document.getElementById('workflowRows');
 const startProxyJobBtn = document.getElementById('startProxyJobBtn');
 const includeTrash = document.getElementById('includeTrash');
 const proxyJobState = document.getElementById('proxyJobState');
@@ -37,11 +41,26 @@ const proxyToolMsg = document.getElementById('proxyToolMsg');
 const languageSelect = document.getElementById('languageSelectAdmin');
 const adminTabs = Array.from(document.querySelectorAll('.admin-tab'));
 const adminPanels = Array.from(document.querySelectorAll('.admin-panel'));
+const overviewCards = Array.from(document.querySelectorAll('[data-overview-target]'));
 const settingsSubTabs = Array.from(document.querySelectorAll('.settings-subtab'));
 const settingsSubPanels = Array.from(document.querySelectorAll('.settings-subpanel'));
 const userPermissionsSearchInput = document.getElementById('userPermissionsSearchInput');
 const userPermissionsRows = document.getElementById('userPermissionsRows');
 const userPermissionsMsg = document.getElementById('userPermissionsMsg');
+const groupAdminGroupInput = document.getElementById('groupAdminGroupInput');
+const groupAdminUserInput = document.getElementById('groupAdminUserInput');
+const addGroupAdminBtn = document.getElementById('addGroupAdminBtn');
+const groupAdminsRows = document.getElementById('groupAdminsRows');
+const groupAdminsMsg = document.getElementById('groupAdminsMsg');
+const refreshIdentityOverviewBtn = document.getElementById('refreshIdentityOverviewBtn');
+const identityOverviewSummary = document.getElementById('identityOverviewSummary');
+const identityGroupsRows = document.getElementById('identityGroupsRows');
+const identityUsersRows = document.getElementById('identityUsersRows');
+const identityUserSearchInput = document.getElementById('identityUserSearchInput');
+const identityUserSearchButton = document.getElementById('identityUserSearchButton');
+const identityMamGroupsRows = document.getElementById('identityMamGroupsRows');
+const identityGroupOptions = document.getElementById('identityGroupOptions');
+const identityUserOptions = document.getElementById('identityUserOptions');
 const ocrAdminSearchInput = document.getElementById('ocrAdminSearchInput');
 const ocrDeleteFileCheck = document.getElementById('ocrDeleteFileCheck');
 const ocrRecordsRows = document.getElementById('ocrRecordsRows');
@@ -63,9 +82,23 @@ const auditTargetSuggestList = document.getElementById('auditTargetSuggestList')
 const auditFromInput = document.getElementById('auditFromInput');
 const auditToInput = document.getElementById('auditToInput');
 const runAuditSearchBtn = document.getElementById('runAuditSearchBtn');
+const exportAuditEventsBtn = document.getElementById('exportAuditEventsBtn');
 const auditEventsRows = document.getElementById('auditEventsRows');
 const auditEventsMsg = document.getElementById('auditEventsMsg');
+const assetRightsSearchInput = document.getElementById('assetRightsSearchInput');
+const assetRightsSuggestList = document.getElementById('assetRightsSuggestList');
+const assetRightsTypeFilters = Array.from(document.querySelectorAll('input[name="assetRightsType"]'));
+const assetRightsVisibilityFilter = document.getElementById('assetRightsVisibilityFilter');
+const assetRightsSearchBtn = document.getElementById('assetRightsSearchBtn');
+const assetRightsRows = document.getElementById('assetRightsRows');
+const assetRightsMsg = document.getElementById('assetRightsMsg');
+const assetRightsPageSize = document.getElementById('assetRightsPageSize');
+const assetRightsPrevPage = document.getElementById('assetRightsPrevPage');
+const assetRightsNextPage = document.getElementById('assetRightsNextPage');
+const assetRightsPageInfo = document.getElementById('assetRightsPageInfo');
 const refreshRuntimeDiagnosticsBtn = document.getElementById('refreshRuntimeDiagnosticsBtn');
+const activeUsersSectionTitle = document.getElementById('activeUsersSectionTitle');
+const runtimeErrorsSectionTitle = document.getElementById('runtimeErrorsSectionTitle');
 const activeUsersRows = document.getElementById('activeUsersRows');
 const runtimeErrorRows = document.getElementById('runtimeErrorRows');
 const runtimeDiagnosticsMsg = document.getElementById('runtimeDiagnosticsMsg');
@@ -76,6 +109,7 @@ const overviewSystemHealthSub = document.getElementById('overviewSystemHealthSub
 const overviewOpenErrors = document.getElementById('overviewOpenErrors');
 const overviewOpenErrorsSub = document.getElementById('overviewOpenErrorsSub');
 const overviewActiveUsers = document.getElementById('overviewActiveUsers');
+const accessScopeModule = window.createMainAccessScopeModule();
 
 let currentLang = localStorage.getItem(LOCAL_LANG) || 'en';
 let pollTimer = null;
@@ -90,12 +124,29 @@ let auditSuggestReqSeq = 0;
 let auditSuggestItems = [];
 let auditSuggestActiveIndex = -1;
 let auditSuggestHideTimer = null;
+let assetRightsSuggestTimer = null;
+let assetRightsSuggestReqSeq = 0;
+let assetRightsSuggestItems = [];
+let assetRightsSuggestActiveIndex = -1;
+let assetRightsSuggestHideTimer = null;
+let assetRightsGroupSuggestEl = null;
+let assetRightsGroupSuggestInput = null;
+let assetRightsGroupSuggestItems = [];
+let assetRightsGroupSuggestActiveIndex = -1;
+let assetRightsGroupSuggestHideTimer = null;
+let assetRightsGroupNamesCache = null;
+let lastAssetRightsAssets = [];
+let lastAssetRightsTypes = [];
+let assetRightsMode = 'asset';
+let assetRightsLockedOnly = false;
+let assetRightsPage = 1;
+let assetRightsPagination = { page: 1, limit: 20, total: 0, totalPages: 1 };
 let currentAdminProfile = null;
 
 let i18n = {
   en: {
     admin_title: 'Admin Settings',
-    admin_subtitle: 'Workflow tracking, proxy generation, and system health.',
+    admin_subtitle: 'Proxy generation and system health.',
     system_overview: 'System Overview',
     overview_active_assets: 'Active Assets',
     overview_system_health: 'System Health',
@@ -120,9 +171,60 @@ let i18n = {
     diag_error_source: 'Source',
     diag_error_status: 'Status',
     audit_events: 'Audit Log',
+    asset_rights: 'Asset Rights',
+    asset_rights_search: 'Asset Search',
+    asset_rights_load: 'Load',
+    asset_rights_none: 'No asset found.',
+    asset_rights_saved: 'Asset rights saved.',
+    asset_rights_load_failed: 'Failed to load asset rights.',
+    asset_rights_save_failed: 'Failed to save asset rights.',
+    asset_lock_locked_by: 'Locked by',
+    asset_lock_unlock: 'Unlock',
+    asset_lock_unlock_confirm: 'Release this asset edit lock?',
+    asset_lock_unlock_done: 'Asset edit lock released.',
+    asset_lock_unlock_failed: 'Failed to release asset edit lock.',
+    asset_lock_editing_by: '{name} is editing this asset.',
+    asset_lock_editing_other: 'This asset is being edited by another user.',
+    asset_rights_asset_col: 'Asset',
+    asset_rights_mode_asset: 'Asset',
+    asset_rights_mode_type: 'Type',
+    asset_rights_type_filter: 'Type',
+    asset_type_video: 'Video',
+    asset_type_audio: 'Audio',
+    asset_type_photo: 'Photo',
+    asset_type_document: 'Doc',
+    asset_type_other: 'Other',
+    asset_rights_visibility_filter: 'Visibility',
+    asset_rights_visibility_all: 'All',
+    asset_visibility: 'Visibility',
+    visibility_private: 'Private',
+    visibility_group: 'Owner groups',
+    visibility_groups: 'Selected groups/users',
+    visibility_public: 'Public',
+    owner_groups: 'Owner groups',
+    allowed_groups: 'Allowed groups',
+    allowed_users: 'Allowed users',
+    denied_groups: 'Denied groups',
+    denied_users: 'Denied users',
+    edit_allowed_groups: 'Editable groups',
+    edit_allowed_users: 'Editable users',
+    edit_denied_groups: 'Edit denied groups',
+    edit_denied_users: 'Edit denied users',
+    save_visibility: 'Save',
+    identity_overview: 'Identity Overview',
+    identity_keycloak_groups: 'Keycloak Groups',
+    identity_keycloak_users: 'Keycloak Users',
+    identity_mam_only_groups: 'MAM-only Groups',
+    identity_source: 'Source',
+    identity_no_groups: 'No groups found.',
+    identity_no_users: 'No users found.',
+    identity_no_mam_groups: 'No MAM-only groups.',
+    identity_load_failed: 'Failed to load identity overview.',
+    identity_user_count: 'Users',
+    identity_group_count: 'Groups',
+    identity_mam_group_count: 'MAM groups',
     settings: 'Settings',
     loading: 'Loading...',
-    workflow_tracking_enabled: 'Workflow tracking enabled',
     auto_proxy_backfill: 'Auto backfill proxies on upload',
     player_mode: 'Player Mode',
     player_mode_vidstack: 'Vidstack',
@@ -142,26 +244,25 @@ let i18n = {
     token_rotated: 'API token rotated.',
     token_copied: 'API token copied.',
     api_test_title: 'Postman Test',
-    api_test_note: 'Headers: X-API-Token or Authorization: Bearer <token>',
+    api_test_note: 'Header: X-API-Token or X-MAM-API-Token',
     api_help_doc_title: 'API Help Document',
     api_help_intro: 'Use this page to test MAM APIs quickly from Postman or cURL.',
     api_help_auth_title: 'Authentication Rules',
-    api_help_auth_note: 'UI traffic on port 3000 is handled by SSO proxy. Token tests should use port 3001 direct API.',
+    api_help_auth_note: 'Use the same web address for API calls. Browser users authenticate with SSO; API clients use a token header.',
     api_help_bearer_on: 'OIDC Bearer JWT validation is ON.',
     api_help_bearer_off: 'OIDC Bearer JWT validation is OFF.',
     api_help_token_on: 'API token protection is currently ON.',
     api_help_token_off: 'API token protection is currently OFF.',
     api_help_token_hint: 'Use current token from Settings for direct API tests.',
     api_help_quick_title: 'Quick Commands',
-    api_help_cmd_workflow: 'List workflow steps',
     api_help_cmd_assets: 'List active assets',
     api_help_cmd_asset_by_id: 'Get one asset by ID',
     api_help_cmd_create_collection: 'Create a collection',
     api_help_postman_title: 'Postman Setup',
     api_help_postman_step1: 'Method: GET',
-    api_help_postman_step2: 'URL: {{baseUrl}}/api/workflow (recommended baseUrl: http://localhost:3001)',
-    api_help_postman_step3: 'When token protection is ON, send either X-API-Token or Authorization: Bearer <token>.',
-    api_help_postman_step4: 'Disable auto-follow redirects when testing through port 3000.',
+    api_help_postman_step2: 'URL: {{baseUrl}}/api/assets?q=istanbul',
+    api_help_postman_step3: 'Headers: X-API-Token: <token> or X-MAM-API-Token: <token>.',
+    api_help_postman_step4: 'A valid token returns JSON; missing or invalid tokens return 401 JSON.',
     api_help_endpoints_title: 'Main Endpoints',
     api_help_group_core: 'Core / Session',
     api_help_group_assets: 'Assets / Search / Versions',
@@ -170,11 +271,12 @@ let i18n = {
     api_help_group_office: 'Office Tools',
     api_help_group_admin: 'Admin / Diagnostics',
     api_help_group_records: 'Admin Records / Audit',
-    settings_group_workflow: 'Workflow & Player',
+    settings_group_player: 'Player',
     settings_group_security: 'Security',
     settings_group_identity: 'Token & OIDC',
     settings_group_audit: 'Audit Log',
     audit_retention_days: 'Log retention (days)',
+    media_job_retention_days: 'Recent media jobs retention (days)',
     settings_group_docs: 'Documentation',
     audit_filter_actor: 'User',
     audit_filter_action: 'Action',
@@ -183,6 +285,8 @@ let i18n = {
     audit_filter_from: 'From',
     audit_filter_to: 'To',
     audit_filter_run: 'Filter',
+    audit_export_excel: 'Export to Excel',
+    audit_export_failed: 'Failed to export audit events.',
     audit_none: 'No audit event found.',
     audit_load_failed: 'Failed to load audit events.',
     audit_action_asset_uploaded: 'Asset uploaded',
@@ -208,16 +312,50 @@ let i18n = {
     ocr_default_blur_filter: 'Blur filter default',
     ocr_default_region_mode: 'Ticker region mode default',
     ocr_default_static_overlay_filter: 'Static overlay filter default',
+    new_asset_default_visibility: 'New asset default visibility',
+    new_asset_visibility_owner_groups: 'Owner groups',
     settings_sub_general: 'General',
-    settings_sub_workflow: 'Workflow',
     settings_sub_proxy: 'Proxy',
     settings_sub_ocr: 'OCR',
     settings_sub_subtitle: 'Subtitle',
+    settings_sub_backup: 'Backup',
     settings_sub_users: 'Users',
+    auth_session_settings: 'Login Session Settings',
+    auth_remember_me: 'Allow remember me',
+    auth_sso_idle_minutes: 'Idle timeout (minutes)',
+    auth_sso_max_hours: 'Maximum session (hours)',
+    auth_client_idle_minutes: 'Client idle timeout (minutes)',
+    auth_client_max_hours: 'Client maximum session (hours)',
+    save_auth_session: 'Save Login Settings',
+    auth_session_saved: 'Login session settings saved.',
+    auth_session_save_failed: 'Failed to save login session settings.',
+    backup_settings: 'Backup Settings',
+    backup_schedule: 'Schedule',
+    backup_enabled: 'Enable daily backup',
+    backup_directory: 'Backup directory',
+    backup_directory_ph: '/app/uploads/_backups',
+    backup_daily_hour: 'Daily hour',
+    backup_retention_days: 'Retention (days)',
+    backup_contents: 'Contents',
+    backup_include_mam_db: 'MAM PostgreSQL dump',
+    backup_include_keycloak_db: 'Keycloak PostgreSQL dump',
+    backup_include_uploads: 'Uploads archive (.tar.gz)',
+    backup_run_now: 'Run Backup Now',
+    backup_saved: 'Backup settings saved.',
+    backup_started: 'Backup completed.',
+    backup_load_failed: 'Failed to load backups.',
+    backup_run_failed: 'Failed to run backup.',
+    backup_delete: 'Delete',
+    backup_delete_confirm: 'Delete this backup file?',
+    backup_deleted: 'Backup file deleted.',
+    backup_delete_failed: 'Failed to delete backup.',
+    backup_no_files: 'No backup file found.',
+    backup_file_name: 'File',
+    backup_file_size: 'Size',
+    backup_file_date: 'Date',
     save_settings: 'Save Settings',
     set_as_default: 'Set as Default',
     settings_saved: 'Settings saved.',
-    workflow_tracking: 'Workflow Tracking',
     proxy_jobs: 'Proxy Jobs',
     include_trash: 'Include trash',
     start_proxy_job: 'Start Proxy Job',
@@ -230,6 +368,9 @@ let i18n = {
     proxy_tool_asset_name_ph: 'Type asset name',
     proxy_tool_action: 'Action',
     proxy_tool_action_thumbnail: 'Generate Video Thumbnail',
+    proxy_tool_action_image_thumbnail: 'Generate Image Thumbnail',
+    proxy_tool_action_image_preview: 'Generate Image Preview',
+    proxy_tool_action_document_thumbnail: 'Generate Document Thumbnail',
     proxy_tool_action_preview: 'Generate Document Preview',
     proxy_tool_action_proxy: 'Generate Video Proxy',
     proxy_tool_action_replace_asset: 'Replace Asset File (Keep Metadata)',
@@ -287,6 +428,7 @@ let i18n = {
     health_up: 'UP',
     health_down: 'DOWN',
     health_recent_jobs: 'Recent Media Jobs',
+    health_recent_jobs_window: 'Last {days} days',
     health_subtitle_jobs: 'Subtitle Jobs',
     health_ocr_jobs: 'OCR Jobs',
     health_job_running_now: 'Running now',
@@ -309,6 +451,11 @@ let i18n = {
     health_job_status_completed: 'Completed',
     health_job_status_failed: 'Failed',
     user_settings: 'User Settings',
+    user_search: 'User Search',
+    user_search_ph: 'Search user...',
+    user_search_required: 'Type a user name and click User Search.',
+    user_search_no_match: 'No matching user found.',
+    user_permissions_empty: 'No user found.',
     perm_admin_access: 'Admin page access',
     perm_metadata_edit: 'Metadata edit',
     perm_office_edit: 'Office edit',
@@ -316,6 +463,19 @@ let i18n = {
     perm_pdf_advanced: 'PDF advanced tools',
     perm_text_admin: 'OCR / subtitle admin',
     user_permissions_saved: 'User permissions saved.',
+    page_size: 'Page size',
+    prev_page: 'Prev',
+    next_page: 'Next',
+    page_info: 'Page {page} / {pages} ({total})',
+    group_admins: 'Group Admins',
+    group_name: 'Group',
+    username: 'User',
+    add_group_admin: 'Add',
+    group_admin_none: 'No group admin defined.',
+    group_admin_saved: 'Group admin saved.',
+    group_admin_load_failed: 'Failed to load group admins.',
+    group_admin_save_failed: 'Failed to save group admin.',
+    group_admin_delete_failed: 'Failed to delete group admin.',
     access_denied: 'Access denied.',
     ocr_records: 'OCR Records',
     ocr_search: 'Search OCR',
@@ -390,7 +550,7 @@ let i18n = {
   },
   tr: {
     admin_title: 'Yönetici Ayarları',
-    admin_subtitle: 'İş akışı izleme, proxy üretimi ve sistem sağlığı.',
+    admin_subtitle: 'Proxy üretimi ve sistem sağlığı.',
     system_overview: 'Sistem Özeti',
     overview_active_assets: 'Aktif Varlıklar',
     overview_system_health: 'Sistem Sağlığı',
@@ -402,12 +562,12 @@ let i18n = {
     overview_failed_jobs: 'Başarısız iş',
     back_to_mam: "MAM'e Dön",
     system_health: 'Sistem Sağlığı',
-    runtime_diagnostics: 'Diagnostik',
+    runtime_diagnostics: 'Tanı',
     active_users: 'Anlık Kullanıcılar',
     error_logs: 'Hata Logları',
     refresh: 'Yenile',
     diagnostics_none: 'Kayıt yok.',
-    diagnostics_load_failed: 'Diagnostik bilgiler yüklenemedi.',
+    diagnostics_load_failed: 'Tanı bilgileri yüklenemedi.',
     diag_last_seen: 'Son görülme',
     diag_last_request: 'Son istek',
     diag_ip: 'IP',
@@ -415,9 +575,60 @@ let i18n = {
     diag_error_source: 'Kaynak',
     diag_error_status: 'Durum',
     audit_events: 'İşlem Geçmişi',
+    asset_rights: 'Varlık Yetkileri',
+    asset_rights_search: 'Varlık Ara',
+    asset_rights_load: 'Yükle',
+    asset_rights_none: 'Varlık bulunamadı.',
+    asset_rights_saved: 'Varlık yetkileri kaydedildi.',
+    asset_rights_load_failed: 'Varlık yetkileri yüklenemedi.',
+    asset_rights_save_failed: 'Varlık yetkileri kaydedilemedi.',
+    asset_lock_locked_by: 'Kilitleyen',
+    asset_lock_unlock: 'Kilidi Aç',
+    asset_lock_unlock_confirm: 'Bu varlık düzenleme kilidi kaldırılsın mı?',
+    asset_lock_unlock_done: 'Varlık düzenleme kilidi kaldırıldı.',
+    asset_lock_unlock_failed: 'Varlık düzenleme kilidi kaldırılamadı.',
+    asset_lock_editing_by: '{name} bu varlığı düzenliyor.',
+    asset_lock_editing_other: 'Bu varlık başka bir kullanıcı tarafından düzenleniyor.',
+    asset_rights_asset_col: 'Varlık',
+    asset_rights_mode_asset: 'Varlık',
+    asset_rights_mode_type: 'Tür',
+    asset_rights_type_filter: 'Tür',
+    asset_type_video: 'Video',
+    asset_type_audio: 'Ses',
+    asset_type_photo: 'Görsel',
+    asset_type_document: 'Doc',
+    asset_type_other: 'Diğer',
+    asset_rights_visibility_filter: 'Görünürlük',
+    asset_rights_visibility_all: 'Tümü',
+    asset_visibility: 'Görünürlük',
+    visibility_private: 'Özel',
+    visibility_group: 'Sahip gruplar',
+    visibility_groups: 'Seçili grup/kullanıcı',
+    visibility_public: 'Herkese açık',
+    owner_groups: 'Sahip gruplar',
+    allowed_groups: 'İzinli gruplar',
+    allowed_users: 'İzinli kullanıcılar',
+    denied_groups: 'Göremeyen gruplar',
+    denied_users: 'Göremeyen kullanıcılar',
+    edit_allowed_groups: 'Değiştirebilen gruplar',
+    edit_allowed_users: 'Değiştirebilen kullanıcılar',
+    edit_denied_groups: 'Değiştiremeyen gruplar',
+    edit_denied_users: 'Değiştiremeyen kullanıcılar',
+    save_visibility: 'Kaydet',
+    identity_overview: 'Kimlik Özeti',
+    identity_keycloak_groups: 'Keycloak Grupları',
+    identity_keycloak_users: 'Keycloak Kullanıcıları',
+    identity_mam_only_groups: 'Sadece MAM Grupları',
+    identity_source: 'Kaynak',
+    identity_no_groups: 'Grup bulunamadı.',
+    identity_no_users: 'Kullanıcı bulunamadı.',
+    identity_no_mam_groups: 'Sadece MAM tarafında grup yok.',
+    identity_load_failed: 'Kimlik özeti yüklenemedi.',
+    identity_user_count: 'Kullanıcı',
+    identity_group_count: 'Grup',
+    identity_mam_group_count: 'MAM grubu',
     settings: 'Ayarlar',
     loading: 'Yükleniyor...',
-    workflow_tracking_enabled: 'İş akışı izleme etkin',
     auto_proxy_backfill: 'Yüklemede proxy backfill otomatik',
     player_mode: 'Oynatıcı Modu',
     player_mode_vidstack: 'Vidstack',
@@ -437,39 +648,39 @@ let i18n = {
     token_rotated: 'API token yenilendi.',
     token_copied: 'API token kopyalandı.',
     api_test_title: 'Postman Testi',
-    api_test_note: 'Header: X-API-Token veya Authorization: Bearer <token>',
+    api_test_note: 'Header: X-API-Token veya X-MAM-API-Token',
     api_help_doc_title: 'API Yardım Dokümanı',
     api_help_intro: 'MAM APIlerini Postman veya cURL ile hızlı test etmek için bu bölümü kullanın.',
     api_help_auth_title: 'Kimlik Doğrulama Kuralları',
-    api_help_auth_note: '3000 portundaki UI trafiği SSO proxy üzerinden çalışır. Token testleri için 3001 direkt API kullanın.',
+    api_help_auth_note: 'API çağrıları için aynı web adresini kullanın. Tarayıcı kullanıcıları SSO ile, API istemcileri token header ile doğrulanır.',
     api_help_bearer_on: 'OIDC Bearer JWT doğrulaması AÇIK.',
     api_help_bearer_off: 'OIDC Bearer JWT doğrulaması KAPALI.',
     api_help_token_on: 'API token koruması şu anda AÇIK.',
     api_help_token_off: 'API token koruması şu anda KAPALI.',
     api_help_token_hint: 'Direkt API testlerinde Settings altındaki güncel tokeni kullanın.',
     api_help_quick_title: 'Hızlı Komutlar',
-    api_help_cmd_workflow: 'Workflow adımlarını listele',
     api_help_cmd_assets: 'Aktif varlıkları listele',
     api_help_cmd_asset_by_id: 'ID ile tek varlık getir',
     api_help_cmd_create_collection: 'Koleksiyon oluştur',
     api_help_postman_title: 'Postman Kurulumu',
     api_help_postman_step1: 'Method: GET',
-    api_help_postman_step2: 'URL: {{baseUrl}}/api/workflow (önerilen baseUrl: http://localhost:3001)',
-    api_help_postman_step3: 'Token koruması AÇIK ise X-API-Token veya Authorization: Bearer <token> gönderin.',
-    api_help_postman_step4: '3000 portunu test ederken otomatik redirect takibini kapatın.',
+    api_help_postman_step2: 'URL: {{baseUrl}}/api/assets?q=istanbul',
+    api_help_postman_step3: 'Headers: X-API-Token: <token> veya X-MAM-API-Token: <token>.',
+    api_help_postman_step4: 'Geçerli token JSON döndürür; eksik veya hatalı token 401 JSON döndürür.',
     api_help_endpoints_title: 'Temel Endpointler',
     api_help_group_core: 'Temel / Oturum',
     api_help_group_assets: 'Varlıklar / Arama / Versiyonlar',
     api_help_group_text: 'Altyazı / OCR',
     api_help_group_pdf: 'PDF Araçları',
     api_help_group_office: 'Office Araçları',
-    api_help_group_admin: 'Yönetim / Diagnostik',
+    api_help_group_admin: 'Yönetim / Tanı',
     api_help_group_records: 'Yönetim Kayıtları / Audit',
-    settings_group_workflow: 'İş Akışı ve Oynatıcı',
+    settings_group_player: 'Oynatıcı',
     settings_group_security: 'Güvenlik',
     settings_group_identity: 'Token ve OIDC',
     settings_group_audit: 'Audit Log',
     audit_retention_days: 'Log saklama süresi (gün)',
+    media_job_retention_days: 'Son medya işleri saklama süresi (gün)',
     settings_group_docs: 'Dokümantasyon',
     audit_filter_actor: 'Kullanıcı',
     audit_filter_action: 'İşlem',
@@ -478,6 +689,8 @@ let i18n = {
     audit_filter_from: 'Başlangıç',
     audit_filter_to: 'Bitiş',
     audit_filter_run: 'Filtrele',
+    audit_export_excel: "Excel'e aktar",
+    audit_export_failed: 'İşlem geçmişi dışa aktarılamadı.',
     audit_none: 'İşlem kaydı bulunamadı.',
     audit_load_failed: 'İşlem geçmişi yüklenemedi.',
     audit_action_asset_uploaded: 'Varlık yüklendi',
@@ -503,16 +716,50 @@ let i18n = {
     ocr_default_blur_filter: 'Bulanıklık filtresi varsayılan açık',
     ocr_default_region_mode: 'Ticker bölge modu varsayılan açık',
     ocr_default_static_overlay_filter: 'Sabit yazı filtresi varsayılan açık',
+    new_asset_default_visibility: 'Yeni yüklenen varlık varsayılan görünürlüğü',
+    new_asset_visibility_owner_groups: 'Sahip gruplar',
     settings_sub_general: 'Genel',
-    settings_sub_workflow: 'İş Akışı',
     settings_sub_proxy: 'Proxy',
     settings_sub_ocr: 'OCR',
     settings_sub_subtitle: 'Altyazı',
+    settings_sub_backup: 'Yedekleme',
     settings_sub_users: 'Kullanıcılar',
+    auth_session_settings: 'Giriş Oturumu Ayarları',
+    auth_remember_me: 'Beni hatırla seçeneğine izin ver',
+    auth_sso_idle_minutes: 'Keycloak boşta kalma süresi (dakika)',
+    auth_sso_max_hours: 'Keycloak maksimum oturum süresi (saat)',
+    auth_client_idle_minutes: 'Uygulama boşta kalma süresi (dakika)',
+    auth_client_max_hours: 'Uygulama oturumu maksimum süresi (saat)',
+    save_auth_session: 'Giriş Ayarlarını Kaydet',
+    auth_session_saved: 'Giriş oturumu ayarları kaydedildi.',
+    auth_session_save_failed: 'Giriş oturumu ayarları kaydedilemedi.',
+    backup_settings: 'Yedekleme Ayarları',
+    backup_schedule: 'Zamanlama',
+    backup_enabled: 'Günlük yedeklemeyi aç',
+    backup_directory: 'Yedekleme dizini',
+    backup_directory_ph: '/app/uploads/_backups',
+    backup_daily_hour: 'Günlük saat',
+    backup_retention_days: 'Saklama süresi (gün)',
+    backup_contents: 'İçerik',
+    backup_include_mam_db: 'MAM PostgreSQL dump',
+    backup_include_keycloak_db: 'Keycloak PostgreSQL dump',
+    backup_include_uploads: 'Uploads arşivi (.tar.gz)',
+    backup_run_now: 'Şimdi Yedekle',
+    backup_saved: 'Yedekleme ayarları kaydedildi.',
+    backup_started: 'Yedekleme tamamlandı.',
+    backup_load_failed: 'Yedekler yüklenemedi.',
+    backup_run_failed: 'Yedekleme çalıştırılamadı.',
+    backup_delete: 'Sil',
+    backup_delete_confirm: 'Bu yedek dosyası silinsin mi?',
+    backup_deleted: 'Yedek dosyası silindi.',
+    backup_delete_failed: 'Yedek silinemedi.',
+    backup_no_files: 'Yedek dosyası bulunamadı.',
+    backup_file_name: 'Dosya',
+    backup_file_size: 'Boyut',
+    backup_file_date: 'Tarih',
     save_settings: 'Ayarları Kaydet',
     set_as_default: 'Varsayılan Yap',
     settings_saved: 'Ayarlar kaydedildi.',
-    workflow_tracking: 'İş Akışı İzleme',
     proxy_jobs: 'Proxy Görevleri',
     include_trash: 'Çöpü dahil et',
     start_proxy_job: 'Proxy Görevi Başlat',
@@ -525,6 +772,9 @@ let i18n = {
     proxy_tool_asset_name_ph: 'Varlık adını yazın',
     proxy_tool_action: 'İşlem',
     proxy_tool_action_thumbnail: 'Video Thumbnail Üret',
+    proxy_tool_action_image_thumbnail: 'Görsel Thumbnail Üret',
+    proxy_tool_action_image_preview: 'Görsel Önizleme Üret',
+    proxy_tool_action_document_thumbnail: 'Doküman Thumbnail Üret',
     proxy_tool_action_preview: 'Doküman Önizlemesi Üret',
     proxy_tool_action_proxy: 'Video Proxy Üret',
     proxy_tool_action_replace_asset: 'Yalnız Dosyayı Değiştir (Metadata Kalsın)',
@@ -582,6 +832,7 @@ let i18n = {
     health_up: 'AYAKTA',
     health_down: 'KAPALI',
     health_recent_jobs: 'Son Medya İşleri',
+    health_recent_jobs_window: 'Son {days} gün',
     health_subtitle_jobs: 'Altyazı İşleri',
     health_ocr_jobs: 'OCR İşleri',
     health_job_running_now: 'Şu an çalışan',
@@ -604,6 +855,11 @@ let i18n = {
     health_job_status_completed: 'Tamamlandı',
     health_job_status_failed: 'Hatalı',
     user_settings: 'Kullanıcı Ayarları',
+    user_search: 'Kullanıcı Ara',
+    user_search_ph: 'Kullanıcı ara...',
+    user_search_required: 'Kullanıcı adı yazıp Kullanıcı Ara düğmesine basın.',
+    user_search_no_match: 'Eşleşen kullanıcı bulunamadı.',
+    user_permissions_empty: 'Kullanıcı bulunamadı.',
     perm_admin_access: 'Yönetim sayfasına erişim',
     perm_metadata_edit: 'Metadata düzenleme',
     perm_office_edit: 'Office düzenleme',
@@ -611,6 +867,19 @@ let i18n = {
     perm_pdf_advanced: 'PDF gelişmiş araçlar',
     perm_text_admin: 'OCR / altyazı yöneticisi',
     user_permissions_saved: 'Kullanıcı yetkileri kaydedildi.',
+    page_size: 'Sayfa boyutu',
+    prev_page: 'Önceki',
+    next_page: 'Sonraki',
+    page_info: 'Sayfa {page} / {pages} ({total})',
+    group_admins: 'Grup Yöneticileri',
+    group_name: 'Grup',
+    username: 'Kullanıcı',
+    add_group_admin: 'Ekle',
+    group_admin_none: 'Grup yöneticisi tanımlı değil.',
+    group_admin_saved: 'Grup yöneticisi kaydedildi.',
+    group_admin_load_failed: 'Grup yöneticileri yüklenemedi.',
+    group_admin_save_failed: 'Grup yöneticisi kaydedilemedi.',
+    group_admin_delete_failed: 'Grup yöneticisi silinemedi.',
     access_denied: 'Erişim engellendi.',
     ocr_records: 'OCR Kayıtları',
     ocr_search: 'OCR Ara',
@@ -685,6 +954,16 @@ let i18n = {
   }
 };
 
+function formatApiError(body = {}) {
+  if (body?.code === 'asset_locked') {
+    const lock = body.lock && typeof body.lock === 'object' ? body.lock : {};
+    const name = String(lock.lockedByName || lock.lockedBy || '').trim();
+    if (name) return t('asset_lock_editing_by').replace('{name}', name);
+    return t('asset_lock_editing_other');
+  }
+  return String(body?.error || 'Request failed');
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     headers: { 'Content-Type': 'application/json' },
@@ -692,7 +971,7 @@ async function api(path, options = {}) {
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.error || 'Request failed');
+    throw new Error(formatApiError(body));
   }
   return response.json();
 }
@@ -714,6 +993,11 @@ function t(key) {
   return i18n[currentLang]?.[key] || i18n.en[key] || key;
 }
 
+function tForLang(key, lang) {
+  const normalized = lang === 'tr' ? 'tr' : 'en';
+  return i18n[normalized]?.[key] || i18n.en[key] || key;
+}
+
 function applyI18n() {
   document.title = t('admin_title');
   document.querySelectorAll('[data-i18n]').forEach((el) => {
@@ -726,6 +1010,7 @@ function applyI18n() {
   });
   renderApiHelp();
   renderApiGuide();
+  syncAssetRightsTableLanguage();
 }
 
 function row(label, value) {
@@ -1177,23 +1462,10 @@ function openTextEditorModal({
   });
 }
 
-function renderWorkflowTracking(data) {
+function renderAssetTracking(data) {
   const totals = data.totals || {};
-  const proxies = data.proxies || {};
   if (overviewActiveAssets) overviewActiveAssets.textContent = String(totals.total_active || 0);
   if (overviewTotalAssets) overviewTotalAssets.textContent = `${t('overview_total_assets')}: ${totals.total_all || 0}`;
-
-  workflowSummary.innerHTML = [
-    `<div class="metric"><strong>${totals.total_all || 0}</strong><span>${t('assets_total')}</span></div>`,
-    `<div class="metric"><strong>${totals.total_active || 0}</strong><span>${t('assets_active')}</span></div>`,
-    `<div class="metric"><strong>${totals.total_trash || 0}</strong><span>${t('assets_trash')}</span></div>`,
-    `<div class="metric"><strong>${proxies.ready || 0}</strong><span>${t('proxies_ready')}</span></div>`
-  ].join('');
-
-  const wfRows = Object.entries(data.workflow || {}).map(([status, count]) => row(status, count));
-  const typeRows = Object.entries(data.types || {}).map(([type, count]) => row(type, count));
-  wfRows.push(row(t('proxies_missing'), proxies.missing || 0));
-  workflowRows.innerHTML = [...wfRows, ...typeRows].join('');
 }
 
 function renderHealth(health) {
@@ -1297,7 +1569,15 @@ function renderSystemHealth(data) {
   const services = data?.services || {};
   const integrity = data?.integrity || {};
   const recent = data?.recentJobs || {};
-  const serviceList = [services.app, services.postgres, services.elasticsearch, services.keycloak, services.oauth2Proxy];
+  const mediaJobRetentionDays = Math.max(1, Number(data?.mediaJobRetentionDays) || 30);
+  const serviceEntries = [
+    ['health_service_app', services.app],
+    ['health_service_postgres', services.postgres],
+    ['health_service_elastic', services.elasticsearch],
+    ['health_service_keycloak', services.keycloak],
+    ['health_service_oauth2_proxy', services.oauth2Proxy]
+  ];
+  const serviceList = serviceEntries.map(([, entry]) => entry);
   const upServices = serviceList.filter((entry) => Boolean(entry?.ok)).length;
   const failedJobs = Number(jobs.proxyFailed || 0) + Number(jobs.subtitleFailed || 0) + Number(jobs.ocrFailed || 0);
   if (overviewSystemHealth) overviewSystemHealth.textContent = upServices === serviceList.length ? 'OK' : `${upServices}/${serviceList.length}`;
@@ -1312,15 +1592,25 @@ function renderSystemHealth(data) {
     const suffix = status > 0 ? ` (${status})` : '';
     return `<span class="${cls}">${escapeHtml(label)}${escapeHtml(suffix)}</span>`;
   };
+  const serviceCards = serviceEntries.map(([labelKey, entry]) => `
+    <div class="health-service-card ${entry?.ok ? 'is-up' : 'is-down'}">
+      <strong>${escapeHtml(t(labelKey))}</strong>
+      ${serviceBadge(entry)}
+    </div>
+  `).join('');
   systemHealthRows.innerHTML = [
     `<div class="row"><strong>${escapeHtml(t('health_disk'))}</strong><span>${escapeHtml(t('health_uploads_size'))}: ${escapeHtml(humanBytes(disk.uploadsBytes))} | ${escapeHtml(t('health_uploads_files'))}: ${escapeHtml(String(disk.uploadsFiles || 0))} | ${escapeHtml(t('health_fs_free'))}: ${escapeHtml(humanBytes(disk.fsFreeBytes))} / ${escapeHtml(t('health_fs_total'))}: ${escapeHtml(humanBytes(disk.fsTotalBytes))}</span></div>`,
-    `<div class="row"><strong>${escapeHtml(t('health_services'))}</strong><span>${escapeHtml(t('health_service_app'))}: ${serviceBadge(services.app)} | ${escapeHtml(t('health_service_postgres'))}: ${serviceBadge(services.postgres)} | ${escapeHtml(t('health_service_elastic'))}: ${serviceBadge(services.elasticsearch)} | ${escapeHtml(t('health_service_keycloak'))}: ${serviceBadge(services.keycloak)} | ${escapeHtml(t('health_service_oauth2_proxy'))}: ${serviceBadge(services.oauth2Proxy)}</span></div>`,
+    `<div class="row health-services-row" data-health-section="services"><strong>${escapeHtml(t('health_services'))}</strong><div class="health-service-list">${serviceCards}</div></div>`,
     `<div class="row"><strong>${escapeHtml(t('health_jobs'))}</strong><span>${escapeHtml(t('health_proxy_running'))}: ${escapeHtml(String(jobs.proxyRunning || 0))} | ${escapeHtml(t('health_subtitle_running'))}: ${escapeHtml(String(jobs.subtitleRunning || 0))} | ${escapeHtml(t('health_ocr_running'))}: ${escapeHtml(String(jobs.ocrRunning || 0))} | ${escapeHtml(t('health_proxy_failed'))}: ${escapeHtml(String(jobs.proxyFailed || 0))} | ${escapeHtml(t('health_subtitle_failed'))}: ${escapeHtml(String(jobs.subtitleFailed || 0))} | ${escapeHtml(t('health_ocr_failed'))}: ${escapeHtml(String(jobs.ocrFailed || 0))}</span></div>`,
     `<div class="row"><strong>${escapeHtml(t('health_integrity'))}</strong><span>${escapeHtml(t('health_missing_proxy'))}: ${escapeHtml(String(integrity.missingProxy || 0))} | ${escapeHtml(t('health_missing_thumbnail'))}: ${escapeHtml(String(integrity.missingThumbnail || 0))} | ${escapeHtml(t('health_missing_subtitle'))}: ${escapeHtml(String(integrity.missingSubtitle || 0))} | ${escapeHtml(t('health_missing_ocr'))}: ${escapeHtml(String(integrity.missingOcr || 0))}</span></div>`
   ].join('');
   if (systemJobStatusEl) {
+    const windowLabel = t('health_recent_jobs_window').replace('{days}', String(mediaJobRetentionDays));
     systemJobStatusEl.innerHTML = `
-      <h3>${escapeHtml(t('health_recent_jobs'))}</h3>
+      <div class="system-job-status-head">
+        <h3>${escapeHtml(t('health_recent_jobs'))}</h3>
+        <span>${escapeHtml(windowLabel)}</span>
+      </div>
       <div class="system-job-grid">
         ${renderSystemJobGroup('health_subtitle_jobs', recent.subtitle || {}, 'subtitle')}
         ${renderSystemJobGroup('health_ocr_jobs', recent.ocr || {}, 'ocr')}
@@ -1414,6 +1704,32 @@ function switchTab(tabName) {
   });
 }
 
+async function openRuntimeDiagnosticsFocus(target) {
+  hideProxySuggestions();
+  hideAuditSuggestions();
+  switchTab('runtimeDiagnostics');
+  await loadRuntimeDiagnostics();
+  const focusEl = target === 'active-users' ? activeUsersSectionTitle : runtimeErrorsSectionTitle;
+  if (focusEl) {
+    focusEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    focusEl.classList.add('admin-section-flash');
+    setTimeout(() => focusEl.classList.remove('admin-section-flash'), 900);
+  }
+}
+
+async function openSystemHealthFocus() {
+  hideProxySuggestions();
+  hideAuditSuggestions();
+  switchTab('systemHealth');
+  await refreshTrackingAndHealth();
+  const focusEl = systemHealthRows?.querySelector('[data-health-section="services"]') || systemHealthRows;
+  if (focusEl) {
+    focusEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    focusEl.classList.add('admin-section-flash');
+    setTimeout(() => focusEl.classList.remove('admin-section-flash'), 900);
+  }
+}
+
 function switchSettingsSubtab(tabName) {
   const target = String(tabName || 'general');
   settingsSubTabs.forEach((btn) => {
@@ -1426,10 +1742,6 @@ function switchSettingsSubtab(tabName) {
 
 async function loadSettingsSubtabData(tabName) {
   const tab = String(tabName || '').trim().toLowerCase();
-  if (tab === 'workflow') {
-    await refreshTrackingAndHealth();
-    return;
-  }
   if (tab === 'proxy') {
     await refreshTrackingAndHealth();
     return;
@@ -1442,8 +1754,24 @@ async function loadSettingsSubtabData(tabName) {
     await loadSubtitleRecords();
     return;
   }
+  if (tab === 'backup') {
+    if (!currentAdminProfile?.canAccessAdmin && !currentAdminProfile?.isAdmin) {
+      if (settingsMsg) settingsMsg.textContent = 'Admin permission is required';
+      switchSettingsSubtab('ocr');
+      return;
+    }
+    await loadBackups();
+    return;
+  }
   if (tab === 'users') {
+    if (!currentAdminProfile?.isSuperAdmin) {
+      if (settingsMsg) settingsMsg.textContent = 'Super admin permission is required';
+      switchSettingsSubtab('general');
+      return;
+    }
     await loadUserPermissions();
+    await loadIdentityOverview();
+    await loadGroupAdmins();
   }
 }
 
@@ -1682,6 +2010,253 @@ function queueAuditSuggestionRequest() {
   }, 180);
 }
 
+function hideAssetRightsSuggestions() {
+  if (!assetRightsSuggestList) return;
+  assetRightsSuggestList.classList.add('hidden');
+  assetRightsSuggestList.innerHTML = '';
+  assetRightsSuggestItems = [];
+  assetRightsSuggestActiveIndex = -1;
+}
+
+function setAssetRightsSuggestActive(index) {
+  if (!assetRightsSuggestList) return;
+  const buttons = Array.from(assetRightsSuggestList.querySelectorAll('.proxy-suggest-item'));
+  if (!buttons.length) {
+    assetRightsSuggestActiveIndex = -1;
+    return;
+  }
+  const safeIndex = Math.max(0, Math.min(buttons.length - 1, index));
+  assetRightsSuggestActiveIndex = safeIndex;
+  buttons.forEach((btn, idx) => {
+    btn.classList.toggle('active', idx === safeIndex);
+  });
+}
+
+function applyAssetRightsSuggestion(item) {
+  if (!item || !assetRightsSearchInput) return;
+  const title = String(item.title || '').trim();
+  const fileName = String(item.fileName || '').trim();
+  assetRightsSearchInput.value = title || fileName;
+  hideAssetRightsSuggestions();
+  assetRightsPage = 1;
+  loadAssetRightsRows().catch((error) => {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+}
+
+function renderAssetRightsSuggestions(items, query) {
+  if (!assetRightsSuggestList) return;
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {
+    hideAssetRightsSuggestions();
+    return;
+  }
+  assetRightsSuggestItems = list;
+  assetRightsSuggestActiveIndex = -1;
+  assetRightsSuggestList.innerHTML = list.map((item, index) => {
+    const title = String(item.title || item.fileName || item.id || '');
+    const fileName = String(item.fileName || '');
+    const type = String(item.type || '-');
+    const trashState = item.inTrash ? 'trash' : 'active';
+    return `
+      <button type="button" class="proxy-suggest-item" data-index="${index}">
+        <strong>${highlightSuggestion(title, query)}</strong>
+        <span>${escapeHtml(type)} | ${escapeHtml(fileName || '-')} | ${escapeHtml(trashState)}</span>
+      </button>
+    `;
+  }).join('');
+  assetRightsSuggestList.classList.remove('hidden');
+}
+
+async function requestAssetRightsSuggestions() {
+  const query = String(assetRightsSearchInput?.value || '').trim();
+  if (query.length < 2) {
+    hideAssetRightsSuggestions();
+    return;
+  }
+  const reqId = ++assetRightsSuggestReqSeq;
+  const params = new URLSearchParams({ q: query, limit: '8' });
+  try {
+    const result = await api(`/api/admin/assets/suggest?${params.toString()}`);
+    if (reqId !== assetRightsSuggestReqSeq) return;
+    renderAssetRightsSuggestions(result, query);
+  } catch (_error) {
+    if (reqId !== assetRightsSuggestReqSeq) return;
+    hideAssetRightsSuggestions();
+  }
+}
+
+function queueAssetRightsSuggestionRequest() {
+  if (assetRightsSuggestTimer) clearTimeout(assetRightsSuggestTimer);
+  assetRightsSuggestTimer = setTimeout(() => {
+    requestAssetRightsSuggestions().catch(() => {});
+  }, 180);
+}
+
+function normalizeGroupSuggestionName(value) {
+  return String(value || '').trim().replace(/^\/+/, '');
+}
+
+function addGroupSuggestionName(names, value) {
+  const name = normalizeGroupSuggestionName(value);
+  if (name) names.add(name);
+}
+
+function collectIdentityGroupNames(result = {}) {
+  const names = new Set();
+  (Array.isArray(result.groups) ? result.groups : []).forEach((group) => {
+    addGroupSuggestionName(names, group.path || group.name);
+  });
+  (Array.isArray(result.mamGroups) ? result.mamGroups : []).forEach((group) => {
+    addGroupSuggestionName(names, group);
+  });
+  (Array.isArray(result.mamOnlyGroups) ? result.mamOnlyGroups : []).forEach((group) => {
+    addGroupSuggestionName(names, group);
+  });
+  (Array.isArray(result.groupAdmins) ? result.groupAdmins : []).forEach((item) => {
+    addGroupSuggestionName(names, item.groupName || item.group);
+  });
+  return Array.from(names).sort((a, b) => a.localeCompare(b));
+}
+
+async function loadAssetRightsGroupNames() {
+  if (Array.isArray(assetRightsGroupNamesCache)) return assetRightsGroupNamesCache;
+  const result = await api('/api/admin/assets/access-groups');
+  assetRightsGroupNamesCache = collectIdentityGroupNames(result);
+  return assetRightsGroupNamesCache;
+}
+
+function ensureAssetRightsGroupSuggestEl() {
+  if (assetRightsGroupSuggestEl) return assetRightsGroupSuggestEl;
+  assetRightsGroupSuggestEl = document.createElement('div');
+  assetRightsGroupSuggestEl.id = 'assetRightsGroupSuggestList';
+  assetRightsGroupSuggestEl.className = 'proxy-suggest asset-rights-group-suggest hidden';
+  document.body.appendChild(assetRightsGroupSuggestEl);
+  assetRightsGroupSuggestEl.addEventListener('mousedown', (event) => {
+    event.preventDefault();
+  });
+  assetRightsGroupSuggestEl.addEventListener('click', (event) => {
+    const button = event.target.closest('.proxy-suggest-item');
+    if (!button) return;
+    const index = Number(button.dataset.index);
+    if (!Number.isFinite(index) || index < 0 || index >= assetRightsGroupSuggestItems.length) return;
+    applyAssetRightsGroupSuggestion(assetRightsGroupSuggestItems[index]);
+  });
+  return assetRightsGroupSuggestEl;
+}
+
+function getAssetRightsGroupToken(input) {
+  const value = String(input?.value || '');
+  const cursor = typeof input?.selectionStart === 'number' ? input.selectionStart : value.length;
+  const beforeCursor = value.slice(0, cursor);
+  const tokenStart = beforeCursor.lastIndexOf(',') + 1;
+  const raw = beforeCursor.slice(tokenStart);
+  const leadingSpaces = raw.match(/^\s*/)?.[0]?.length || 0;
+  return {
+    value,
+    cursor,
+    tokenStart: tokenStart + leadingSpaces,
+    tokenEnd: cursor,
+    query: raw.trim()
+  };
+}
+
+function positionAssetRightsGroupSuggestions(input) {
+  const el = ensureAssetRightsGroupSuggestEl();
+  const rect = input.getBoundingClientRect();
+  const width = Math.max(220, Math.min(340, rect.width));
+  const maxTop = Math.max(8, window.innerHeight - 260);
+  el.style.width = `${width}px`;
+  el.style.left = `${Math.max(8, Math.min(window.innerWidth - width - 8, rect.left))}px`;
+  el.style.top = `${Math.max(8, Math.min(maxTop, rect.bottom + 4))}px`;
+}
+
+function hideAssetRightsGroupSuggestions() {
+  if (!assetRightsGroupSuggestEl) return;
+  assetRightsGroupSuggestEl.classList.add('hidden');
+  assetRightsGroupSuggestEl.innerHTML = '';
+  assetRightsGroupSuggestInput = null;
+  assetRightsGroupSuggestItems = [];
+  assetRightsGroupSuggestActiveIndex = -1;
+}
+
+function setAssetRightsGroupSuggestActive(index) {
+  const el = ensureAssetRightsGroupSuggestEl();
+  const buttons = Array.from(el.querySelectorAll('.proxy-suggest-item'));
+  if (!buttons.length) {
+    assetRightsGroupSuggestActiveIndex = -1;
+    return;
+  }
+  const safeIndex = Math.max(0, Math.min(buttons.length - 1, index));
+  assetRightsGroupSuggestActiveIndex = safeIndex;
+  buttons.forEach((btn, idx) => {
+    btn.classList.toggle('active', idx === safeIndex);
+  });
+}
+
+function renderAssetRightsGroupSuggestions(input, groups, query) {
+  const el = ensureAssetRightsGroupSuggestEl();
+  const list = Array.isArray(groups) ? groups : [];
+  if (!list.length) {
+    hideAssetRightsGroupSuggestions();
+    return;
+  }
+  assetRightsGroupSuggestInput = input;
+  assetRightsGroupSuggestItems = list;
+  assetRightsGroupSuggestActiveIndex = -1;
+  el.innerHTML = list.map((name, index) => `
+    <button type="button" class="proxy-suggest-item" data-index="${index}">
+      <strong>${highlightSuggestion(name, query)}</strong>
+    </button>
+  `).join('');
+  positionAssetRightsGroupSuggestions(input);
+  el.classList.remove('hidden');
+}
+
+async function requestAssetRightsGroupSuggestions(input) {
+  if (!input || input.disabled || input.readOnly) {
+    hideAssetRightsGroupSuggestions();
+    return;
+  }
+  const token = getAssetRightsGroupToken(input);
+  if (token.query.length < 2) {
+    hideAssetRightsGroupSuggestions();
+    return;
+  }
+  try {
+    const groups = await loadAssetRightsGroupNames();
+    const needle = token.query.toLocaleLowerCase('tr');
+    const selected = new Set(String(input.value || '')
+      .split(',')
+      .map((item) => normalizeGroupSuggestionName(item).toLocaleLowerCase('tr'))
+      .filter(Boolean));
+    selected.delete(needle);
+    const matches = groups
+      .filter((name) => name.toLocaleLowerCase('tr').includes(needle))
+      .filter((name) => !selected.has(name.toLocaleLowerCase('tr')))
+      .slice(0, 8);
+    renderAssetRightsGroupSuggestions(input, matches, token.query);
+  } catch (_error) {
+    hideAssetRightsGroupSuggestions();
+  }
+}
+
+function applyAssetRightsGroupSuggestion(name) {
+  const input = assetRightsGroupSuggestInput;
+  if (!input) return;
+  const value = String(input.value || '');
+  const cursor = typeof input.selectionStart === 'number' ? input.selectionStart : value.length;
+  const parts = value.split(',');
+  let tokenIndex = value.slice(0, cursor).split(',').length - 1;
+  tokenIndex = Math.max(0, Math.min(parts.length - 1, tokenIndex));
+  parts[tokenIndex] = ` ${normalizeGroupSuggestionName(name)}`;
+  input.value = parts.map((part, index) => index === 0 ? part.trim() : part.trim()).filter(Boolean).join(', ');
+  const nextCursor = input.value.length;
+  input.focus();
+  input.setSelectionRange(nextCursor, nextCursor);
+  hideAssetRightsGroupSuggestions();
+}
+
 const adminRecordsModule = window.createAdminRecordsModule({
   api,
   t,
@@ -1692,6 +2267,10 @@ const adminRecordsModule = window.createAdminRecordsModule({
   userPermissionsSearchButton: document.getElementById('userPermissionsSearchButton'),
   userPermissionsRows,
   userPermissionsMsg,
+  userPermissionsPageSize: document.getElementById('userPermissionsPageSize'),
+  userPermissionsPrevPage: document.getElementById('userPermissionsPrevPage'),
+  userPermissionsNextPage: document.getElementById('userPermissionsNextPage'),
+  userPermissionsPageInfo: document.getElementById('userPermissionsPageInfo'),
   ocrAdminSearchInput,
   ocrDeleteFileCheck,
   ocrRecordsRows,
@@ -1712,6 +2291,120 @@ async function loadUserPermissions() {
   return adminRecordsModule.loadUserPermissions();
 }
 
+function renderGroupAdmins(rows = []) {
+  if (!groupAdminsRows) return;
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) {
+    groupAdminsRows.innerHTML = `<div class="empty">${escapeHtml(t('group_admin_none'))}</div>`;
+    return;
+  }
+  groupAdminsRows.innerHTML = list.map((row) => `
+    <div class="row" data-group-admin-id="${escapeHtml(row.id || '')}">
+      <strong>${escapeHtml(row.groupName || '')}</strong>
+      <span>${escapeHtml(row.username || '')}</span>
+      <span>${escapeHtml(formatAdminDateTime(row.createdAt))}</span>
+      <button type="button" class="danger deleteGroupAdminBtn" data-id="${escapeHtml(row.id || '')}">${escapeHtml(t('delete'))}</button>
+    </div>
+  `).join('');
+}
+
+async function loadGroupAdmins() {
+  if (!groupAdminsRows) return;
+  try {
+    const result = await api('/api/admin/group-admins');
+    renderGroupAdmins(result.groupAdmins || []);
+    if (groupAdminsMsg) groupAdminsMsg.textContent = '';
+  } catch (error) {
+    if (groupAdminsMsg) groupAdminsMsg.textContent = String(error.message || t('group_admin_load_failed'));
+  }
+}
+
+function renderIdentityOverview(payload = {}) {
+  const groups = Array.isArray(payload.groups) ? payload.groups : [];
+  const users = Array.isArray(payload.users) ? payload.users : [];
+  const mamOnlyGroups = Array.isArray(payload.mamOnlyGroups) ? payload.mamOnlyGroups : [];
+  const mamGroups = Array.isArray(payload.mamGroups) ? payload.mamGroups : [];
+  assetRightsGroupNamesCache = collectIdentityGroupNames(payload);
+
+  if (identityOverviewSummary) {
+    identityOverviewSummary.innerHTML = [
+      `<div class="metric"><strong>${escapeHtml(String(users.length))}</strong><span>${escapeHtml(t('identity_user_count'))}</span></div>`,
+      `<div class="metric"><strong>${escapeHtml(String(groups.length))}</strong><span>${escapeHtml(t('identity_group_count'))}</span></div>`,
+      `<div class="metric"><strong>${escapeHtml(String(mamGroups.length))}</strong><span>${escapeHtml(t('identity_mam_group_count'))}</span></div>`,
+      `<div class="metric"><strong>${escapeHtml(String(payload.source || '-'))}</strong><span>${escapeHtml(t('identity_source'))}</span></div>`
+    ].join('');
+  }
+
+  if (identityGroupsRows) {
+    identityGroupsRows.innerHTML = groups.length
+      ? groups.map((group) => `
+        <div class="row compact-row">
+          <strong>${escapeHtml(group.path || group.name || '-')}</strong>
+          <span>${escapeHtml(group.realm || '-')}</span>
+        </div>
+      `).join('')
+      : `<div class="empty">${escapeHtml(t('identity_no_groups'))}</div>`;
+  }
+
+  if (identityUsersRows) {
+    identityUsersRows.innerHTML = users.length
+      ? users.map((user) => {
+        const label = [user.displayName, user.email].map((item) => String(item || '').trim()).filter(Boolean).join(' · ');
+        const perms = Array.isArray(user.permissionKeys) && user.permissionKeys.length ? user.permissionKeys.join(', ') : '-';
+        return `
+          <div class="row compact-row">
+            <strong>${escapeHtml(user.username || '-')}</strong>
+            <span>${escapeHtml(label || user.realm || '-')}</span>
+            <small>${escapeHtml(perms)}</small>
+          </div>
+        `;
+      }).join('')
+      : `<div class="empty">${escapeHtml(t(String(payload.userQuery || '').trim() ? 'identity_no_users' : 'user_search_required'))}</div>`;
+  }
+
+  if (identityMamGroupsRows) {
+    identityMamGroupsRows.innerHTML = mamOnlyGroups.length
+      ? mamOnlyGroups.map((group) => `<div class="row compact-row"><strong>${escapeHtml(group)}</strong><span>MAM DB</span></div>`).join('')
+      : `<div class="empty">${escapeHtml(t('identity_no_mam_groups'))}</div>`;
+  }
+
+  if (identityGroupOptions) {
+    identityGroupOptions.innerHTML = assetRightsGroupNamesCache
+      .map((name) => `<option value="${escapeHtml(name)}"></option>`)
+      .join('');
+  }
+
+  if (identityUserOptions) {
+    identityUserOptions.innerHTML = users
+      .map((user) => String(user.username || '').trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+      .map((username) => `<option value="${escapeHtml(username)}"></option>`)
+      .join('');
+  }
+}
+
+async function loadIdentityOverview() {
+  if (!identityOverviewSummary && !identityGroupsRows && !identityUsersRows) return;
+  try {
+    const params = new URLSearchParams();
+    const userQ = String(identityUserSearchInput?.value || '').trim();
+    if (userQ.length >= 2) params.set('userQ', userQ);
+    const query = params.toString();
+    const result = await api(`/api/admin/identity/overview${query ? `?${query}` : ''}`);
+    renderIdentityOverview(result);
+    if (groupAdminsMsg) groupAdminsMsg.textContent = '';
+  } catch (error) {
+    if (groupAdminsMsg) groupAdminsMsg.textContent = String(error.message || t('identity_load_failed'));
+  }
+}
+
+function searchIdentityUsers() {
+  loadIdentityOverview().catch((error) => {
+    if (groupAdminsMsg) groupAdminsMsg.textContent = String(error.message || t('identity_load_failed'));
+  });
+}
+
 async function loadOcrRecords() {
   return adminRecordsModule.loadOcrRecords();
 }
@@ -1726,52 +2419,27 @@ async function runCombinedSearch() {
 
 adminRecordsModule.init();
 
-function setAdminTabVisibility(tabName, visible) {
-  const tab = adminTabs.find((item) => item.dataset.tab === tabName);
-  const panel = adminPanels.find((item) => item.dataset.panel === tabName);
-  if (tab) tab.classList.toggle('hidden', !visible);
-  if (panel) panel.classList.toggle('hidden', !visible);
-}
-
-function setSettingsSubtabVisibility(tabName, visible) {
-  const tab = settingsSubTabs.find((item) => item.dataset.settingsTab === tabName);
-  const panel = settingsSubPanels.find((item) => item.dataset.settingsPanel === tabName);
-  if (tab) tab.classList.toggle('hidden', !visible);
-  if (panel) panel.classList.toggle('hidden', !visible);
-}
-
 function applyAdminAccessMode(me = {}) {
   currentAdminProfile = me && typeof me === 'object' ? me : {};
-  const canAccessAdmin = Boolean(currentAdminProfile.canAccessAdmin || currentAdminProfile.isAdmin);
-  const canAccessTextAdmin = Boolean(currentAdminProfile.canAccessTextAdmin || canAccessAdmin);
-  const isTextOnly = canAccessTextAdmin && !canAccessAdmin;
-
-  setAdminTabVisibility('apiHelp', !isTextOnly);
-  setAdminTabVisibility('systemHealth', !isTextOnly);
-  setAdminTabVisibility('runtimeDiagnostics', !isTextOnly);
-  setAdminTabVisibility('auditEvents', !isTextOnly);
-  setAdminTabVisibility('settings', true);
-
-  setSettingsSubtabVisibility('general', !isTextOnly);
-  setSettingsSubtabVisibility('workflow', !isTextOnly);
-  setSettingsSubtabVisibility('proxy', !isTextOnly);
-  setSettingsSubtabVisibility('ocr', true);
-  setSettingsSubtabVisibility('subtitle', true);
-  setSettingsSubtabVisibility('users', !isTextOnly);
-
-  if (settingsForm) settingsForm.classList.toggle('hidden', isTextOnly);
-  if (settingsMsg) settingsMsg.classList.toggle('hidden', isTextOnly);
-  if (ocrSettingsForm) ocrSettingsForm.classList.toggle('hidden', isTextOnly);
-  if (ocrSettingsMsg) ocrSettingsMsg.classList.toggle('hidden', isTextOnly);
-  if (subtitleSettingsForm) subtitleSettingsForm.classList.toggle('hidden', false);
-  if (subtitleSettingsMsg) subtitleSettingsMsg.classList.toggle('hidden', false);
-
-  if (isTextOnly) {
-    switchTab('settings');
-    switchSettingsSubtab('ocr');
-  }
-
-  return { canAccessAdmin, canAccessTextAdmin, isTextOnly };
+  return accessScopeModule.applyAdminAccessMode({
+    profile: currentAdminProfile,
+    adminTabs,
+    adminPanels,
+    settingsSubTabs,
+    settingsSubPanels,
+    elements: {
+      settingsForm,
+      settingsMsg,
+      ocrSettingsForm,
+      ocrSettingsMsg,
+      subtitleSettingsForm,
+      subtitleSettingsMsg,
+      authSessionSettingsForm,
+      authSessionSettingsMsg
+    },
+    switchTab,
+    switchSettingsSubtab
+  });
 }
 
 function renderApiHelp() {
@@ -1780,7 +2448,7 @@ function renderApiHelp() {
   const masked = token ? `${token.slice(0, 4)}...${token.slice(-4)}` : '-';
   apiHelpBox.textContent = [
     `${t('api_test_title')}:`,
-    `GET http://localhost:3000/api/workflow`,
+    `GET http://localhost:3000/api/assets`,
     t('api_test_note'),
     `Current token: ${masked}`
   ].join('\n');
@@ -1793,20 +2461,18 @@ function renderApiGuide() {
   const tokenEnabled = Boolean(settingsForm?.elements?.apiTokenEnabled?.checked);
   const bearerEnabled = Boolean(settingsForm?.elements?.oidcBearerEnabled?.checked);
   const browserBase = window.location.origin;
-  const directBase = browserBase.includes(':3000') ? browserBase.replace(':3000', ':3001') : browserBase;
+  const apiBase = browserBase;
   const sampleAssetId = '<asset-id>';
   const tokenHeader = token || '<api-token>';
-  const postmanUrlStep = t('api_help_postman_step2').replace('{{baseUrl}}', directBase);
+  const postmanUrlStep = t('api_help_postman_step2').replace('{{baseUrl}}', apiBase);
 
-  const workflowCmd = `curl -s ${directBase}/api/workflow \\\n  -H "X-API-Token: ${tokenHeader}"`;
-  const assetsCmd = `curl -s "${directBase}/api/assets?trash=active" \\\n  -H "X-API-Token: ${tokenHeader}"`;
-  const oneAssetCmd = `curl -s ${directBase}/api/assets/${sampleAssetId} \\\n  -H "X-API-Token: ${tokenHeader}"`;
-  const collectionCmd = `curl -s -X POST ${directBase}/api/collections \\\n  -H "Content-Type: application/json" \\\n  -H "X-API-Token: ${tokenHeader}" \\\n  -d '{"name":"News Rundown","assetIds":["${sampleAssetId}"]}'`;
+  const assetsCmd = `curl -s "${apiBase}/api/assets?q=istanbul" \\\n  -H "X-API-Token: ${tokenHeader}"`;
+  const oneAssetCmd = `curl -s ${apiBase}/api/assets/${sampleAssetId} \\\n  -H "X-API-Token: ${tokenHeader}"`;
+  const collectionCmd = `curl -s -X POST ${apiBase}/api/collections \\\n  -H "Content-Type: application/json" \\\n  -H "X-API-Token: ${tokenHeader}" \\\n  -d '{"name":"News Rundown","assetIds":["${sampleAssetId}"]}'`;
   const endpointGroups = [
     {
       title: t('api_help_group_core'),
       endpoints: [
-        'GET    /api/workflow',
         'GET    /api/me',
         'GET    /api/logout-url',
         'GET    /api/ui-settings',
@@ -1827,7 +2493,6 @@ function renderApiGuide() {
         'PATCH  /api/assets/:id',
         'GET    /api/assets/:id/technical',
         'GET    /api/assets/:id/preview-text',
-        'POST   /api/assets/:id/transition',
         'POST   /api/assets/:id/trash',
         'POST   /api/assets/:id/restore',
         'DELETE /api/assets/:id',
@@ -1893,7 +2558,9 @@ function renderApiGuide() {
         'GET    /api/admin/system-health',
         'GET    /api/admin/runtime-diagnostics',
         'GET    /api/admin/ffmpeg-health',
-        'GET    /api/admin/workflow-tracking',
+        'GET    /api/admin/backups',
+        'POST   /api/admin/backups/run',
+        'DELETE /api/admin/backups/:fileName',
         'POST   /api/admin/search/reindex',
         'POST   /api/admin/proxy-jobs',
         'GET    /api/admin/proxy-jobs',
@@ -1933,7 +2600,7 @@ function renderApiGuide() {
   apiGuideDoc.innerHTML = [
     `<p>${escapeHtml(t('api_help_intro'))}</p>`,
     `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_auth_title'))}</h3><p>${escapeHtml(t('api_help_auth_note'))}</p><p>${escapeHtml(bearerEnabled ? t('api_help_bearer_on') : t('api_help_bearer_off'))}</p><p>${escapeHtml(tokenEnabled ? t('api_help_token_on') : t('api_help_token_off'))}</p><p>${escapeHtml(t('api_help_token_hint'))} (${escapeHtml(masked)})</p></div>`,
-    `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_quick_title'))}</h3><p><strong>${escapeHtml(t('api_help_cmd_workflow'))}</strong></p><pre>${escapeHtml(workflowCmd)}</pre><p><strong>${escapeHtml(t('api_help_cmd_assets'))}</strong></p><pre>${escapeHtml(assetsCmd)}</pre><p><strong>${escapeHtml(t('api_help_cmd_asset_by_id'))}</strong></p><pre>${escapeHtml(oneAssetCmd)}</pre><p><strong>${escapeHtml(t('api_help_cmd_create_collection'))}</strong></p><pre>${escapeHtml(collectionCmd)}</pre></div>`,
+    `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_quick_title'))}</h3><p><strong>${escapeHtml(t('api_help_cmd_assets'))}</strong></p><pre>${escapeHtml(assetsCmd)}</pre><p><strong>${escapeHtml(t('api_help_cmd_asset_by_id'))}</strong></p><pre>${escapeHtml(oneAssetCmd)}</pre><p><strong>${escapeHtml(t('api_help_cmd_create_collection'))}</strong></p><pre>${escapeHtml(collectionCmd)}</pre></div>`,
     `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_postman_title'))}</h3><ul><li>${escapeHtml(t('api_help_postman_step1'))}</li><li>${escapeHtml(postmanUrlStep)}</li><li>${escapeHtml(t('api_help_postman_step3'))}</li><li>${escapeHtml(t('api_help_postman_step4'))}</li></ul></div>`,
     `<div class="api-guide-section"><h3>${escapeHtml(t('api_help_endpoints_title'))}</h3>${endpointSections}</div>`
   ].join('');
@@ -2021,6 +2688,391 @@ function auditDetailValue(key, value) {
   return String(value);
 }
 
+function parseAccessList(value) {
+  return String(value || '')
+    .split(/[,\n]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+const ASSET_RIGHTS_TABLE_LABELS = {
+  en: {
+    asset: 'Asset',
+    type: 'Type',
+    modeAsset: 'Asset',
+    modeType: 'Type',
+    visibility: 'Visibility',
+    ownerGroups: 'Owner groups',
+    allowedGroups: 'Allowed groups',
+    allowedUsers: 'Allowed users',
+    deniedGroups: 'Denied groups',
+    deniedUsers: 'Denied users',
+    editAllowedGroups: 'Editable groups',
+    editAllowedUsers: 'Editable users',
+    editDeniedGroups: 'Edit denied groups',
+    editDeniedUsers: 'Edit denied users',
+    downloadAllowedGroups: 'Download groups',
+    downloadAllowedUsers: 'Download users',
+    downloadDeniedGroups: 'Download denied groups',
+    downloadDeniedUsers: 'Download denied users',
+    uploadAllowedGroups: 'Upload groups',
+    uploadAllowedUsers: 'Upload users',
+    uploadDeniedGroups: 'Upload denied groups',
+    uploadDeniedUsers: 'Upload denied users',
+    lockedItems: 'Locked',
+    empty: 'No asset found.',
+    save: 'Save',
+    visibilityPrivate: 'Private',
+    visibilityGroup: 'Owner groups',
+    visibilityGroups: 'Selected groups/users',
+    visibilityPublic: 'Public'
+  },
+  tr: {
+    asset: 'Varlık',
+    type: 'Tür',
+    modeAsset: 'Varlık',
+    modeType: 'Tür',
+    visibility: 'Görünürlük',
+    ownerGroups: 'Sahip gruplar',
+    allowedGroups: 'İzinli gruplar',
+    allowedUsers: 'İzinli kullanıcılar',
+    deniedGroups: 'Göremeyen gruplar',
+    deniedUsers: 'Göremeyen kullanıcılar',
+    editAllowedGroups: 'Değiştirebilen gruplar',
+    editAllowedUsers: 'Değiştirebilen kullanıcılar',
+    editDeniedGroups: 'Değiştiremeyen gruplar',
+    editDeniedUsers: 'Değiştiremeyen kullanıcılar',
+    downloadAllowedGroups: 'İndirebilen gruplar',
+    downloadAllowedUsers: 'İndirebilen kullanıcılar',
+    downloadDeniedGroups: 'İndiremeyen gruplar',
+    downloadDeniedUsers: 'İndiremeyen kullanıcılar',
+    uploadAllowedGroups: 'Yükleyebilen gruplar',
+    uploadAllowedUsers: 'Yükleyebilen kullanıcılar',
+    uploadDeniedGroups: 'Yükleyemeyen gruplar',
+    uploadDeniedUsers: 'Yükleyemeyen kullanıcılar',
+    lockedItems: 'Kilitliler',
+    empty: 'Varlık bulunamadı.',
+    save: 'Kaydet',
+    visibilityPrivate: 'Özel',
+    visibilityGroup: 'Sahip gruplar',
+    visibilityGroups: 'Seçili grup/kullanıcı',
+    visibilityPublic: 'Herkese açık'
+  }
+};
+
+function getActiveAdminLanguage() {
+  if (languageSelect?.value === 'tr') return 'tr';
+  if (languageSelect?.value === 'en') return 'en';
+  return currentLang === 'tr' ? 'tr' : 'en';
+}
+
+function getAssetRightsTableLabels() {
+  return ASSET_RIGHTS_TABLE_LABELS[getActiveAdminLanguage()];
+}
+
+function getAssetRightsLabel(key) {
+  return getAssetRightsTableLabels()[key] || key;
+}
+
+function getAssetTypeGroupLabel(typeGroup) {
+  const key = String(typeGroup || '').trim().toLowerCase();
+  const map = {
+    video: t('asset_type_video'),
+    audio: t('asset_type_audio'),
+    photo: t('asset_type_photo'),
+    document: t('asset_type_document'),
+    other: t('asset_type_other')
+  };
+  return map[key] || key || '-';
+}
+
+function renderAssetRightsModeSelect(labels) {
+  const mode = assetRightsMode === 'type' ? 'type' : 'asset';
+  return `
+    <label class="asset-rights-mode-switch">
+      <span data-asset-rights-label="${mode === 'type' ? 'type' : 'asset'}">${escapeHtml(mode === 'type' ? labels.type : labels.asset)}</span>
+      <select id="assetRightsModeSelect">
+        <option value="asset" ${mode === 'asset' ? 'selected' : ''}>${escapeHtml(labels.modeAsset)}</option>
+        <option value="type" ${mode === 'type' ? 'selected' : ''}>${escapeHtml(labels.modeType)}</option>
+      </select>
+    </label>
+  `;
+}
+
+function updateAssetRightsTableLanguage() {
+  if (!assetRightsRows) return;
+  const labels = getAssetRightsTableLabels();
+  assetRightsRows.querySelectorAll('[data-asset-rights-label]').forEach((el) => {
+    const key = el.getAttribute('data-asset-rights-label') || '';
+    const value = labels[key];
+    if (value) el.textContent = value;
+  });
+  assetRightsRows.querySelectorAll('[data-asset-rights-cell-label]').forEach((el) => {
+    const key = el.getAttribute('data-asset-rights-cell-label') || '';
+    const value = labels[key];
+    if (value) el.setAttribute('data-label', value);
+  });
+  assetRightsRows.querySelectorAll('select[name="visibility"] option').forEach((option) => {
+    const map = {
+      private: 'visibilityPrivate',
+      group: 'visibilityGroup',
+      groups: 'visibilityGroups',
+      public: 'visibilityPublic'
+    };
+    const key = map[String(option.value || '')];
+    if (key && labels[key]) option.textContent = labels[key];
+  });
+  assetRightsRows.querySelectorAll('#assetRightsModeSelect option').forEach((option) => {
+    if (option.value === 'asset') option.textContent = labels.modeAsset;
+    if (option.value === 'type') option.textContent = labels.modeType;
+  });
+  assetRightsRows.querySelectorAll('[data-asset-rights-type-label]').forEach((el) => {
+    el.textContent = getAssetTypeGroupLabel(el.getAttribute('data-asset-rights-type-label'));
+  });
+  assetRightsRows.querySelectorAll('[data-asset-rights-locked-label]').forEach((el) => {
+    el.textContent = labels.lockedItems;
+  });
+  const empty = assetRightsRows.querySelector('[data-asset-rights-empty="true"]');
+  if (empty) empty.textContent = labels.empty;
+}
+
+function syncAssetRightsTableLanguage() {
+  updateAssetRightsTableLanguage();
+  requestAnimationFrame(() => updateAssetRightsTableLanguage());
+  setTimeout(() => updateAssetRightsTableLanguage(), 0);
+}
+
+function renderAssetRightsHeader(labels) {
+  return `
+    <div class="asset-rights-table-head" aria-hidden="true">
+      ${renderAssetRightsModeSelect(labels)}
+      <span data-asset-rights-label="visibility">${escapeHtml(labels.visibility)}</span>
+      <span data-asset-rights-label="ownerGroups">${escapeHtml(labels.ownerGroups)}</span>
+      <span data-asset-rights-label="allowedGroups">${escapeHtml(labels.allowedGroups)}</span>
+      <span data-asset-rights-label="allowedUsers">${escapeHtml(labels.allowedUsers)}</span>
+      <span data-asset-rights-label="deniedGroups">${escapeHtml(labels.deniedGroups)}</span>
+      <span data-asset-rights-label="deniedUsers">${escapeHtml(labels.deniedUsers)}</span>
+      <span data-asset-rights-label="editAllowedGroups">${escapeHtml(labels.editAllowedGroups)}</span>
+      <span data-asset-rights-label="editAllowedUsers">${escapeHtml(labels.editAllowedUsers)}</span>
+      <span data-asset-rights-label="editDeniedGroups">${escapeHtml(labels.editDeniedGroups)}</span>
+      <span data-asset-rights-label="editDeniedUsers">${escapeHtml(labels.editDeniedUsers)}</span>
+      <span data-asset-rights-label="downloadAllowedGroups">${escapeHtml(labels.downloadAllowedGroups)}</span>
+      <span data-asset-rights-label="downloadAllowedUsers">${escapeHtml(labels.downloadAllowedUsers)}</span>
+      <span data-asset-rights-label="downloadDeniedGroups">${escapeHtml(labels.downloadDeniedGroups)}</span>
+      <span data-asset-rights-label="downloadDeniedUsers">${escapeHtml(labels.downloadDeniedUsers)}</span>
+      ${assetRightsMode === 'type' ? `
+        <span data-asset-rights-label="uploadAllowedGroups">${escapeHtml(labels.uploadAllowedGroups)}</span>
+        <span data-asset-rights-label="uploadAllowedUsers">${escapeHtml(labels.uploadAllowedUsers)}</span>
+        <span data-asset-rights-label="uploadDeniedGroups">${escapeHtml(labels.uploadDeniedGroups)}</span>
+        <span data-asset-rights-label="uploadDeniedUsers">${escapeHtml(labels.uploadDeniedUsers)}</span>
+      ` : ''}
+      <label class="asset-rights-locked-filter">
+        <input id="assetRightsLockedOnlyCheck" type="checkbox" ${assetRightsLockedOnly ? 'checked' : ''} ${assetRightsMode === 'type' ? 'disabled' : ''} />
+        <span data-asset-rights-locked-label>${escapeHtml(labels.lockedItems)}</span>
+      </label>
+    </div>
+  `;
+}
+
+function renderAssetRightsRows(assets = []) {
+  if (!assetRightsRows) return;
+  const labels = getAssetRightsTableLabels();
+  const list = Array.isArray(assets) ? assets : [];
+
+  const visibilityOptions = ['private', 'group', 'groups', 'public'];
+  const visibilityLabels = {
+    private: labels.visibilityPrivate,
+    group: labels.visibilityGroup,
+    groups: labels.visibilityGroups,
+    public: labels.visibilityPublic
+  };
+  const header = renderAssetRightsHeader(labels);
+  if (!list.length) {
+    assetRightsRows.innerHTML = `<div class="asset-rights-table asset-rights-table--${escapeHtml(assetRightsMode === 'type' ? 'type' : 'asset')}">${header}<div class="empty asset-rights-empty-row" data-asset-rights-empty="true">${escapeHtml(labels.empty)}</div></div>`;
+    syncAssetRightsTableLanguage();
+    return;
+  }
+
+  const rows = list.map((asset) => {
+    const isTypeMode = assetRightsMode === 'type';
+    const selected = String(asset.visibility || 'public');
+    const options = visibilityOptions
+      .map((item) => `<option value="${escapeHtml(item)}" ${item === selected ? 'selected' : ''}>${escapeHtml(visibilityLabels[item] || item)}</option>`)
+      .join('');
+    const ownerGroups = Array.isArray(asset.ownerGroups) ? asset.ownerGroups.join(', ') : '';
+    const allowedGroups = Array.isArray(asset.allowedGroups) ? asset.allowedGroups.join(', ') : '';
+    const allowedUsers = Array.isArray(asset.allowedUsers) ? asset.allowedUsers.join(', ') : '';
+    const deniedGroups = Array.isArray(asset.deniedGroups) ? asset.deniedGroups.join(', ') : '';
+    const deniedUsers = Array.isArray(asset.deniedUsers) ? asset.deniedUsers.join(', ') : '';
+    const editAllowedGroups = Array.isArray(asset.editAllowedGroups) ? asset.editAllowedGroups.join(', ') : '';
+    const editAllowedUsers = Array.isArray(asset.editAllowedUsers) ? asset.editAllowedUsers.join(', ') : '';
+    const editDeniedGroups = Array.isArray(asset.editDeniedGroups) ? asset.editDeniedGroups.join(', ') : '';
+    const editDeniedUsers = Array.isArray(asset.editDeniedUsers) ? asset.editDeniedUsers.join(', ') : '';
+    const downloadAllowedGroups = Array.isArray(asset.downloadAllowedGroups) ? asset.downloadAllowedGroups.join(', ') : '';
+    const downloadAllowedUsers = Array.isArray(asset.downloadAllowedUsers) ? asset.downloadAllowedUsers.join(', ') : '';
+    const downloadDeniedGroups = Array.isArray(asset.downloadDeniedGroups) ? asset.downloadDeniedGroups.join(', ') : '';
+    const downloadDeniedUsers = Array.isArray(asset.downloadDeniedUsers) ? asset.downloadDeniedUsers.join(', ') : '';
+    const uploadAllowedGroups = Array.isArray(asset.uploadAllowedGroups) ? asset.uploadAllowedGroups.join(', ') : '';
+    const uploadAllowedUsers = Array.isArray(asset.uploadAllowedUsers) ? asset.uploadAllowedUsers.join(', ') : '';
+    const uploadDeniedGroups = Array.isArray(asset.uploadDeniedGroups) ? asset.uploadDeniedGroups.join(', ') : '';
+    const uploadDeniedUsers = Array.isArray(asset.uploadDeniedUsers) ? asset.uploadDeniedUsers.join(', ') : '';
+    const title = isTypeMode ? getAssetTypeGroupLabel(asset.typeGroup) : (asset.title || asset.id || '');
+    const meta = isTypeMode ? labels.type : [asset.type || '-', asset.owner || '-'].filter(Boolean).join(' · ');
+    const lock = !isTypeMode && asset.editLock && typeof asset.editLock === 'object' ? asset.editLock : null;
+    const lockName = String(lock?.lockedByName || lock?.lockedBy || '').trim();
+    const lockInfo = lock ? `
+          <span class="asset-rights-lock">${escapeHtml(t('asset_lock_locked_by'))}: ${escapeHtml(lockName || '-')}</span>
+        ` : '';
+    const ownerGroupInput = `<input name="ownerGroups" value="${escapeHtml(ownerGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />`;
+
+    return `
+      <form class="asset-rights-row" data-access-mode="${escapeHtml(assetRightsMode)}" data-asset-id="${escapeHtml(asset.id || '')}" data-type-group="${escapeHtml(asset.typeGroup || '')}">
+        <div class="asset-rights-asset" data-asset-rights-cell-label="${isTypeMode ? 'type' : 'asset'}" data-label="${escapeHtml(isTypeMode ? labels.type : labels.asset)}">
+          <strong ${isTypeMode ? `data-asset-rights-type-label="${escapeHtml(asset.typeGroup || '')}"` : ''}>${escapeHtml(title)}</strong>
+          <span>${escapeHtml(meta)}</span>
+          ${lockInfo}
+        </div>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="visibility" data-label="${escapeHtml(labels.visibility)}">
+          <span data-asset-rights-label="visibility">${escapeHtml(labels.visibility)}</span>
+          <select name="visibility">${options}</select>
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="ownerGroups" data-label="${escapeHtml(labels.ownerGroups)}">
+          <span data-asset-rights-label="ownerGroups">${escapeHtml(labels.ownerGroups)}</span>
+          ${ownerGroupInput}
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="allowedGroups" data-label="${escapeHtml(labels.allowedGroups)}">
+          <span data-asset-rights-label="allowedGroups">${escapeHtml(labels.allowedGroups)}</span>
+          <input name="allowedGroups" value="${escapeHtml(allowedGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="allowedUsers" data-label="${escapeHtml(labels.allowedUsers)}">
+          <span data-asset-rights-label="allowedUsers">${escapeHtml(labels.allowedUsers)}</span>
+          <input name="allowedUsers" value="${escapeHtml(allowedUsers)}" placeholder="user@example.com" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="deniedGroups" data-label="${escapeHtml(labels.deniedGroups)}">
+          <span data-asset-rights-label="deniedGroups">${escapeHtml(labels.deniedGroups)}</span>
+          <input name="deniedGroups" value="${escapeHtml(deniedGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="deniedUsers" data-label="${escapeHtml(labels.deniedUsers)}">
+          <span data-asset-rights-label="deniedUsers">${escapeHtml(labels.deniedUsers)}</span>
+          <input name="deniedUsers" value="${escapeHtml(deniedUsers)}" placeholder="user@example.com" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="editAllowedGroups" data-label="${escapeHtml(labels.editAllowedGroups)}">
+          <span data-asset-rights-label="editAllowedGroups">${escapeHtml(labels.editAllowedGroups)}</span>
+          <input name="editAllowedGroups" value="${escapeHtml(editAllowedGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="editAllowedUsers" data-label="${escapeHtml(labels.editAllowedUsers)}">
+          <span data-asset-rights-label="editAllowedUsers">${escapeHtml(labels.editAllowedUsers)}</span>
+          <input name="editAllowedUsers" value="${escapeHtml(editAllowedUsers)}" placeholder="user@example.com" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="editDeniedGroups" data-label="${escapeHtml(labels.editDeniedGroups)}">
+          <span data-asset-rights-label="editDeniedGroups">${escapeHtml(labels.editDeniedGroups)}</span>
+          <input name="editDeniedGroups" value="${escapeHtml(editDeniedGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="editDeniedUsers" data-label="${escapeHtml(labels.editDeniedUsers)}">
+          <span data-asset-rights-label="editDeniedUsers">${escapeHtml(labels.editDeniedUsers)}</span>
+          <input name="editDeniedUsers" value="${escapeHtml(editDeniedUsers)}" placeholder="user@example.com" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="downloadAllowedGroups" data-label="${escapeHtml(labels.downloadAllowedGroups)}">
+          <span data-asset-rights-label="downloadAllowedGroups">${escapeHtml(labels.downloadAllowedGroups)}</span>
+          <input name="downloadAllowedGroups" value="${escapeHtml(downloadAllowedGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="downloadAllowedUsers" data-label="${escapeHtml(labels.downloadAllowedUsers)}">
+          <span data-asset-rights-label="downloadAllowedUsers">${escapeHtml(labels.downloadAllowedUsers)}</span>
+          <input name="downloadAllowedUsers" value="${escapeHtml(downloadAllowedUsers)}" placeholder="user@example.com" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="downloadDeniedGroups" data-label="${escapeHtml(labels.downloadDeniedGroups)}">
+          <span data-asset-rights-label="downloadDeniedGroups">${escapeHtml(labels.downloadDeniedGroups)}</span>
+          <input name="downloadDeniedGroups" value="${escapeHtml(downloadDeniedGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />
+        </label>
+        <label class="asset-rights-cell" data-asset-rights-cell-label="downloadDeniedUsers" data-label="${escapeHtml(labels.downloadDeniedUsers)}">
+          <span data-asset-rights-label="downloadDeniedUsers">${escapeHtml(labels.downloadDeniedUsers)}</span>
+          <input name="downloadDeniedUsers" value="${escapeHtml(downloadDeniedUsers)}" placeholder="user@example.com" />
+        </label>
+        ${isTypeMode ? `
+          <label class="asset-rights-cell" data-asset-rights-cell-label="uploadAllowedGroups" data-label="${escapeHtml(labels.uploadAllowedGroups)}">
+            <span data-asset-rights-label="uploadAllowedGroups">${escapeHtml(labels.uploadAllowedGroups)}</span>
+            <input name="uploadAllowedGroups" value="${escapeHtml(uploadAllowedGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />
+          </label>
+          <label class="asset-rights-cell" data-asset-rights-cell-label="uploadAllowedUsers" data-label="${escapeHtml(labels.uploadAllowedUsers)}">
+            <span data-asset-rights-label="uploadAllowedUsers">${escapeHtml(labels.uploadAllowedUsers)}</span>
+            <input name="uploadAllowedUsers" value="${escapeHtml(uploadAllowedUsers)}" placeholder="user@example.com" />
+          </label>
+          <label class="asset-rights-cell" data-asset-rights-cell-label="uploadDeniedGroups" data-label="${escapeHtml(labels.uploadDeniedGroups)}">
+            <span data-asset-rights-label="uploadDeniedGroups">${escapeHtml(labels.uploadDeniedGroups)}</span>
+            <input name="uploadDeniedGroups" value="${escapeHtml(uploadDeniedGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />
+          </label>
+          <label class="asset-rights-cell" data-asset-rights-cell-label="uploadDeniedUsers" data-label="${escapeHtml(labels.uploadDeniedUsers)}">
+            <span data-asset-rights-label="uploadDeniedUsers">${escapeHtml(labels.uploadDeniedUsers)}</span>
+            <input name="uploadDeniedUsers" value="${escapeHtml(uploadDeniedUsers)}" placeholder="user@example.com" />
+          </label>
+        ` : ''}
+        <div class="asset-rights-actions">
+          ${lock ? `<button type="button" class="asset-lock-unlock-btn" data-unlock-asset-id="${escapeHtml(asset.id || '')}">${escapeHtml(t('asset_lock_unlock'))}</button>` : ''}
+          <button type="submit" data-asset-rights-label="save">${escapeHtml(labels.save)}</button>
+        </div>
+      </form>
+    `;
+  }).join('');
+
+  assetRightsRows.innerHTML = `<div class="asset-rights-table asset-rights-table--${escapeHtml(assetRightsMode === 'type' ? 'type' : 'asset')}">${header}${rows}</div>`;
+  syncAssetRightsTableLanguage();
+}
+
+function renderAssetRightsPager() {
+  const total = Number(assetRightsPagination.total || 0);
+  const page = Math.max(1, Number(assetRightsPagination.page || 1));
+  const totalPages = Math.max(1, Number(assetRightsPagination.totalPages || 1));
+  if (assetRightsPageInfo) {
+    assetRightsPageInfo.textContent = t('page_info')
+      .replace('{page}', String(page))
+      .replace('{pages}', String(totalPages))
+      .replace('{total}', String(total));
+  }
+  if (assetRightsPrevPage) assetRightsPrevPage.disabled = page <= 1;
+  if (assetRightsNextPage) assetRightsNextPage.disabled = page >= totalPages;
+}
+
+async function loadAssetRightsRows() {
+  if (!assetRightsRows) return;
+  if (assetRightsMode === 'type') {
+    try {
+      const result = await api('/api/admin/asset-types/access');
+      lastAssetRightsTypes = Array.isArray(result.types) ? result.types : [];
+      assetRightsPagination = result.pagination || { page: 1, limit: 5, total: lastAssetRightsTypes.length, totalPages: 1 };
+      assetRightsPage = 1;
+      renderAssetRightsRows(lastAssetRightsTypes);
+      renderAssetRightsPager();
+      if (assetRightsMsg) assetRightsMsg.textContent = '';
+    } catch (error) {
+      if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || t('asset_rights_load_failed'));
+    }
+    return;
+  }
+  const params = new URLSearchParams();
+  const q = String(assetRightsSearchInput?.value || '').trim();
+  if (q) params.set('q', q);
+  assetRightsTypeFilters
+    .filter((item) => item.checked)
+    .forEach((item) => params.append('typeGroup', String(item.value || '').trim()));
+  const visibility = String(assetRightsVisibilityFilter?.value || '').trim();
+  if (visibility) params.set('visibility', visibility);
+  if (assetRightsLockedOnly) params.set('lockedOnly', '1');
+  const limit = Number(assetRightsPageSize?.value || 20) === 50 ? 50 : 20;
+  params.set('limit', String(limit));
+  params.set('page', String(Math.max(1, assetRightsPage)));
+  try {
+    const result = await api(`/api/admin/assets/access?${params.toString()}`);
+    lastAssetRightsAssets = Array.isArray(result.assets) ? result.assets : [];
+    assetRightsPagination = result.pagination || { page: assetRightsPage, limit, total: lastAssetRightsAssets.length, totalPages: 1 };
+    assetRightsPage = Number(assetRightsPagination.page || assetRightsPage);
+    renderAssetRightsRows(lastAssetRightsAssets);
+    renderAssetRightsPager();
+    if (assetRightsMsg) assetRightsMsg.textContent = '';
+  } catch (error) {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || t('asset_rights_load_failed'));
+  }
+}
+
 function renderAuditEvents(events = []) {
   if (!auditEventsRows) return;
   if (!events.length) {
@@ -2052,10 +3104,8 @@ function renderAuditEvents(events = []) {
   }).join('');
 }
 
-async function loadAuditEvents() {
-  if (!auditEventsRows) return;
-  if (auditEventsMsg) auditEventsMsg.textContent = '';
-  const params = new URLSearchParams({ limit: '100' });
+function buildAuditEventParams(limit = '100') {
+  const params = new URLSearchParams({ limit: String(limit) });
   const actor = String(auditActorInput?.value || '').trim();
   const action = String(auditActionSelect?.value || '').trim();
   const target = String(auditTargetInput?.value || '').trim();
@@ -2066,6 +3116,13 @@ async function loadAuditEvents() {
   if (target) params.set('target', target);
   if (from) params.set('from', from);
   if (to) params.set('to', to);
+  return params;
+}
+
+async function loadAuditEvents() {
+  if (!auditEventsRows) return;
+  if (auditEventsMsg) auditEventsMsg.textContent = '';
+  const params = buildAuditEventParams('100');
   try {
     const data = await api(`/api/admin/audit-events?${params.toString()}`);
     renderAuditEvents(Array.isArray(data.events) ? data.events : []);
@@ -2074,10 +3131,44 @@ async function loadAuditEvents() {
   }
 }
 
+async function exportAuditEvents() {
+  if (auditEventsMsg) auditEventsMsg.textContent = '';
+  if (exportAuditEventsBtn) exportAuditEventsBtn.disabled = true;
+  const params = buildAuditEventParams('5000');
+  try {
+    const response = await fetch(`/api/admin/audit-events/export?${params.toString()}`);
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.error || t('audit_export_failed'));
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get('content-disposition') || '';
+    const match = disposition.match(/filename="?([^"]+)"?/i);
+    const filename = match?.[1] || `audit-events-${new Date().toISOString().slice(0, 10)}.csv`;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    if (auditEventsMsg) auditEventsMsg.textContent = error.message || t('audit_export_failed');
+  } finally {
+    if (exportAuditEventsBtn) exportAuditEventsBtn.disabled = false;
+  }
+}
+
 async function loadSettings() {
   const settings = await api('/api/admin/settings');
-  settingsForm.elements.workflowTrackingEnabled.checked = Boolean(settings.workflowTrackingEnabled);
   settingsForm.elements.autoProxyBackfillOnUpload.checked = Boolean(settings.autoProxyBackfillOnUpload);
+  if (settingsForm.elements.newAssetDefaultVisibility) {
+    const defaultVisibility = String(settings.newAssetDefaultVisibility || 'owner_groups').toLowerCase();
+    settingsForm.elements.newAssetDefaultVisibility.value = ['owner_groups', 'public', 'private'].includes(defaultVisibility)
+      ? defaultVisibility
+      : 'owner_groups';
+  }
   {
     const mode = String(settings.playerUiMode || 'vidstack').toLowerCase();
     settingsForm.elements.playerUiMode.value = (mode === 'vidstack' || mode === 'mpegdash') ? mode : 'vidstack';
@@ -2091,6 +3182,10 @@ async function loadSettings() {
   if (settingsForm.elements.auditRetentionDays) {
     settingsForm.elements.auditRetentionDays.value = String(settings.auditRetentionDays || 180);
   }
+  if (settingsForm.elements.mediaJobRetentionDays) {
+    settingsForm.elements.mediaJobRetentionDays.value = String(settings.mediaJobRetentionDays || 30);
+  }
+  writeAuthSessionSettingsForm(settings.authSession || {});
   {
     const advancedModeInput = document.getElementById('ocrDefaultAdvancedMode');
     const turkishFixInput = document.getElementById('ocrDefaultTurkishAiCorrect');
@@ -2104,8 +3199,91 @@ async function loadSettings() {
     if (staticOverlayInput) staticOverlayInput.checked = Boolean(settings.ocrDefaultIgnoreStaticOverlays);
   }
   writeSubtitleStyleForm(settings.subtitleStyle || {});
+  writeBackupSettingsForm(settings.backup || {});
   renderApiHelp();
   renderApiGuide();
+}
+
+function readAuthSessionSettingsForm() {
+  const elements = authSessionSettingsForm?.elements;
+  return {
+    rememberMe: Boolean(elements?.rememberMe?.checked),
+    ssoIdleMinutes: Number(elements?.ssoIdleMinutes?.value) || 30,
+    ssoMaxHours: Number(elements?.ssoMaxHours?.value) || 8,
+    clientIdleMinutes: Number(elements?.clientIdleMinutes?.value) || 30,
+    clientMaxHours: Number(elements?.clientMaxHours?.value) || 8
+  };
+}
+
+function writeAuthSessionSettingsForm(authSession = {}) {
+  const elements = authSessionSettingsForm?.elements;
+  if (!elements) return;
+  elements.rememberMe.checked = Boolean(authSession.rememberMe);
+  elements.ssoIdleMinutes.value = String(Number(authSession.ssoIdleMinutes) || 30);
+  elements.ssoMaxHours.value = String(Number(authSession.ssoMaxHours) || 8);
+  elements.clientIdleMinutes.value = String(Number(authSession.clientIdleMinutes) || 30);
+  elements.clientMaxHours.value = String(Number(authSession.clientMaxHours) || 8);
+}
+
+function formatAdminFileSize(bytes) {
+  const value = Math.max(0, Number(bytes) || 0);
+  if (value >= 1024 * 1024 * 1024) return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  if (value >= 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${value} B`;
+}
+
+function readBackupSettingsForm() {
+  const elements = backupSettingsForm?.elements;
+  return {
+    enabled: Boolean(elements?.backupEnabled?.checked),
+    directory: String(elements?.backupDirectory?.value || '').trim(),
+    dailyHour: Number(elements?.backupDailyHour?.value) || 0,
+    includeMamDb: Boolean(elements?.backupIncludeMamDb?.checked),
+    includeKeycloakDb: Boolean(elements?.backupIncludeKeycloakDb?.checked),
+    includeUploadsArchive: Boolean(elements?.backupIncludeUploadsArchive?.checked),
+    retentionDays: Number(elements?.backupRetentionDays?.value) || 14
+  };
+}
+
+function writeBackupSettingsForm(backup = {}) {
+  const elements = backupSettingsForm?.elements;
+  if (!elements) return;
+  elements.backupEnabled.checked = Boolean(backup.enabled);
+  elements.backupDirectory.value = String(backup.directory || '/app/uploads/_backups');
+  elements.backupDailyHour.value = String(Number.isFinite(Number(backup.dailyHour)) ? Number(backup.dailyHour) : 2);
+  elements.backupIncludeMamDb.checked = backup.includeMamDb !== false;
+  elements.backupIncludeKeycloakDb.checked = Boolean(backup.includeKeycloakDb);
+  elements.backupIncludeUploadsArchive.checked = Boolean(backup.includeUploadsArchive);
+  elements.backupRetentionDays.value = String(Number(backup.retentionDays) || 14);
+}
+
+function renderBackupFiles(files = []) {
+  if (!backupFilesRows) return;
+  if (!files.length) {
+    backupFilesRows.innerHTML = `<div class="empty">${escapeHtml(t('backup_no_files'))}</div>`;
+    return;
+  }
+  backupFilesRows.innerHTML = files.map((file) => `
+    <div class="row backup-file-row">
+      <strong>${escapeHtml(file.fileName || '')}</strong>
+      <span>${escapeHtml(formatAdminFileSize(file.size))}</span>
+      <span>${escapeHtml(formatAdminDateTime(file.updatedAt))}</span>
+      <button type="button" class="danger ghost backup-delete-btn" data-backup-file="${escapeHtml(file.fileName || '')}">${escapeHtml(t('backup_delete'))}</button>
+    </div>
+  `).join('');
+}
+
+async function loadBackups() {
+  if (!backupSettingsForm) return;
+  try {
+    const result = await api('/api/admin/backups');
+    writeBackupSettingsForm(result.settings || {});
+    renderBackupFiles(result.files || []);
+    if (backupSettingsMsg) backupSettingsMsg.textContent = result.directory ? `${t('backup_directory')}: ${result.directory}` : '';
+  } catch (error) {
+    if (backupSettingsMsg) backupSettingsMsg.textContent = error.message || t('backup_load_failed');
+  }
 }
 
 async function refreshTrackingAndHealth() {
@@ -2115,7 +3293,7 @@ async function refreshTrackingAndHealth() {
     api('/api/admin/system-health'),
     api('/api/admin/runtime-diagnostics?limit=100').catch(() => null)
   ]);
-  renderWorkflowTracking(tracking);
+  renderAssetTracking(tracking);
   renderHealth(health);
   renderSystemHealth(systemHealth);
   if (diagnostics) renderRuntimeDiagnostics(diagnostics);
@@ -2140,8 +3318,8 @@ async function pollJob() {
 settingsForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const payload = {
-    workflowTrackingEnabled: settingsForm.elements.workflowTrackingEnabled.checked,
     autoProxyBackfillOnUpload: settingsForm.elements.autoProxyBackfillOnUpload.checked,
+    newAssetDefaultVisibility: String(settingsForm.elements.newAssetDefaultVisibility?.value || 'owner_groups'),
     playerUiMode: String(settingsForm.elements.playerUiMode.value || 'vidstack'),
     apiTokenEnabled: settingsForm.elements.apiTokenEnabled.checked,
     apiToken: String(settingsForm.elements.apiToken.value || '').trim(),
@@ -2149,12 +3327,81 @@ settingsForm.addEventListener('submit', async (event) => {
     oidcIssuerUrl: String(settingsForm.elements.oidcIssuerUrl.value || '').trim(),
     oidcJwksUrl: String(settingsForm.elements.oidcJwksUrl.value || '').trim(),
     oidcAudience: String(settingsForm.elements.oidcAudience.value || '').trim(),
-    auditRetentionDays: Number(settingsForm.elements.auditRetentionDays?.value) || 180
+    auditRetentionDays: Number(settingsForm.elements.auditRetentionDays?.value) || 180,
+    mediaJobRetentionDays: Number(settingsForm.elements.mediaJobRetentionDays?.value) || 30
   };
   await api('/api/admin/settings', { method: 'PATCH', body: JSON.stringify(payload) });
   settingsMsg.textContent = t('settings_saved');
   renderApiHelp();
   renderApiGuide();
+});
+
+backupSettingsForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const current = await api('/api/admin/settings');
+  await api('/api/admin/settings', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      ...current,
+      backup: readBackupSettingsForm()
+    })
+  });
+  if (backupSettingsMsg) backupSettingsMsg.textContent = t('backup_saved');
+  await loadBackups();
+});
+
+runBackupNowBtn?.addEventListener('click', async () => {
+  runBackupNowBtn.disabled = true;
+  if (backupSettingsMsg) backupSettingsMsg.textContent = '';
+  try {
+    const result = await api('/api/admin/backups/run', {
+      method: 'POST',
+      body: JSON.stringify(readBackupSettingsForm())
+    });
+    const files = Array.isArray(result.files) ? result.files.length : 0;
+    if (backupSettingsMsg) backupSettingsMsg.textContent = `${t('backup_started')} (${files})`;
+    await loadBackups();
+  } catch (error) {
+    if (backupSettingsMsg) backupSettingsMsg.textContent = error.message || t('backup_run_failed');
+  } finally {
+    runBackupNowBtn.disabled = false;
+  }
+});
+
+backupFilesRows?.addEventListener('click', async (event) => {
+  const button = event.target.closest('.backup-delete-btn');
+  if (!button) return;
+  const fileName = String(button.dataset.backupFile || '').trim();
+  if (!fileName) return;
+  if (!window.confirm(t('backup_delete_confirm'))) return;
+  button.disabled = true;
+  try {
+    await api(`/api/admin/backups/${encodeURIComponent(fileName)}`, { method: 'DELETE' });
+    if (backupSettingsMsg) backupSettingsMsg.textContent = t('backup_deleted');
+    await loadBackups();
+  } catch (error) {
+    if (backupSettingsMsg) backupSettingsMsg.textContent = error.message || t('backup_delete_failed');
+    button.disabled = false;
+  }
+});
+
+authSessionSettingsForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (authSessionSettingsMsg) authSessionSettingsMsg.textContent = '';
+  const submitButton = authSessionSettingsForm.querySelector('button[type="submit"]');
+  if (submitButton) submitButton.disabled = true;
+  try {
+    const result = await api('/api/admin/identity/session-settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ authSession: readAuthSessionSettingsForm() })
+    });
+    writeAuthSessionSettingsForm(result.authSession || {});
+    if (authSessionSettingsMsg) authSessionSettingsMsg.textContent = t('auth_session_saved');
+  } catch (error) {
+    if (authSessionSettingsMsg) authSessionSettingsMsg.textContent = error.message || t('auth_session_save_failed');
+  } finally {
+    if (submitButton) submitButton.disabled = false;
+  }
 });
 
 ocrSettingsForm?.addEventListener('submit', async (event) => {
@@ -2434,6 +3681,7 @@ adminTabs.forEach((btn) => {
   btn.addEventListener('click', () => {
     hideProxySuggestions();
     hideAuditSuggestions();
+    hideAssetRightsSuggestions();
     const target = btn.dataset.tab || 'apiHelp';
     switchTab(target);
     if (target === 'settings') {
@@ -2449,7 +3697,33 @@ adminTabs.forEach((btn) => {
       loadRuntimeDiagnostics().catch((error) => {
         if (runtimeDiagnosticsMsg) runtimeDiagnosticsMsg.textContent = String(error.message || 'Request failed');
       });
+    } else if (target === 'assetRights') {
+      loadAssetRightsRows().catch((error) => {
+        if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+      });
     }
+  });
+});
+
+overviewCards.forEach((card) => {
+  const open = () => {
+    const target = String(card.dataset.overviewTarget || '').trim();
+    if (target === 'system-health') {
+      openSystemHealthFocus().catch((error) => {
+        if (systemHealthRows) systemHealthRows.innerHTML = `<div class="empty">${escapeHtml(String(error.message || 'Request failed'))}</div>`;
+      });
+      return;
+    }
+    if (!['active-users', 'errors'].includes(target)) return;
+    openRuntimeDiagnosticsFocus(target).catch((error) => {
+      if (runtimeDiagnosticsMsg) runtimeDiagnosticsMsg.textContent = String(error.message || 'Request failed');
+    });
+  };
+  card.addEventListener('click', open);
+  card.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    open();
   });
 });
 
@@ -2465,6 +3739,263 @@ runAuditSearchBtn?.addEventListener('click', () => {
   });
 });
 
+exportAuditEventsBtn?.addEventListener('click', () => {
+  exportAuditEvents().catch((error) => {
+    if (auditEventsMsg) auditEventsMsg.textContent = String(error.message || t('audit_export_failed'));
+  });
+});
+
+assetRightsSearchBtn?.addEventListener('click', () => {
+  hideAssetRightsSuggestions();
+  assetRightsPage = 1;
+  loadAssetRightsRows().catch((error) => {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+assetRightsSearchInput?.addEventListener('input', () => {
+  queueAssetRightsSuggestionRequest();
+});
+
+assetRightsSearchInput?.addEventListener('focus', () => {
+  queueAssetRightsSuggestionRequest();
+});
+
+assetRightsSearchInput?.addEventListener('blur', () => {
+  if (assetRightsSuggestHideTimer) clearTimeout(assetRightsSuggestHideTimer);
+  assetRightsSuggestHideTimer = setTimeout(() => {
+    hideAssetRightsSuggestions();
+    assetRightsSuggestHideTimer = null;
+  }, 120);
+});
+
+assetRightsSearchInput?.addEventListener('keydown', (event) => {
+  const isOpen = Boolean(assetRightsSuggestList && !assetRightsSuggestList.classList.contains('hidden'));
+  if (!isOpen && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+    queueAssetRightsSuggestionRequest();
+    return;
+  }
+  if (isOpen && event.key === 'ArrowDown') {
+    event.preventDefault();
+    setAssetRightsSuggestActive((assetRightsSuggestActiveIndex < 0 ? -1 : assetRightsSuggestActiveIndex) + 1);
+    return;
+  }
+  if (isOpen && event.key === 'ArrowUp') {
+    event.preventDefault();
+    setAssetRightsSuggestActive((assetRightsSuggestActiveIndex < 0 ? assetRightsSuggestItems.length : assetRightsSuggestActiveIndex) - 1);
+    return;
+  }
+  if (isOpen && event.key === 'Enter' && assetRightsSuggestActiveIndex >= 0 && assetRightsSuggestItems[assetRightsSuggestActiveIndex]) {
+    event.preventDefault();
+    applyAssetRightsSuggestion(assetRightsSuggestItems[assetRightsSuggestActiveIndex]);
+    return;
+  }
+  if (isOpen && event.key === 'Escape') {
+    hideAssetRightsSuggestions();
+    return;
+  }
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    hideAssetRightsSuggestions();
+    assetRightsPage = 1;
+    loadAssetRightsRows().catch((error) => {
+      if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+    });
+  }
+});
+
+assetRightsSuggestList?.addEventListener('mousedown', (event) => {
+  event.preventDefault();
+});
+
+assetRightsSuggestList?.addEventListener('click', (event) => {
+  const button = event.target.closest('.proxy-suggest-item');
+  if (!button) return;
+  const index = Number(button.dataset.index);
+  if (!Number.isFinite(index) || index < 0 || index >= assetRightsSuggestItems.length) return;
+  applyAssetRightsSuggestion(assetRightsSuggestItems[index]);
+});
+
+assetRightsTypeFilters.forEach((filter) => {
+  filter.addEventListener('change', () => {
+    assetRightsPage = 1;
+    loadAssetRightsRows().catch((error) => {
+      if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+    });
+  });
+});
+
+assetRightsVisibilityFilter?.addEventListener('change', () => {
+  assetRightsPage = 1;
+  loadAssetRightsRows().catch((error) => {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+assetRightsPageSize?.addEventListener('change', () => {
+  assetRightsPage = 1;
+  loadAssetRightsRows().catch((error) => {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+assetRightsPrevPage?.addEventListener('click', () => {
+  assetRightsPage = Math.max(1, assetRightsPage - 1);
+  loadAssetRightsRows().catch((error) => {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+assetRightsNextPage?.addEventListener('click', () => {
+  assetRightsPage += 1;
+  loadAssetRightsRows().catch((error) => {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+assetRightsRows?.addEventListener('change', (event) => {
+  const select = event.target.closest('#assetRightsModeSelect');
+  const lockedOnlyCheck = event.target.closest('#assetRightsLockedOnlyCheck');
+  if (!select && !lockedOnlyCheck) return;
+  if (select) assetRightsMode = select.value === 'type' ? 'type' : 'asset';
+  if (lockedOnlyCheck) assetRightsLockedOnly = Boolean(lockedOnlyCheck.checked);
+  assetRightsPage = 1;
+  loadAssetRightsRows().catch((error) => {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+assetRightsRows?.addEventListener('input', (event) => {
+  const input = event.target.closest('input[data-group-suggest="1"]');
+  if (!input) return;
+  requestAssetRightsGroupSuggestions(input).catch(() => {});
+});
+
+assetRightsRows?.addEventListener('focusin', (event) => {
+  const input = event.target.closest('input[data-group-suggest="1"]');
+  if (!input) return;
+  if (assetRightsGroupSuggestHideTimer) {
+    clearTimeout(assetRightsGroupSuggestHideTimer);
+    assetRightsGroupSuggestHideTimer = null;
+  }
+  requestAssetRightsGroupSuggestions(input).catch(() => {});
+});
+
+assetRightsRows?.addEventListener('focusout', (event) => {
+  const input = event.target.closest('input[data-group-suggest="1"]');
+  if (!input) return;
+  if (assetRightsGroupSuggestHideTimer) clearTimeout(assetRightsGroupSuggestHideTimer);
+  assetRightsGroupSuggestHideTimer = setTimeout(() => {
+    hideAssetRightsGroupSuggestions();
+    assetRightsGroupSuggestHideTimer = null;
+  }, 120);
+});
+
+assetRightsRows?.addEventListener('keydown', (event) => {
+  const input = event.target.closest('input[data-group-suggest="1"]');
+  if (!input) return;
+  const isOpen = Boolean(assetRightsGroupSuggestEl && !assetRightsGroupSuggestEl.classList.contains('hidden'));
+  if (!isOpen && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+    requestAssetRightsGroupSuggestions(input).catch(() => {});
+    return;
+  }
+  if (isOpen && event.key === 'ArrowDown') {
+    event.preventDefault();
+    setAssetRightsGroupSuggestActive((assetRightsGroupSuggestActiveIndex < 0 ? -1 : assetRightsGroupSuggestActiveIndex) + 1);
+    return;
+  }
+  if (isOpen && event.key === 'ArrowUp') {
+    event.preventDefault();
+    setAssetRightsGroupSuggestActive((assetRightsGroupSuggestActiveIndex < 0 ? assetRightsGroupSuggestItems.length : assetRightsGroupSuggestActiveIndex) - 1);
+    return;
+  }
+  if (isOpen && event.key === 'Enter' && assetRightsGroupSuggestActiveIndex >= 0 && assetRightsGroupSuggestItems[assetRightsGroupSuggestActiveIndex]) {
+    event.preventDefault();
+    applyAssetRightsGroupSuggestion(assetRightsGroupSuggestItems[assetRightsGroupSuggestActiveIndex]);
+    return;
+  }
+  if (isOpen && event.key === 'Escape') {
+    event.preventDefault();
+    hideAssetRightsGroupSuggestions();
+  }
+});
+
+assetRightsRows?.addEventListener('scroll', () => {
+  if (assetRightsGroupSuggestInput && assetRightsGroupSuggestEl && !assetRightsGroupSuggestEl.classList.contains('hidden')) {
+    positionAssetRightsGroupSuggestions(assetRightsGroupSuggestInput);
+  }
+});
+
+assetRightsRows?.addEventListener('submit', async (event) => {
+  const form = event.target.closest('.asset-rights-row');
+  if (!form) return;
+  event.preventDefault();
+  const assetId = String(form.dataset.assetId || '').trim();
+  const typeGroup = String(form.dataset.typeGroup || '').trim();
+  const accessMode = String(form.dataset.accessMode || 'asset').trim();
+  if (accessMode === 'asset' && !assetId) return;
+  if (accessMode === 'type' && !typeGroup) return;
+  const saveBtn = form.querySelector('button[type="submit"]');
+  if (saveBtn) saveBtn.disabled = true;
+  try {
+    const data = new FormData(form);
+    const payload = {
+      visibility: String(data.get('visibility') || 'public'),
+      ownerGroups: parseAccessList(data.get('ownerGroups')),
+      allowedGroups: parseAccessList(data.get('allowedGroups')),
+      allowedUsers: parseAccessList(data.get('allowedUsers')),
+      deniedGroups: parseAccessList(data.get('deniedGroups')),
+      deniedUsers: parseAccessList(data.get('deniedUsers')),
+      editAllowedGroups: parseAccessList(data.get('editAllowedGroups')),
+      editAllowedUsers: parseAccessList(data.get('editAllowedUsers')),
+      editDeniedGroups: parseAccessList(data.get('editDeniedGroups')),
+      editDeniedUsers: parseAccessList(data.get('editDeniedUsers')),
+      downloadAllowedGroups: parseAccessList(data.get('downloadAllowedGroups')),
+      downloadAllowedUsers: parseAccessList(data.get('downloadAllowedUsers')),
+      downloadDeniedGroups: parseAccessList(data.get('downloadDeniedGroups')),
+      downloadDeniedUsers: parseAccessList(data.get('downloadDeniedUsers'))
+    };
+    if (accessMode === 'type') {
+      payload.uploadAllowedGroups = parseAccessList(data.get('uploadAllowedGroups'));
+      payload.uploadAllowedUsers = parseAccessList(data.get('uploadAllowedUsers'));
+      payload.uploadDeniedGroups = parseAccessList(data.get('uploadDeniedGroups'));
+      payload.uploadDeniedUsers = parseAccessList(data.get('uploadDeniedUsers'));
+    }
+    const endpoint = accessMode === 'type'
+      ? `/api/admin/asset-types/${encodeURIComponent(typeGroup)}/access`
+      : `/api/admin/assets/${encodeURIComponent(assetId)}/access`;
+    await api(endpoint, {
+      method: 'PATCH',
+      body: JSON.stringify(payload)
+    });
+    if (assetRightsMsg) assetRightsMsg.textContent = t('asset_rights_saved');
+    await loadAssetRightsRows();
+  } catch (error) {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || t('asset_rights_save_failed'));
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
+});
+
+assetRightsRows?.addEventListener('click', async (event) => {
+  const unlockBtn = event.target.closest('[data-unlock-asset-id]');
+  if (!unlockBtn) return;
+  event.preventDefault();
+  const assetId = String(unlockBtn.getAttribute('data-unlock-asset-id') || '').trim();
+  if (!assetId) return;
+  if (!window.confirm(t('asset_lock_unlock_confirm'))) return;
+  unlockBtn.disabled = true;
+  try {
+    await api(`/api/admin/assets/${encodeURIComponent(assetId)}/edit-lock`, { method: 'DELETE' });
+    if (assetRightsMsg) assetRightsMsg.textContent = t('asset_lock_unlock_done');
+    await loadAssetRightsRows();
+  } catch (error) {
+    if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || t('asset_lock_unlock_failed'));
+  } finally {
+    unlockBtn.disabled = false;
+  }
+});
+
 settingsSubTabs.forEach((btn) => {
   btn.addEventListener('click', () => {
     const target = btn.dataset.settingsTab || 'general';
@@ -2475,13 +4006,29 @@ settingsSubTabs.forEach((btn) => {
   });
 });
 
-languageSelect?.addEventListener('change', async (event) => {
-  currentLang = event.target.value === 'tr' ? 'tr' : 'en';
+function applyAdminLanguage(nextLang) {
+  currentLang = nextLang === 'tr' ? 'tr' : 'en';
+  if (languageSelect && languageSelect.value !== currentLang) {
+    languageSelect.value = currentLang;
+  }
   localStorage.setItem(LOCAL_LANG, currentLang);
   applyI18n();
+  if (assetRightsRows?.querySelector('.asset-rights-table') || lastAssetRightsAssets.length || lastAssetRightsTypes.length) {
+    renderAssetRightsRows(assetRightsMode === 'type' ? lastAssetRightsTypes : lastAssetRightsAssets);
+  }
+  renderAssetRightsPager();
+  syncAssetRightsTableLanguage();
+}
+
+languageSelect?.addEventListener('change', async (event) => {
+  applyAdminLanguage(event.target.value);
   if (!currentAdminProfile?.canAccessTextAdmin || currentAdminProfile?.canAccessAdmin || currentAdminProfile?.isAdmin) {
     await refreshTrackingAndHealth();
-    await loadUserPermissions();
+    if (currentAdminProfile?.isSuperAdmin) {
+      await loadUserPermissions();
+      await loadIdentityOverview();
+      await loadGroupAdmins();
+    }
   }
   await loadOcrRecords();
   await loadSubtitleRecords();
@@ -2491,41 +4038,95 @@ languageSelect?.addEventListener('change', async (event) => {
   }
 });
 
+addGroupAdminBtn?.addEventListener('click', async () => {
+  const groupName = String(groupAdminGroupInput?.value || '').trim();
+  const username = String(groupAdminUserInput?.value || '').trim();
+  if (!groupName || !username) {
+    if (groupAdminsMsg) groupAdminsMsg.textContent = `${t('group_name')} / ${t('username')}`;
+    return;
+  }
+  try {
+    await api('/api/admin/group-admins', {
+      method: 'POST',
+      body: JSON.stringify({ groupName, username })
+    });
+    if (groupAdminUserInput) groupAdminUserInput.value = '';
+    if (groupAdminsMsg) groupAdminsMsg.textContent = t('group_admin_saved');
+    await loadIdentityOverview();
+    await loadGroupAdmins();
+  } catch (error) {
+    if (groupAdminsMsg) groupAdminsMsg.textContent = String(error.message || t('group_admin_save_failed'));
+  }
+});
+
+refreshIdentityOverviewBtn?.addEventListener('click', () => {
+  loadIdentityOverview().catch((error) => {
+    if (groupAdminsMsg) groupAdminsMsg.textContent = String(error.message || t('identity_load_failed'));
+  });
+});
+
+identityUserSearchInput?.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  searchIdentityUsers();
+});
+
+identityUserSearchButton?.addEventListener('click', () => {
+  searchIdentityUsers();
+});
+
+groupAdminsRows?.addEventListener('click', async (event) => {
+  const btn = event.target.closest('.deleteGroupAdminBtn');
+  if (!btn) return;
+  const id = String(btn.dataset.id || '').trim();
+  if (!id) return;
+  try {
+    await api(`/api/admin/group-admins/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await loadIdentityOverview();
+    await loadGroupAdmins();
+  } catch (error) {
+    if (groupAdminsMsg) groupAdminsMsg.textContent = String(error.message || t('group_admin_delete_failed'));
+  }
+});
+
 const onLanguageShortcut = (event) => {
   if (event.key !== 'L' || !event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
-  const target = event.target;
-  if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"]')) return;
   if (!languageSelect) return;
   const nextLang = languageSelect.value === 'tr' ? 'en' : 'tr';
-  languageSelect.value = nextLang;
-  languageSelect.dispatchEvent(new Event('change', { bubbles: true }));
+  applyAdminLanguage(nextLang);
   event.preventDefault();
   event.stopPropagation();
 };
 
-document.addEventListener('keydown', onLanguageShortcut);
+document.addEventListener('keydown', onLanguageShortcut, true);
 
 (async () => {
   try {
     const me = await api('/api/me');
     const access = applyAdminAccessMode(me);
-    if (!access.canAccessAdmin && !access.canAccessTextAdmin) {
+    if (!access.canAccessAdmin && !access.canAccessTextAdmin && !access.canAccessAssetRightsAdmin) {
       window.location.href = '/';
       return;
     }
     await loadI18nFile();
-    currentLang = currentLang === 'tr' ? 'tr' : 'en';
-    if (languageSelect) languageSelect.value = currentLang;
-    applyI18n();
+    applyAdminLanguage(currentLang);
     updateProxyToolUi();
-    if (!access.isTextOnly) {
+    if (!access.isTextOnly && !access.isAssetRightsOnly) {
       await loadSettings();
       await refreshTrackingAndHealth();
-      await loadUserPermissions();
+      if (access.isSuperAdmin) {
+        await loadUserPermissions();
+        await loadIdentityOverview();
+        await loadGroupAdmins();
+      }
+    } else if (access.isAssetRightsOnly) {
+      await loadAssetRightsRows();
     }
-    await loadOcrRecords();
-    await loadSubtitleRecords();
-    switchSettingsSubtab(access.isTextOnly ? 'ocr' : 'general');
+    if (!access.isAssetRightsOnly) {
+      await loadOcrRecords();
+      await loadSubtitleRecords();
+    }
+    if (!access.isAssetRightsOnly) switchSettingsSubtab(access.isTextOnly ? 'ocr' : 'general');
   } catch (error) {
     ffmpegHealthEl.textContent = error.message;
   }

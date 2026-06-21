@@ -322,8 +322,10 @@ app.get('/api/admin/identity/overview', async (req, res) => {
   try {
     const effective = await requireSuperAdminRequest(req, res);
     if (!effective) return null;
+    const userQ = String(req.query.userQ || req.query.q || '').trim();
+    const shouldSearchUsers = userQ.length >= 2;
     const [kcData, kcGroupsData, mamGroups, groupAdminsResult] = await Promise.all([
-      fetchKeycloakUsers(),
+      shouldSearchUsers ? fetchKeycloakUsers({ search: userQ, max: 100 }) : Promise.resolve({ users: [], realmByUsername: new Map() }),
       typeof fetchKeycloakGroups === 'function' ? fetchKeycloakGroups() : Promise.resolve({ groups: [] }),
       collectMamAccessGroups(),
       pool.query(
@@ -360,6 +362,7 @@ app.get('/api/admin/identity/overview', async (req, res) => {
     const mamOnlyGroups = mamGroups.filter((group) => !keycloakGroupNames.has(group.toLowerCase()));
     return res.json({
       source: users.length || groups.length ? 'keycloak' : 'empty',
+      userQuery: shouldSearchUsers ? userQ : '',
       users,
       groups,
       mamGroups,
@@ -1918,12 +1921,17 @@ app.get('/api/admin/user-permissions', async (req, res) => {
     const limit = Number(req.query.limit) === 50 ? 50 : 20;
     const requestedPage = Math.max(1, Number(req.query.page) || 1);
     const saved = await getUserPermissionsSettings();
-    const kcData = await fetchKeycloakUsers();
+    if (q.length < 2) {
+      return res.json({
+        users: [],
+        availablePermissions: getPermissionDefinitionsPayload(),
+        pagination: { page: 1, limit, total: 0, totalPages: 1 },
+        source: 'search_required'
+      });
+    }
+    const kcData = await fetchKeycloakUsers({ search: q, max: 100 });
     const kcUsersAll = Array.isArray(kcData?.users) ? kcData.users : [];
     const kcUsers = kcUsersAll.filter((row) => isVisibleKeycloakUser(row));
-    if (!kcUsers.length) {
-      return res.status(503).json({ error: 'Failed to fetch users from Keycloak' });
-    }
     const permissionDefaultsByUser = await fetchKeycloakUserPermissionDefaults(kcUsers, kcData?.realmByUsername);
     const keycloakUserByUsername = new Map();
     const usernames = new Set();
@@ -1984,7 +1992,7 @@ app.patch('/api/admin/user-permissions/:username', async (req, res) => {
     if (!effective) return null;
     const username = String(req.params.username || '').trim().toLowerCase();
     if (!username) return res.status(400).json({ error: 'username is required' });
-    const kcData = await fetchKeycloakUsers();
+    const kcData = await fetchKeycloakUsers({ search: username, max: 50 });
     const kcUsersAll = Array.isArray(kcData?.users) ? kcData.users : [];
     const kcUsers = kcUsersAll.filter((row) => isVisibleKeycloakUser(row));
     if (!kcUsers.length) {

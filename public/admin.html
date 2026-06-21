@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MAM Admin</title>
     <link rel="stylesheet" href="/styles.css?v=20260424-seek-preview-1" />
-    <link rel="stylesheet" href="/admin.css?v=20260430-admin-mam-theme-1" />
+    <link rel="stylesheet" href="/admin.css?v=20260522-hide-backup-textadmin-1" />
   </head>
   <body>
     <main class="admin-wrap">
@@ -20,8 +20,9 @@
         <nav class="admin-tabs" id="adminTabs">
           <button type="button" class="admin-tab active" data-tab="apiHelp" data-i18n="api_help_doc_title">API Help Document</button>
           <button type="button" class="admin-tab" data-tab="systemHealth" data-i18n="system_health">System Health</button>
-          <button type="button" class="admin-tab" data-tab="runtimeDiagnostics" data-i18n="runtime_diagnostics">Diagnostik</button>
+          <button type="button" class="admin-tab" data-tab="runtimeDiagnostics" data-i18n="runtime_diagnostics">Tanı</button>
           <button type="button" class="admin-tab" data-tab="auditEvents" data-i18n="audit_events">İşlem Geçmişi</button>
+          <button type="button" class="admin-tab" data-tab="assetRights" data-i18n="asset_rights">Asset Rights</button>
           <button type="button" class="admin-tab" data-tab="settings" data-i18n="settings">Settings</button>
         </nav>
       </aside>
@@ -30,7 +31,7 @@
         <header class="admin-header">
           <div>
             <h1 data-i18n="system_overview">System Overview</h1>
-            <p data-i18n="admin_subtitle">Workflow tracking, proxy generation, and system health.</p>
+            <p data-i18n="admin_subtitle">Proxy generation and system health.</p>
           </div>
           <div class="admin-actions">
             <select id="languageSelectAdmin">
@@ -47,17 +48,17 @@
             <strong id="overviewActiveAssets">-</strong>
             <small id="overviewTotalAssets">-</small>
           </article>
-          <article class="overview-card">
+          <article class="overview-card is-clickable" role="button" tabindex="0" data-overview-target="system-health">
             <span data-i18n="overview_system_health">System Health</span>
             <strong id="overviewSystemHealth">-</strong>
             <small id="overviewSystemHealthSub">-</small>
           </article>
-          <article class="overview-card is-warning">
+          <article class="overview-card is-warning is-clickable" role="button" tabindex="0" data-overview-target="errors">
             <span data-i18n="overview_open_errors">Open Errors</span>
             <strong id="overviewOpenErrors">-</strong>
             <small id="overviewOpenErrorsSub">-</small>
           </article>
-          <article class="overview-card">
+          <article class="overview-card is-clickable" role="button" tabindex="0" data-overview-target="active-users">
             <span data-i18n="overview_active_users">Active Users</span>
             <strong id="overviewActiveUsers">-</strong>
             <small data-i18n="overview_recent_window">Recent window</small>
@@ -79,19 +80,19 @@
 
         <article class="admin-card admin-panel" data-panel="runtimeDiagnostics">
           <div class="admin-section-head">
-            <h2 data-i18n="runtime_diagnostics">Diagnostik</h2>
+            <h2 data-i18n="runtime_diagnostics">Tanı</h2>
             <button id="refreshRuntimeDiagnosticsBtn" type="button" data-i18n="refresh">Yenile</button>
           </div>
-          <h3 data-i18n="active_users">Anlık Kullanıcılar</h3>
+          <h3 id="activeUsersSectionTitle" data-i18n="active_users">Anlık Kullanıcılar</h3>
           <div id="activeUsersRows" class="rows"></div>
-          <h3 data-i18n="error_logs">Hata Logları</h3>
+          <h3 id="runtimeErrorsSectionTitle" data-i18n="error_logs">Hata Logları</h3>
           <div id="runtimeErrorRows" class="rows"></div>
           <div id="runtimeDiagnosticsMsg" class="admin-note"></div>
         </article>
 
         <article class="admin-card admin-panel" data-panel="auditEvents">
           <h2 data-i18n="audit_events">İşlem Geçmişi</h2>
-          <div class="proxy-tool-grid records-toolbar">
+          <div class="proxy-tool-grid records-toolbar audit-events-toolbar">
             <label>
               <span data-i18n="audit_filter_actor">Kullanıcı</span>
               <input id="auditActorInput" type="text" />
@@ -124,34 +125,85 @@
             </label>
             <div class="proxy-tool-actions">
               <button id="runAuditSearchBtn" type="button" data-i18n="audit_filter_run">Filtrele</button>
+              <button id="exportAuditEventsBtn" type="button" data-i18n="audit_export_excel">Excel'e aktar</button>
             </div>
           </div>
           <div id="auditEventsRows" class="rows"></div>
           <div id="auditEventsMsg" class="admin-note"></div>
         </article>
 
+        <article class="admin-card admin-panel" data-panel="assetRights">
+          <h2 data-i18n="asset_rights">Asset Rights</h2>
+          <div class="proxy-tool-grid records-toolbar asset-rights-toolbar">
+            <label>
+              <span data-i18n="asset_rights_search">Asset Search</span>
+              <input id="assetRightsSearchInput" type="text" autocomplete="off" />
+              <div id="assetRightsSuggestList" class="proxy-suggest hidden"></div>
+            </label>
+            <fieldset class="asset-rights-type-filters" aria-label="Asset type filters">
+              <legend data-i18n="asset_rights_type_filter">Type</legend>
+              <label><input type="checkbox" name="assetRightsType" value="video" /> <span data-i18n="asset_type_video">Video</span></label>
+              <label><input type="checkbox" name="assetRightsType" value="audio" /> <span data-i18n="asset_type_audio">Audio</span></label>
+              <label><input type="checkbox" name="assetRightsType" value="photo" /> <span data-i18n="asset_type_photo">Photo</span></label>
+              <label><input type="checkbox" name="assetRightsType" value="document" /> <span data-i18n="asset_type_document">Doc</span></label>
+              <label><input type="checkbox" name="assetRightsType" value="other" /> <span data-i18n="asset_type_other">Other</span></label>
+            </fieldset>
+            <label class="asset-rights-visibility-filter">
+              <span data-i18n="asset_rights_visibility_filter">Visibility</span>
+              <select id="assetRightsVisibilityFilter">
+                <option value="" data-i18n="asset_rights_visibility_all">All</option>
+                <option value="private" data-i18n="visibility_private">Private</option>
+                <option value="group" data-i18n="visibility_group">Owner groups</option>
+                <option value="groups" data-i18n="visibility_groups">Selected groups/users</option>
+                <option value="public" data-i18n="visibility_public">Public</option>
+              </select>
+            </label>
+            <div class="proxy-tool-actions asset-rights-load-action">
+              <button id="assetRightsSearchBtn" type="button" data-i18n="asset_rights_load">Load</button>
+            </div>
+          </div>
+          <div id="assetRightsRows" class="rows"></div>
+          <div class="admin-pager" id="assetRightsPager">
+            <label>
+              <span data-i18n="page_size">Page size</span>
+              <select id="assetRightsPageSize">
+                <option value="20">20</option>
+                <option value="50">50</option>
+              </select>
+            </label>
+            <button id="assetRightsPrevPage" type="button" data-i18n="prev_page">Prev</button>
+            <span id="assetRightsPageInfo">-</span>
+            <button id="assetRightsNextPage" type="button" data-i18n="next_page">Next</button>
+          </div>
+          <div id="assetRightsMsg" class="admin-note"></div>
+        </article>
+
         <article class="admin-card admin-panel" data-panel="settings">
           <h2 data-i18n="settings">Settings</h2>
           <nav class="settings-subtabs" id="settingsSubtabs">
             <button type="button" class="settings-subtab active" data-settings-tab="general" data-i18n="settings_sub_general">General</button>
-            <button type="button" class="settings-subtab" data-settings-tab="workflow" data-i18n="settings_sub_workflow">Workflow</button>
             <button type="button" class="settings-subtab" data-settings-tab="proxy" data-i18n="settings_sub_proxy">Proxy</button>
             <button type="button" class="settings-subtab" data-settings-tab="ocr" data-i18n="settings_sub_ocr">OCR</button>
             <button type="button" class="settings-subtab" data-settings-tab="subtitle" data-i18n="settings_sub_subtitle">Subtitle</button>
+            <button type="button" class="settings-subtab" data-settings-tab="backup" data-i18n="settings_sub_backup">Backup</button>
             <button type="button" class="settings-subtab" data-settings-tab="users" data-i18n="settings_sub_users">Users</button>
           </nav>
 
           <section class="settings-subpanel active" data-settings-panel="general">
             <form id="settingsForm" class="stack">
               <fieldset class="settings-group">
-                <legend data-i18n="settings_group_workflow">Workflow & Player</legend>
-                <label class="toggle-row">
-                  <input type="checkbox" name="workflowTrackingEnabled" />
-                  <span data-i18n="workflow_tracking_enabled">Workflow tracking enabled</span>
-                </label>
+                <legend data-i18n="settings_group_player">Player</legend>
                 <label class="toggle-row">
                   <input type="checkbox" name="autoProxyBackfillOnUpload" />
                   <span data-i18n="auto_proxy_backfill">Auto backfill proxies on upload</span>
+                </label>
+                <label>
+                  <span data-i18n="new_asset_default_visibility">New asset default visibility</span>
+                  <select name="newAssetDefaultVisibility">
+                    <option value="owner_groups" data-i18n="new_asset_visibility_owner_groups">Owner groups</option>
+                    <option value="public" data-i18n="visibility_public">Public</option>
+                    <option value="private" data-i18n="visibility_private">Private</option>
+                  </select>
                 </label>
                 <label>
                   <span data-i18n="player_mode">Player Mode</span>
@@ -204,6 +256,10 @@
                   <span data-i18n="audit_retention_days">Log saklama süresi (gün)</span>
                   <input name="auditRetentionDays" type="number" min="1" max="3650" step="1" />
                 </label>
+                <label>
+                  <span data-i18n="media_job_retention_days">Son medya işleri saklama süresi (gün)</span>
+                  <input name="mediaJobRetentionDays" type="number" min="1" max="3650" step="1" />
+                </label>
               </fieldset>
 
               <fieldset class="settings-group">
@@ -216,12 +272,6 @@
               </div>
             </form>
             <div id="settingsMsg" class="admin-note"></div>
-          </section>
-
-          <section class="settings-subpanel" data-settings-panel="workflow">
-            <h3 data-i18n="workflow_tracking">Workflow Tracking</h3>
-            <div id="workflowSummary" class="metrics"></div>
-            <div id="workflowRows" class="rows"></div>
           </section>
 
           <section class="settings-subpanel" data-settings-panel="proxy">
@@ -246,6 +296,9 @@
                   <span data-i18n="proxy_tool_action">Action</span>
                   <select id="proxyToolAction">
                     <option value="thumbnail" data-i18n="proxy_tool_action_thumbnail">Generate Thumbnail</option>
+                    <option value="image_thumbnail" data-i18n="proxy_tool_action_image_thumbnail">Generate Image Thumbnail</option>
+                    <option value="image_preview" data-i18n="proxy_tool_action_image_preview">Generate Image Preview</option>
+                    <option value="document_thumbnail" data-i18n="proxy_tool_action_document_thumbnail">Generate Document Thumbnail</option>
                     <option value="preview" data-i18n="proxy_tool_action_preview">Generate Preview</option>
                     <option value="proxy" data-i18n="proxy_tool_action_proxy">Generate Proxy</option>
                     <option value="replace_asset" data-i18n="proxy_tool_action_replace_asset">Replace Asset File (Keep Metadata)</option>
@@ -400,7 +453,82 @@
             <div id="combinedSearchMsg" class="admin-note"></div>
           </section>
 
+          <section class="settings-subpanel" data-settings-panel="backup">
+            <h3 data-i18n="backup_settings">Backup Settings</h3>
+            <form id="backupSettingsForm" class="stack">
+              <fieldset class="settings-group">
+                <legend data-i18n="backup_schedule">Schedule</legend>
+                <label class="toggle-row">
+                  <input type="checkbox" name="backupEnabled" />
+                  <span data-i18n="backup_enabled">Enable daily backup</span>
+                </label>
+                <label>
+                  <span data-i18n="backup_directory">Backup directory</span>
+                  <input name="backupDirectory" data-i18n-placeholder="backup_directory_ph" placeholder="/app/uploads/_backups" />
+                </label>
+                <label>
+                  <span data-i18n="backup_daily_hour">Daily hour</span>
+                  <input name="backupDailyHour" type="number" min="0" max="23" step="1" />
+                </label>
+                <label>
+                  <span data-i18n="backup_retention_days">Retention (days)</span>
+                  <input name="backupRetentionDays" type="number" min="1" max="3650" step="1" />
+                </label>
+              </fieldset>
+              <fieldset class="settings-group">
+                <legend data-i18n="backup_contents">Contents</legend>
+                <label class="toggle-row">
+                  <input type="checkbox" name="backupIncludeMamDb" />
+                  <span data-i18n="backup_include_mam_db">MAM PostgreSQL dump</span>
+                </label>
+                <label class="toggle-row">
+                  <input type="checkbox" name="backupIncludeKeycloakDb" />
+                  <span data-i18n="backup_include_keycloak_db">Keycloak PostgreSQL dump</span>
+                </label>
+                <label class="toggle-row">
+                  <input type="checkbox" name="backupIncludeUploadsArchive" />
+                  <span data-i18n="backup_include_uploads">Uploads archive (.tar.gz)</span>
+                </label>
+              </fieldset>
+              <div class="settings-submit-row">
+                <button type="submit" data-i18n="save_settings">Save Settings</button>
+                <button id="runBackupNowBtn" type="button" data-i18n="backup_run_now">Run Backup Now</button>
+              </div>
+            </form>
+            <div id="backupFilesRows" class="rows"></div>
+            <div id="backupSettingsMsg" class="admin-note"></div>
+          </section>
+
           <section class="settings-subpanel" data-settings-panel="users">
+            <form id="authSessionSettingsForm" class="stack">
+              <fieldset class="settings-group">
+                <legend data-i18n="auth_session_settings">Login Session Settings</legend>
+                <label class="toggle-row">
+                  <input type="checkbox" name="rememberMe" />
+                  <span data-i18n="auth_remember_me">Allow remember me</span>
+                </label>
+                <label>
+                  <span data-i18n="auth_sso_idle_minutes">Idle timeout (minutes)</span>
+                  <input name="ssoIdleMinutes" type="number" min="1" max="1440" step="1" />
+                </label>
+                <label>
+                  <span data-i18n="auth_sso_max_hours">Maximum session (hours)</span>
+                  <input name="ssoMaxHours" type="number" min="1" max="720" step="1" />
+                </label>
+                <label>
+                  <span data-i18n="auth_client_idle_minutes">Client idle timeout (minutes)</span>
+                  <input name="clientIdleMinutes" type="number" min="1" max="1440" step="1" />
+                </label>
+                <label>
+                  <span data-i18n="auth_client_max_hours">Client maximum session (hours)</span>
+                  <input name="clientMaxHours" type="number" min="1" max="720" step="1" />
+                </label>
+              </fieldset>
+              <div class="settings-submit-row">
+                <button type="submit" data-i18n="save_auth_session">Save Login Settings</button>
+              </div>
+              <div id="authSessionSettingsMsg" class="admin-note"></div>
+            </form>
             <div class="settings-section-head user-settings-head">
               <h3 data-i18n="user_settings">User Settings</h3>
               <div class="user-settings-search-form">
@@ -409,14 +537,66 @@
               </div>
             </div>
             <div id="userPermissionsRows" class="rows user-permissions-rows"></div>
+            <div class="admin-pager" id="userPermissionsPager">
+              <label>
+                <span data-i18n="page_size">Page size</span>
+                <select id="userPermissionsPageSize">
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                </select>
+              </label>
+              <button id="userPermissionsPrevPage" type="button" data-i18n="prev_page">Prev</button>
+              <span id="userPermissionsPageInfo">-</span>
+              <button id="userPermissionsNextPage" type="button" data-i18n="next_page">Next</button>
+            </div>
             <div id="userPermissionsMsg" class="admin-note"></div>
+            <h3 data-i18n="identity_overview">Identity Overview</h3>
+            <div class="proxy-tool-actions identity-overview-actions">
+              <button id="refreshIdentityOverviewBtn" type="button" data-i18n="refresh">Refresh</button>
+            </div>
+            <div id="identityOverviewSummary" class="metrics"></div>
+            <div class="identity-grid">
+              <section>
+                <h4 data-i18n="identity_keycloak_groups">Keycloak Groups</h4>
+                <div id="identityGroupsRows" class="rows compact-rows"></div>
+              </section>
+              <section>
+                <h4 data-i18n="identity_keycloak_users">Keycloak Users</h4>
+                <div class="user-settings-search-form identity-user-search-form">
+                  <input id="identityUserSearchInput" class="user-settings-search" type="text" data-i18n-placeholder="user_search_ph" placeholder="Search user..." autocomplete="off" aria-label="Keycloak User Search" />
+                  <button id="identityUserSearchButton" class="user-settings-search-button" type="button" data-i18n="user_search">User Search</button>
+                </div>
+                <div id="identityUsersRows" class="rows compact-rows"></div>
+              </section>
+              <section>
+                <h4 data-i18n="identity_mam_only_groups">MAM-only Groups</h4>
+                <div id="identityMamGroupsRows" class="rows compact-rows"></div>
+              </section>
+            </div>
+            <h3 data-i18n="group_admins">Group Admins</h3>
+            <div class="filter-row">
+              <label>
+                <span data-i18n="group_name">Group</span>
+                <input id="groupAdminGroupInput" type="text" placeholder="archive-team" list="identityGroupOptions" />
+              </label>
+              <label>
+                <span data-i18n="username">User</span>
+                <input id="groupAdminUserInput" type="text" placeholder="username" list="identityUserOptions" />
+              </label>
+              <button id="addGroupAdminBtn" type="button" data-i18n="add_group_admin">Add</button>
+            </div>
+            <datalist id="identityGroupOptions"></datalist>
+            <datalist id="identityUserOptions"></datalist>
+            <div id="groupAdminsRows" class="rows"></div>
+            <div id="groupAdminsMsg" class="admin-note"></div>
           </section>
         </article>
         </section>
       </section>
     </main>
 
-    <script src="/admin-records.js?v=20260621-user-search-button-1"></script>
-    <script src="/admin.js?v=20260430-admin-dashboard-1"></script>
+    <script src="/main-access-scope.js?v=20260522-hide-backup-textadmin-1"></script>
+    <script src="/admin-records.js?v=20260621-user-search-on-demand-1"></script>
+    <script src="/admin.js?v=20260621-identity-user-search-1"></script>
   </body>
 </html>
