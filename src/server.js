@@ -7468,9 +7468,12 @@ async function getKeycloakAdminAccessToken() {
   }
 }
 
-async function fetchKeycloakUsers() {
+async function fetchKeycloakUsers(options = {}) {
+  const search = String(options.search || '').trim();
+  const max = Math.max(1, Math.min(Number(options.max) || 100, 500));
+  const searchMode = Boolean(search);
   const now = Date.now();
-  if (keycloakUsersCache.value && keycloakUsersCache.expiresAt > now) {
+  if (!searchMode && keycloakUsersCache.value && keycloakUsersCache.expiresAt > now) {
     return keycloakUsersCache.value;
   }
   const token = await getKeycloakAdminAccessToken();
@@ -7481,10 +7484,15 @@ async function fetchKeycloakUsers() {
   const seen = new Set();
   for (const realm of realms) {
     let first = 0;
-    const pageSize = 100;
+    const pageSize = searchMode ? max : 100;
     try {
       while (true) {
-        const url = `${KEYCLOAK_INTERNAL_URL}/admin/realms/${encodeURIComponent(realm)}/users?first=${first}&max=${pageSize}`;
+        const params = new URLSearchParams({
+          first: String(first),
+          max: String(pageSize)
+        });
+        if (searchMode) params.set('search', search);
+        const url = `${KEYCLOAK_INTERNAL_URL}/admin/realms/${encodeURIComponent(realm)}/users?${params.toString()}`;
         const response = await fetch(url, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -7499,6 +7507,7 @@ async function fetchKeycloakUsers() {
           realmByUsername.set(username, realm);
         });
         if (arr.length < pageSize) break;
+        if (searchMode) break;
         first += pageSize;
       }
     } catch (_error) {
@@ -7506,7 +7515,7 @@ async function fetchKeycloakUsers() {
     }
   }
   const value = { users, realmByUsername };
-  keycloakUsersCache = { expiresAt: now + KEYCLOAK_ADMIN_CACHE_TTL_MS, value };
+  if (!searchMode) keycloakUsersCache = { expiresAt: now + KEYCLOAK_ADMIN_CACHE_TTL_MS, value };
   return value;
 }
 

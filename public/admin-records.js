@@ -113,7 +113,7 @@
           { key: 'text.admin', legacyField: 'textAdminAccess', labelKey: 'perm_text_admin' }
         ];
       if (!list.length) {
-        userPermissionsRows.innerHTML = `<div class="empty">${escapeHtml(t(getUserPermissionSearchQuery().length >= 2 ? 'user_search_no_match' : 'user_permissions_empty'))}</div>`;
+        userPermissionsRows.innerHTML = `<div class="empty">${escapeHtml(t(getUserPermissionSearchQuery().length >= 2 ? 'user_search_no_match' : 'user_search_required'))}</div>`;
         return;
       }
       userPermissionsRows.innerHTML = list.map((user) => {
@@ -185,8 +185,14 @@
     async function loadUserPermissions() {
       const params = new URLSearchParams();
       const q = getUserPermissionSearchQuery();
-      if (q.length >= 2) params.set('q', q);
       const limit = Number(userPermissionsPageSize?.value || 20) === 50 ? 50 : 20;
+      if (q.length < 2) {
+        userPermissionsPagination = { page: 1, limit, total: 0, totalPages: 1 };
+        renderUserPermissions([], availableUserPermissions);
+        renderUserPermissionsPager();
+        return;
+      }
+      params.set('q', q);
       params.set('limit', String(limit));
       params.set('page', String(Math.max(1, userPermissionsPage)));
       const result = await api(`/api/admin/user-permissions?${params.toString()}`);
@@ -204,10 +210,6 @@
         setUserPermissionsMessage(String(error.message || 'Request failed'));
       });
     }
-
-    userPermissionsSearchInput?.addEventListener('input', () => {
-      refreshUserPermissionSearch();
-    });
 
     userPermissionsSearchInput?.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter') return;

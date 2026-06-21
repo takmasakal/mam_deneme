@@ -660,6 +660,10 @@ body {
   margin-top: 12px;
 }
 
+.identity-user-search-form {
+  margin-bottom: 10px;
+}
+
 .user-perm-identity {
   display: grid;
   align-content: center;

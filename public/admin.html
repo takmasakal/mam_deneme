@@ -562,6 +562,10 @@
               </section>
               <section>
                 <h4 data-i18n="identity_keycloak_users">Keycloak Users</h4>
+                <div class="user-settings-search-form identity-user-search-form">
+                  <input id="identityUserSearchInput" class="user-settings-search" type="text" data-i18n-placeholder="user_search_ph" placeholder="Search user..." autocomplete="off" aria-label="Keycloak User Search" />
+                  <button id="identityUserSearchButton" class="user-settings-search-button" type="button" data-i18n="user_search">User Search</button>
+                </div>
                 <div id="identityUsersRows" class="rows compact-rows"></div>
               </section>
               <section>
@@ -592,7 +596,7 @@
     </main>
 
     <script src="/main-access-scope.js?v=20260522-hide-backup-textadmin-1"></script>
-    <script src="/admin-records.js?v=20260609-user-permission-refresh-1"></script>
-    <script src="/admin.js?v=20260612-image-derivatives-1"></script>
+    <script src="/admin-records.js?v=20260621-user-search-on-demand-1"></script>
+    <script src="/admin.js?v=20260621-identity-user-search-1"></script>
   </body>
 </html>

@@ -56,6 +56,8 @@ const refreshIdentityOverviewBtn = document.getElementById('refreshIdentityOverv
 const identityOverviewSummary = document.getElementById('identityOverviewSummary');
 const identityGroupsRows = document.getElementById('identityGroupsRows');
 const identityUsersRows = document.getElementById('identityUsersRows');
+const identityUserSearchInput = document.getElementById('identityUserSearchInput');
+const identityUserSearchButton = document.getElementById('identityUserSearchButton');
 const identityMamGroupsRows = document.getElementById('identityMamGroupsRows');
 const identityGroupOptions = document.getElementById('identityGroupOptions');
 const identityUserOptions = document.getElementById('identityUserOptions');
@@ -451,6 +453,7 @@ let i18n = {
     user_settings: 'User Settings',
     user_search: 'User Search',
     user_search_ph: 'Search user...',
+    user_search_required: 'Type a user name and click User Search.',
     user_search_no_match: 'No matching user found.',
     user_permissions_empty: 'No user found.',
     perm_admin_access: 'Admin page access',
@@ -854,6 +857,7 @@ let i18n = {
     user_settings: 'Kullanıcı Ayarları',
     user_search: 'Kullanıcı Ara',
     user_search_ph: 'Kullanıcı ara...',
+    user_search_required: 'Kullanıcı adı yazıp Kullanıcı Ara düğmesine basın.',
     user_search_no_match: 'Eşleşen kullanıcı bulunamadı.',
     user_permissions_empty: 'Kullanıcı bulunamadı.',
     perm_admin_access: 'Yönetim sayfasına erişim',
@@ -2355,7 +2359,7 @@ function renderIdentityOverview(payload = {}) {
           </div>
         `;
       }).join('')
-      : `<div class="empty">${escapeHtml(t('identity_no_users'))}</div>`;
+      : `<div class="empty">${escapeHtml(t(String(payload.userQuery || '').trim() ? 'identity_no_users' : 'user_search_required'))}</div>`;
   }
 
   if (identityMamGroupsRows) {
@@ -2383,12 +2387,22 @@ function renderIdentityOverview(payload = {}) {
 async function loadIdentityOverview() {
   if (!identityOverviewSummary && !identityGroupsRows && !identityUsersRows) return;
   try {
-    const result = await api('/api/admin/identity/overview');
+    const params = new URLSearchParams();
+    const userQ = String(identityUserSearchInput?.value || '').trim();
+    if (userQ.length >= 2) params.set('userQ', userQ);
+    const query = params.toString();
+    const result = await api(`/api/admin/identity/overview${query ? `?${query}` : ''}`);
     renderIdentityOverview(result);
     if (groupAdminsMsg) groupAdminsMsg.textContent = '';
   } catch (error) {
     if (groupAdminsMsg) groupAdminsMsg.textContent = String(error.message || t('identity_load_failed'));
   }
+}
+
+function searchIdentityUsers() {
+  loadIdentityOverview().catch((error) => {
+    if (groupAdminsMsg) groupAdminsMsg.textContent = String(error.message || t('identity_load_failed'));
+  });
 }
 
 async function loadOcrRecords() {
@@ -4049,6 +4063,16 @@ refreshIdentityOverviewBtn?.addEventListener('click', () => {
   loadIdentityOverview().catch((error) => {
     if (groupAdminsMsg) groupAdminsMsg.textContent = String(error.message || t('identity_load_failed'));
   });
+});
+
+identityUserSearchInput?.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  searchIdentityUsers();
+});
+
+identityUserSearchButton?.addEventListener('click', () => {
+  searchIdentityUsers();
 });
 
 groupAdminsRows?.addEventListener('click', async (event) => {
