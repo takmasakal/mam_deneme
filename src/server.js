@@ -3200,7 +3200,7 @@ function normalizeTypeFolder(typeValue, mimeType, fileName) {
 }
 
 function getIngestStoragePath({ type, mimeType, fileName }) {
-  const datePart = new Date().toISOString().slice(0, 10);
+  const datePart = getUploadDateDir();
   const typePart = normalizeTypeFolder(type, mimeType, fileName);
   const relativeDir = path.join(datePart, typePart);
   const absoluteDir = path.join(UPLOADS_DIR, relativeDir);
@@ -3214,8 +3214,7 @@ function inferAssetStorageSubdir(input = {}) {
 
 function getDatePart(value) {
   const d = value ? new Date(value) : new Date();
-  if (!Number.isFinite(d.getTime())) return new Date().toISOString().slice(0, 10);
-  return d.toISOString().slice(0, 10);
+  return getUploadDateDir(Number.isFinite(d.getTime()) ? d : new Date());
 }
 
 function artifactRoot(kind) {
@@ -3226,13 +3225,32 @@ function artifactRoot(kind) {
   throw new Error(`Unknown artifact kind: ${kind}`);
 }
 
+function getUploadDateDir(value = new Date()) {
+  const d = value instanceof Date ? value : new Date(value);
+  const safeDate = Number.isFinite(d.getTime()) ? d : new Date();
+  const year = String(safeDate.getUTCFullYear());
+  const month = String(safeDate.getUTCMonth() + 1);
+  const day = String(safeDate.getUTCDate());
+  return path.join(year, month, day);
+}
+
+function artifactFolder(kind) {
+  if (kind === 'proxies') return 'previews';
+  if (kind === 'thumbnails') return 'thumbnails';
+  if (kind === 'subtitles') return 'subtitles';
+  if (kind === 'ocr') return 'ocr';
+  if (kind === 'attachments') return 'attachments';
+  throw new Error(`Unknown artifact kind: ${kind}`);
+}
+
 function buildArtifactPath(kind, storedName, dateValue) {
   const datePart = getDatePart(dateValue);
   const safeName = sanitizeFileName(storedName);
-  const dir = path.join(artifactRoot(kind), datePart);
+  const folder = artifactFolder(kind);
+  const dir = path.join(UPLOADS_DIR, datePart, folder);
   fs.mkdirSync(dir, { recursive: true });
   const absolutePath = path.join(dir, safeName);
-  const publicUrl = `/uploads/${kind}/${datePart}/${safeName}`;
+  const publicUrl = `/uploads/${datePart.replace(/\\/g, '/')}/${folder}/${safeName}`;
   return { absolutePath, publicUrl, datePart };
 }
 
