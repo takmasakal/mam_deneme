@@ -1666,6 +1666,7 @@ detailModule = window.createMainDetailModule({
   deleteApi,
   escapeHtml,
   isVideo,
+  isAudio,
   isOfficeDocument,
   mediaViewer,
   tagColorStyle,
