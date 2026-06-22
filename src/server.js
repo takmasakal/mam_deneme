@@ -7194,7 +7194,7 @@ function buildUserContextFromRequest(req) {
   const username = preferred || tokenUsername || (!uuidLike.test(usernameRaw) ? usernameRaw : '') || localFromEmail;
   const displayName = (!uuidLike.test(usernameRaw) ? usernameRaw : '') || tokenName || username || localFromEmail;
   const groups = groupsRaw
-    .split(/[,\s]+/)
+    .split(/[,\n;]+/)
     .concat(tokenGroups.map((g) => String(g || '')))
     .map((g) => g.trim().toLowerCase())
     .filter(Boolean);
