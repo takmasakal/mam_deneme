@@ -8,7 +8,7 @@ function normalizeAccessName(value) {
 function normalizeAccessList(values) {
   return Array.from(new Set(
     (Array.isArray(values) ? values : [])
-      .flatMap((value) => String(value || '').split(/[,\s]+/))
+      .flatMap((value) => String(value || '').split(/[,\n;]+/))
       .map(normalizeAccessName)
       .filter(Boolean)
   ));
