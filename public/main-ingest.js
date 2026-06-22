@@ -63,6 +63,12 @@
       });
     }
 
+    function localizeUploadError(error) {
+      const code = String(error?.code || '').trim();
+      if (code === 'asset_type_upload_forbidden') return t('asset_type_upload_forbidden');
+      return String(error?.message || 'Upload failed');
+    }
+
     function localizeUploadWarning(warning) {
       const code = String(warning?.code || '').trim();
       if (code === 'proxy_generation_failed') return t('upload_warning_proxy_generation_failed');
@@ -299,7 +305,7 @@
           const warningMessage = formatIngestWarningMessage(created);
           if (warningMessage) alert(warningMessage);
         } catch (error) {
-          alert(String(error?.message || 'Upload failed'));
+          alert(localizeUploadError(error));
         } finally {
           if (submitBtn) submitBtn.disabled = false;
           setTimeout(() => hideUploadProgress(), 450);

@@ -426,6 +426,7 @@ function createAssetAccessService({ pool }) {
       mime_type: input.mimeType || input.mime_type,
       file_name: input.fileName || input.file_name
     };
+    if (context?.canAccessAdmin || context?.isAdmin) return canCreateAssetOfType(row, context);
     const rule = getTypeRuleForAsset(row, context);
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
     if (identityMatchesAny(identity, rule.uploadDeniedUsers, rule.uploadDeniedGroups)) return false;

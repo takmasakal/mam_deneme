@@ -174,7 +174,7 @@ function registerAssetRoutes(app, deps) {
 
   function mapAssetRowForUser(row, accessContext) {
     const mapped = mapAssetRow(row);
-    mapped.canManageVisibility = assetAccessService.canManageAssetVisibility(row, accessContext);
+    mapped.canManageVisibility = Boolean(accessContext?.isSuperAdmin && assetAccessService.canManageAssetVisibility(row, accessContext));
     mapped.canEditAsset = assetAccessService.canEditAsset(row, accessContext);
     mapped.canDownloadAsset = assetAccessService.canDownloadAsset(row, accessContext);
     mapped.canDeleteAsset = assetAccessService.canDeleteAsset(row, accessContext);
@@ -1360,6 +1360,9 @@ function registerAssetRoutes(app, deps) {
   app.patch('/api/assets/:id/visibility', async (req, res) => {
     try {
       const accessContext = await resolveAssetAccessContext(req);
+      if (!accessContext?.isSuperAdmin) {
+        return res.status(403).json({ error: 'Super admin permission is required' });
+      }
       const result = await assetAccessService.updateAssetVisibility(req.params.id, req.body || {}, accessContext);
       if (result.status !== 200) {
         return res.status(result.status).json({ error: result.error });

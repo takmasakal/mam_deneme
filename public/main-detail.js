@@ -22,6 +22,7 @@
       formatDate,
       currentUserCanUsePdfAdvancedTools,
       currentUserCanEditOffice,
+      currentUserIsSuperAdmin,
       currentUserCanAccessAdmin,
       currentUserCanDeleteAssets,
       currentUserCanEditMetadata,
@@ -178,7 +179,7 @@
       const visibilityOptions = ['private', 'group', 'groups', 'public']
         .map((visibility) => `<option value="${escapeHtml(visibility)}" ${visibility === String(asset.visibility || 'public') ? 'selected' : ''}>${escapeHtml(t(`visibility_${visibility}`))}</option>`)
         .join('');
-      const visibilitySection = asset.canManageVisibility ? `
+      const visibilitySection = Boolean(currentUserIsSuperAdmin?.() && asset.canManageVisibility) ? `
         <form id="assetVisibilityForm" class="inline-grid">
           <h4>${escapeHtml(t('asset_visibility'))}</h4>
           <div class="dc-grid">

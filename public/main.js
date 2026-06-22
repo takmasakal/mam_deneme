@@ -83,6 +83,7 @@ let commonModule = null;
 let detailModule = null;
 let ingestModule = null;
 let selectedAssetId = null;
+let currentUserIsSuperAdmin = false;
 let currentUserCanAccessAdmin = false;
 let currentUserCanEditMetadata = false;
 let currentUserCanEditOffice = false;
@@ -463,6 +464,7 @@ let i18n = {
     trash_confirm: 'Permanently delete this asset? This cannot be undone.',
     select_media_first: 'Select a media file to upload.',
     upload_empty_file: 'The selected file is empty (0 KB). Please choose a complete file.',
+    asset_type_upload_forbidden: 'You are not allowed to upload this asset type.',
     upload_type_mismatch: 'Selected asset type is {expected}, but the selected file looks like {actual}. Please choose a matching file or change the asset type.',
     proxy_failed: 'Proxy failed. Switched to original media.',
     proxy_fallback_status: 'fallback',
@@ -801,6 +803,7 @@ let i18n = {
     trash_confirm: 'Bu varlık kalıcı olarak silinecek. Geri alınamaz.',
     select_media_first: 'Yüklemek için medya dosyası seçin.',
     upload_empty_file: 'Seçilen dosya boş (0 KB). Lütfen tam inmiş/geçerli bir dosya seçin.',
+    asset_type_upload_forbidden: 'Bu varlık türünü yükleme yetkiniz yok.',
     upload_type_mismatch: 'Seçilen varlık türü {expected}, ancak seçilen dosya {actual} gibi görünüyor. Lütfen uygun dosya seçin veya varlık türünü değiştirin.',
     proxy_failed: 'Proxy açılamadı. Orijinal medyaya geçildi.',
     proxy_fallback_status: 'yedek',
@@ -1203,6 +1206,7 @@ function applyCurrentUserAssetTypeScope() {
 function buildCurrentUserPermissionSignature() {
   return JSON.stringify({
     username: currentUsername,
+    isSuperAdmin: currentUserIsSuperAdmin,
     canAccessAdmin: currentUserCanAccessAdmin,
     canEditMetadata: currentUserCanEditMetadata,
     canEditOffice: currentUserCanEditOffice,
@@ -1229,6 +1233,7 @@ async function loadCurrentUser(options = {}) {
     const displayName = String(me.displayName || '').trim();
     const email = String(me.email || '').trim();
     const canAccessAdmin = toStrictBool(me.canAccessAdmin, toStrictBool(me.isAdmin, false));
+    const isSuperAdmin = toStrictBool(me.isSuperAdmin, toStrictBool(me.baseIsSuperAdmin, false));
     const canAccessTextAdmin = toStrictBool(me.canAccessTextAdmin, canAccessAdmin);
     const canEditMetadata = toStrictBool(me.canEditMetadata, false);
     const canEditOffice = toStrictBool(me.canEditOffice, false);
@@ -1238,6 +1243,7 @@ async function loadCurrentUser(options = {}) {
     currentUserRoles = Array.isArray(me.roles) ? me.roles : [];
     currentUserAllowedAssetTypes = accessScopeModule.normalizeAllowedAssetTypes(me.allowedAssetTypes || []);
     currentUserUploadAllowedAssetTypes = accessScopeModule.normalizeAllowedAssetTypes(me.uploadAllowedAssetTypes || me.allowedAssetTypes || []);
+    currentUserIsSuperAdmin = isSuperAdmin;
     currentUserCanAccessAdmin = canAccessAdmin;
     currentUserCanEditMetadata = canEditMetadata;
     currentUserCanEditOffice = canEditOffice;
@@ -1259,6 +1265,7 @@ async function loadCurrentUser(options = {}) {
     currentUserPermissionSignature = buildCurrentUserPermissionSignature();
     return Boolean(detectChanges && previousSignature && currentUserPermissionSignature !== previousSignature);
   } catch (_error) {
+    currentUserIsSuperAdmin = false;
     currentUserCanAccessAdmin = false;
     currentUserCanEditMetadata = false;
     currentUserCanEditOffice = false;
@@ -1845,6 +1852,7 @@ detailModule = window.createMainDetailModule({
   formatDate,
   currentUserCanUsePdfAdvancedTools: () => currentUserCanUsePdfAdvancedTools,
   currentUserCanEditOffice: () => currentUserCanEditOffice,
+  currentUserIsSuperAdmin: () => currentUserIsSuperAdmin,
   currentUserCanAccessAdmin: () => currentUserCanAccessAdmin,
   currentUserCanDeleteAssets: () => currentUserCanDeleteAssets,
   currentUserCanEditMetadata: () => currentUserCanEditMetadata,
