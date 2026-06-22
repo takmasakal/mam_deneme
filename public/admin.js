@@ -14,6 +14,16 @@ const backupSettingsForm = document.getElementById('backupSettingsForm');
 const backupSettingsMsg = document.getElementById('backupSettingsMsg');
 const backupFilesRows = document.getElementById('backupFilesRows');
 const runBackupNowBtn = document.getElementById('runBackupNowBtn');
+const permissionBackupGroup = document.getElementById('permissionBackupGroup');
+const permissionBackupMsg = document.getElementById('permissionBackupMsg');
+const assetRightsExportName = document.getElementById('assetRightsExportName');
+const exportAssetRightsBtn = document.getElementById('exportAssetRightsBtn');
+const assetRightsImportFile = document.getElementById('assetRightsImportFile');
+const importAssetRightsBtn = document.getElementById('importAssetRightsBtn');
+const principalRightsExportName = document.getElementById('principalRightsExportName');
+const exportPrincipalRightsBtn = document.getElementById('exportPrincipalRightsBtn');
+const principalRightsImportFile = document.getElementById('principalRightsImportFile');
+const importPrincipalRightsBtn = document.getElementById('importPrincipalRightsBtn');
 const authSessionSettingsForm = document.getElementById('authSessionSettingsForm');
 const authSessionSettingsMsg = document.getElementById('authSessionSettingsMsg');
 const apiTokenInput = document.getElementById('apiTokenInput');
@@ -353,6 +363,18 @@ let i18n = {
     backup_file_name: 'File',
     backup_file_size: 'Size',
     backup_file_date: 'Date',
+    permission_backup_title: 'Permission Export / Import',
+    permission_backup_asset_rights: 'Asset rights',
+    permission_backup_principal_rights: 'User and group rights',
+    permission_backup_export_file_name_ph: 'Optional file name',
+    permission_backup_export: 'Export',
+    permission_backup_import: 'Import',
+    permission_backup_select_file: 'Select a JSON file first.',
+    permission_backup_import_confirm: 'Importing this file will overwrite the selected permission settings. Continue?',
+    permission_backup_exported: 'Permission export downloaded.',
+    permission_backup_imported: 'Permission import completed.',
+    permission_backup_export_failed: 'Failed to export permissions.',
+    permission_backup_import_failed: 'Failed to import permissions.',
     save_settings: 'Save Settings',
     set_as_default: 'Set as Default',
     settings_saved: 'Settings saved.',
@@ -757,6 +779,18 @@ let i18n = {
     backup_file_name: 'Dosya',
     backup_file_size: 'Boyut',
     backup_file_date: 'Tarih',
+    permission_backup_title: 'Yetki Dışa / İçe Aktarma',
+    permission_backup_asset_rights: 'Varlık yetkileri',
+    permission_backup_principal_rights: 'Kullanıcı ve grup yetkileri',
+    permission_backup_export_file_name_ph: 'Opsiyonel dosya adı',
+    permission_backup_export: 'Dışa Aktar',
+    permission_backup_import: 'İçe Aktar',
+    permission_backup_select_file: 'Önce bir JSON dosyası seçin.',
+    permission_backup_import_confirm: 'Bu dosyayı içe aktarmak seçili yetki ayarlarının üzerine yazacak. Devam edilsin mi?',
+    permission_backup_exported: 'Yetki yedeği indirildi.',
+    permission_backup_imported: 'Yetki içe aktarma tamamlandı.',
+    permission_backup_export_failed: 'Yetkiler dışa aktarılamadı.',
+    permission_backup_import_failed: 'Yetkiler içe aktarılamadı.',
     save_settings: 'Ayarları Kaydet',
     set_as_default: 'Varsayılan Yap',
     settings_saved: 'Ayarlar kaydedildi.',
@@ -2421,6 +2455,7 @@ adminRecordsModule.init();
 
 function applyAdminAccessMode(me = {}) {
   currentAdminProfile = me && typeof me === 'object' ? me : {};
+  if (permissionBackupGroup) permissionBackupGroup.hidden = !currentAdminProfile?.isSuperAdmin;
   return accessScopeModule.applyAdminAccessMode({
     profile: currentAdminProfile,
     adminTabs,
@@ -3233,6 +3268,67 @@ function formatAdminFileSize(bytes) {
   return `${value} B`;
 }
 
+function getAttachmentFileName(response, fallback) {
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const utfMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  const plainMatch = disposition.match(/filename="?([^";]+)"?/i);
+  const raw = utfMatch?.[1] || plainMatch?.[1] || fallback;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function triggerDownload(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+async function exportPermissionBackup(kind, nameInput, fallbackName) {
+  const params = new URLSearchParams();
+  const requestedName = String(nameInput?.value || '').trim();
+  if (requestedName) params.set('fileName', requestedName);
+  const query = params.toString();
+  const response = await fetch(`/api/admin/permission-exports/${encodeURIComponent(kind)}${query ? `?${query}` : ''}`, {
+    cache: 'no-store'
+  });
+  if (!response.ok) {
+    let message = t('permission_backup_export_failed');
+    try {
+      const body = await response.json();
+      if (body?.error) message = body.error;
+    } catch {}
+    throw new Error(message);
+  }
+  const blob = await response.blob();
+  triggerDownload(blob, getAttachmentFileName(response, fallbackName));
+}
+
+async function readPermissionImportFile(fileInput) {
+  const file = fileInput?.files?.[0];
+  if (!file) throw new Error(t('permission_backup_select_file'));
+  try {
+    return JSON.parse(await file.text());
+  } catch {
+    throw new Error(t('permission_backup_import_failed'));
+  }
+}
+
+async function importPermissionBackup(kind, fileInput) {
+  const payload = await readPermissionImportFile(fileInput);
+  return api(`/api/admin/permission-imports/${encodeURIComponent(kind)}`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
 function readBackupSettingsForm() {
   const elements = backupSettingsForm?.elements;
   return {
@@ -3382,6 +3478,67 @@ backupFilesRows?.addEventListener('click', async (event) => {
   } catch (error) {
     if (backupSettingsMsg) backupSettingsMsg.textContent = error.message || t('backup_delete_failed');
     button.disabled = false;
+  }
+});
+
+exportAssetRightsBtn?.addEventListener('click', async () => {
+  exportAssetRightsBtn.disabled = true;
+  if (permissionBackupMsg) permissionBackupMsg.textContent = '';
+  try {
+    await exportPermissionBackup('asset-rights', assetRightsExportName, 'varlık_yetkileri.json');
+    if (permissionBackupMsg) permissionBackupMsg.textContent = t('permission_backup_exported');
+  } catch (error) {
+    if (permissionBackupMsg) permissionBackupMsg.textContent = error.message || t('permission_backup_export_failed');
+  } finally {
+    exportAssetRightsBtn.disabled = false;
+  }
+});
+
+exportPrincipalRightsBtn?.addEventListener('click', async () => {
+  exportPrincipalRightsBtn.disabled = true;
+  if (permissionBackupMsg) permissionBackupMsg.textContent = '';
+  try {
+    await exportPermissionBackup('principal-rights', principalRightsExportName, 'kullanıcı_grup_yetkileri.json');
+    if (permissionBackupMsg) permissionBackupMsg.textContent = t('permission_backup_exported');
+  } catch (error) {
+    if (permissionBackupMsg) permissionBackupMsg.textContent = error.message || t('permission_backup_export_failed');
+  } finally {
+    exportPrincipalRightsBtn.disabled = false;
+  }
+});
+
+importAssetRightsBtn?.addEventListener('click', async () => {
+  if (!window.confirm(t('permission_backup_import_confirm'))) return;
+  importAssetRightsBtn.disabled = true;
+  if (permissionBackupMsg) permissionBackupMsg.textContent = '';
+  try {
+    const result = await importPermissionBackup('asset-rights', assetRightsImportFile);
+    if (assetRightsImportFile) assetRightsImportFile.value = '';
+    const skipped = Number(result?.missingAssetIds?.length || 0);
+    if (permissionBackupMsg) {
+      permissionBackupMsg.textContent = skipped
+        ? `${t('permission_backup_imported')} (${skipped} skipped)`
+        : t('permission_backup_imported');
+    }
+  } catch (error) {
+    if (permissionBackupMsg) permissionBackupMsg.textContent = error.message || t('permission_backup_import_failed');
+  } finally {
+    importAssetRightsBtn.disabled = false;
+  }
+});
+
+importPrincipalRightsBtn?.addEventListener('click', async () => {
+  if (!window.confirm(t('permission_backup_import_confirm'))) return;
+  importPrincipalRightsBtn.disabled = true;
+  if (permissionBackupMsg) permissionBackupMsg.textContent = '';
+  try {
+    await importPermissionBackup('principal-rights', principalRightsImportFile);
+    if (principalRightsImportFile) principalRightsImportFile.value = '';
+    if (permissionBackupMsg) permissionBackupMsg.textContent = t('permission_backup_imported');
+  } catch (error) {
+    if (permissionBackupMsg) permissionBackupMsg.textContent = error.message || t('permission_backup_import_failed');
+  } finally {
+    importPrincipalRightsBtn.disabled = false;
   }
 });
 
