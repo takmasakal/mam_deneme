@@ -24,6 +24,7 @@ function registerAdminRoutes(app, deps) {
     getUserPermissionsSettings,
     fetchKeycloakUsers,
     fetchKeycloakGroups,
+    fetchKeycloakGroupMembers,
     isVisibleKeycloakUser,
     fetchKeycloakUserPermissionDefaults,
     resolvePermissionKeysFromPrincipals,
@@ -101,6 +102,7 @@ function registerAdminRoutes(app, deps) {
     getAssetFamily,
     assetAccessService,
     assetEditLockService,
+    hasDocumentRightsAdminAccess,
     nanoid: providedNanoid,
     removeAssetFromElastic
   } = deps;
@@ -243,6 +245,111 @@ async function requireAssetRightsAdminRequest(req, res) {
   }
   return context;
 }
+
+const DOCUMENT_RIGHTS_USER_GROUPS = String(process.env.MAM_DOCUMENT_USER_GROUPS || 'dokkullan,dokadmin,dokyonet,dokyönet,dokyon,dokyön')
+  .split(',')
+  .map((value) => String(value || '').trim())
+  .filter(Boolean);
+
+function normalizeDocumentIdentity(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^\/+/, '')
+    .replace(/İ/g, 'i')
+    .replace(/I/g, 'i')
+    .replace(/ı/g, 'i')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ç/g, 'c')
+    .replace(/ğ/g, 'g')
+    .replace(/ö/g, 'o')
+    .replace(/ş/g, 's')
+    .replace(/ü/g, 'u');
+}
+
+function documentUserCandidates(user = {}) {
+  const username = String(user?.username || '').trim();
+  const email = String(user?.email || '').trim();
+  const firstName = String(user?.firstName || '').trim();
+  const lastName = String(user?.lastName || '').trim();
+  const localEmail = email.includes('@') ? email.split('@')[0] : '';
+  return [username, email, localEmail, `${firstName} ${lastName}`.trim()]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+}
+
+async function requireDocumentRightsAdminRequest(req, res) {
+  const effective = await resolveEffectivePermissions(req);
+  const context = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+  const allowed = typeof hasDocumentRightsAdminAccess === 'function'
+    ? hasDocumentRightsAdminAccess(effective, context)
+    : Boolean(effective?.isSuperAdmin || effective?.canAccessAdmin);
+  if (!allowed) {
+    res.status(403).json({ error: 'Document rights admin permission is required' });
+    return null;
+  }
+  return { effective, context };
+}
+
+async function collectDocumentEligibleUsers() {
+  const data = typeof fetchKeycloakGroupMembers === 'function'
+    ? await fetchKeycloakGroupMembers(DOCUMENT_RIGHTS_USER_GROUPS, { maxPerGroup: 1000 })
+    : { users: [] };
+  const users = (Array.isArray(data?.users) ? data.users : [])
+    .filter((user) => (typeof isVisibleKeycloakUser === 'function' ? isVisibleKeycloakUser(user) : true));
+  const allowed = new Set();
+  users.forEach((user) => {
+    documentUserCandidates(user).forEach((candidate) => {
+      const key = normalizeDocumentIdentity(candidate);
+      if (key) allowed.add(key);
+    });
+  });
+  return { users, allowed };
+}
+
+function normalizeDocumentUserList(values) {
+  return assetAccessService.normalizeAccessList(values || []);
+}
+
+function validateDocumentUserLists(payload, allowedUserKeys) {
+  const fields = [
+    'allowedUsers',
+    'deniedUsers',
+    'editAllowedUsers',
+    'editDeniedUsers',
+    'downloadAllowedUsers',
+    'downloadDeniedUsers'
+  ];
+  const normalized = {};
+  const invalid = [];
+  fields.forEach((field) => {
+    const list = normalizeDocumentUserList(payload?.[field]);
+    normalized[field] = list;
+    list.forEach((value) => {
+      const key = normalizeDocumentIdentity(value);
+      if (!key || !allowedUserKeys.has(key)) invalid.push(value);
+    });
+  });
+  return { normalized, invalid: Array.from(new Set(invalid)) };
+}
+
+const DOCUMENT_ASSET_SQL = `(
+  LOWER(COALESCE(assets.type, '')) IN ('document', 'documents', 'pdf', 'office', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx')
+  OR LOWER(COALESCE(assets.mime_type, '')) IN (
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/vnd.oasis.opendocument.text',
+    'application/vnd.oasis.opendocument.spreadsheet',
+    'application/vnd.oasis.opendocument.presentation'
+  )
+  OR LOWER(COALESCE(assets.file_name, '')) ~ '\\.(pdf|doc|docx|xls|xlsx|ppt|pptx|odt|ods|odp)$'
+)`;
 
 function mapTypeAccessPayload(row) {
   return {
@@ -455,6 +562,199 @@ app.delete('/api/admin/group-admins/:id', async (req, res) => {
     return res.status(204).send();
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to delete group admin' });
+  }
+});
+
+app.get('/api/admin/document-rights/assets', async (req, res) => {
+  try {
+    const gate = await requireDocumentRightsAdminRequest(req, res);
+    if (!gate) return null;
+    const q = String(req.query.q || '').trim();
+    const requestedPage = Math.max(1, Number.parseInt(String(req.query.page || '1'), 10) || 1);
+    const requestedLimit = Number.parseInt(String(req.query.limit || '20'), 10) || 20;
+    const limit = [20, 50, 100].includes(requestedLimit) ? requestedLimit : 20;
+    const lockedOnly = ['1', 'true', 'yes', 'on'].includes(String(req.query.lockedOnly || '').trim().toLowerCase());
+    const values = [];
+    const where = [DOCUMENT_ASSET_SQL];
+    if (q) {
+      values.push(`%${q.toLowerCase()}%`);
+      where.push(`(
+        LOWER(COALESCE(assets.title, '')) LIKE $${values.length}
+        OR LOWER(COALESCE(assets.file_name, '')) LIKE $${values.length}
+        OR LOWER(COALESCE(assets.id, '')) LIKE $${values.length}
+      )`);
+    }
+    if (lockedOnly) {
+      where.push(`EXISTS (
+        SELECT 1
+        FROM asset_edit_locks document_locks
+        WHERE document_locks.asset_id = assets.id
+          AND document_locks.expires_at > NOW()
+      )`);
+    }
+    const whereSql = `WHERE ${where.join(' AND ')}`;
+    const countResult = await pool.query(`SELECT COUNT(*)::int AS total FROM assets ${whereSql}`, values);
+    const total = Number(countResult.rows?.[0]?.total || 0);
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const page = Math.min(requestedPage, totalPages);
+    const offset = (page - 1) * limit;
+    const pageValues = [...values, limit, offset];
+    const result = await pool.query(
+      `
+        SELECT
+          assets.id, assets.title, assets.file_name, assets.owner, assets.type,
+          assets.allowed_users, assets.denied_users,
+          assets.edit_allowed_users, assets.edit_denied_users,
+          assets.download_allowed_users, assets.download_denied_users,
+          assets.updated_at,
+          asset_edit_locks.locked_by,
+          asset_edit_locks.locked_by_name,
+          asset_edit_locks.purpose AS lock_purpose,
+          asset_edit_locks.created_at AS lock_created_at,
+          asset_edit_locks.expires_at AS lock_expires_at
+        FROM assets
+        LEFT JOIN asset_edit_locks
+          ON asset_edit_locks.asset_id = assets.id
+         AND asset_edit_locks.expires_at > NOW()
+        ${whereSql}
+        ORDER BY LOWER(COALESCE(NULLIF(assets.title, ''), assets.file_name, assets.id)) ASC
+        LIMIT $${pageValues.length - 1}
+        OFFSET $${pageValues.length}
+      `,
+      pageValues
+    );
+    return res.json({
+      assets: result.rows.map((row) => ({
+        id: row.id,
+        title: row.title || row.file_name || row.id,
+        fileName: row.file_name || '',
+        owner: row.owner || '',
+        allowedUsers: row.allowed_users || [],
+        deniedUsers: row.denied_users || [],
+        editAllowedUsers: row.edit_allowed_users || [],
+        editDeniedUsers: row.edit_denied_users || [],
+        downloadAllowedUsers: row.download_allowed_users || [],
+        downloadDeniedUsers: row.download_denied_users || [],
+        editLock: row.locked_by ? {
+          lockedBy: row.locked_by || '',
+          lockedByName: row.locked_by_name || row.locked_by || '',
+          purpose: row.lock_purpose || '',
+          lockedAt: row.lock_created_at,
+          expiresAt: row.lock_expires_at
+        } : null,
+        updatedAt: row.updated_at
+      })),
+      pagination: { page, limit, total, totalPages }
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load document rights rows' });
+  }
+});
+
+app.patch('/api/admin/document-rights/assets/:id/access', async (req, res) => {
+  try {
+    const gate = await requireDocumentRightsAdminRequest(req, res);
+    if (!gate) return null;
+    const assetId = String(req.params.id || '').trim();
+    if (!assetId) return res.status(400).json({ error: 'assetId is required' });
+    const forbiddenFields = [
+      'visibility',
+      'ownerGroups',
+      'allowedGroups',
+      'deniedGroups',
+      'editAllowedGroups',
+      'editDeniedGroups',
+      'downloadAllowedGroups',
+      'downloadDeniedGroups',
+      'uploadAllowedUsers',
+      'uploadAllowedGroups',
+      'uploadDeniedUsers',
+      'uploadDeniedGroups'
+    ].filter((field) => Object.prototype.hasOwnProperty.call(req.body || {}, field));
+    if (forbiddenFields.length) {
+      return res.status(400).json({ error: 'Document rights only accepts user fields', fields: forbiddenFields });
+    }
+    const assetResult = await pool.query(
+      `SELECT id, title, file_name FROM assets WHERE id = $1 AND ${DOCUMENT_ASSET_SQL}`,
+      [assetId]
+    );
+    const assetRow = assetResult.rows?.[0] || null;
+    if (!assetRow) return res.status(404).json({ error: 'Document asset not found' });
+    const { allowed } = await collectDocumentEligibleUsers();
+    if (!allowed.size) return res.status(400).json({ error: 'No eligible document users were found' });
+    const { normalized, invalid } = validateDocumentUserLists(req.body || {}, allowed);
+    if (invalid.length) {
+      return res.status(400).json({ error: 'Only document users can be assigned', invalidUsers: invalid });
+    }
+    const result = await assetAccessService.updateAssetVisibility(assetId, normalized, {
+      ...gate.context,
+      canManageAllAssetVisibility: true
+    });
+    if (result.status !== 200) {
+      return res.status(result.status).json({ error: result.error });
+    }
+    await indexAssetToElastic(assetId).catch(() => {});
+    await recordAuditEvent?.(req, {
+      action: 'asset.document_rights_updated',
+      targetType: 'asset',
+      targetId: assetId,
+      targetTitle: String(assetRow.title || assetRow.file_name || assetId),
+      details: {
+        source: 'document_rights_panel',
+        allowedUsers: normalized.allowedUsers,
+        deniedUsers: normalized.deniedUsers,
+        editAllowedUsers: normalized.editAllowedUsers,
+        editDeniedUsers: normalized.editDeniedUsers,
+        downloadAllowedUsers: normalized.downloadAllowedUsers,
+        downloadDeniedUsers: normalized.downloadDeniedUsers
+      }
+    });
+    return res.json({
+      asset: {
+        id: result.row.id,
+        title: result.row.title || result.row.file_name || result.row.id,
+        allowedUsers: result.row.allowed_users || [],
+        deniedUsers: result.row.denied_users || [],
+        editAllowedUsers: result.row.edit_allowed_users || [],
+        editDeniedUsers: result.row.edit_denied_users || [],
+        downloadAllowedUsers: result.row.download_allowed_users || [],
+        downloadDeniedUsers: result.row.download_denied_users || []
+      }
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to update document rights' });
+  }
+});
+
+app.delete('/api/admin/document-rights/assets/:id/edit-lock', async (req, res) => {
+  try {
+    const gate = await requireDocumentRightsAdminRequest(req, res);
+    if (!gate) return null;
+    if (!assetEditLockService) return res.status(503).json({ error: 'Edit lock service is not available' });
+    const assetId = String(req.params.id || '').trim();
+    if (!assetId) return res.status(400).json({ error: 'assetId is required' });
+    const assetResult = await pool.query(
+      `SELECT id, title, file_name FROM assets WHERE id = $1 AND ${DOCUMENT_ASSET_SQL}`,
+      [assetId]
+    );
+    const assetRow = assetResult.rows?.[0] || null;
+    if (!assetRow) return res.status(404).json({ error: 'Document asset not found' });
+    const result = await assetEditLockService.releaseAsset(assetId);
+    await recordAuditEvent?.(req, {
+      action: 'asset.edit_lock_released',
+      targetType: 'asset',
+      targetId: assetId,
+      targetTitle: String(assetRow.title || assetRow.file_name || assetId),
+      details: {
+        source: 'document_rights_panel',
+        forced: true,
+        released: Boolean(result.released),
+        lock: result.lock || null
+      }
+    });
+    return res.json({ released: Boolean(result.released), lock: result.lock || null });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to release edit lock' });
   }
 });
 

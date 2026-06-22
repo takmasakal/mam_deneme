@@ -76,10 +76,21 @@
     const canAccessAdmin = Boolean(current.canAccessAdmin || current.isAdmin);
     const canAccessTextAdmin = Boolean(current.canAccessTextAdmin || canAccessAdmin);
     const canAccessAssetRightsAdmin = Boolean(current.canAccessAssetRightsAdmin || canAccessAdmin);
+    const canAccessDocumentRightsAdmin = Boolean(current.canAccessDocumentRightsAdmin || canAccessAdmin);
     const isSuperAdmin = Boolean(current.isSuperAdmin || current.baseIsSuperAdmin);
-    const isTextOnly = canAccessTextAdmin && !canAccessAdmin && !canAccessAssetRightsAdmin;
-    const isAssetRightsOnly = canAccessAssetRightsAdmin && !canAccessAdmin && !canAccessTextAdmin;
-    return { canAccessAdmin, canAccessTextAdmin, canAccessAssetRightsAdmin, isSuperAdmin, isTextOnly, isAssetRightsOnly };
+    const isTextOnly = canAccessTextAdmin && !canAccessAdmin && !canAccessAssetRightsAdmin && !canAccessDocumentRightsAdmin;
+    const isDocumentRightsOnly = canAccessDocumentRightsAdmin && !canAccessAdmin && !canAccessTextAdmin;
+    const isAssetRightsOnly = canAccessAssetRightsAdmin && !canAccessAdmin && !canAccessTextAdmin && !isDocumentRightsOnly;
+    return {
+      canAccessAdmin,
+      canAccessTextAdmin,
+      canAccessAssetRightsAdmin,
+      canAccessDocumentRightsAdmin,
+      isSuperAdmin,
+      isTextOnly,
+      isAssetRightsOnly,
+      isDocumentRightsOnly
+    };
   }
 
   function setTabVisibility(items = [], tabKey, dataAttr, visible) {
@@ -98,7 +109,7 @@
 
   function canShowAdminMenu(profile = {}) {
     const access = getAdminAccessMode(profile);
-    return access.canAccessAdmin || access.canAccessTextAdmin || access.canAccessAssetRightsAdmin;
+    return access.canAccessAdmin || access.canAccessTextAdmin || access.canAccessAssetRightsAdmin || access.canAccessDocumentRightsAdmin;
   }
 
   function applyAdminAccessMode({
@@ -112,14 +123,15 @@
     switchSettingsSubtab = null
   } = {}) {
     const access = getAdminAccessMode(profile);
-    const canShowFullAdminPanels = !access.isTextOnly && !access.isAssetRightsOnly;
+    const canShowFullAdminPanels = !access.isTextOnly && !access.isAssetRightsOnly && !access.isDocumentRightsOnly;
     const visibleMainTabs = {
       apiHelp: canShowFullAdminPanels,
       systemHealth: canShowFullAdminPanels,
       runtimeDiagnostics: canShowFullAdminPanels,
       auditEvents: canShowFullAdminPanels,
-      assetRights: !access.isTextOnly || access.canAccessAssetRightsAdmin,
-      settings: !access.isAssetRightsOnly
+      assetRights: canShowFullAdminPanels || (access.canAccessAssetRightsAdmin && !access.isDocumentRightsOnly),
+      documentRights: access.isDocumentRightsOnly,
+      settings: !access.isAssetRightsOnly && !access.isDocumentRightsOnly
     };
     Object.entries(visibleMainTabs).forEach(([tabName, visible]) => {
       setTabVisibility(adminTabs, tabName, 'tab', visible);
@@ -154,6 +166,8 @@
       if (typeof switchSettingsSubtab === 'function') switchSettingsSubtab('ocr');
     } else if (access.isAssetRightsOnly) {
       if (typeof switchTab === 'function') switchTab('assetRights');
+    } else if (access.isDocumentRightsOnly) {
+      if (typeof switchTab === 'function') switchTab('documentRights');
     }
 
     return access;

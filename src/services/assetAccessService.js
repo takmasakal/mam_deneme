@@ -213,7 +213,7 @@ function createAssetAccessService({ pool }) {
       groupAdminGroups,
       assetTypeAccessRules,
       canBypassAssetTypeAccess: Boolean(user.isSuperAdmin),
-      canManageAllAssetVisibility: Boolean(user.isSuperAdmin)
+      canManageAllAssetVisibility: Boolean(user.isSuperAdmin || user.canAccessAdmin || user.isAdmin)
     };
     if (req && typeof req === 'object') req.__mamAssetAccessContext = context;
     return context;
@@ -436,6 +436,7 @@ function createAssetAccessService({ pool }) {
 
   function getAllowedUploadAssetTypeGroups(context = {}) {
     if (context?.canBypassAssetTypeAccess) return [...ASSET_TYPE_GROUPS];
+    if (context?.canAccessAdmin || context?.isAdmin) return getAllowedAssetTypeGroups(context);
     return ASSET_TYPE_GROUPS.filter((typeGroup) => canUploadAssetType({ typeGroup }, context));
   }
 
