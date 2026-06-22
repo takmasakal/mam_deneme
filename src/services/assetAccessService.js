@@ -426,18 +426,16 @@ function createAssetAccessService({ pool }) {
       mime_type: input.mimeType || input.mime_type,
       file_name: input.fileName || input.file_name
     };
-    if (context?.canAccessAdmin || context?.isAdmin) return canCreateAssetOfType(row, context);
     const rule = getTypeRuleForAsset(row, context);
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
     if (identityMatchesAny(identity, rule.uploadDeniedUsers, rule.uploadDeniedGroups)) return false;
     const hasExplicitUploadRules = Boolean(rule.uploadAllowedUsers.length || rule.uploadAllowedGroups.length);
-    if (!hasExplicitUploadRules) return canCreateAssetOfType(input, context);
+    if (!hasExplicitUploadRules) return canCreateAssetOfType(row, context);
     return identityMatchesAny(identity, rule.uploadAllowedUsers, rule.uploadAllowedGroups);
   }
 
   function getAllowedUploadAssetTypeGroups(context = {}) {
     if (context?.canBypassAssetTypeAccess) return [...ASSET_TYPE_GROUPS];
-    if (context?.canAccessAdmin || context?.isAdmin) return getAllowedAssetTypeGroups(context);
     return ASSET_TYPE_GROUPS.filter((typeGroup) => canUploadAssetType({ typeGroup }, context));
   }
 
