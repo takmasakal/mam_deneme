@@ -285,6 +285,8 @@ const KEYCLOAK_ADMIN_REQUEST_TIMEOUT_MS = Math.max(1000, Number(process.env.KEYC
 const SYSTEM_HEALTH_CACHE_TTL_MS = Math.max(5, Number(process.env.SYSTEM_HEALTH_CACHE_TTL_SECONDS) || 30) * 1000;
 let keycloakUsersCache = { expiresAt: 0, value: null };
 let keycloakGroupsCache = { expiresAt: 0, value: null };
+let keycloakAdminTokenCache = { expiresAt: 0, token: '' };
+let keycloakAdminTokenPromise = null;
 const keycloakPermissionDefaultsCache = new Map();
 const keycloakUserProfileCache = new Map();
 let systemHealthCache = { expiresAt: 0, value: null };
@@ -7448,8 +7450,14 @@ function getKeycloakCandidateRealms() {
 
 async function getKeycloakAdminAccessToken() {
   if (!KEYCLOAK_ADMIN_USERNAME || !KEYCLOAK_ADMIN_PASSWORD) return '';
+  const now = Date.now();
+  if (keycloakAdminTokenCache.token && keycloakAdminTokenCache.expiresAt > now) {
+    return keycloakAdminTokenCache.token;
+  }
+  if (keycloakAdminTokenPromise) return keycloakAdminTokenPromise;
   const tokenUrl = `${KEYCLOAK_INTERNAL_URL}/realms/${encodeURIComponent(KEYCLOAK_ADMIN_REALM)}/protocol/openid-connect/token`;
-  try {
+
+  keycloakAdminTokenPromise = (async () => {
     const form = new URLSearchParams();
     form.set('grant_type', 'password');
     form.set('client_id', KEYCLOAK_ADMIN_CLIENT_ID);
@@ -7462,9 +7470,23 @@ async function getKeycloakAdminAccessToken() {
     });
     if (!response.ok) return '';
     const payload = await response.json().catch(() => ({}));
-    return String(payload?.access_token || '').trim();
+    const token = String(payload?.access_token || '').trim();
+    const expiresInMs = Math.max(0, Number(payload?.expires_in) || 0) * 1000;
+    if (token) {
+      keycloakAdminTokenCache = {
+        token,
+        expiresAt: Date.now() + Math.max(0, expiresInMs - 10_000)
+      };
+    }
+    return token;
+  })();
+
+  try {
+    return await keycloakAdminTokenPromise;
   } catch (_error) {
     return '';
+  } finally {
+    keycloakAdminTokenPromise = null;
   }
 }
 
@@ -7642,6 +7664,7 @@ async function fetchKeycloakUserPermissionDefaults(users) {
 }
 
 async function resolveEffectivePermissions(req) {
+  if (req?.__mamEffectivePermissions) return req.__mamEffectivePermissions;
   const user = await enrichUserProfileFromKeycloak(buildUserContextFromRequest(req));
   const settings = await getUserPermissionsSettings();
   const override = getPermissionOverrideForUser(settings, user);
@@ -7657,7 +7680,7 @@ async function resolveEffectivePermissions(req) {
   const canAccessAdmin = Boolean(effective.adminPageAccess);
   const canAccessTextAdmin = Boolean(effective.textAdminAccess || canAccessAdmin);
   const canEditOffice = Boolean(effective.officeEdit || canAccessAdmin);
-  return {
+  const effectiveUser = {
     ...user,
     isSuperAdmin,
     isAdmin: canAccessAdmin,
@@ -7670,6 +7693,8 @@ async function resolveEffectivePermissions(req) {
     permissions: effective,
     permissionKeys: effective.permissionKeys
   };
+  if (req && typeof req === 'object') req.__mamEffectivePermissions = effectiveUser;
+  return effectiveUser;
 }
 
 app.get('/api/workflow', (_req, res) => {
@@ -7697,7 +7722,7 @@ app.get('/api/me', async (req, res) => {
       email: effective.email || '',
       groups: effective.groups || [],
       roles: effective.roles || [],
-      groupAdminGroups: await assetAccessService.getGroupAdminGroupsForUser(effective).catch(() => []),
+      groupAdminGroups: accessContext.groupAdminGroups || [],
       isSuperAdmin: Boolean(effective.isSuperAdmin),
       isAdmin: effective.isAdmin,
 	      canAccessAdmin: effective.canAccessAdmin,

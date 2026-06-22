@@ -200,13 +200,14 @@ function createAssetAccessService({ pool }) {
   }
 
   async function resolveAccessContext(req, resolveEffectivePermissions) {
+    if (req?.__mamAssetAccessContext) return req.__mamAssetAccessContext;
     const user = typeof resolveEffectivePermissions === 'function'
       ? await resolveEffectivePermissions(req)
       : {};
     const identity = getUserAccessIdentity(user);
     const groupAdminGroups = await getGroupAdminGroupsForUser(user);
     const assetTypeAccessRules = await getAssetTypeAccessRows();
-    return {
+    const context = {
       ...user,
       accessIdentity: identity,
       groupAdminGroups,
@@ -214,6 +215,8 @@ function createAssetAccessService({ pool }) {
       canBypassAssetTypeAccess: Boolean(user.isSuperAdmin),
       canManageAllAssetVisibility: Boolean(user.isSuperAdmin)
     };
+    if (req && typeof req === 'object') req.__mamAssetAccessContext = context;
+    return context;
   }
 
   function hasScopedAssetRightsAdminAccess(context = {}) {
