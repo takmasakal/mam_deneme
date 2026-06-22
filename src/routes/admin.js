@@ -1129,6 +1129,386 @@ app.patch('/api/admin/asset-types/:typeGroup/access', async (req, res) => {
   }
 });
 
+const PERMISSION_EXPORT_SCHEMA = 'mam.permission-export';
+const PERMISSION_EXPORT_VERSION = 1;
+const ACCESS_ARRAY_FIELDS = [
+  'owner_groups',
+  'allowed_users',
+  'allowed_groups',
+  'denied_users',
+  'denied_groups',
+  'edit_allowed_users',
+  'edit_allowed_groups',
+  'edit_denied_users',
+  'edit_denied_groups',
+  'download_allowed_users',
+  'download_allowed_groups',
+  'download_denied_users',
+  'download_denied_groups',
+  'upload_allowed_users',
+  'upload_allowed_groups',
+  'upload_denied_users',
+  'upload_denied_groups'
+];
+const ASSET_ACCESS_ARRAY_FIELDS = ACCESS_ARRAY_FIELDS.filter((field) => !field.startsWith('upload_'));
+const TYPE_ACCESS_GROUPS = ['video', 'audio', 'photo', 'document', 'other'];
+
+function permissionExportStamp(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  const safe = Number.isNaN(date.getTime()) ? new Date() : date;
+  const pad = (num) => String(num).padStart(2, '0');
+  return [
+    safe.getFullYear(),
+    pad(safe.getMonth() + 1),
+    pad(safe.getDate()),
+    pad(safe.getHours())
+  ].join('_');
+}
+
+function sanitizePermissionExportFileName(value, fallback) {
+  const raw = String(value || '').trim() || fallback;
+  const withoutExt = raw.replace(/\.json$/i, '');
+  const safe = withoutExt
+    .normalize('NFKD')
+    .replace(/[^\w.\-ığüşöçİĞÜŞÖÇ]+/gi, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 120);
+  return `${safe || fallback}.json`;
+}
+
+function sendPermissionExport(res, payload, requestedName, defaultSuffix) {
+  const fallback = `${permissionExportStamp()}_${defaultSuffix}`;
+  const fileName = sanitizePermissionExportFileName(requestedName, fallback);
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+  return res.send(`${JSON.stringify(payload, null, 2)}\n`);
+}
+
+function ensurePermissionImportPayload(payload, expectedKind) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    const error = new Error('Invalid import payload');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (payload.schema !== PERMISSION_EXPORT_SCHEMA || payload.version !== PERMISSION_EXPORT_VERSION || payload.kind !== expectedKind) {
+    const error = new Error('Import file does not match the selected permission type');
+    error.statusCode = 400;
+    throw error;
+  }
+  return payload;
+}
+
+function normalizeTypeAccessImportRow(row = {}) {
+  const typeGroup = assetAccessService.normalizeAssetTypeGroup(row.type_group || row.typeGroup || '');
+  if (!typeGroup || !TYPE_ACCESS_GROUPS.includes(typeGroup)) return null;
+  const out = {
+    type_group: typeGroup,
+    visibility: assetAccessService.normalizeVisibility(row.visibility, 'public')
+  };
+  ACCESS_ARRAY_FIELDS.forEach((field) => {
+    const camel = field.replace(/_([a-z])/g, (_match, letter) => letter.toUpperCase());
+    out[field] = assetAccessService.normalizeAccessList(row[field] || row[camel] || []);
+  });
+  return out;
+}
+
+function normalizeAssetAccessImportRow(row = {}) {
+  const id = String(row.id || '').trim();
+  if (!id) return null;
+  const out = {
+    id,
+    visibility: assetAccessService.normalizeVisibility(row.visibility, 'public'),
+    owner_user: assetAccessService.normalizeAccessName(row.owner_user || row.ownerUser || '')
+  };
+  ASSET_ACCESS_ARRAY_FIELDS.forEach((field) => {
+    const camel = field.replace(/_([a-z])/g, (_match, letter) => letter.toUpperCase());
+    out[field] = assetAccessService.normalizeAccessList(row[field] || row[camel] || []);
+  });
+  return out;
+}
+
+function normalizeGroupAdminImportRow(row = {}) {
+  const groupName = assetAccessService.normalizeAccessName(row.group_name || row.groupName || '');
+  const username = assetAccessService.normalizeAccessName(row.username || '');
+  if (!groupName || !username) return null;
+  return {
+    id: String(row.id || '').trim() || resolvedNanoid(),
+    group_name: groupName,
+    username,
+    created_at: row.created_at || row.createdAt || new Date().toISOString(),
+    created_by: String(row.created_by || row.createdBy || 'import').trim() || 'import'
+  };
+}
+
+app.get('/api/admin/permission-exports/:kind', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const kind = String(req.params.kind || '').trim();
+    const exportedAt = new Date().toISOString();
+    if (kind === 'asset-rights') {
+      const [typeRows, assetRows] = await Promise.all([
+        pool.query(`
+          SELECT type_group, visibility, owner_groups, allowed_users, allowed_groups, denied_users, denied_groups,
+                 edit_allowed_users, edit_allowed_groups, edit_denied_users, edit_denied_groups,
+                 download_allowed_users, download_allowed_groups, download_denied_users, download_denied_groups,
+                 upload_allowed_users, upload_allowed_groups, upload_denied_users, upload_denied_groups,
+                 updated_at, updated_by
+          FROM asset_type_access
+          ORDER BY CASE type_group WHEN 'video' THEN 1 WHEN 'audio' THEN 2 WHEN 'photo' THEN 3 WHEN 'document' THEN 4 ELSE 5 END
+        `),
+        pool.query(`
+          SELECT id, title, type, media_url, visibility, owner_user, owner_groups,
+                 allowed_users, allowed_groups, denied_users, denied_groups,
+                 edit_allowed_users, edit_allowed_groups, edit_denied_users, edit_denied_groups,
+                 download_allowed_users, download_allowed_groups, download_denied_users, download_denied_groups,
+                 updated_at
+          FROM assets
+          ORDER BY lower(COALESCE(title, '')), id
+        `)
+      ]);
+      const payload = {
+        schema: PERMISSION_EXPORT_SCHEMA,
+        version: PERMISSION_EXPORT_VERSION,
+        kind,
+        exportedAt,
+        exportedBy: effective.username || effective.displayName || '',
+        assetTypeAccess: typeRows.rows,
+        assetAccess: assetRows.rows
+      };
+      await recordAuditEvent?.(req, {
+        action: 'permission_export.asset_rights',
+        targetType: 'permission_export',
+        targetId: kind,
+        targetTitle: 'Asset rights export',
+        details: { typeRows: typeRows.rowCount, assetRows: assetRows.rowCount }
+      });
+      return sendPermissionExport(res, payload, req.query.fileName, 'varlık_yetkileri');
+    }
+    if (kind === 'principal-rights') {
+      const [userPermissions, groupAdmins] = await Promise.all([
+        getUserPermissionsSettings(),
+        pool.query('SELECT id, group_name, username, created_at, created_by FROM group_admins ORDER BY group_name, username')
+      ]);
+      const payload = {
+        schema: PERMISSION_EXPORT_SCHEMA,
+        version: PERMISSION_EXPORT_VERSION,
+        kind,
+        exportedAt,
+        exportedBy: effective.username || effective.displayName || '',
+        userPermissions,
+        groupAdmins: groupAdmins.rows
+      };
+      await recordAuditEvent?.(req, {
+        action: 'permission_export.principal_rights',
+        targetType: 'permission_export',
+        targetId: kind,
+        targetTitle: 'User and group rights export',
+        details: { userPermissionEntries: Object.keys(userPermissions || {}).length, groupAdmins: groupAdmins.rowCount }
+      });
+      return sendPermissionExport(res, payload, req.query.fileName, 'kullanıcı_grup_yetkileri');
+    }
+    return res.status(400).json({ error: 'Invalid permission export type' });
+  } catch (error) {
+    return res.status(500).json({ error: String(error?.message || 'Failed to export permissions') });
+  }
+});
+
+app.post('/api/admin/permission-imports/:kind', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const kind = String(req.params.kind || '').trim();
+    const payload = ensurePermissionImportPayload(req.body || {}, kind);
+    const importedAt = new Date().toISOString();
+
+    if (kind === 'asset-rights') {
+      const typeRows = (Array.isArray(payload.assetTypeAccess) ? payload.assetTypeAccess : [])
+        .map(normalizeTypeAccessImportRow)
+        .filter(Boolean);
+      const assetRows = (Array.isArray(payload.assetAccess) ? payload.assetAccess : [])
+        .map(normalizeAssetAccessImportRow)
+        .filter(Boolean);
+      const missingAssetIds = [];
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        for (const row of typeRows) {
+          await client.query(
+            `
+              INSERT INTO asset_type_access (
+                type_group, visibility, owner_groups, allowed_users, allowed_groups,
+                denied_users, denied_groups, edit_allowed_users, edit_allowed_groups,
+                edit_denied_users, edit_denied_groups,
+                download_allowed_users, download_allowed_groups, download_denied_users, download_denied_groups,
+                upload_allowed_users, upload_allowed_groups, upload_denied_users, upload_denied_groups,
+                updated_at, updated_by
+              )
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+              ON CONFLICT (type_group) DO UPDATE
+              SET visibility = EXCLUDED.visibility,
+                  owner_groups = EXCLUDED.owner_groups,
+                  allowed_users = EXCLUDED.allowed_users,
+                  allowed_groups = EXCLUDED.allowed_groups,
+                  denied_users = EXCLUDED.denied_users,
+                  denied_groups = EXCLUDED.denied_groups,
+                  edit_allowed_users = EXCLUDED.edit_allowed_users,
+                  edit_allowed_groups = EXCLUDED.edit_allowed_groups,
+                  edit_denied_users = EXCLUDED.edit_denied_users,
+                  edit_denied_groups = EXCLUDED.edit_denied_groups,
+                  download_allowed_users = EXCLUDED.download_allowed_users,
+                  download_allowed_groups = EXCLUDED.download_allowed_groups,
+                  download_denied_users = EXCLUDED.download_denied_users,
+                  download_denied_groups = EXCLUDED.download_denied_groups,
+                  upload_allowed_users = EXCLUDED.upload_allowed_users,
+                  upload_allowed_groups = EXCLUDED.upload_allowed_groups,
+                  upload_denied_users = EXCLUDED.upload_denied_users,
+                  upload_denied_groups = EXCLUDED.upload_denied_groups,
+                  updated_at = EXCLUDED.updated_at,
+                  updated_by = EXCLUDED.updated_by
+            `,
+            [
+              row.type_group,
+              row.visibility,
+              row.owner_groups,
+              row.allowed_users,
+              row.allowed_groups,
+              row.denied_users,
+              row.denied_groups,
+              row.edit_allowed_users,
+              row.edit_allowed_groups,
+              row.edit_denied_users,
+              row.edit_denied_groups,
+              row.download_allowed_users,
+              row.download_allowed_groups,
+              row.download_denied_users,
+              row.download_denied_groups,
+              row.upload_allowed_users,
+              row.upload_allowed_groups,
+              row.upload_denied_users,
+              row.upload_denied_groups,
+              importedAt,
+              effective.username || effective.displayName || 'import'
+            ]
+          );
+        }
+        let updatedAssets = 0;
+        for (const row of assetRows) {
+          const result = await client.query(
+            `
+              UPDATE assets
+              SET visibility = $2,
+                  owner_user = $3,
+                  owner_groups = $4,
+                  allowed_users = $5,
+                  allowed_groups = $6,
+                  denied_users = $7,
+                  denied_groups = $8,
+                  edit_allowed_users = $9,
+                  edit_allowed_groups = $10,
+                  edit_denied_users = $11,
+                  edit_denied_groups = $12,
+                  download_allowed_users = $13,
+                  download_allowed_groups = $14,
+                  download_denied_users = $15,
+                  download_denied_groups = $16,
+                  updated_at = NOW()
+              WHERE id = $1
+            `,
+            [
+              row.id,
+              row.visibility,
+              row.owner_user,
+              row.owner_groups,
+              row.allowed_users,
+              row.allowed_groups,
+              row.denied_users,
+              row.denied_groups,
+              row.edit_allowed_users,
+              row.edit_allowed_groups,
+              row.edit_denied_users,
+              row.edit_denied_groups,
+              row.download_allowed_users,
+              row.download_allowed_groups,
+              row.download_denied_users,
+              row.download_denied_groups
+            ]
+          );
+          if (result.rowCount) updatedAssets += 1;
+          else missingAssetIds.push(row.id);
+        }
+        await client.query('COMMIT');
+        await recordAuditEvent?.(req, {
+          action: 'permission_import.asset_rights',
+          targetType: 'permission_import',
+          targetId: kind,
+          targetTitle: 'Asset rights import',
+          details: { typeRows: typeRows.length, updatedAssets, missingAssetIds }
+        });
+        return res.json({ ok: true, typeRows: typeRows.length, updatedAssets, missingAssetIds });
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+
+    if (kind === 'principal-rights') {
+      const userPermissions = payload.userPermissions && typeof payload.userPermissions === 'object' && !Array.isArray(payload.userPermissions)
+        ? payload.userPermissions
+        : {};
+      const groupAdmins = (Array.isArray(payload.groupAdmins) ? payload.groupAdmins : [])
+        .map(normalizeGroupAdminImportRow)
+        .filter(Boolean);
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(
+          `
+            INSERT INTO admin_settings (key, value, updated_at)
+            VALUES ('user_permissions', $1::jsonb, $2)
+            ON CONFLICT (key)
+            DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
+          `,
+          [JSON.stringify(userPermissions), importedAt]
+        );
+        await client.query('DELETE FROM group_admins');
+        for (const row of groupAdmins) {
+          await client.query(
+            `
+              INSERT INTO group_admins (id, group_name, username, created_at, created_by)
+              VALUES ($1, $2, $3, $4, $5)
+              ON CONFLICT (group_name, username)
+              DO UPDATE SET created_at = EXCLUDED.created_at, created_by = EXCLUDED.created_by
+            `,
+            [row.id, row.group_name, row.username, row.created_at, row.created_by]
+          );
+        }
+        await client.query('COMMIT');
+        await recordAuditEvent?.(req, {
+          action: 'permission_import.principal_rights',
+          targetType: 'permission_import',
+          targetId: kind,
+          targetTitle: 'User and group rights import',
+          details: { userPermissionEntries: Object.keys(userPermissions).length, groupAdmins: groupAdmins.length }
+        });
+        return res.json({ ok: true, userPermissionEntries: Object.keys(userPermissions).length, groupAdmins: groupAdmins.length });
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+
+    return res.status(400).json({ error: 'Invalid permission import type' });
+  } catch (error) {
+    return res.status(error?.statusCode || 500).json({ error: String(error?.message || 'Failed to import permissions') });
+  }
+});
+
 app.get('/api/admin/turkish-corrections', async (_req, res) => {
   try {
     await reloadLearnedTurkishCorrectionsFromDb();

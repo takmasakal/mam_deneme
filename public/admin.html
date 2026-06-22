@@ -528,6 +528,24 @@
                 <button id="runBackupNowBtn" type="button" data-i18n="backup_run_now">Run Backup Now</button>
               </div>
             </form>
+            <fieldset id="permissionBackupGroup" class="settings-group">
+              <legend data-i18n="permission_backup_title">Permission Export / Import</legend>
+              <div class="backup-file-row">
+                <strong data-i18n="permission_backup_asset_rights">Asset rights</strong>
+                <input id="assetRightsExportName" data-i18n-placeholder="permission_backup_export_file_name_ph" placeholder="Optional file name" />
+                <button id="exportAssetRightsBtn" type="button" data-i18n="permission_backup_export">Export</button>
+                <input id="assetRightsImportFile" type="file" accept="application/json,.json" />
+                <button id="importAssetRightsBtn" type="button" class="secondary" data-i18n="permission_backup_import">Import</button>
+              </div>
+              <div class="backup-file-row">
+                <strong data-i18n="permission_backup_principal_rights">User and group rights</strong>
+                <input id="principalRightsExportName" data-i18n-placeholder="permission_backup_export_file_name_ph" placeholder="Optional file name" />
+                <button id="exportPrincipalRightsBtn" type="button" data-i18n="permission_backup_export">Export</button>
+                <input id="principalRightsImportFile" type="file" accept="application/json,.json" />
+                <button id="importPrincipalRightsBtn" type="button" class="secondary" data-i18n="permission_backup_import">Import</button>
+              </div>
+              <div id="permissionBackupMsg" class="admin-note"></div>
+            </fieldset>
             <div id="backupFilesRows" class="rows"></div>
             <div id="backupSettingsMsg" class="admin-note"></div>
           </section>
