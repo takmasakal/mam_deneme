@@ -292,6 +292,15 @@ async function requireDocumentRightsAdminRequest(req, res) {
   return { effective, context };
 }
 
+function getDocumentRightsVisibilityContext(gate = {}) {
+  if (gate?.effective?.isSuperAdmin) return gate.context || {};
+  return {
+    ...(gate.context || {}),
+    canBypassAssetTypeAccess: false,
+    canManageAllAssetVisibility: false
+  };
+}
+
 async function collectDocumentEligibleUsers() {
   const data = typeof fetchKeycloakGroupMembers === 'function'
     ? await fetchKeycloakGroupMembers(DOCUMENT_RIGHTS_USER_GROUPS, { maxPerGroup: 1000 })
@@ -576,6 +585,8 @@ app.get('/api/admin/document-rights/assets', async (req, res) => {
     const lockedOnly = ['1', 'true', 'yes', 'on'].includes(String(req.query.lockedOnly || '').trim().toLowerCase());
     const values = [];
     const where = [DOCUMENT_ASSET_SQL];
+    const visibilityContext = getDocumentRightsVisibilityContext(gate);
+    assetAccessService.appendAssetAccessWhere(where, values, visibilityContext, 'assets');
     if (q) {
       values.push(`%${q.toLowerCase()}%`);
       where.push(`(
@@ -674,12 +685,13 @@ app.patch('/api/admin/document-rights/assets/:id/access', async (req, res) => {
     if (forbiddenFields.length) {
       return res.status(400).json({ error: 'Document rights only accepts user fields', fields: forbiddenFields });
     }
-    const assetResult = await pool.query(
-      `SELECT id, title, file_name FROM assets WHERE id = $1 AND ${DOCUMENT_ASSET_SQL}`,
-      [assetId]
-    );
+    const assetResult = await pool.query(`SELECT * FROM assets WHERE id = $1 AND ${DOCUMENT_ASSET_SQL}`, [assetId]);
     const assetRow = assetResult.rows?.[0] || null;
     if (!assetRow) return res.status(404).json({ error: 'Document asset not found' });
+    const visibilityContext = getDocumentRightsVisibilityContext(gate);
+    if (!assetAccessService.canViewAsset(assetRow, visibilityContext)) {
+      return res.status(404).json({ error: 'Document asset not found' });
+    }
     const { allowed } = await collectDocumentEligibleUsers();
     if (!allowed.size) return res.status(400).json({ error: 'No eligible document users were found' });
     const { normalized, invalid } = validateDocumentUserLists(req.body || {}, allowed);
@@ -733,12 +745,13 @@ app.delete('/api/admin/document-rights/assets/:id/edit-lock', async (req, res) =
     if (!assetEditLockService) return res.status(503).json({ error: 'Edit lock service is not available' });
     const assetId = String(req.params.id || '').trim();
     if (!assetId) return res.status(400).json({ error: 'assetId is required' });
-    const assetResult = await pool.query(
-      `SELECT id, title, file_name FROM assets WHERE id = $1 AND ${DOCUMENT_ASSET_SQL}`,
-      [assetId]
-    );
+    const assetResult = await pool.query(`SELECT * FROM assets WHERE id = $1 AND ${DOCUMENT_ASSET_SQL}`, [assetId]);
     const assetRow = assetResult.rows?.[0] || null;
     if (!assetRow) return res.status(404).json({ error: 'Document asset not found' });
+    const visibilityContext = getDocumentRightsVisibilityContext(gate);
+    if (!assetAccessService.canViewAsset(assetRow, visibilityContext)) {
+      return res.status(404).json({ error: 'Document asset not found' });
+    }
     const result = await assetEditLockService.releaseAsset(assetId);
     await recordAuditEvent?.(req, {
       action: 'asset.edit_lock_released',
@@ -1287,10 +1300,52 @@ app.get('/api/admin/permission-exports/:kind', async (req, res) => {
       return sendPermissionExport(res, payload, req.query.fileName, 'varlık_yetkileri');
     }
     if (kind === 'principal-rights') {
-      const [userPermissions, groupAdmins] = await Promise.all([
+      const [userPermissions, groupAdmins, keycloakGroupsData] = await Promise.all([
         getUserPermissionsSettings(),
-        pool.query('SELECT id, group_name, username, created_at, created_by FROM group_admins ORDER BY group_name, username')
+        pool.query('SELECT id, group_name, username, created_at, created_by FROM group_admins ORDER BY group_name, username'),
+        fetchKeycloakGroups()
       ]);
+      const groupNames = (Array.isArray(keycloakGroupsData?.groups) ? keycloakGroupsData.groups : [])
+        .map((group) => String(group?.path || group?.name || '').trim())
+        .filter(Boolean);
+      const groupedUsersData = await fetchKeycloakGroupMembers(groupNames, { maxPerGroup: 1000 });
+      const keycloakUsers = (Array.isArray(groupedUsersData?.users) ? groupedUsersData.users : [])
+        .filter((user) => isVisibleKeycloakUser(user))
+        .map((user) => {
+          const username = String(user?.username || '').trim().toLowerCase();
+          const savedPermissionOverride = userPermissions?.[username] || null;
+          return {
+            id: String(user?.id || '').trim(),
+            username,
+            firstName: String(user?.firstName || '').trim(),
+            lastName: String(user?.lastName || '').trim(),
+            email: String(user?.email || '').trim(),
+            enabled: user?.enabled !== false,
+            realm: String(groupedUsersData?.realmByUsername?.get(username) || '').trim(),
+            groups: Array.isArray(groupedUsersData?.groupPathsByUsername?.get(username))
+              ? groupedUsersData.groupPathsByUsername.get(username)
+              : [],
+            hasSavedPermissionOverride: Boolean(savedPermissionOverride),
+            savedPermissionOverride
+          };
+        })
+        .filter((user) => user.username)
+        .sort((a, b) => a.username.localeCompare(b.username));
+      const keycloakGroups = (Array.isArray(keycloakGroupsData?.groups) ? keycloakGroupsData.groups : [])
+        .map((group) => {
+          const name = String(group?.name || '').trim();
+          const path = String(group?.path || '').trim();
+          const mapped = resolvePermissionKeysFromPrincipals({ groups: [name, path] });
+          return {
+            id: String(group?.id || '').trim(),
+            name,
+            path,
+            realm: String(group?.realm || '').trim(),
+            permissionKeys: mapped.permissionKeys
+          };
+        })
+        .filter((group) => group.name)
+        .sort((a, b) => String(a.path || a.name).localeCompare(String(b.path || b.name)));
       const payload = {
         schema: PERMISSION_EXPORT_SCHEMA,
         version: PERMISSION_EXPORT_VERSION,
@@ -1298,14 +1353,21 @@ app.get('/api/admin/permission-exports/:kind', async (req, res) => {
         exportedAt,
         exportedBy: effective.username || effective.displayName || '',
         userPermissions,
-        groupAdmins: groupAdmins.rows
+        groupAdmins: groupAdmins.rows,
+        keycloakUsers,
+        keycloakGroups
       };
       await recordAuditEvent?.(req, {
         action: 'permission_export.principal_rights',
         targetType: 'permission_export',
         targetId: kind,
         targetTitle: 'User and group rights export',
-        details: { userPermissionEntries: Object.keys(userPermissions || {}).length, groupAdmins: groupAdmins.rowCount }
+        details: {
+          userPermissionEntries: Object.keys(userPermissions || {}).length,
+          groupAdmins: groupAdmins.rowCount,
+          keycloakUsers: keycloakUsers.length,
+          keycloakGroups: keycloakGroups.length
+        }
       });
       return sendPermissionExport(res, payload, req.query.fileName, 'kullanıcı_grup_yetkileri');
     }

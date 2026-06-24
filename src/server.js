@@ -7654,13 +7654,14 @@ async function fetchKeycloakGroupMembers(groupNames = [], options = {}) {
       .map((name) => normalizeIdentityKey(String(name || '').replace(/^\/+/, '').split('/').filter(Boolean).pop() || name))
       .filter(Boolean)
   );
-  if (!requested.size) return { users: [], realmByUsername: new Map() };
+  if (!requested.size) return { users: [], realmByUsername: new Map(), groupPathsByUsername: new Map() };
   const token = await getKeycloakAdminAccessToken();
-  if (!token) return { users: [], realmByUsername: new Map() };
+  if (!token) return { users: [], realmByUsername: new Map(), groupPathsByUsername: new Map() };
   const { groups } = await fetchKeycloakGroups();
   const maxPerGroup = Math.max(1, Math.min(Number(options.maxPerGroup) || 500, 1000));
   const users = [];
   const realmByUsername = new Map();
+  const groupPathsByUsername = new Map();
   const seen = new Set();
   const matchingGroups = (Array.isArray(groups) ? groups : []).filter((group) => {
     const names = [
@@ -7688,16 +7689,31 @@ async function fetchKeycloakGroupMembers(groupNames = [], options = {}) {
       const arr = Array.isArray(rows) ? rows : [];
       arr.forEach((row) => {
         const username = String(row?.username || '').trim().toLowerCase();
-        if (!username || seen.has(username)) return;
-        seen.add(username);
-        users.push(row);
+        if (!username) return;
+        const groupPath = String(group.path || group.name || '').trim();
+        const memberships = groupPathsByUsername.get(username) || new Set();
+        if (groupPath) memberships.add(groupPath);
+        groupPathsByUsername.set(username, memberships);
+        if (!seen.has(username)) {
+          seen.add(username);
+          users.push(row);
+        }
         realmByUsername.set(username, realm);
       });
       if (arr.length < maxPerGroup) break;
       first += maxPerGroup;
     }
   }
-  return { users, realmByUsername };
+  return {
+    users,
+    realmByUsername,
+    groupPathsByUsername: new Map(
+      Array.from(groupPathsByUsername.entries()).map(([username, paths]) => [
+        username,
+        Array.from(paths).sort((a, b) => a.localeCompare(b))
+      ])
+    )
+  };
 }
 
 function isVisibleKeycloakUser(user) {

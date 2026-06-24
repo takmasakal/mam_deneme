@@ -1633,6 +1633,65 @@ body {
   overflow-wrap: anywhere;
 }
 
+.permission-backup-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 190px) minmax(180px, 1fr) auto minmax(220px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+#permissionBackupGroup[hidden] {
+  display: none !important;
+}
+
+.permission-backup-row + .permission-backup-row {
+  margin-top: 8px;
+}
+
+.permission-backup-row > strong,
+.permission-backup-row > input {
+  min-width: 0;
+}
+
+.permission-backup-row > input[type='file'] {
+  width: 100%;
+  max-width: 100%;
+  padding: 6px 8px;
+}
+
+.permission-backup-row > button {
+  width: auto;
+  max-width: max-content;
+  min-height: 34px;
+  padding: 0 12px;
+  justify-self: start;
+  white-space: nowrap;
+}
+
+@media (max-width: 1050px) {
+  .permission-backup-row {
+    grid-template-columns: minmax(140px, 180px) minmax(180px, 1fr) auto;
+  }
+
+  .permission-backup-row > input[type='file'] {
+    grid-column: 2;
+  }
+}
+
+@media (max-width: 720px) {
+  .permission-backup-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .permission-backup-row > strong {
+    grid-column: 1 / -1;
+  }
+
+  .permission-backup-row > input[type='file'] {
+    grid-column: 1;
+  }
+}
+
 .admin-note {
   color: #d8e3fb;
   font-size: 13px;
