@@ -7148,6 +7148,20 @@ const assetEditLockService = createAssetEditLockService({
   pool,
   ttlSeconds: Number(process.env.ASSET_EDIT_LOCK_TTL_SECONDS || 900)
 });
+const DOCUMENT_RIGHTS_ADMIN_GROUPS = String(process.env.MAM_DOCUMENT_ADMIN_GROUPS || 'dokadmin,dokyonet,dokyönet,dokyon,dokyön')
+  .split(',')
+  .map((value) => normalizeIdentityKey(value.replace(/^\/+/, '').trim()))
+  .filter(Boolean);
+
+function hasDocumentRightsAdminAccess(effective = {}, accessContext = {}) {
+  if (effective?.isSuperAdmin || effective?.canAccessAdmin || accessContext?.canManageAllAssetVisibility) return true;
+  const groups = []
+    .concat(effective?.groups || [])
+    .concat(accessContext?.groupAdminGroups || [])
+    .map((value) => normalizeIdentityKey(String(value || '').replace(/^\/+/, '').split('/').filter(Boolean).pop() || value))
+    .filter(Boolean);
+  return groups.some((group) => DOCUMENT_RIGHTS_ADMIN_GROUPS.includes(group));
+}
 
 function buildUserContextFromRequest(req) {
   const usernameRaw =
@@ -7180,7 +7194,7 @@ function buildUserContextFromRequest(req) {
   const username = preferred || tokenUsername || (!uuidLike.test(usernameRaw) ? usernameRaw : '') || localFromEmail;
   const displayName = (!uuidLike.test(usernameRaw) ? usernameRaw : '') || tokenName || username || localFromEmail;
   const groups = groupsRaw
-    .split(/[,\s]+/)
+    .split(/[,\n;]+/)
     .concat(tokenGroups.map((g) => String(g || '')))
     .map((g) => g.trim().toLowerCase())
     .filter(Boolean);
@@ -7634,6 +7648,74 @@ async function fetchKeycloakGroups() {
   return value;
 }
 
+async function fetchKeycloakGroupMembers(groupNames = [], options = {}) {
+  const requested = new Set(
+    (Array.isArray(groupNames) ? groupNames : [groupNames])
+      .map((name) => normalizeIdentityKey(String(name || '').replace(/^\/+/, '').split('/').filter(Boolean).pop() || name))
+      .filter(Boolean)
+  );
+  if (!requested.size) return { users: [], realmByUsername: new Map(), groupPathsByUsername: new Map() };
+  const token = await getKeycloakAdminAccessToken();
+  if (!token) return { users: [], realmByUsername: new Map(), groupPathsByUsername: new Map() };
+  const { groups } = await fetchKeycloakGroups();
+  const maxPerGroup = Math.max(1, Math.min(Number(options.maxPerGroup) || 500, 1000));
+  const users = [];
+  const realmByUsername = new Map();
+  const groupPathsByUsername = new Map();
+  const seen = new Set();
+  const matchingGroups = (Array.isArray(groups) ? groups : []).filter((group) => {
+    const names = [
+      group.name,
+      String(group.path || '').split('/').filter(Boolean).pop()
+    ].map((value) => normalizeIdentityKey(value)).filter(Boolean);
+    return names.some((name) => requested.has(name));
+  });
+
+  for (const group of matchingGroups) {
+    const realm = String(group.realm || KEYCLOAK_REALM || '').trim();
+    const groupId = String(group.id || '').trim();
+    if (!realm || !groupId) continue;
+    let first = 0;
+    while (true) {
+      const params = new URLSearchParams({
+        first: String(first),
+        max: String(maxPerGroup),
+        briefRepresentation: 'true'
+      });
+      const rows = await fetchKeycloakAdminJson(
+        `${KEYCLOAK_INTERNAL_URL}/admin/realms/${encodeURIComponent(realm)}/groups/${encodeURIComponent(groupId)}/members?${params.toString()}`,
+        token
+      );
+      const arr = Array.isArray(rows) ? rows : [];
+      arr.forEach((row) => {
+        const username = String(row?.username || '').trim().toLowerCase();
+        if (!username) return;
+        const groupPath = String(group.path || group.name || '').trim();
+        const memberships = groupPathsByUsername.get(username) || new Set();
+        if (groupPath) memberships.add(groupPath);
+        groupPathsByUsername.set(username, memberships);
+        if (!seen.has(username)) {
+          seen.add(username);
+          users.push(row);
+        }
+        realmByUsername.set(username, realm);
+      });
+      if (arr.length < maxPerGroup) break;
+      first += maxPerGroup;
+    }
+  }
+  return {
+    users,
+    realmByUsername,
+    groupPathsByUsername: new Map(
+      Array.from(groupPathsByUsername.entries()).map(([username, paths]) => [
+        username,
+        Array.from(paths).sort((a, b) => a.localeCompare(b))
+      ])
+    )
+  };
+}
+
 function isVisibleKeycloakUser(user) {
   const username = String(user?.username || '').trim().toLowerCase();
   if (!username) return false;
@@ -7728,6 +7810,7 @@ app.get('/api/me', async (req, res) => {
 	      canAccessAdmin: effective.canAccessAdmin,
 	      canAccessTextAdmin: effective.canAccessTextAdmin,
 	      canAccessAssetRightsAdmin: Boolean(effective.canAccessAdmin || assetAccessService.hasScopedAssetRightsAdminAccess(accessContext)),
+	      canAccessDocumentRightsAdmin: hasDocumentRightsAdminAccess(effective, accessContext),
 	      canEditMetadata: effective.canEditMetadata,
       canEditOffice: effective.canEditOffice,
       canDeleteAssets: effective.canDeleteAssets,
@@ -8164,9 +8247,27 @@ async function requireScopedAdminAccess(req, res, next) {
     /^\/asset-types\/access$/,
     /^\/asset-types\/[^/]+\/access$/
   ];
+  const documentRightsAdminPaths = [
+    /^\/document-rights\/assets$/,
+    /^\/document-rights\/assets\/[^/]+\/access$/,
+    /^\/document-rights\/assets\/[^/]+\/edit-lock$/
+  ];
   const safePath = String(req.path || '').trim();
   if (textAdminPaths.some((pattern) => pattern.test(safePath))) {
     return requireTextAdminAccess(req, res, next);
+  }
+  if (documentRightsAdminPaths.some((pattern) => pattern.test(safePath))) {
+    try {
+      const effective = await resolveEffectivePermissions(req);
+      const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+      if (hasDocumentRightsAdminAccess(effective, accessContext)) {
+        req.userPermissions = effective;
+        return next();
+      }
+      return res.status(403).json({ error: 'Forbidden' });
+    } catch (_error) {
+      return res.status(500).json({ error: 'Failed to verify document rights admin permissions' });
+    }
   }
   if (assetRightsAdminPaths.some((pattern) => pattern.test(safePath))) {
     try {
@@ -8338,6 +8439,7 @@ registerAdminRoutes(app, {
   getUserPermissionsSettings,
   fetchKeycloakUsers,
   fetchKeycloakGroups,
+  fetchKeycloakGroupMembers,
   isVisibleKeycloakUser,
   fetchKeycloakUserPermissionDefaults,
   resolvePermissionKeysFromPrincipals,
@@ -8416,6 +8518,7 @@ registerAdminRoutes(app, {
   getAssetFamily,
   assetAccessService,
   assetEditLockService,
+  hasDocumentRightsAdminAccess,
   recordAuditEvent,
   getAdminSettings,
   normalizeNewAssetDefaultVisibility,

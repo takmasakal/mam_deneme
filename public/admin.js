@@ -106,6 +106,15 @@ const assetRightsPageSize = document.getElementById('assetRightsPageSize');
 const assetRightsPrevPage = document.getElementById('assetRightsPrevPage');
 const assetRightsNextPage = document.getElementById('assetRightsNextPage');
 const assetRightsPageInfo = document.getElementById('assetRightsPageInfo');
+const documentRightsSearchInput = document.getElementById('documentRightsSearchInput');
+const documentRightsSearchBtn = document.getElementById('documentRightsSearchBtn');
+const documentRightsLockedOnlyCheck = document.getElementById('documentRightsLockedOnlyCheck');
+const documentRightsRows = document.getElementById('documentRightsRows');
+const documentRightsMsg = document.getElementById('documentRightsMsg');
+const documentRightsPageSize = document.getElementById('documentRightsPageSize');
+const documentRightsPrevPage = document.getElementById('documentRightsPrevPage');
+const documentRightsNextPage = document.getElementById('documentRightsNextPage');
+const documentRightsPageInfo = document.getElementById('documentRightsPageInfo');
 const refreshRuntimeDiagnosticsBtn = document.getElementById('refreshRuntimeDiagnosticsBtn');
 const activeUsersSectionTitle = document.getElementById('activeUsersSectionTitle');
 const runtimeErrorsSectionTitle = document.getElementById('runtimeErrorsSectionTitle');
@@ -151,6 +160,10 @@ let assetRightsMode = 'asset';
 let assetRightsLockedOnly = false;
 let assetRightsPage = 1;
 let assetRightsPagination = { page: 1, limit: 20, total: 0, totalPages: 1 };
+let lastDocumentRightsAssets = [];
+let documentRightsPage = 1;
+let documentRightsLockedOnly = false;
+let documentRightsPagination = { page: 1, limit: 20, total: 0, totalPages: 1 };
 let currentAdminProfile = null;
 
 let i18n = {
@@ -182,12 +195,17 @@ let i18n = {
     diag_error_status: 'Status',
     audit_events: 'Audit Log',
     asset_rights: 'Asset Rights',
+    document_rights: 'Document Rights',
+    document_rights_saved: 'Document rights saved.',
+    document_rights_load_failed: 'Failed to load document rights.',
+    document_rights_save_failed: 'Failed to save document rights.',
     asset_rights_search: 'Asset Search',
     asset_rights_load: 'Load',
     asset_rights_none: 'No asset found.',
     asset_rights_saved: 'Asset rights saved.',
     asset_rights_load_failed: 'Failed to load asset rights.',
     asset_rights_save_failed: 'Failed to save asset rights.',
+    asset_rights_locked_items: 'Locked',
     asset_lock_locked_by: 'Locked by',
     asset_lock_unlock: 'Unlock',
     asset_lock_unlock_confirm: 'Release this asset edit lock?',
@@ -598,12 +616,17 @@ let i18n = {
     diag_error_status: 'Durum',
     audit_events: 'İşlem Geçmişi',
     asset_rights: 'Varlık Yetkileri',
+    document_rights: 'Doküman Yetkileri',
+    document_rights_saved: 'Doküman yetkileri kaydedildi.',
+    document_rights_load_failed: 'Doküman yetkileri yüklenemedi.',
+    document_rights_save_failed: 'Doküman yetkileri kaydedilemedi.',
     asset_rights_search: 'Varlık Ara',
     asset_rights_load: 'Yükle',
     asset_rights_none: 'Varlık bulunamadı.',
     asset_rights_saved: 'Varlık yetkileri kaydedildi.',
     asset_rights_load_failed: 'Varlık yetkileri yüklenemedi.',
     asset_rights_save_failed: 'Varlık yetkileri kaydedilemedi.',
+    asset_rights_locked_items: 'Kilitliler',
     asset_lock_locked_by: 'Kilitleyen',
     asset_lock_unlock: 'Kilidi Aç',
     asset_lock_unlock_confirm: 'Bu varlık düzenleme kilidi kaldırılsın mı?',
@@ -3108,6 +3131,116 @@ async function loadAssetRightsRows() {
   }
 }
 
+function renderDocumentRightsRows(assets = []) {
+  if (!documentRightsRows) return;
+  const labels = getAssetRightsTableLabels();
+  const list = Array.isArray(assets) ? assets : [];
+  const header = `
+    <div class="asset-rights-table-head" aria-hidden="true">
+      <span>${escapeHtml(labels.asset)}</span>
+      <span>${escapeHtml(labels.allowedUsers)}</span>
+      <span>${escapeHtml(labels.deniedUsers)}</span>
+      <span>${escapeHtml(labels.editAllowedUsers)}</span>
+      <span>${escapeHtml(labels.editDeniedUsers)}</span>
+      <span>${escapeHtml(labels.downloadAllowedUsers)}</span>
+      <span>${escapeHtml(labels.downloadDeniedUsers)}</span>
+      <span>${escapeHtml(labels.save)}</span>
+    </div>
+  `;
+  if (!list.length) {
+    documentRightsRows.innerHTML = `<div class="asset-rights-table document-rights-table">${header}<div class="empty asset-rights-empty-row">${escapeHtml(labels.empty)}</div></div>`;
+    return;
+  }
+  const rows = list.map((asset) => {
+    const lock = asset.editLock && typeof asset.editLock === 'object' ? asset.editLock : null;
+    const lockName = String(lock?.lockedByName || lock?.lockedBy || '').trim();
+    const lockInfo = lock ? `<span class="asset-rights-lock">${escapeHtml(t('asset_lock_locked_by'))}: ${escapeHtml(lockName || '-')}</span>` : '';
+    const fields = {
+      allowedUsers: Array.isArray(asset.allowedUsers) ? asset.allowedUsers.join(', ') : '',
+      deniedUsers: Array.isArray(asset.deniedUsers) ? asset.deniedUsers.join(', ') : '',
+      editAllowedUsers: Array.isArray(asset.editAllowedUsers) ? asset.editAllowedUsers.join(', ') : '',
+      editDeniedUsers: Array.isArray(asset.editDeniedUsers) ? asset.editDeniedUsers.join(', ') : '',
+      downloadAllowedUsers: Array.isArray(asset.downloadAllowedUsers) ? asset.downloadAllowedUsers.join(', ') : '',
+      downloadDeniedUsers: Array.isArray(asset.downloadDeniedUsers) ? asset.downloadDeniedUsers.join(', ') : ''
+    };
+    return `
+      <form class="asset-rights-row document-rights-row" data-asset-id="${escapeHtml(asset.id || '')}">
+        <div class="asset-rights-asset" data-label="${escapeHtml(labels.asset)}">
+          <strong>${escapeHtml(asset.title || asset.id || '')}</strong>
+          <span>${escapeHtml(asset.fileName || asset.owner || '')}</span>
+          ${lockInfo}
+        </div>
+        <label class="asset-rights-cell" data-label="${escapeHtml(labels.allowedUsers)}">
+          <span>${escapeHtml(labels.allowedUsers)}</span>
+          <input name="allowedUsers" value="${escapeHtml(fields.allowedUsers)}" placeholder="user@example.com" />
+        </label>
+        <label class="asset-rights-cell" data-label="${escapeHtml(labels.deniedUsers)}">
+          <span>${escapeHtml(labels.deniedUsers)}</span>
+          <input name="deniedUsers" value="${escapeHtml(fields.deniedUsers)}" placeholder="user@example.com" />
+        </label>
+        <label class="asset-rights-cell" data-label="${escapeHtml(labels.editAllowedUsers)}">
+          <span>${escapeHtml(labels.editAllowedUsers)}</span>
+          <input name="editAllowedUsers" value="${escapeHtml(fields.editAllowedUsers)}" placeholder="user@example.com" />
+        </label>
+        <label class="asset-rights-cell" data-label="${escapeHtml(labels.editDeniedUsers)}">
+          <span>${escapeHtml(labels.editDeniedUsers)}</span>
+          <input name="editDeniedUsers" value="${escapeHtml(fields.editDeniedUsers)}" placeholder="user@example.com" />
+        </label>
+        <label class="asset-rights-cell" data-label="${escapeHtml(labels.downloadAllowedUsers)}">
+          <span>${escapeHtml(labels.downloadAllowedUsers)}</span>
+          <input name="downloadAllowedUsers" value="${escapeHtml(fields.downloadAllowedUsers)}" placeholder="user@example.com" />
+        </label>
+        <label class="asset-rights-cell" data-label="${escapeHtml(labels.downloadDeniedUsers)}">
+          <span>${escapeHtml(labels.downloadDeniedUsers)}</span>
+          <input name="downloadDeniedUsers" value="${escapeHtml(fields.downloadDeniedUsers)}" placeholder="user@example.com" />
+        </label>
+        <div class="asset-rights-actions">
+          ${lock ? `<button type="button" class="asset-lock-unlock-btn" data-document-unlock-asset-id="${escapeHtml(asset.id || '')}">${escapeHtml(t('asset_lock_unlock'))}</button>` : ''}
+          <button type="submit">${escapeHtml(labels.save)}</button>
+        </div>
+      </form>
+    `;
+  }).join('');
+  documentRightsRows.innerHTML = `<div class="asset-rights-table document-rights-table">${header}${rows}</div>`;
+}
+
+function renderDocumentRightsPager() {
+  const total = Number(documentRightsPagination.total || 0);
+  const page = Math.max(1, Number(documentRightsPagination.page || 1));
+  const totalPages = Math.max(1, Number(documentRightsPagination.totalPages || 1));
+  if (documentRightsPageInfo) {
+    documentRightsPageInfo.textContent = t('page_info')
+      .replace('{page}', String(page))
+      .replace('{pages}', String(totalPages))
+      .replace('{total}', String(total));
+  }
+  if (documentRightsPrevPage) documentRightsPrevPage.disabled = page <= 1;
+  if (documentRightsNextPage) documentRightsNextPage.disabled = page >= totalPages;
+}
+
+async function loadDocumentRightsRows() {
+  if (!documentRightsRows) return;
+  const params = new URLSearchParams();
+  const q = String(documentRightsSearchInput?.value || '').trim();
+  if (q) params.set('q', q);
+  if (documentRightsLockedOnly) params.set('lockedOnly', '1');
+  const limitValue = Number(documentRightsPageSize?.value || 20);
+  const limit = [20, 50, 100].includes(limitValue) ? limitValue : 20;
+  params.set('limit', String(limit));
+  params.set('page', String(Math.max(1, documentRightsPage)));
+  try {
+    const result = await api(`/api/admin/document-rights/assets?${params.toString()}`);
+    lastDocumentRightsAssets = Array.isArray(result.assets) ? result.assets : [];
+    documentRightsPagination = result.pagination || { page: documentRightsPage, limit, total: lastDocumentRightsAssets.length, totalPages: 1 };
+    documentRightsPage = Number(documentRightsPagination.page || documentRightsPage);
+    renderDocumentRightsRows(lastDocumentRightsAssets);
+    renderDocumentRightsPager();
+    if (documentRightsMsg) documentRightsMsg.textContent = '';
+  } catch (error) {
+    if (documentRightsMsg) documentRightsMsg.textContent = String(error.message || t('document_rights_load_failed'));
+  }
+}
+
 function renderAuditEvents(events = []) {
   if (!auditEventsRows) return;
   if (!events.length) {
@@ -3858,6 +3991,10 @@ adminTabs.forEach((btn) => {
       loadAssetRightsRows().catch((error) => {
         if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
       });
+    } else if (target === 'documentRights') {
+      loadDocumentRightsRows().catch((error) => {
+        if (documentRightsMsg) documentRightsMsg.textContent = String(error.message || 'Request failed');
+      });
     }
   });
 });
@@ -3907,6 +4044,51 @@ assetRightsSearchBtn?.addEventListener('click', () => {
   assetRightsPage = 1;
   loadAssetRightsRows().catch((error) => {
     if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+documentRightsSearchBtn?.addEventListener('click', () => {
+  documentRightsPage = 1;
+  loadDocumentRightsRows().catch((error) => {
+    if (documentRightsMsg) documentRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+documentRightsSearchInput?.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  documentRightsPage = 1;
+  loadDocumentRightsRows().catch((error) => {
+    if (documentRightsMsg) documentRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+documentRightsLockedOnlyCheck?.addEventListener('change', () => {
+  documentRightsLockedOnly = Boolean(documentRightsLockedOnlyCheck.checked);
+  documentRightsPage = 1;
+  loadDocumentRightsRows().catch((error) => {
+    if (documentRightsMsg) documentRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+documentRightsPageSize?.addEventListener('change', () => {
+  documentRightsPage = 1;
+  loadDocumentRightsRows().catch((error) => {
+    if (documentRightsMsg) documentRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+documentRightsPrevPage?.addEventListener('click', () => {
+  documentRightsPage = Math.max(1, documentRightsPage - 1);
+  loadDocumentRightsRows().catch((error) => {
+    if (documentRightsMsg) documentRightsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+documentRightsNextPage?.addEventListener('click', () => {
+  documentRightsPage += 1;
+  loadDocumentRightsRows().catch((error) => {
+    if (documentRightsMsg) documentRightsMsg.textContent = String(error.message || 'Request failed');
   });
 });
 
@@ -4153,6 +4335,56 @@ assetRightsRows?.addEventListener('click', async (event) => {
   }
 });
 
+documentRightsRows?.addEventListener('submit', async (event) => {
+  const form = event.target.closest('.document-rights-row');
+  if (!form) return;
+  event.preventDefault();
+  const assetId = String(form.dataset.assetId || '').trim();
+  if (!assetId) return;
+  const saveBtn = form.querySelector('button[type="submit"]');
+  if (saveBtn) saveBtn.disabled = true;
+  try {
+    const data = new FormData(form);
+    const payload = {
+      allowedUsers: parseAccessList(data.get('allowedUsers')),
+      deniedUsers: parseAccessList(data.get('deniedUsers')),
+      editAllowedUsers: parseAccessList(data.get('editAllowedUsers')),
+      editDeniedUsers: parseAccessList(data.get('editDeniedUsers')),
+      downloadAllowedUsers: parseAccessList(data.get('downloadAllowedUsers')),
+      downloadDeniedUsers: parseAccessList(data.get('downloadDeniedUsers'))
+    };
+    await api(`/api/admin/document-rights/assets/${encodeURIComponent(assetId)}/access`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload)
+    });
+    if (documentRightsMsg) documentRightsMsg.textContent = t('document_rights_saved');
+    await loadDocumentRightsRows();
+  } catch (error) {
+    if (documentRightsMsg) documentRightsMsg.textContent = String(error.message || t('document_rights_save_failed'));
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
+});
+
+documentRightsRows?.addEventListener('click', async (event) => {
+  const unlockBtn = event.target.closest('[data-document-unlock-asset-id]');
+  if (!unlockBtn) return;
+  event.preventDefault();
+  const assetId = String(unlockBtn.getAttribute('data-document-unlock-asset-id') || '').trim();
+  if (!assetId) return;
+  if (!window.confirm(t('asset_lock_unlock_confirm'))) return;
+  unlockBtn.disabled = true;
+  try {
+    await api(`/api/admin/document-rights/assets/${encodeURIComponent(assetId)}/edit-lock`, { method: 'DELETE' });
+    if (documentRightsMsg) documentRightsMsg.textContent = t('asset_lock_unlock_done');
+    await loadDocumentRightsRows();
+  } catch (error) {
+    if (documentRightsMsg) documentRightsMsg.textContent = String(error.message || t('asset_lock_unlock_failed'));
+  } finally {
+    unlockBtn.disabled = false;
+  }
+});
+
 settingsSubTabs.forEach((btn) => {
   btn.addEventListener('click', () => {
     const target = btn.dataset.settingsTab || 'general';
@@ -4173,13 +4405,18 @@ function applyAdminLanguage(nextLang) {
   if (assetRightsRows?.querySelector('.asset-rights-table') || lastAssetRightsAssets.length || lastAssetRightsTypes.length) {
     renderAssetRightsRows(assetRightsMode === 'type' ? lastAssetRightsTypes : lastAssetRightsAssets);
   }
+  if (documentRightsRows?.querySelector('.document-rights-table') || lastDocumentRightsAssets.length) {
+    renderDocumentRightsRows(lastDocumentRightsAssets);
+  }
   renderAssetRightsPager();
+  renderDocumentRightsPager();
   syncAssetRightsTableLanguage();
 }
 
 languageSelect?.addEventListener('change', async (event) => {
   applyAdminLanguage(event.target.value);
-  if (!currentAdminProfile?.canAccessTextAdmin || currentAdminProfile?.canAccessAdmin || currentAdminProfile?.isAdmin) {
+  const access = accessScopeModule.getAdminAccessMode(currentAdminProfile || {});
+  if (!access.isAssetRightsOnly && !access.isDocumentRightsOnly && (!currentAdminProfile?.canAccessTextAdmin || currentAdminProfile?.canAccessAdmin || currentAdminProfile?.isAdmin)) {
     await refreshTrackingAndHealth();
     if (currentAdminProfile?.isSuperAdmin) {
       await loadUserPermissions();
@@ -4187,8 +4424,10 @@ languageSelect?.addEventListener('change', async (event) => {
       await loadGroupAdmins();
     }
   }
-  await loadOcrRecords();
-  await loadSubtitleRecords();
+  if (!access.isAssetRightsOnly && !access.isDocumentRightsOnly) {
+    await loadOcrRecords();
+    await loadSubtitleRecords();
+  }
   if (activeJobId) {
     const job = await api(`/api/admin/proxy-jobs/${activeJobId}`);
     renderProxyJob(job);
@@ -4261,14 +4500,14 @@ document.addEventListener('keydown', onLanguageShortcut, true);
   try {
     const me = await api('/api/me');
     const access = applyAdminAccessMode(me);
-    if (!access.canAccessAdmin && !access.canAccessTextAdmin && !access.canAccessAssetRightsAdmin) {
+    if (!access.canAccessAdmin && !access.canAccessTextAdmin && !access.canAccessAssetRightsAdmin && !access.canAccessDocumentRightsAdmin) {
       window.location.href = '/';
       return;
     }
     await loadI18nFile();
     applyAdminLanguage(currentLang);
     updateProxyToolUi();
-    if (!access.isTextOnly && !access.isAssetRightsOnly) {
+    if (!access.isTextOnly && !access.isAssetRightsOnly && !access.isDocumentRightsOnly) {
       await loadSettings();
       await refreshTrackingAndHealth();
       if (access.isSuperAdmin) {
@@ -4278,12 +4517,14 @@ document.addEventListener('keydown', onLanguageShortcut, true);
       }
     } else if (access.isAssetRightsOnly) {
       await loadAssetRightsRows();
+    } else if (access.isDocumentRightsOnly) {
+      await loadDocumentRightsRows();
     }
-    if (!access.isAssetRightsOnly) {
+    if (!access.isAssetRightsOnly && !access.isDocumentRightsOnly) {
       await loadOcrRecords();
       await loadSubtitleRecords();
     }
-    if (!access.isAssetRightsOnly) switchSettingsSubtab(access.isTextOnly ? 'ocr' : 'general');
+    if (!access.isAssetRightsOnly && !access.isDocumentRightsOnly) switchSettingsSubtab(access.isTextOnly ? 'ocr' : 'general');
   } catch (error) {
     ffmpegHealthEl.textContent = error.message;
   }

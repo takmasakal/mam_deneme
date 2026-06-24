@@ -2,48 +2,61 @@ const PERMISSION_DEFINITIONS = [
   {
     key: 'admin.access',
     legacyField: 'adminPageAccess',
-    roleNames: ['mam-admin', 'mam-admin-access', 'admin-access'],
     labelKey: 'perm_admin_access'
   },
   {
     key: 'metadata.edit',
     legacyField: 'metadataEdit',
-    roleNames: ['mam-metadata-edit'],
     labelKey: 'perm_metadata_edit'
   },
   {
     key: 'office.edit',
     legacyField: 'officeEdit',
-    roleNames: ['mam-office-edit'],
     labelKey: 'perm_office_edit'
   },
   {
     key: 'asset.delete',
     legacyField: 'assetDelete',
-    roleNames: ['mam-asset-delete', 'asset-delete'],
     labelKey: 'perm_asset_delete'
   },
   {
     key: 'pdf.advanced',
     legacyField: 'pdfAdvancedTools',
-    roleNames: ['mam-pdf-advanced'],
     labelKey: 'perm_pdf_advanced'
   },
   {
     key: 'text.admin',
     legacyField: 'textAdminAccess',
-    roleNames: ['mam-text-admin', 'text-admin'],
     labelKey: 'perm_text_admin'
   }
 ];
 
 const PERMISSION_KEYS = PERMISSION_DEFINITIONS.map((item) => item.key);
-const SUPER_ADMIN_ROLE_NAMES = ['admin', 'realm-admin', 'mam-super-admin'];
+const PRINCIPAL_PERMISSION_MAP = {
+  superadmin: PERMISSION_KEYS,
+  'super admin': PERMISSION_KEYS,
+  'super-admin': PERMISSION_KEYS,
+  super_admin: PERMISSION_KEYS,
+  admin: ['admin.access'],
+  'standart yönetici': ['admin.access'],
+  'standart yonetici': ['admin.access'],
+  altyazı_ocr_operator: ['text.admin'],
+  altyazi_ocr_operator: ['text.admin']
+};
 
 function normalizePrincipalNames(values) {
   return (Array.isArray(values) ? values : [])
-    .flatMap((value) => String(value || '').split(/[,\s]+/))
-    .map((value) => String(value || '').trim().toLowerCase())
+    .flatMap((value) => String(value || '').split(','))
+    .flatMap((value) => {
+      const normalized = String(value || '').trim().toLowerCase();
+      const withoutSlash = normalized.replace(/^\/+/, '');
+      const lastPathSegment = withoutSlash.split('/').filter(Boolean).pop() || '';
+      return Array.from(new Set([
+        normalized,
+        withoutSlash,
+        lastPathSegment
+      ])).filter(Boolean);
+    })
     .filter(Boolean);
 }
 
@@ -51,32 +64,21 @@ function getPermissionDefinitionsPayload() {
   return PERMISSION_DEFINITIONS.map((item) => ({
     key: item.key,
     legacyField: item.legacyField,
-    labelKey: item.labelKey,
-    roleNames: [...item.roleNames]
+    labelKey: item.labelKey
   }));
 }
 
 function resolvePermissionKeysFromPrincipals({ groups = [], roles = [] } = {}) {
-  const principalNames = new Set([
-    ...normalizePrincipalNames(groups),
-    ...normalizePrincipalNames(roles)
-  ]);
-  const permissionKeys = new Set();
-  const isSuperAdmin = [...principalNames].some((name) => SUPER_ADMIN_ROLE_NAMES.includes(name));
-
-  if (isSuperAdmin) {
-    PERMISSION_KEYS.forEach((key) => permissionKeys.add(key));
-  }
-
-  PERMISSION_DEFINITIONS.forEach((definition) => {
-    if (definition.roleNames.some((roleName) => principalNames.has(roleName))) {
-      permissionKeys.add(definition.key);
-    }
+  const principals = normalizePrincipalNames([...groups, ...roles]);
+  const keys = new Set();
+  principals.forEach((principal) => {
+    const mapped = PRINCIPAL_PERMISSION_MAP[principal] || [];
+    mapped.forEach((key) => keys.add(key));
   });
-
+  const permissionKeys = PERMISSION_KEYS.filter((key) => keys.has(key));
   return {
-    permissionKeys: Array.from(permissionKeys),
-    isSuperAdmin
+    permissionKeys,
+    isSuperAdmin: PERMISSION_KEYS.every((key) => keys.has(key))
   };
 }
 
@@ -147,15 +149,6 @@ function normalizePermissionEntry(input, fallbackPermissions) {
   };
 }
 
-function isAdminName() {
-  return false;
-}
-
-function isAdminByGroupsOrRoles(groupsOrRoles) {
-  return normalizePrincipalNames(groupsOrRoles)
-    .some((name) => SUPER_ADMIN_ROLE_NAMES.includes(name) || name === 'mam-admin' || name === 'mam-admin-access' || name === 'admin-access');
-}
-
 module.exports = {
   PERMISSION_DEFINITIONS,
   PERMISSION_KEYS,
@@ -163,7 +156,5 @@ module.exports = {
   getPermissionDefinitionsPayload,
   resolvePermissionKeysFromPrincipals,
   permissionKeysToLegacyFlags,
-  normalizePermissionEntry,
-  isAdminName,
-  isAdminByGroupsOrRoles
+  normalizePermissionEntry
 };
