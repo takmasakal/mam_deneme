@@ -966,9 +966,8 @@ app.delete('/api/admin/assets/:id/edit-lock', async (req, res) => {
 
 app.patch('/api/admin/assets/:id/access', async (req, res) => {
   try {
-    const effective = await requireSuperAdminRequest(req, res);
-    if (!effective) return null;
-    const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+    const accessContext = await requireAssetRightsAdminRequest(req, res);
+    if (!accessContext) return null;
     const result = await assetAccessService.updateAssetVisibility(req.params.id, req.body || {}, accessContext);
     if (result.status !== 200) {
       return res.status(result.status).json({ error: result.error });

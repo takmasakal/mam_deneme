@@ -230,8 +230,8 @@ let i18n = {
     visibility_groups: 'Selected groups/users',
     visibility_public: 'Public',
     owner_groups: 'Owner groups',
-    allowed_groups: 'Allowed groups',
-    allowed_users: 'Allowed users',
+    allowed_groups: 'Viewer groups',
+    allowed_users: 'Viewer users',
     denied_groups: 'Denied groups',
     denied_users: 'Denied users',
     edit_allowed_groups: 'Editable groups',
@@ -651,8 +651,8 @@ let i18n = {
     visibility_groups: 'Seçili grup/kullanıcı',
     visibility_public: 'Herkese açık',
     owner_groups: 'Sahip gruplar',
-    allowed_groups: 'İzinli gruplar',
-    allowed_users: 'İzinli kullanıcılar',
+    allowed_groups: 'Görebilen gruplar',
+    allowed_users: 'Görebilen kullanıcılar',
     denied_groups: 'Göremeyen gruplar',
     denied_users: 'Göremeyen kullanıcılar',
     edit_allowed_groups: 'Değiştirebilen gruplar',
@@ -2758,11 +2758,11 @@ const ASSET_RIGHTS_TABLE_LABELS = {
     asset: 'Asset',
     type: 'Type',
     modeAsset: 'Asset',
-    modeType: 'Type',
+    modeType: 'Type / upload',
     visibility: 'Visibility',
     ownerGroups: 'Owner groups',
-    allowedGroups: 'Allowed groups',
-    allowedUsers: 'Allowed users',
+    allowedGroups: 'Viewer groups',
+    allowedUsers: 'Viewer users',
     deniedGroups: 'Denied groups',
     deniedUsers: 'Denied users',
     editAllowedGroups: 'Editable groups',
@@ -2789,11 +2789,11 @@ const ASSET_RIGHTS_TABLE_LABELS = {
     asset: 'Varlık',
     type: 'Tür',
     modeAsset: 'Varlık',
-    modeType: 'Tür',
+    modeType: 'Tür / yükleme',
     visibility: 'Görünürlük',
     ownerGroups: 'Sahip gruplar',
-    allowedGroups: 'İzinli gruplar',
-    allowedUsers: 'İzinli kullanıcılar',
+    allowedGroups: 'Görebilen gruplar',
+    allowedUsers: 'Görebilen kullanıcılar',
     deniedGroups: 'Göremeyen gruplar',
     deniedUsers: 'Göremeyen kullanıcılar',
     editAllowedGroups: 'Değiştirebilen gruplar',
@@ -4425,8 +4425,12 @@ languageSelect?.addEventListener('change', async (event) => {
     }
   }
   if (!access.isAssetRightsOnly && !access.isDocumentRightsOnly) {
-    await loadOcrRecords();
-    await loadSubtitleRecords();
+    const activeSub = settingsSubTabs.find((item) => item.classList.contains('active'))?.dataset?.settingsTab || 'general';
+    if (activeSub === 'ocr') {
+      await loadOcrRecords();
+    } else if (activeSub === 'subtitle') {
+      await loadSubtitleRecords();
+    }
   }
   if (activeJobId) {
     const job = await api(`/api/admin/proxy-jobs/${activeJobId}`);
@@ -4521,10 +4525,12 @@ document.addEventListener('keydown', onLanguageShortcut, true);
       await loadDocumentRightsRows();
     }
     if (!access.isAssetRightsOnly && !access.isDocumentRightsOnly) {
-      await loadOcrRecords();
-      await loadSubtitleRecords();
+      const initialSubtab = access.isTextOnly ? 'ocr' : 'general';
+      switchSettingsSubtab(initialSubtab);
+      if (initialSubtab === 'ocr') {
+        await loadOcrRecords();
+      }
     }
-    if (!access.isAssetRightsOnly && !access.isDocumentRightsOnly) switchSettingsSubtab(access.isTextOnly ? 'ocr' : 'general');
   } catch (error) {
     ffmpegHealthEl.textContent = error.message;
   }
