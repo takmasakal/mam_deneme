@@ -198,6 +198,12 @@ print(json.dumps(items, ensure_ascii=False))
   echo "Realm locale settings ensured: ${REALM} (${KEYCLOAK_DEFAULT_LOCALE})"
 }
 
+ensure_realm_remember_me() {
+  kcadm update "realms/${REALM}" \
+    -s "rememberMe=${KEYCLOAK_REMEMBER_ME}" >/dev/null
+  echo "Realm remember-me ensured: ${REALM}"
+}
+
 ensure_realm_session_settings() {
   kcadm update "realms/${REALM}" \
     -s "rememberMe=${KEYCLOAK_REMEMBER_ME}" \
@@ -261,6 +267,7 @@ for group_name in "${MAM_GROUPS[@]}"; do
   ensure_group "${group_name}"
 done
 
+ensure_realm_remember_me
 if [[ "${KEYCLOAK_SYNC_SESSION_SETTINGS}" == "true" ]]; then
   ensure_realm_session_settings
 fi

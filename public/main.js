@@ -577,6 +577,16 @@ let i18n = {
     unpin_video: 'Unpin video',
     close: 'Close',
     fullscreen_image: 'Full screen',
+    photo_ocr_settings: 'Photo OCR',
+    photo_ocr_title: 'Photo OCR',
+    photo_ocr_lang: 'OCR language',
+    photo_ocr_label: 'OCR file name',
+    photo_ocr_extract: 'Extract OCR',
+    photo_ocr_running: 'Extracting photo OCR...',
+    photo_ocr_done: 'Photo OCR completed.',
+    photo_ocr_failed: 'Photo OCR failed.',
+    photo_ocr_result: 'OCR result',
+    photo_ocr_no_result: 'No OCR text yet.',
     fullscreen_overlay_settings: 'Overlay Settings',
     fullscreen_overlay_show_controls: 'Show controls',
     fullscreen_overlay_show_timecode: 'Show timecode',
@@ -916,6 +926,16 @@ let i18n = {
     unpin_video: 'Video sabitlemeyi kaldır',
     close: 'Kapat',
     fullscreen_image: 'Tam ekran',
+    photo_ocr_settings: 'Fotoğraf OCR',
+    photo_ocr_title: 'Fotoğraf OCR',
+    photo_ocr_lang: 'OCR dil',
+    photo_ocr_label: 'OCR dosya adı',
+    photo_ocr_extract: 'OCR çıkar',
+    photo_ocr_running: 'Fotoğraf OCR çıkarılıyor...',
+    photo_ocr_done: 'Fotoğraf OCR tamamlandı.',
+    photo_ocr_failed: 'Fotoğraf OCR başarısız.',
+    photo_ocr_result: 'OCR sonucu',
+    photo_ocr_no_result: 'Henüz OCR metni yok.',
     fullscreen_overlay_settings: 'Overlay Ayarları',
     fullscreen_overlay_show_controls: 'Kontrolleri göster',
     fullscreen_overlay_show_timecode: 'Timecode göster',
@@ -2131,6 +2151,78 @@ function focusCutRowInDetail(root = document, cutId = '') {
   return detailModule.focusCutRowInDetail(root, cutId);
 }
 
+function latestPhotoOcrText(asset) {
+  const dc = asset?.dcMetadata && typeof asset.dcMetadata === 'object' ? asset.dcMetadata : {};
+  const items = Array.isArray(asset?.photoOcrItems) && asset.photoOcrItems.length
+    ? asset.photoOcrItems
+    : (Array.isArray(dc.photoOcrItems) ? dc.photoOcrItems : []);
+  const latest = items.length ? items[items.length - 1] : null;
+  const label = String(latest?.ocrLabel || asset?.photoOcrLabel || dc.photoOcrLabel || '').trim();
+  const url = String(latest?.ocrUrl || asset?.photoOcrUrl || dc.photoOcrUrl || '').trim();
+  return { label, url };
+}
+
+function openPhotoOcrDialog(asset) {
+  if (!asset || !isImage(asset)) return;
+  const existing = document.getElementById('photoOcrModalBackdrop');
+  if (existing) existing.remove();
+  const current = latestPhotoOcrText(asset);
+  const imgUrl = String(asset.proxyUrl || asset.mediaUrl || '').trim();
+  const labelValue = String(current.label || `${asset.title || 'photo'}-ocr`).replace(/\.txt$/i, '');
+  const backdrop = document.createElement('div');
+  backdrop.id = 'photoOcrModalBackdrop';
+  backdrop.className = 'clip-modal-backdrop photo-ocr-modal-backdrop';
+  backdrop.innerHTML = `
+    <div class="clip-modal photo-ocr-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('photo_ocr_title'))}">
+      <div class="photo-ocr-head">
+        <h4>${escapeHtml(t('photo_ocr_title'))}</h4>
+        <button type="button" class="photo-ocr-close" aria-label="${escapeHtml(t('close'))}">×</button>
+      </div>
+      <div class="photo-ocr-preview-wrap">
+        <img class="photo-ocr-preview" src="${escapeHtml(imgUrl)}" alt="${escapeHtml(asset.title || '')}" />
+      </div>
+      <div class="photo-ocr-controls">
+        <label>${escapeHtml(t('photo_ocr_lang'))}<input id="photoOcrLangInput" type="text" value="eng+tur" /></label>
+        <label>${escapeHtml(t('photo_ocr_label'))}<input id="photoOcrLabelInput" type="text" value="${escapeHtml(labelValue)}" /></label>
+        <button type="button" id="photoOcrExtractBtn">${escapeHtml(t('photo_ocr_extract'))}</button>
+      </div>
+      <div id="photoOcrStatus" class="asset-meta">${escapeHtml(current.url ? t('photo_ocr_done') : t('photo_ocr_no_result'))}</div>
+      <label class="photo-ocr-result-label">${escapeHtml(t('photo_ocr_result'))}<textarea id="photoOcrResultText" readonly>${escapeHtml(current.url || '')}</textarea></label>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  const close = () => backdrop.remove();
+  backdrop.querySelector('.photo-ocr-close')?.addEventListener('click', close);
+  backdrop.addEventListener('click', (event) => {
+    if (event.target === backdrop) close();
+  });
+  const runBtn = backdrop.querySelector('#photoOcrExtractBtn');
+  runBtn?.addEventListener('click', async () => {
+    const status = backdrop.querySelector('#photoOcrStatus');
+    const resultText = backdrop.querySelector('#photoOcrResultText');
+    runBtn.disabled = true;
+    if (status) status.textContent = t('photo_ocr_running');
+    try {
+      const payload = {
+        ocrLang: String(backdrop.querySelector('#photoOcrLangInput')?.value || 'eng+tur').trim() || 'eng+tur',
+        ocrLabel: String(backdrop.querySelector('#photoOcrLabelInput')?.value || '').trim()
+      };
+      const result = await api(`/api/assets/${encodeURIComponent(asset.id)}/photo-ocr/extract`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      if (status) status.textContent = t('photo_ocr_done');
+      if (resultText) resultText.value = String(result?.text || '');
+      await loadAssets();
+      await openAsset(asset.id, workflow);
+    } catch (error) {
+      if (status) status.textContent = `${t('photo_ocr_failed')}: ${String(error?.message || error)}`;
+    } finally {
+      runBtn.disabled = false;
+    }
+  });
+}
+
 async function openAsset(id, workflow, options = {}) {
   if (isVideoToolsPageMode) {
     panelVisibility.panelIngest = false;
@@ -2243,6 +2335,8 @@ async function openAsset(id, workflow, options = {}) {
     const target = document.getElementById('imageViewerFullscreenTarget') || imageFullscreenBtn.closest('.viewer-resizable');
     await toggleFullscreenForElement(target);
   });
+  const imageOcrSettingsBtn = document.getElementById('imageOcrSettingsBtn');
+  imageOcrSettingsBtn?.addEventListener('click', () => openPhotoOcrDialog(asset));
   loadAssetTechnicalInfo(asset).catch(() => {});
   const ensureProxyBtn = document.getElementById('ensureProxyBtn');
   ensureProxyBtn?.addEventListener('click', async () => {

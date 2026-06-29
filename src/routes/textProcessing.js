@@ -20,12 +20,14 @@ function registerTextProcessingRoutes(app, deps) {
     getMediaProcessingJobById,
     mapSubtitleJobFromDbRow,
     queueVideoOcrJob,
+    extractPhotoOcrToText,
     videoOcrJobs,
     getLatestVideoOcrJobForAsset,
     getLatestMediaProcessingJobForAsset,
     sanitizeVideoOcrItems,
     sanitizeSubtitleItems,
     saveAssetVideoOcrMetadata,
+    saveAssetPhotoOcrMetadata,
     publicUploadUrlToAbsolutePath,
     safeRmDir,
     cleanupAssetFiles,
@@ -71,6 +73,29 @@ function registerTextProcessingRoutes(app, deps) {
         nextOffset: safeOffset + safeLimit
       }
     };
+  }
+
+  function isPhotoCandidate(row) {
+    const mime = String(row?.mime_type || '').toLowerCase();
+    const type = String(row?.type || '').toLowerCase();
+    const ext = path.extname(String(row?.file_name || '')).toLowerCase().replace(/^\./, '');
+    return mime.startsWith('image/')
+      || type === 'photo'
+      || type === 'image'
+      || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tif', 'tiff', 'heic', 'heif'].includes(ext);
+  }
+
+  function resolvePhotoOcrInputPath(row) {
+    const candidates = [
+      String(row?.proxy_url || '').trim(),
+      String(row?.thumbnail_url || '').trim(),
+      String(row?.media_url || '').trim()
+    ];
+    for (const url of candidates) {
+      const filePath = publicUploadUrlToAbsolutePath(url);
+      if (filePath && fs.existsSync(filePath)) return filePath;
+    }
+    return '';
   }
 
   app.post('/api/assets/:id/subtitles', async (req, res) => {
@@ -209,6 +234,56 @@ function registerTextProcessingRoutes(app, deps) {
       return res.json(mapped);
     } catch (_error) {
       return res.status(500).json({ error: 'Failed to load subtitle job' });
+    }
+  });
+  
+  app.post('/api/assets/:id/photo-ocr/extract', async (req, res) => {
+    try {
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
+      }
+      const row = loaded.row;
+      if (!isPhotoCandidate(row)) {
+        return res.status(400).json({ error: 'Photo OCR is supported only for image assets' });
+      }
+      if (typeof extractPhotoOcrToText !== 'function' || typeof saveAssetPhotoOcrMetadata !== 'function') {
+        return res.status(500).json({ error: 'Photo OCR service is not available' });
+      }
+
+      const inputPath = resolvePhotoOcrInputPath(row);
+      if (!inputPath) return res.status(404).json({ error: 'Photo source file not found' });
+
+      const ocrLang = String(req.body?.ocrLang || 'eng+tur').trim() || 'eng+tur';
+      const baseLabel = String(req.body?.ocrLabel || '').trim() || `${path.basename(String(row.file_name || row.title || 'photo'), path.extname(String(row.file_name || '')))}-photo-ocr`;
+      const safeLabel = sanitizeFileName(baseLabel.replace(/\.txt$/i, '')) || 'photo-ocr';
+      const storedName = `${Date.now()}-${nanoid()}-${safeLabel}.txt`;
+      const out = buildArtifactPath('ocr', storedName, row.created_at);
+      const result = await extractPhotoOcrToText(inputPath, out.absolutePath, { ocrLang });
+      const saved = await saveAssetPhotoOcrMetadata(req.params.id, row, {
+        resultUrl: out.publicUrl,
+        ocrLabel: safeLabel,
+        ocrEngine: result.engine || 'paddle',
+        ocrLang,
+        lineCount: result.lines,
+        segmentCount: result.segments
+      });
+      let text = '';
+      try {
+        text = fs.readFileSync(out.absolutePath, 'utf8');
+      } catch (_error) {}
+      return res.json({
+        ok: true,
+        ocrUrl: out.publicUrl,
+        ocrLabel: saved.item?.ocrLabel || `${safeLabel}.txt`,
+        ocrEngine: result.engine || 'paddle',
+        lineCount: Number(result.lines || 0),
+        segmentCount: Number(result.segments || 0),
+        text,
+        asset: mapAssetRow(saved.row)
+      });
+    } catch (error) {
+      return res.status(500).json({ error: String(error?.message || 'Photo OCR extraction failed').slice(0, 900) });
     }
   });
   

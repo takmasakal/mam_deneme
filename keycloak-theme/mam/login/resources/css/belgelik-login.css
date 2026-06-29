@@ -42,7 +42,7 @@ body.login-pf,
 
 .card-pf,
 .login-pf-page .card-pf {
-  border: 1.6px solid #ffffff !important;
+  border: 0 !important;
   border-radius: 28px !important;
   box-shadow: 0 14px 28px rgba(0, 0, 0, 0.25) !important;
   background: #2a2d36 !important;

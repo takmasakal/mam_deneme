@@ -10,10 +10,10 @@
   overflow: hidden;
 }
 
-.image-fullscreen-btn {
+.image-fullscreen-btn,
+.image-ocr-settings-btn {
   position: absolute;
   top: 10px;
-  right: 10px;
   z-index: 3;
   width: 34px;
   height: 34px;
@@ -25,9 +25,22 @@
   line-height: 1;
   cursor: pointer;
   backdrop-filter: blur(8px);
+  opacity: 0;
+  transition: opacity 0.16s ease, background 0.16s ease;
 }
 
-.image-fullscreen-btn:hover {
+.image-fullscreen-btn { right: 10px; }
+.image-ocr-settings-btn { right: 52px; }
+
+.image-viewer-resizable:hover .image-fullscreen-btn,
+.image-viewer-resizable:hover .image-ocr-settings-btn,
+.image-fullscreen-btn:focus-visible,
+.image-ocr-settings-btn:focus-visible {
+  opacity: 1;
+}
+
+.image-fullscreen-btn:hover,
+.image-ocr-settings-btn:hover {
   background: rgba(33, 40, 54, 0.9);
 }
 
@@ -35,4 +48,73 @@
 .mam-fs-root:-webkit-full-screen .image-fullscreen-btn {
   top: 18px;
   right: 18px;
+}
+
+.mam-fs-root:fullscreen .image-ocr-settings-btn,
+.mam-fs-root:-webkit-full-screen .image-ocr-settings-btn {
+  top: 18px;
+  right: 60px;
+}
+
+.photo-ocr-modal {
+  width: min(920px, 92vw);
+  max-height: 92vh;
+  overflow: auto;
+}
+.photo-ocr-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.photo-ocr-close {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 28px;
+  line-height: 1;
+}
+.photo-ocr-preview-wrap {
+  display: flex;
+  justify-content: center;
+  max-height: 48vh;
+  overflow: auto;
+  background: #0f172a;
+  border-radius: 8px;
+}
+.photo-ocr-preview {
+  max-width: 100%;
+  max-height: 48vh;
+  object-fit: contain;
+}
+.photo-ocr-controls {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  margin: 14px 0;
+}
+.photo-ocr-controls label,
+.photo-ocr-result-label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+}
+.photo-ocr-controls input,
+.photo-ocr-result-label textarea {
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 8px;
+  padding: 9px 10px;
+  font: inherit;
+}
+.photo-ocr-result-label textarea {
+  min-height: 130px;
+  resize: vertical;
+}
+@media (max-width: 760px) {
+  .photo-ocr-controls {
+    grid-template-columns: 1fr;
+  }
 }
