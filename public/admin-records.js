@@ -47,6 +47,7 @@
     let userPermissionsPage = 1;
     let userPermissionsPagination = { page: 1, limit: 20, total: 0, totalPages: 1 };
     let userPermissionsMsgTimer = null;
+    const RECORD_SEARCH_MIN_CHARS = 3;
 
     function setUserPermissionsMessage(message, options = {}) {
       if (!userPermissionsMsg) return;
@@ -115,6 +116,16 @@
 
     function renderSubtitleRecordsPager() {
       renderSimplePager(subtitleRecordsPagination, subtitleRecordsPrevPage, subtitleRecordsNextPage, subtitleRecordsPageInfo);
+    }
+
+    function getRecordSearchQuery(input) {
+      const q = String(input?.value || '').trim();
+      return q.length >= RECORD_SEARCH_MIN_CHARS ? q : '';
+    }
+
+    function hasPendingRecordSearchQuery(input) {
+      const q = String(input?.value || '').trim();
+      return q.length > 0 && q.length < RECORD_SEARCH_MIN_CHARS;
     }
 
     function formatPermissionLabel(definition) {
@@ -344,7 +355,7 @@
 
     async function loadOcrRecords() {
       if (!ocrRecordsRows) return;
-      const q = String(ocrAdminSearchInput?.value || '').trim();
+      const q = getRecordSearchQuery(ocrAdminSearchInput);
       const params = new URLSearchParams();
       if (q) params.set('q', q);
       params.set('limit', '20');
@@ -437,7 +448,7 @@
 
     async function loadSubtitleRecords() {
       if (!subtitleRecordsRows) return;
-      const q = String(subtitleAdminSearchInput?.value || '').trim();
+      const q = getRecordSearchQuery(subtitleAdminSearchInput);
       const params = new URLSearchParams();
       if (q) params.set('q', q);
       params.set('limit', '20');
@@ -498,6 +509,10 @@
     function init() {
       ocrAdminSearchInput?.addEventListener('input', () => {
         ocrRecordsPage = 1;
+        if (hasPendingRecordSearchQuery(ocrAdminSearchInput)) {
+          if (ocrRecordsTimer) clearTimeout(ocrRecordsTimer);
+          return;
+        }
         queueLoadOcrRecords();
       });
 
@@ -505,6 +520,7 @@
         if (event.key !== 'Enter') return;
         event.preventDefault();
         try {
+          if (hasPendingRecordSearchQuery(ocrAdminSearchInput)) return;
           ocrRecordsPage = 1;
           await loadOcrRecords();
         } catch (error) {
@@ -514,6 +530,7 @@
 
       runOcrAdminSearchBtn?.addEventListener('click', async () => {
         try {
+          if (hasPendingRecordSearchQuery(ocrAdminSearchInput)) return;
           ocrRecordsPage = 1;
           await loadOcrRecords();
         } catch (error) {
@@ -523,6 +540,10 @@
 
       subtitleAdminSearchInput?.addEventListener('input', () => {
         subtitleRecordsPage = 1;
+        if (hasPendingRecordSearchQuery(subtitleAdminSearchInput)) {
+          if (subtitleRecordsTimer) clearTimeout(subtitleRecordsTimer);
+          return;
+        }
         queueLoadSubtitleRecords();
       });
 
@@ -530,6 +551,7 @@
         if (event.key !== 'Enter') return;
         event.preventDefault();
         try {
+          if (hasPendingRecordSearchQuery(subtitleAdminSearchInput)) return;
           subtitleRecordsPage = 1;
           await loadSubtitleRecords();
         } catch (error) {
