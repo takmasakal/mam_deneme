@@ -3187,9 +3187,22 @@ async function saveAssetPhotoOcrMetadata(assetId, row, job) {
     photoOcrSegmentCount: latest.segmentCount,
     photoOcrItems: items
   };
-  const updated = await updateAssetDcMetadata(assetId, nextDc);
-  await syncOcrSegmentIndexForAsset(assetId, latest.ocrUrl, { sourceEngine: latest.ocrEngine, lang: latest.ocrLang });
-  return { row: updated || row, item };
+  const now = new Date().toISOString();
+  const result = await pool.query(
+    `
+      UPDATE assets
+      SET dc_metadata = $2::jsonb,
+          updated_at = $3
+      WHERE id = $1
+      RETURNING *
+    `,
+    [assetId, JSON.stringify(nextDc), now]
+  );
+  const updatedRow = result.rows[0];
+  try {
+    await syncOcrSegmentIndexForAsset(assetId, latest.ocrUrl, { sourceEngine: latest.ocrEngine, lang: latest.ocrLang });
+  } catch (_error) {}
+  return { row: updatedRow || row, item };
 }
 
 async function saveAssetVideoOcrMetadata(assetId, row, job) {
