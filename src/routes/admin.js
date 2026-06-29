@@ -1654,19 +1654,94 @@ app.delete('/api/admin/turkish-corrections', async (req, res) => {
 
 function getOcrItemsFromDc(dcMetadata = {}, fallbackDate = '') {
   const dc = dcMetadata && typeof dcMetadata === 'object' ? dcMetadata : {};
-  let items = sanitizeVideoOcrItems(dc.videoOcrItems);
-  if (!items.length && String(dc.videoOcrUrl || '').trim()) {
-    items = [{
+  let videoItems = sanitizeVideoOcrItems(dc.videoOcrItems).map((item) => ({
+    ...item,
+    ocrKind: 'video'
+  }));
+  if (!videoItems.length && String(dc.videoOcrUrl || '').trim()) {
+    videoItems = [{
       id: '__legacy_active__',
       ocrUrl: String(dc.videoOcrUrl || '').trim(),
       ocrLabel: String(dc.videoOcrLabel || '').trim() || 'video-ocr',
       ocrEngine: normalizeOcrEngine(dc.videoOcrEngine || 'paddle'),
       lineCount: Math.max(0, Number(dc.videoOcrLineCount) || 0),
       segmentCount: Math.max(0, Number(dc.videoOcrSegmentCount) || 0),
-      createdAt: String(fallbackDate || new Date().toISOString())
+      createdAt: String(fallbackDate || new Date().toISOString()),
+      ocrKind: 'video'
+    }];
+  }
+  let photoItems = sanitizeVideoOcrItems(dc.photoOcrItems).map((item) => ({
+    ...item,
+    ocrLabel: String(item.ocrLabel || '').trim() || 'photo-ocr',
+    ocrKind: 'photo'
+  }));
+  if (!photoItems.length && String(dc.photoOcrUrl || '').trim()) {
+    photoItems = [{
+      id: '__legacy_photo_active__',
+      ocrUrl: String(dc.photoOcrUrl || '').trim(),
+      ocrLabel: String(dc.photoOcrLabel || '').trim() || 'photo-ocr',
+      ocrEngine: normalizeOcrEngine(dc.photoOcrEngine || 'paddle'),
+      lineCount: Math.max(0, Number(dc.photoOcrLineCount) || 0),
+      segmentCount: Math.max(0, Number(dc.photoOcrSegmentCount) || 0),
+      createdAt: String(fallbackDate || new Date().toISOString()),
+      ocrKind: 'photo'
+    }];
+  }
+  return [...videoItems, ...photoItems];
+}
+
+function getOcrKind(item = {}) {
+  return String(item.ocrKind || '').trim().toLowerCase() === 'photo' ? 'photo' : 'video';
+}
+
+function stripOcrKindForStorage(item = {}) {
+  const { ocrKind: _ocrKind, ...rest } = item || {};
+  return rest;
+}
+
+function getOcrItemsForKind(dc = {}, kind = 'video') {
+  const normalizedKind = kind === 'photo' ? 'photo' : 'video';
+  const key = normalizedKind === 'photo' ? 'photoOcrItems' : 'videoOcrItems';
+  const prefix = normalizedKind === 'photo' ? 'photoOcr' : 'videoOcr';
+  let items = sanitizeVideoOcrItems(dc[key]).map((item) => ({
+    ...item,
+    ocrLabel: String(item.ocrLabel || '').trim() || (normalizedKind === 'photo' ? 'photo-ocr' : 'video-ocr'),
+    ocrKind: normalizedKind
+  }));
+  const directUrl = String(dc[`${prefix}Url`] || '').trim();
+  if (!items.length && directUrl) {
+    items = [{
+      id: normalizedKind === 'photo' ? '__legacy_photo_active__' : '__legacy_active__',
+      ocrUrl: directUrl,
+      ocrLabel: String(dc[`${prefix}Label`] || '').trim() || (normalizedKind === 'photo' ? 'photo-ocr' : 'video-ocr'),
+      ocrEngine: normalizeOcrEngine(dc[`${prefix}Engine`] || 'paddle'),
+      lineCount: Math.max(0, Number(dc[`${prefix}LineCount`]) || 0),
+      segmentCount: Math.max(0, Number(dc[`${prefix}SegmentCount`]) || 0),
+      createdAt: new Date().toISOString(),
+      ocrKind: normalizedKind
     }];
   }
   return items;
+}
+
+function applyOcrKindToDc(dc = {}, kind = 'video', items = [], preferredActiveUrl = '') {
+  const normalizedKind = kind === 'photo' ? 'photo' : 'video';
+  const prefix = normalizedKind === 'photo' ? 'photoOcr' : 'videoOcr';
+  const storedItems = sanitizeVideoOcrItems(items).map(stripOcrKindForStorage);
+  const activeUrl = String(preferredActiveUrl || '').trim();
+  let activeItem = activeUrl
+    ? storedItems.find((it) => String(it.ocrUrl || '').trim() === activeUrl)
+    : null;
+  if (!activeItem && storedItems.length) activeItem = storedItems[storedItems.length - 1];
+  return {
+    ...dc,
+    [`${prefix}Items`]: storedItems,
+    [`${prefix}Url`]: activeItem ? String(activeItem.ocrUrl || '').trim() : '',
+    [`${prefix}Label`]: activeItem ? String(activeItem.ocrLabel || '').trim() : '',
+    [`${prefix}Engine`]: activeItem ? String(activeItem.ocrEngine || '').trim() : '',
+    [`${prefix}LineCount`]: activeItem ? Math.max(0, Number(activeItem.lineCount) || 0) : 0,
+    [`${prefix}SegmentCount`]: activeItem ? Math.max(0, Number(activeItem.segmentCount) || 0) : 0
+  };
 }
 
 function ocrAbsolutePathToPublicUrl(absPath) {
@@ -1705,7 +1780,8 @@ function resolveAdminOcrItemForAssetRow(row, itemId) {
       ocrEngine: '',
       lineCount: 0,
       segmentCount: 0,
-      createdAt: String(row?.updated_at || row?.created_at || new Date().toISOString())
+      createdAt: String(row?.updated_at || row?.created_at || new Date().toISOString()),
+      ocrKind: isImageAssetRow(row) ? 'photo' : 'video'
     },
     inferred: true
   };
@@ -1756,9 +1832,10 @@ app.get('/api/admin/ocr-records', async (req, res) => {
         }
       }
       if (!items.length) return;
-      const activeUrl = String(dc.videoOcrUrl || '').trim();
       items.forEach((item) => {
         if (records.length >= limit) return;
+        const ocrKind = getOcrKind(item);
+        const activeUrl = String(ocrKind === 'photo' ? dc.photoOcrUrl || '' : dc.videoOcrUrl || '').trim();
         const label = String(item.ocrLabel || '').trim();
         const url = String(item.ocrUrl || '').trim();
         const urlFileName = path.basename(url || '');
@@ -1771,7 +1848,8 @@ app.get('/api/admin/ocr-records', async (req, res) => {
           type: String(row.type || ''),
           owner: String(row.owner || ''),
           itemId: String(item.id || ''),
-          ocrLabel: label || 'video-ocr',
+          ocrKind,
+          ocrLabel: label || (ocrKind === 'photo' ? 'photo-ocr' : 'video-ocr'),
           ocrUrl: url,
           ocrEngine: String(item.ocrEngine || ''),
           lineCount: Number.isFinite(lineCount) ? lineCount : 0,
@@ -1799,21 +1877,16 @@ app.patch('/api/admin/ocr-records', async (req, res) => {
     if (!rowResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
     const row = rowResult.rows[0];
     const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
-    const items = getOcrItemsFromDc(dc, row.updated_at || row.created_at || '');
+    const allItems = getOcrItemsFromDc(dc, row.updated_at || row.created_at || '');
+    const target = allItems.find((item) => String(item.id || '') === itemId);
+    if (!target) return res.status(404).json({ error: 'OCR record not found' });
+    const ocrKind = getOcrKind(target);
+    const items = getOcrItemsForKind(dc, ocrKind);
     const idx = items.findIndex((item) => String(item.id || '') === itemId);
     if (idx < 0) return res.status(404).json({ error: 'OCR record not found' });
     items[idx] = { ...items[idx], ocrLabel: nextLabel };
-    const activeUrl = String(dc.videoOcrUrl || '').trim();
-    const activeItem = items.find((it) => String(it.ocrUrl || '').trim() === activeUrl) || items[items.length - 1] || null;
-    const updatedDc = {
-      ...dc,
-      videoOcrItems: items,
-      videoOcrUrl: activeItem ? String(activeItem.ocrUrl || '').trim() : '',
-      videoOcrLabel: activeItem ? String(activeItem.ocrLabel || '').trim() : '',
-      videoOcrEngine: activeItem ? String(activeItem.ocrEngine || '').trim() : '',
-      videoOcrLineCount: activeItem ? Math.max(0, Number(activeItem.lineCount) || 0) : 0,
-      videoOcrSegmentCount: activeItem ? Math.max(0, Number(activeItem.segmentCount) || 0) : 0
-    };
+    const activeUrl = String(ocrKind === 'photo' ? dc.photoOcrUrl || '' : dc.videoOcrUrl || '').trim();
+    const updatedDc = applyOcrKindToDc(dc, ocrKind, items, activeUrl);
     await pool.query(
       'UPDATE assets SET dc_metadata = $2::jsonb, updated_at = $3 WHERE id = $1',
       [assetId, JSON.stringify(updatedDc), new Date().toISOString()]
@@ -1838,19 +1911,10 @@ app.delete('/api/admin/ocr-records', async (req, res) => {
     const items = getOcrItemsFromDc(dc, row.updated_at || row.created_at || '');
     const target = items.find((item) => String(item.id || '') === itemId);
     if (!target) return res.status(404).json({ error: 'OCR record not found' });
-    const nextItems = items.filter((item) => String(item.id || '') !== itemId);
-    const prevActiveUrl = String(dc.videoOcrUrl || '').trim();
-    let nextActive = nextItems.find((it) => String(it.ocrUrl || '').trim() === prevActiveUrl) || null;
-    if (!nextActive && nextItems.length) nextActive = nextItems[nextItems.length - 1];
-    const updatedDc = {
-      ...dc,
-      videoOcrItems: nextItems,
-      videoOcrUrl: nextActive ? String(nextActive.ocrUrl || '').trim() : '',
-      videoOcrLabel: nextActive ? String(nextActive.ocrLabel || '').trim() : '',
-      videoOcrEngine: nextActive ? String(nextActive.ocrEngine || '').trim() : '',
-      videoOcrLineCount: nextActive ? Math.max(0, Number(nextActive.lineCount) || 0) : 0,
-      videoOcrSegmentCount: nextActive ? Math.max(0, Number(nextActive.segmentCount) || 0) : 0
-    };
+    const ocrKind = getOcrKind(target);
+    const nextItems = getOcrItemsForKind(dc, ocrKind).filter((item) => String(item.id || '') !== itemId);
+    const prevActiveUrl = String(ocrKind === 'photo' ? dc.photoOcrUrl || '' : dc.videoOcrUrl || '').trim();
+    const updatedDc = applyOcrKindToDc(dc, ocrKind, nextItems, prevActiveUrl);
     await pool.query(
       'UPDATE assets SET dc_metadata = $2::jsonb, updated_at = $3 WHERE id = $1',
       [assetId, JSON.stringify(updatedDc), new Date().toISOString()]
@@ -1919,7 +1983,8 @@ app.patch('/api/admin/ocr-records/content', async (req, res) => {
     const resolved = resolveAdminOcrItemForAssetRow(row, itemId);
     const target = resolved.item;
     if (!target) return res.status(404).json({ error: 'OCR record not found' });
-    const items = getOcrItemsFromDc(dc, row.updated_at || row.created_at || '');
+    const ocrKind = getOcrKind(target);
+    const items = getOcrItemsForKind(dc, ocrKind);
     let idx = items.findIndex((it) => String(it.id || '') === itemId);
     const filePath = resolveOcrFilePath(target.ocrUrl);
     if (!filePath || !fs.existsSync(filePath)) {
@@ -1942,7 +2007,8 @@ app.patch('/api/admin/ocr-records/content', async (req, res) => {
         ocrEngine: normalizeOcrEngine(target.ocrEngine || 'paddle'),
         lineCount: Math.max(0, Number(stats.lineCount) || 0),
         segmentCount: Math.max(0, Number(stats.segmentCount) || 0),
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        ocrKind
       });
       idx = items.length - 1;
     } else {
@@ -1953,17 +2019,8 @@ app.patch('/api/admin/ocr-records/content', async (req, res) => {
       };
     }
     const persistedItem = items[idx] || null;
-    const activeUrl = String(dc.videoOcrUrl || '').trim();
-    const activeItem = items.find((it) => String(it.ocrUrl || '').trim() === activeUrl) || persistedItem;
-    const updatedDc = {
-      ...dc,
-      videoOcrItems: items,
-      videoOcrUrl: activeItem ? String(activeItem.ocrUrl || '').trim() : '',
-      videoOcrLabel: activeItem ? String(activeItem.ocrLabel || '').trim() : '',
-      videoOcrEngine: activeItem ? String(activeItem.ocrEngine || '').trim() : '',
-      videoOcrLineCount: activeItem ? Math.max(0, Number(activeItem.lineCount) || 0) : 0,
-      videoOcrSegmentCount: activeItem ? Math.max(0, Number(activeItem.segmentCount) || 0) : 0
-    };
+    const activeUrl = String(ocrKind === 'photo' ? dc.photoOcrUrl || '' : dc.videoOcrUrl || '').trim();
+    const updatedDc = applyOcrKindToDc(dc, ocrKind, items, activeUrl || String(persistedItem?.ocrUrl || '').trim());
     await pool.query(
       'UPDATE assets SET dc_metadata = $2::jsonb, updated_at = $3 WHERE id = $1',
       [assetId, JSON.stringify(updatedDc), new Date().toISOString()]
@@ -3438,6 +3495,7 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
         if (isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
           const inputPath = resolveAssetInputPath(row);
           if (inputPath && fs.existsSync(inputPath)) {
+            const previousThumbnailUrl = resolveStoredUrl(row.thumbnail_url, 'thumbnails');
             const thumbStoredName = `${Date.now()}-${nanoid()}-thumb.jpg`;
             const thumbOut = buildArtifactPath('thumbnails', thumbStoredName, new Date());
             await generateVideoThumbnail(inputPath, thumbOut.absolutePath);
@@ -3446,6 +3504,7 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
               [row.id, thumbOut.publicUrl, new Date().toISOString()]
             );
             row = refreshed.rows?.[0] || row;
+            await cleanupReplacedUploadUrls(row.id, previousThumbnailUrl);
           }
         } else if (isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
           row = await ensurePdfThumbnailForRow(row);
