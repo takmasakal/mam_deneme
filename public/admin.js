@@ -1965,7 +1965,7 @@ function renderProxySuggestions(items, query) {
 
 async function requestProxySuggestions() {
   const query = String(proxyToolAssetName?.value || '').trim();
-  if (query.length < 2) {
+  if (query.length < 3) {
     hideProxySuggestions();
     return;
   }
@@ -2050,7 +2050,7 @@ function renderAuditSuggestions(items, query) {
 
 async function requestAuditSuggestions() {
   const query = String(auditTargetInput?.value || '').trim();
-  if (query.length < 2) {
+  if (query.length < 3) {
     hideAuditSuggestions();
     return;
   }
@@ -2133,7 +2133,7 @@ function renderAssetRightsSuggestions(items, query) {
 
 async function requestAssetRightsSuggestions() {
   const query = String(assetRightsSearchInput?.value || '').trim();
-  if (query.length < 2) {
+  if (query.length < 3) {
     hideAssetRightsSuggestions();
     return;
   }
@@ -2282,7 +2282,7 @@ async function requestAssetRightsGroupSuggestions(input) {
     return;
   }
   const token = getAssetRightsGroupToken(input);
-  if (token.query.length < 2) {
+  if (token.query.length < 3) {
     hideAssetRightsGroupSuggestions();
     return;
   }
@@ -2339,10 +2339,16 @@ const adminRecordsModule = window.createAdminRecordsModule({
   ocrRecordsRows,
   ocrRecordsMsg,
   runOcrAdminSearchBtn,
+  ocrRecordsPrevPage: document.getElementById('ocrRecordsPrevPage'),
+  ocrRecordsNextPage: document.getElementById('ocrRecordsNextPage'),
+  ocrRecordsPageInfo: document.getElementById('ocrRecordsPageInfo'),
   subtitleAdminSearchInput,
   subtitleDeleteFileCheck,
   subtitleRecordsRows,
   subtitleRecordsMsg,
+  subtitleRecordsPrevPage: document.getElementById('subtitleRecordsPrevPage'),
+  subtitleRecordsNextPage: document.getElementById('subtitleRecordsNextPage'),
+  subtitleRecordsPageInfo: document.getElementById('subtitleRecordsPageInfo'),
   combinedSearchInput,
   combinedSearchLimit,
   runCombinedSearchBtn,
@@ -4431,8 +4437,12 @@ languageSelect?.addEventListener('change', async (event) => {
     }
   }
   if (!access.isAssetRightsOnly && !access.isDocumentRightsOnly) {
-    await loadOcrRecords();
-    await loadSubtitleRecords();
+    const activeSub = settingsSubTabs.find((item) => item.classList.contains('active'))?.dataset?.settingsTab || 'general';
+    if (activeSub === 'ocr') {
+      await loadOcrRecords();
+    } else if (activeSub === 'subtitle') {
+      await loadSubtitleRecords();
+    }
   }
   if (activeJobId) {
     const job = await api(`/api/admin/proxy-jobs/${activeJobId}`);
@@ -4527,10 +4537,12 @@ document.addEventListener('keydown', onLanguageShortcut, true);
       await loadDocumentRightsRows();
     }
     if (!access.isAssetRightsOnly && !access.isDocumentRightsOnly) {
-      await loadOcrRecords();
-      await loadSubtitleRecords();
+      const initialSubtab = access.isTextOnly ? 'ocr' : 'general';
+      switchSettingsSubtab(initialSubtab);
+      if (initialSubtab === 'ocr') {
+        await loadOcrRecords();
+      }
     }
-    if (!access.isAssetRightsOnly && !access.isDocumentRightsOnly) switchSettingsSubtab(access.isTextOnly ? 'ocr' : 'general');
   } catch (error) {
     ffmpegHealthEl.textContent = error.message;
   }

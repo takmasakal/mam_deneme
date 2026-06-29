@@ -810,7 +810,7 @@ function registerTextProcessingRoutes(app, deps) {
       const query = String(req.query.q || '').trim();
       const limit = Math.max(1, Math.min(20, Number(req.query.limit) || 8));
       if (!assetId) return res.status(400).json({ error: 'Asset id is required' });
-      if (query.length < 2) return res.json([]);
+      if (query.length < 3) return res.json([]);
   
       const loaded = await loadVisibleAssetRow(req, assetId);
       if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
