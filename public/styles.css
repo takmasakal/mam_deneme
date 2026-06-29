@@ -68,13 +68,24 @@
   gap: 12px;
   margin-bottom: 12px;
 }
-.photo-ocr-close {
-  border: 0;
-  background: transparent;
-  color: inherit;
+.photo-ocr-modal .photo-ocr-close {
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: transparent !important;
+  color: inherit !important;
   cursor: pointer;
-  font-size: 28px;
-  line-height: 1;
+  font-size: 28px !important;
+  line-height: 1 !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+}
+.photo-ocr-modal .photo-ocr-close:hover {
+  background: rgba(148, 163, 184, 0.18) !important;
 }
 .photo-ocr-preview-wrap {
   display: flex;

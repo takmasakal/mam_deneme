@@ -3163,7 +3163,7 @@ function mapSubtitleJobFromDbRow(row) {
 }
 
 async function saveAssetPhotoOcrMetadata(assetId, row, job) {
-  const existingDc = parseDcMetadata(row.dc_metadata);
+  const existingDc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
   const items = sanitizePhotoOcrItems(existingDc.photoOcrItems);
   const label = normalizeRequestedOcrLabel(job.ocrLabel, 'photo-ocr') || 'photo-ocr.txt';
   const item = {
