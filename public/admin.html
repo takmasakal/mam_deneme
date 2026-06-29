@@ -400,6 +400,11 @@
                 <span data-i18n="ocr_delete_file">Delete OCR file from disk too</span>
               </label>
             </div>
+            <div class="admin-pager" id="ocrRecordsPager">
+              <button id="ocrRecordsPrevPage" type="button" data-i18n="prev_page">Prev</button>
+              <span id="ocrRecordsPageInfo">-</span>
+              <button id="ocrRecordsNextPage" type="button" data-i18n="next_page">Next</button>
+            </div>
             <div id="ocrRecordsRows" class="rows"></div>
             <div id="ocrRecordsMsg" class="admin-note"></div>
           </section>
@@ -464,6 +469,11 @@
                 <input id="subtitleDeleteFileCheck" type="checkbox" />
                 <span data-i18n="subtitle_delete_file">Delete subtitle file from disk too</span>
               </label>
+            </div>
+            <div class="admin-pager" id="subtitleRecordsPager">
+              <button id="subtitleRecordsPrevPage" type="button" data-i18n="prev_page">Prev</button>
+              <span id="subtitleRecordsPageInfo">-</span>
+              <button id="subtitleRecordsNextPage" type="button" data-i18n="next_page">Next</button>
             </div>
             <div id="subtitleRecordsRows" class="rows"></div>
             <div id="subtitleRecordsMsg" class="admin-note"></div>
@@ -647,7 +657,7 @@
     </main>
 
     <script src="/main-access-scope.js?v=20260522-hide-backup-textadmin-1"></script>
-    <script src="/admin-records.js?v=20260621-user-search-on-demand-1"></script>
-    <script src="/admin.js?v=20260628-asset-rights-lazy-text-records-1"></script>
+    <script src="/admin-records.js?v=20260629-text-records-paging-1"></script>
+    <script src="/admin.js?v=20260629-text-records-paging-1"></script>
   </body>
 </html>

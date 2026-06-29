@@ -19,10 +19,16 @@
       ocrRecordsRows,
       ocrRecordsMsg,
       runOcrAdminSearchBtn,
+      ocrRecordsPrevPage,
+      ocrRecordsNextPage,
+      ocrRecordsPageInfo,
       subtitleAdminSearchInput,
       subtitleDeleteFileCheck,
       subtitleRecordsRows,
       subtitleRecordsMsg,
+      subtitleRecordsPrevPage,
+      subtitleRecordsNextPage,
+      subtitleRecordsPageInfo,
       combinedSearchInput,
       combinedSearchLimit,
       runCombinedSearchBtn,
@@ -32,6 +38,10 @@
 
     let ocrRecordsTimer = null;
     let subtitleRecordsTimer = null;
+    let ocrRecordsPage = 1;
+    let subtitleRecordsPage = 1;
+    let ocrRecordsPagination = { page: 1, limit: 20, total: 0, totalPages: 1 };
+    let subtitleRecordsPagination = { page: 1, limit: 20, total: 0, totalPages: 1 };
     let availableUserPermissions = [];
     let allUserPermissionUsers = [];
     let userPermissionsPage = 1;
@@ -83,6 +93,28 @@
       }
       if (userPermissionsPrevPage) userPermissionsPrevPage.disabled = page <= 1;
       if (userPermissionsNextPage) userPermissionsNextPage.disabled = page >= totalPages;
+    }
+
+    function renderSimplePager(pagination, prevButton, nextButton, infoEl) {
+      const total = Number(pagination?.total || 0);
+      const page = Math.max(1, Number(pagination?.page || 1));
+      const totalPages = Math.max(1, Number(pagination?.totalPages || 1));
+      if (infoEl) {
+        infoEl.textContent = t('page_info')
+          .replace('{page}', String(page))
+          .replace('{pages}', String(totalPages))
+          .replace('{total}', String(total));
+      }
+      if (prevButton) prevButton.disabled = page <= 1;
+      if (nextButton) nextButton.disabled = page >= totalPages;
+    }
+
+    function renderOcrRecordsPager() {
+      renderSimplePager(ocrRecordsPagination, ocrRecordsPrevPage, ocrRecordsNextPage, ocrRecordsPageInfo);
+    }
+
+    function renderSubtitleRecordsPager() {
+      renderSimplePager(subtitleRecordsPagination, subtitleRecordsPrevPage, subtitleRecordsNextPage, subtitleRecordsPageInfo);
     }
 
     function formatPermissionLabel(definition) {
@@ -315,9 +347,13 @@
       const q = String(ocrAdminSearchInput?.value || '').trim();
       const params = new URLSearchParams();
       if (q) params.set('q', q);
-      params.set('limit', '800');
+      params.set('limit', '20');
+      params.set('page', String(Math.max(1, ocrRecordsPage)));
       const result = await api(`/api/admin/ocr-records?${params.toString()}`);
+      ocrRecordsPagination = result.pagination || { page: ocrRecordsPage, limit: 20, total: (result.records || []).length, totalPages: 1 };
+      ocrRecordsPage = Math.max(1, Number(ocrRecordsPagination.page || ocrRecordsPage));
       renderOcrRecords(result.records || []);
+      renderOcrRecordsPager();
     }
 
     function queueLoadOcrRecords() {
@@ -404,9 +440,13 @@
       const q = String(subtitleAdminSearchInput?.value || '').trim();
       const params = new URLSearchParams();
       if (q) params.set('q', q);
-      params.set('limit', '1200');
+      params.set('limit', '20');
+      params.set('page', String(Math.max(1, subtitleRecordsPage)));
       const result = await api(`/api/admin/subtitle-records?${params.toString()}`);
+      subtitleRecordsPagination = result.pagination || { page: subtitleRecordsPage, limit: 20, total: (result.records || []).length, totalPages: 1 };
+      subtitleRecordsPage = Math.max(1, Number(subtitleRecordsPagination.page || subtitleRecordsPage));
       renderSubtitleRecords(result.records || []);
+      renderSubtitleRecordsPager();
     }
 
     function queueLoadSubtitleRecords() {
@@ -457,6 +497,7 @@
 
     function init() {
       ocrAdminSearchInput?.addEventListener('input', () => {
+        ocrRecordsPage = 1;
         queueLoadOcrRecords();
       });
 
@@ -464,6 +505,7 @@
         if (event.key !== 'Enter') return;
         event.preventDefault();
         try {
+          ocrRecordsPage = 1;
           await loadOcrRecords();
         } catch (error) {
           if (ocrRecordsMsg) ocrRecordsMsg.textContent = String(error.message || 'Request failed');
@@ -472,6 +514,7 @@
 
       runOcrAdminSearchBtn?.addEventListener('click', async () => {
         try {
+          ocrRecordsPage = 1;
           await loadOcrRecords();
         } catch (error) {
           if (ocrRecordsMsg) ocrRecordsMsg.textContent = String(error.message || 'Request failed');
@@ -479,7 +522,47 @@
       });
 
       subtitleAdminSearchInput?.addEventListener('input', () => {
+        subtitleRecordsPage = 1;
         queueLoadSubtitleRecords();
+      });
+
+      subtitleAdminSearchInput?.addEventListener('keydown', async (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        try {
+          subtitleRecordsPage = 1;
+          await loadSubtitleRecords();
+        } catch (error) {
+          if (subtitleRecordsMsg) subtitleRecordsMsg.textContent = String(error.message || 'Request failed');
+        }
+      });
+
+      ocrRecordsPrevPage?.addEventListener('click', () => {
+        ocrRecordsPage = Math.max(1, ocrRecordsPage - 1);
+        loadOcrRecords().catch((error) => {
+          if (ocrRecordsMsg) ocrRecordsMsg.textContent = String(error.message || 'Request failed');
+        });
+      });
+
+      ocrRecordsNextPage?.addEventListener('click', () => {
+        ocrRecordsPage += 1;
+        loadOcrRecords().catch((error) => {
+          if (ocrRecordsMsg) ocrRecordsMsg.textContent = String(error.message || 'Request failed');
+        });
+      });
+
+      subtitleRecordsPrevPage?.addEventListener('click', () => {
+        subtitleRecordsPage = Math.max(1, subtitleRecordsPage - 1);
+        loadSubtitleRecords().catch((error) => {
+          if (subtitleRecordsMsg) subtitleRecordsMsg.textContent = String(error.message || 'Request failed');
+        });
+      });
+
+      subtitleRecordsNextPage?.addEventListener('click', () => {
+        subtitleRecordsPage += 1;
+        loadSubtitleRecords().catch((error) => {
+          if (subtitleRecordsMsg) subtitleRecordsMsg.textContent = String(error.message || 'Request failed');
+        });
       });
 
       ocrRecordsRows?.addEventListener('click', async (event) => {

@@ -704,7 +704,7 @@ function registerAssetRoutes(app, deps) {
   app.get('/api/assets/ocr-suggest', async (req, res) => {
     try {
       const q = String(req.query.q || '').trim();
-      if (q.length < 2) return res.json([]);
+      if (q.length < 3) return res.json([]);
       const parsedOcrQuery = parseTextSearchQuery(q, normalizeSubtitleSearchText);
       if (!parsedOcrQuery.raw) return res.json([]);
       const limit = Math.max(1, Math.min(12, Number(req.query.limit) || 8));
@@ -803,7 +803,7 @@ function registerAssetRoutes(app, deps) {
   app.get('/api/assets/subtitle-suggest', async (req, res) => {
     try {
       const q = String(req.query.q || '').trim();
-      if (q.length < 2) return res.json([]);
+      if (q.length < 3) return res.json([]);
       const parsedQuery = parseSubtitleTextSearchQuery(q);
       if (!parsedQuery.raw) return res.json([]);
       const limit = Math.max(1, Math.min(12, Number(req.query.limit) || 8));

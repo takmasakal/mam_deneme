@@ -556,7 +556,7 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
   };
   const requestSubtitleSuggest = async () => {
     const q = String(searchInput.value || '').trim();
-    if (q.length < 2) {
+    if (q.length < 3) {
       hideSubtitleSuggest();
       return;
     }

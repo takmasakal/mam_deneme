@@ -1959,7 +1959,7 @@ function renderProxySuggestions(items, query) {
 
 async function requestProxySuggestions() {
   const query = String(proxyToolAssetName?.value || '').trim();
-  if (query.length < 2) {
+  if (query.length < 3) {
     hideProxySuggestions();
     return;
   }
@@ -2044,7 +2044,7 @@ function renderAuditSuggestions(items, query) {
 
 async function requestAuditSuggestions() {
   const query = String(auditTargetInput?.value || '').trim();
-  if (query.length < 2) {
+  if (query.length < 3) {
     hideAuditSuggestions();
     return;
   }
@@ -2127,7 +2127,7 @@ function renderAssetRightsSuggestions(items, query) {
 
 async function requestAssetRightsSuggestions() {
   const query = String(assetRightsSearchInput?.value || '').trim();
-  if (query.length < 2) {
+  if (query.length < 3) {
     hideAssetRightsSuggestions();
     return;
   }
@@ -2276,7 +2276,7 @@ async function requestAssetRightsGroupSuggestions(input) {
     return;
   }
   const token = getAssetRightsGroupToken(input);
-  if (token.query.length < 2) {
+  if (token.query.length < 3) {
     hideAssetRightsGroupSuggestions();
     return;
   }
@@ -2333,10 +2333,16 @@ const adminRecordsModule = window.createAdminRecordsModule({
   ocrRecordsRows,
   ocrRecordsMsg,
   runOcrAdminSearchBtn,
+  ocrRecordsPrevPage: document.getElementById('ocrRecordsPrevPage'),
+  ocrRecordsNextPage: document.getElementById('ocrRecordsNextPage'),
+  ocrRecordsPageInfo: document.getElementById('ocrRecordsPageInfo'),
   subtitleAdminSearchInput,
   subtitleDeleteFileCheck,
   subtitleRecordsRows,
   subtitleRecordsMsg,
+  subtitleRecordsPrevPage: document.getElementById('subtitleRecordsPrevPage'),
+  subtitleRecordsNextPage: document.getElementById('subtitleRecordsNextPage'),
+  subtitleRecordsPageInfo: document.getElementById('subtitleRecordsPageInfo'),
   combinedSearchInput,
   combinedSearchLimit,
   runCombinedSearchBtn,

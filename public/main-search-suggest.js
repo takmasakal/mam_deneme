@@ -106,7 +106,7 @@
 
     async function requestSearchSuggestions() {
       const query = String(searchQueryInput?.value || '').trim();
-      if (query.length < 2) {
+      if (query.length < 3) {
         hideSearchSuggestions();
         return;
       }
@@ -205,7 +205,7 @@
 
     async function requestOcrSuggestions() {
       const query = String(getActiveOcrQueryInput?.()?.value || '').trim();
-      if (query.length < 2) {
+      if (query.length < 3) {
         hideOcrSuggestions();
         return;
       }
@@ -301,7 +301,7 @@
 
     async function requestSubtitleSuggestions() {
       const query = String(subtitleQueryInput?.value || '').trim();
-      if (query.length < 2) {
+      if (query.length < 3) {
         hideSubtitleSuggestions();
         return;
       }

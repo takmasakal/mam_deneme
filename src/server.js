@@ -8093,7 +8093,7 @@ function buildAssetOrderClause({ hasRelevance, sortBy, rankedParamAlias }) {
 
 async function queryAssetSuggestions(options = {}) {
   const q = String(options.q || '').trim();
-  if (!q) return [];
+  if (q.length < 3) return [];
   const limit = Math.max(1, Math.min(15, Number(options.limit) || 8));
   const trash = normalizeTrashScope(options.trash, 'active');
   const tag = String(options.tag || '').trim();

@@ -1787,11 +1787,32 @@ function resolveAdminOcrItemForAssetRow(row, itemId) {
   };
 }
 
+function getAdminRecordPagination(query = {}) {
+  const limit = Math.max(1, Math.min(100, Number(query.limit) || 20));
+  const page = Math.max(1, Number(query.page) || 1);
+  return { limit, page };
+}
+
+function paginateAdminRecords(records = [], pagination = {}) {
+  const list = Array.isArray(records) ? records : [];
+  const limit = Math.max(1, Number(pagination.limit || 20));
+  const requestedPage = Math.max(1, Number(pagination.page || 1));
+  const total = list.length;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const page = Math.min(requestedPage, totalPages);
+  const offset = (page - 1) * limit;
+  return {
+    records: list.slice(offset, offset + limit),
+    pagination: { page, limit, total, totalPages }
+  };
+}
+
 app.get('/api/admin/ocr-records', async (req, res) => {
   try {
     const q = String(req.query.q || '').trim();
-    const limit = Math.max(20, Math.min(2000, Number(req.query.limit) || 500));
-    const params = [limit];
+    const pagination = getAdminRecordPagination(req.query || {});
+    const assetScanLimit = 5000;
+    const params = [assetScanLimit];
     let whereSql = '';
     if (q) {
       params.push(`%${q}%`);
@@ -1810,7 +1831,6 @@ app.get('/api/admin/ocr-records', async (req, res) => {
 
     const records = [];
     result.rows.forEach((row) => {
-      if (records.length >= limit) return;
       const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
       let items = getOcrItemsFromDc(dc, row.updated_at || row.created_at || '');
       if (!items.length) {
@@ -1833,7 +1853,6 @@ app.get('/api/admin/ocr-records', async (req, res) => {
       }
       if (!items.length) return;
       items.forEach((item) => {
-        if (records.length >= limit) return;
         const ocrKind = getOcrKind(item);
         const activeUrl = String(ocrKind === 'photo' ? dc.photoOcrUrl || '' : dc.videoOcrUrl || '').trim();
         const label = String(item.ocrLabel || '').trim();
@@ -1859,7 +1878,7 @@ app.get('/api/admin/ocr-records', async (req, res) => {
         });
       });
     });
-    return res.json({ records });
+    return res.json(paginateAdminRecords(records, pagination));
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to load OCR records' });
   }
@@ -2057,7 +2076,8 @@ function findSubtitleMatchInText(text, queryNorm) {
 app.get('/api/admin/subtitle-records', async (req, res) => {
   try {
     const q = String(req.query.q || '').trim().toLocaleLowerCase('tr');
-    const limit = Math.max(20, Math.min(2000, Number(req.query.limit) || 500));
+    const pagination = getAdminRecordPagination(req.query || {});
+    const assetScanLimit = 5000;
     const result = await pool.query(
       `
         SELECT id, title, file_name, type, owner, updated_at, dc_metadata
@@ -2065,7 +2085,7 @@ app.get('/api/admin/subtitle-records', async (req, res) => {
         ORDER BY updated_at DESC
         LIMIT $1
       `,
-      [limit]
+      [assetScanLimit]
     );
 
     const records = [];
@@ -2095,7 +2115,7 @@ app.get('/api/admin/subtitle-records', async (req, res) => {
         });
       });
     });
-    return res.json({ records });
+    return res.json(paginateAdminRecords(records, pagination));
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to load subtitle records' });
   }
