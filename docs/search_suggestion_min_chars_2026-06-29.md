@@ -8,6 +8,8 @@ Asset suggestion requests now start after 3 typed characters instead of 2. This 
 
 The same performance pass also paginates the admin OCR and subtitle record lists. Those lists now load 20 records per page and use previous/next controls instead of rendering every OCR/subtitle record in one request.
 
+Admin OCR/subtitle record filters also follow the 3-character rule: an empty field loads the paged unfiltered list, 1-2 characters do not reload/filter the list, and 3+ characters apply the filter.
+
 ## Why 3 characters
 
 Two-character autocomplete queries can match a very large portion of the asset catalog. That increases unnecessary frontend requests and backend DB/Elasticsearch work, especially as the asset count grows. A 3-character minimum is a small guardrail that reduces broad suggestion traffic without changing explicit search form submissions.
@@ -20,6 +22,8 @@ Two-character autocomplete queries can match a very large portion of the asset c
 - Video tools subtitle suggestions.
 - Admin proxy/audit/asset-rights asset suggestions.
 - Admin asset-rights group token suggestions.
+- Admin OCR record filter.
+- Admin subtitle record filter.
 - Backend asset suggestion endpoint.
 - Backend OCR/subtitle suggestion endpoints.
 
@@ -97,3 +101,4 @@ Manual checks:
 - Open Management > Settings > OCR. OCR records should show 20 rows per page with previous/next controls.
 - Open Management > Settings > Subtitles. Subtitle records should show 20 rows per page with previous/next controls.
 - Search in either OCR/subtitle list. The page should reset to page 1 and still load 20 records at a time.
+- Type 1 or 2 characters in OCR/subtitle record search fields. The list should not filter yet.
