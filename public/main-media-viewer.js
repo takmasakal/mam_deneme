@@ -321,6 +321,7 @@ function mediaViewer(asset, options = {}) {
   if (isImage(asset)) {
     return `
       <div class="viewer-resizable image-viewer-resizable mam-fs-root" id="imageViewerFullscreenTarget">
+        <button type="button" id="imageOcrSettingsBtn" class="image-ocr-settings-btn" aria-label="${escapeHtml(t('photo_ocr_settings'))}" title="${escapeHtml(t('photo_ocr_settings'))}">⚙</button>
         <button type="button" id="imageFullscreenBtn" class="image-fullscreen-btn" aria-label="${escapeHtml(t('fullscreen_image'))}" title="${escapeHtml(t('fullscreen_image'))}">⛶</button>
         <img class="asset-viewer image-asset-viewer" src="${playbackUrl}" alt="${escapeHtml(asset.title)}" />
       </div>

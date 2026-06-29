@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const express = require('express');
@@ -20,6 +21,7 @@ const { createAssetDeletionService } = require('./services/assetDeletionService'
 const { createAssetAccessService } = require('./services/assetAccessService');
 const { createAssetEditLockService } = require('./services/assetEditLockService');
 const { createImageDerivativeService } = require('./services/imageDerivativeService');
+const { createMetadataEnrichmentService } = require('./services/metadataEnrichmentService');
 const {
   normalizeOcrText,
   normalizeOcrLine,
@@ -741,6 +743,13 @@ function sanitizeVideoOcrItems(value) {
     .filter(Boolean);
 }
 
+function sanitizePhotoOcrItems(value) {
+  return sanitizeVideoOcrItems(value).map((item) => ({
+    ...item,
+    ocrLabel: String(item.ocrLabel || '').trim() || 'photo-ocr'
+  }));
+}
+
 function toAsciiUpperToken(value, fallback = 'OCR') {
   const text = String(value || '')
     .normalize('NFKD')
@@ -810,8 +819,15 @@ function pickLatestVideoOcrUrlFromDc(dcMetadata) {
   const direct = String(dc.videoOcrUrl || '').trim();
   if (direct) return direct;
   const items = sanitizeVideoOcrItems(dc.videoOcrItems);
-  if (!items.length) return '';
-  const last = items[items.length - 1];
+  if (items.length) {
+    const last = items[items.length - 1];
+    return String(last.ocrUrl || '').trim();
+  }
+  const photoDirect = String(dc.photoOcrUrl || '').trim();
+  if (photoDirect) return photoDirect;
+  const photoItems = sanitizePhotoOcrItems(dc.photoOcrItems);
+  if (!photoItems.length) return '';
+  const last = photoItems[photoItems.length - 1];
   return String(last.ocrUrl || '').trim();
 }
 
@@ -2873,7 +2889,7 @@ function getLatestVideoOcrJobForAsset(assetId) {
 
 function normalizeMediaJobType(value) {
   const raw = String(value || '').trim().toLowerCase();
-  if (raw === 'subtitle' || raw === 'video_ocr' || raw === 'proxy') return raw;
+  if (raw === 'subtitle' || raw === 'video_ocr' || raw === 'proxy' || raw === 'metadata_enrichment') return raw;
   return '';
 }
 
@@ -3105,10 +3121,16 @@ function buildSubtitleDbRequestPayload(job) {
     subtitleLabel: String(job.subtitleLabel || 'auto-whisper'),
     turkishAiCorrect: Boolean(job.turkishAiCorrect),
     useZemberekLexicon: Boolean(job.useZemberekLexicon),
-    audioStreamIndex: Number.isFinite(Number(job.audioStreamIndex)) ? Number(job.audioStreamIndex) : null,
-    audioChannelIndex: Number.isFinite(Number(job.audioChannelIndex)) ? Number(job.audioChannelIndex) : null,
+    audioStreamIndex: normalizeOptionalMediaIndex(job.audioStreamIndex),
+    audioChannelIndex: normalizeOptionalMediaIndex(job.audioChannelIndex),
     subtitleBackend: normalizeSubtitleBackend(job.subtitleBackendRequested || job.subtitleBackend)
   };
+}
+
+function normalizeOptionalMediaIndex(value) {
+  if (value == null || String(value).trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function buildSubtitleDbResultPayload(job) {
@@ -3180,6 +3202,60 @@ async function saveAssetVideoOcrMetadata(assetId, row, job) {
     videoOcrLineCount: latest.lineCount,
     videoOcrSegmentCount: latest.segmentCount,
     videoOcrItems: items
+  };
+  const result = await pool.query(
+    `
+      UPDATE assets
+      SET dc_metadata = $2::jsonb,
+          updated_at = $3
+      WHERE id = $1
+      RETURNING *
+    `,
+    [assetId, JSON.stringify(dcMetadata), now]
+  );
+  const updatedRow = result.rows[0];
+  try {
+    await syncOcrSegmentIndexForAsset(assetId, latest.ocrUrl, {
+      sourceEngine: latest.ocrEngine,
+      lang: String(job?.ocrLang || '')
+    });
+  } catch (_error) {}
+  return { row: updatedRow, item: latest };
+}
+
+async function saveAssetPhotoOcrMetadata(assetId, row, job) {
+  const now = new Date().toISOString();
+  const existingDc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+  const items = sanitizePhotoOcrItems(existingDc.photoOcrItems);
+  const nextVersion = items.length + 1;
+  const requestedLabel = normalizeRequestedOcrLabel(
+    job.ocrLabel,
+    buildOcrDisplayLabel({
+      assetTitle: String(row?.title || ''),
+      fileName: String(row?.file_name || ''),
+      createdAt: now,
+      engine: normalizeOcrEngine(job.ocrEngine || 'paddle'),
+      version: nextVersion
+    })
+  );
+  items.push({
+    id: nanoid(),
+    ocrUrl: String(job.resultUrl || '').trim(),
+    ocrLabel: requestedLabel,
+    ocrEngine: normalizeOcrEngine(job.ocrEngine || 'paddle'),
+    lineCount: Math.max(0, Number(job.lineCount) || 0),
+    segmentCount: Math.max(0, Number(job.segmentCount) || 0),
+    createdAt: now
+  });
+  const latest = items[items.length - 1];
+  const dcMetadata = {
+    ...existingDc,
+    photoOcrUrl: latest.ocrUrl,
+    photoOcrLabel: latest.ocrLabel,
+    photoOcrEngine: latest.ocrEngine,
+    photoOcrLineCount: latest.lineCount,
+    photoOcrSegmentCount: latest.segmentCount,
+    photoOcrItems: items
   };
   const result = await pool.query(
     `
@@ -4380,6 +4456,7 @@ function mapAssetRow(row) {
   const dcMetadata = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
   let subtitleItems = sanitizeSubtitleItems(dcMetadata.subtitleItems);
   let videoOcrItems = sanitizeVideoOcrItems(dcMetadata.videoOcrItems);
+  let photoOcrItems = sanitizePhotoOcrItems(dcMetadata.photoOcrItems);
   if (!subtitleItems.length && String(dcMetadata.subtitleUrl || '').trim()) {
     subtitleItems = [{
       id: nanoid(),
@@ -4397,6 +4474,17 @@ function mapAssetRow(row) {
       ocrEngine: normalizeOcrEngine(dcMetadata.videoOcrEngine || 'paddle'),
       lineCount: Math.max(0, Number(dcMetadata.videoOcrLineCount) || 0),
       segmentCount: Math.max(0, Number(dcMetadata.videoOcrSegmentCount) || 0),
+      createdAt: row.updated_at || row.created_at || new Date().toISOString()
+    }];
+  }
+  if (!photoOcrItems.length && String(dcMetadata.photoOcrUrl || '').trim()) {
+    photoOcrItems = [{
+      id: nanoid(),
+      ocrUrl: String(dcMetadata.photoOcrUrl || '').trim(),
+      ocrLabel: String(dcMetadata.photoOcrLabel || '').trim() || 'photo-ocr.txt',
+      ocrEngine: normalizeOcrEngine(dcMetadata.photoOcrEngine || 'paddle'),
+      lineCount: Math.max(0, Number(dcMetadata.photoOcrLineCount) || 0),
+      segmentCount: Math.max(0, Number(dcMetadata.photoOcrSegmentCount) || 0),
       createdAt: row.updated_at || row.created_at || new Date().toISOString()
     }];
   }
@@ -4458,6 +4546,12 @@ function mapAssetRow(row) {
     videoOcrLineCount: Math.max(0, Number(dcMetadata.videoOcrLineCount) || 0),
     videoOcrSegmentCount: Math.max(0, Number(dcMetadata.videoOcrSegmentCount) || 0),
     videoOcrItems,
+    photoOcrUrl: String(dcMetadata.photoOcrUrl || '').trim(),
+    photoOcrLabel: String(dcMetadata.photoOcrLabel || '').trim(),
+    photoOcrEngine: normalizeOcrEngine(dcMetadata.photoOcrEngine || 'paddle'),
+    photoOcrLineCount: Math.max(0, Number(dcMetadata.photoOcrLineCount) || 0),
+    photoOcrSegmentCount: Math.max(0, Number(dcMetadata.photoOcrSegmentCount) || 0),
+    photoOcrItems,
     ocrSearchHit: row._ocr_search_hit || null,
     ocrSearchHits: Array.isArray(row._ocr_search_hits) ? row._ocr_search_hits : [],
     ocrSearchPage: row._ocr_search_page || null,
@@ -4910,8 +5004,10 @@ function countGeneratedSubtitleCues(outputPath) {
 }
 
 function buildEmptySubtitleError(job = {}) {
-  const channel = Number.isFinite(Number(job.audioChannelIndex)) ? ` channel ${Number(job.audioChannelIndex)}` : '';
-  const stream = Number.isFinite(Number(job.audioStreamIndex)) ? ` stream ${Number(job.audioStreamIndex)}` : '';
+  const channelIndex = normalizeOptionalMediaIndex(job.audioChannelIndex);
+  const streamIndex = normalizeOptionalMediaIndex(job.audioStreamIndex);
+  const channel = channelIndex != null ? ` channel ${channelIndex}` : '';
+  const stream = streamIndex != null ? ` stream ${streamIndex}` : '';
   const source = `${stream}${channel}`.trim();
   return source
     ? `No subtitle cues were generated from selected audio ${source}. Check the selected audio stream/channel or choose another language.`
@@ -4925,8 +5021,8 @@ async function transcribeMediaToVtt(inputPath, outputPath, options = {}) {
     : path.join(__dirname, 'transcribe_whisper.py');
   const lang = String(options.lang || '').trim().toLowerCase();
   const model = normalizeSubtitleModel(options.model || WHISPER_MODEL || 'small');
-  const audioStreamIndex = Number.isFinite(Number(options.audioStreamIndex)) ? Number(options.audioStreamIndex) : null;
-  const audioChannelIndex = Number.isFinite(Number(options.audioChannelIndex)) ? Number(options.audioChannelIndex) : null;
+  const audioStreamIndex = normalizeOptionalMediaIndex(options.audioStreamIndex);
+  const audioChannelIndex = normalizeOptionalMediaIndex(options.audioChannelIndex);
   let preparedInputPath = inputPath;
   let cleanupPreparedInput = () => {};
   if (audioStreamIndex != null || audioChannelIndex != null) {
@@ -4975,8 +5071,8 @@ function normalizeSubtitleModel(value) {
 }
 
 async function prepareAudioInputForTranscription(inputPath, options = {}) {
-  const audioStreamIndex = Number.isFinite(Number(options.audioStreamIndex)) ? Number(options.audioStreamIndex) : null;
-  const audioChannelIndex = Number.isFinite(Number(options.audioChannelIndex)) ? Number(options.audioChannelIndex) : null;
+  const audioStreamIndex = normalizeOptionalMediaIndex(options.audioStreamIndex);
+  const audioChannelIndex = normalizeOptionalMediaIndex(options.audioChannelIndex);
   if (audioStreamIndex == null && audioChannelIndex == null) {
     return { path: inputPath, cleanup: () => {} };
   }
@@ -5419,6 +5515,55 @@ async function extractVideoOcrFrameTextPaddle({ workDir, files, intervalSec, ocr
   return { frameEntries, engine: 'paddle' };
 }
 
+async function extractPhotoOcrToText(inputPath, outputPath, options = {}) {
+  const ocrLang = String(options.ocrLang || 'eng+tur').trim() || 'eng+tur';
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mam-photo-ocr-'));
+  try {
+    const frameName = 'frame-000001.jpg';
+    const framePath = path.join(workDir, frameName);
+    const convert = await runCommandCapture('ffmpeg', [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-y',
+      '-i',
+      inputPath,
+      '-frames:v',
+      '1',
+      '-vf',
+      'scale=min(2200\\,iw):-2',
+      '-q:v',
+      '3',
+      framePath
+    ]);
+    if (!convert.ok || !fs.existsSync(framePath)) {
+      throw new Error(String(convert.stderr || convert.stdout || 'Could not prepare image for OCR').trim().slice(0, 700));
+    }
+
+    const result = await extractVideoOcrFrameTextPaddle({
+      workDir,
+      files: [frameName],
+      intervalSec: 1,
+      ocrLang
+    });
+    const entries = Array.isArray(result.frameEntries) ? result.frameEntries : [];
+    const text = normalizeOcrText(entries.map((item) => item.text).filter(Boolean).join(' '));
+    const output = text
+      ? `[00:00:00.000 --> 00:00:01.000] ${text}\n`
+      : '[00:00:00.000 --> 00:00:01.000] No OCR text detected.\n';
+    fs.writeFileSync(outputPath, output, 'utf8');
+    return {
+      lines: text ? 1 : 0,
+      segments: text ? 1 : 0,
+      engine: result.engine || 'paddle',
+      text,
+      workDir
+    };
+  } finally {
+    safeRmDir(workDir);
+  }
+}
+
 function wordsToSimpleLine(words = []) {
   const lines = [];
   let current = [];
@@ -5681,8 +5826,8 @@ function queueSubtitleGenerationJob(row, options = {}) {
   const subtitleLang = normalizeSubtitleLang(options.lang);
   const subtitleLabel = String(options.label || 'auto-whisper').trim() || 'auto-whisper';
   const model = String(options.model || WHISPER_MODEL || 'small').trim() || 'small';
-  const audioStreamIndex = Number.isFinite(Number(options.audioStreamIndex)) ? Number(options.audioStreamIndex) : null;
-  const audioChannelIndex = Number.isFinite(Number(options.audioChannelIndex)) ? Number(options.audioChannelIndex) : null;
+  const audioStreamIndex = normalizeOptionalMediaIndex(options.audioStreamIndex);
+  const audioChannelIndex = normalizeOptionalMediaIndex(options.audioChannelIndex);
   const requestedSubtitleBackend = normalizeSubtitleBackend(
     options.subtitleBackend || (options.useWhisperX ? 'whisperx' : 'whisper')
   );
@@ -7148,6 +7293,19 @@ const assetEditLockService = createAssetEditLockService({
   pool,
   ttlSeconds: Number(process.env.ASSET_EDIT_LOCK_TTL_SECONDS || 900)
 });
+const metadataEnrichmentService = createMetadataEnrichmentService({
+  pool,
+  nanoid,
+  runCommandCapture,
+  buildArtifactPath,
+  publicUploadUrlToAbsolutePath,
+  extractPreviewContentFromFile,
+  extractVideoOcrFrameTextPaddle,
+  queueSubtitleGenerationJob,
+  subtitleJobs,
+  upsertMediaProcessingJobSafe,
+  indexAssetToElastic
+});
 const DOCUMENT_RIGHTS_ADMIN_GROUPS = String(process.env.MAM_DOCUMENT_ADMIN_GROUPS || 'dokadmin,dokyonet,dokyönet,dokyon,dokyön')
   .split(',')
   .map((value) => normalizeIdentityKey(value.replace(/^\/+/, '').trim()))
@@ -8544,12 +8702,14 @@ registerTextProcessingRoutes(app, {
   getMediaProcessingJobById,
   mapSubtitleJobFromDbRow,
   queueVideoOcrJob,
+  extractPhotoOcrToText,
   videoOcrJobs,
   getLatestVideoOcrJobForAsset,
   getLatestMediaProcessingJobForAsset,
   sanitizeVideoOcrItems,
   sanitizeSubtitleItems,
   saveAssetVideoOcrMetadata,
+  saveAssetPhotoOcrMetadata,
   publicUploadUrlToAbsolutePath,
   safeRmDir,
   SUBTITLES_DIR,
@@ -8636,6 +8796,7 @@ registerAssetRoutes(app, {
     canManageVersionRow,
     assetAccessService,
     assetEditLockService,
+    metadataEnrichmentService,
     mapVersionRow,
   recordAuditEvent,
   nanoid
