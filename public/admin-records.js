@@ -270,6 +270,7 @@
             data-engine="${escapeHtml(item.ocrEngine || '-')}"
             data-lines="${escapeHtml(String(item.lineCount || 0))}"
             data-segments="${escapeHtml(String(item.segmentCount || 0))}"
+            data-kind="${escapeHtml(item.ocrKind || '')}"
             ${index === 0 ? 'selected' : ''}
           >${escapeHtml(item.ocrLabel || item.itemId || 'ocr')}</option>
         `).join('');
@@ -301,11 +302,12 @@
       const engine = String(option.dataset.engine || '-').trim();
       const lines = String(option.dataset.lines || '0').trim();
       const segments = String(option.dataset.segments || '0').trim();
+      const kind = String(option.dataset.kind || '').trim().toLowerCase();
       const labelInput = rowEl.querySelector('.ocr-label-input');
       const meta = rowEl.querySelector('.ocr-selected-meta');
       if (labelInput instanceof HTMLInputElement) labelInput.value = label;
       if (meta) meta.textContent = `${t('ocr_engine')}: ${engine} | ${t('ocr_lines')}: ${lines} | ${t('ocr_segments')}: ${segments}`;
-      return { itemId, label, engine, lines, segments };
+      return { itemId, label, engine, lines, segments, kind };
     }
 
     async function loadOcrRecords() {
@@ -503,7 +505,7 @@
               title: `${t('ocr_records')} - ${rowEl.querySelector('.ocr-row-main strong')?.textContent || assetId}`,
               content: String(readResult.content || ''),
               mediaUrl,
-              previewMode: 'video',
+              previewMode: selected?.kind === 'photo' ? 'image' : 'video',
               onSave: async (nextContent) => {
                 await api('/api/admin/ocr-records/content', {
                   method: 'PATCH',

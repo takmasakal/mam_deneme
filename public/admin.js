@@ -1152,6 +1152,7 @@ function openTextEditorModal({
     const mode = String(previewMode || 'audio').trim().toLowerCase();
     const hasAudio = Boolean(mode === 'audio' && safeMediaUrl);
     const hasVideo = Boolean(mode === 'video' && safeMediaUrl);
+    const hasImage = Boolean((mode === 'image' || mode === 'photo') && safeMediaUrl);
     const backdrop = document.createElement('div');
     backdrop.className = 'content-modal-backdrop';
     backdrop.innerHTML = `
@@ -1180,6 +1181,11 @@ function openTextEditorModal({
             <span class="content-modal-audio-tc">${escapeHtml(t('content_audio_tc'))}: <strong id="contentEditorVideoTc">00:00:00:00</strong></span>
           </div>
           <video id="contentEditorVideo" class="content-modal-video-el" controls preload="metadata" src="${escapeHtml(safeMediaUrl)}"></video>
+        </div>
+        ` : ''}
+        ${hasImage ? `
+        <div class="content-modal-video" role="group" aria-label="${escapeHtml(t('type_photo'))}">
+          <img class="content-modal-video-el" alt="${escapeHtml(t('type_photo'))}" src="${escapeHtml(safeMediaUrl)}" />
         </div>
         ` : ''}
         <div class="content-modal-toolbar">
