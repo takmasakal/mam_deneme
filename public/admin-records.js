@@ -7,6 +7,7 @@
       highlightSuggestion,
       openTextEditorModal,
       userPermissionsSearchInput,
+      userPermissionsPrincipalType,
       userPermissionsSearchButton,
       userPermissionsRows,
       userPermissionsMsg,
@@ -82,6 +83,10 @@
       return String(userPermissionsSearchInput?.value || '').trim().toLowerCase();
     }
 
+    function getUserPermissionPrincipalType() {
+      return String(userPermissionsPrincipalType?.value || 'user').trim() === 'group' ? 'group' : 'user';
+    }
+
     function renderUserPermissionsPager() {
       const total = Number(userPermissionsPagination.total || 0);
       const page = Math.max(1, Number(userPermissionsPagination.page || 1));
@@ -153,17 +158,21 @@
           { key: 'office.edit', legacyField: 'officeEdit', labelKey: 'perm_office_edit' },
           { key: 'asset.delete', legacyField: 'assetDelete', labelKey: 'perm_asset_delete' },
           { key: 'pdf.advanced', legacyField: 'pdfAdvancedTools', labelKey: 'perm_pdf_advanced' },
-          { key: 'text.admin', legacyField: 'textAdminAccess', labelKey: 'perm_text_admin' }
+          { key: 'text.admin', legacyField: 'textAdminAccess', labelKey: 'perm_text_admin' },
+          { key: 'document.rights.admin', legacyField: 'documentRightsAdminAccess', labelKey: 'perm_document_rights_admin' }
         ];
       if (!list.length) {
         userPermissionsRows.innerHTML = `<div class="empty">${escapeHtml(t(getUserPermissionSearchQuery().length >= 2 ? 'user_search_no_match' : 'user_search_required'))}</div>`;
         return;
       }
+      const principalType = getUserPermissionPrincipalType();
       userPermissionsRows.innerHTML = list.map((user) => {
         const uname = escapeHtml(user.username || '');
         const displayName = String(user.displayName || '').trim();
         const email = String(user.email || '').trim();
-        const meta = [displayName, email].filter(Boolean).join(' · ');
+        const meta = principalType === 'group'
+          ? [user.path || displayName || t('principal_type_group')].filter(Boolean).join(' · ')
+          : [displayName, email].filter(Boolean).join(' · ');
         const activeKeys = new Set(Array.isArray(user.permissionKeys) ? user.permissionKeys : []);
         const checkboxes = defs.map((definition) => {
           const checked = activeKeys.has(definition.key) || Boolean(user?.[definition.legacyField]);
@@ -209,7 +218,10 @@
           );
           btn.disabled = true;
           try {
-            await api(`/api/admin/user-permissions/${encodeURIComponent(username)}`, {
+            const endpoint = getUserPermissionPrincipalType() === 'group'
+              ? `/api/admin/group-permissions/${encodeURIComponent(username)}`
+              : `/api/admin/user-permissions/${encodeURIComponent(username)}`;
+            await api(endpoint, {
               method: 'PATCH',
               body: JSON.stringify({ permissionKeys, ...legacyFlags })
             });
@@ -236,6 +248,7 @@
         return;
       }
       params.set('q', q);
+      params.set('principalType', getUserPermissionPrincipalType());
       params.set('limit', String(limit));
       params.set('page', String(Math.max(1, userPermissionsPage)));
       const result = await api(`/api/admin/user-permissions?${params.toString()}`);
@@ -261,6 +274,10 @@
     });
 
     userPermissionsSearchButton?.addEventListener('click', () => {
+      refreshUserPermissionSearch();
+    });
+
+    userPermissionsPrincipalType?.addEventListener('change', () => {
       refreshUserPermissionSearch();
     });
 

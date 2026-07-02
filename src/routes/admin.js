@@ -2802,15 +2802,86 @@ app.get('/api/admin/user-permissions', async (req, res) => {
     const effective = await requireSuperAdminRequest(req, res);
     if (!effective) return null;
     const q = String(req.query.q || '').trim().toLowerCase();
+    const principalType = String(req.query.principalType || req.query.type || 'user').trim().toLowerCase() === 'group' ? 'group' : 'user';
     const limit = Number(req.query.limit) === 50 ? 50 : 20;
     const requestedPage = Math.max(1, Number(req.query.page) || 1);
     const saved = await getUserPermissionsSettings();
+    const savedUsers = saved?.users && typeof saved.users === 'object' && !Array.isArray(saved.users) ? saved.users : {};
+    const savedGroups = saved?.groups && typeof saved.groups === 'object' && !Array.isArray(saved.groups) ? saved.groups : {};
+    const legacyUsers = Object.fromEntries(
+      Object.entries(saved || {}).filter(([key]) => !['users', 'groups'].includes(String(key || '').trim()))
+    );
+    const userPermissionEntries = { ...legacyUsers, ...savedUsers };
     if (q.length < 2) {
       return res.json({
         users: [],
         availablePermissions: getPermissionDefinitionsPayload(),
         pagination: { page: 1, limit, total: 0, totalPages: 1 },
         source: 'search_required'
+      });
+    }
+    if (principalType === 'group') {
+      const [keycloakGroupsData, mamGroups] = await Promise.all([
+        fetchKeycloakGroups(),
+        collectMamAccessGroups()
+      ]);
+      const groupsByName = new Map();
+      (Array.isArray(keycloakGroupsData?.groups) ? keycloakGroupsData.groups : []).forEach((group) => {
+        const name = String(group?.name || group?.path || '').trim().replace(/^\/+/, '').toLowerCase();
+        if (!name) return;
+        groupsByName.set(name, {
+          username: name,
+          displayName: String(group?.name || name).trim(),
+          path: String(group?.path || `/${name}`).trim(),
+          source: 'keycloak'
+        });
+      });
+      mamGroups.forEach((group) => {
+        const name = String(group || '').trim().replace(/^\/+/, '').toLowerCase();
+        if (!name || groupsByName.has(name)) return;
+        groupsByName.set(name, {
+          username: name,
+          displayName: name,
+          path: `/${name}`,
+          source: 'mam'
+        });
+      });
+      Object.keys(savedGroups || {}).forEach((group) => {
+        const name = String(group || '').trim().replace(/^\/+/, '').toLowerCase();
+        if (!name || groupsByName.has(name)) return;
+        groupsByName.set(name, {
+          username: name,
+          displayName: name,
+          path: `/${name}`,
+          source: 'saved'
+        });
+      });
+      const allGroups = Array.from(groupsByName.values())
+        .filter((group) => [group.username, group.displayName, group.path].map((item) => String(item || '').toLowerCase()).join(' ').includes(q))
+        .sort((a, b) => a.username.localeCompare(b.username))
+        .map((group) => {
+          const entry = normalizePermissionEntry(savedGroups?.[group.username], []);
+          return {
+            ...group,
+            principalType: 'group',
+            permissionKeys: entry.permissionKeys,
+            adminPageAccess: entry.adminPageAccess,
+            textAdminAccess: entry.textAdminAccess,
+            metadataEdit: entry.metadataEdit,
+            assetDelete: entry.assetDelete,
+            pdfAdvancedTools: entry.pdfAdvancedTools,
+            documentRightsAdminAccess: entry.documentRightsAdminAccess
+          };
+        });
+      const total = allGroups.length;
+      const totalPages = Math.max(1, Math.ceil(total / limit));
+      const page = Math.min(requestedPage, totalPages);
+      const offset = (page - 1) * limit;
+      return res.json({
+        users: allGroups.slice(offset, offset + limit),
+        availablePermissions: getPermissionDefinitionsPayload(),
+        pagination: { page, limit, total, totalPages },
+        source: 'groups'
       });
     }
     const kcData = await fetchKeycloakUsers({ search: q, max: 100 });
@@ -2825,7 +2896,7 @@ app.get('/api/admin/user-permissions', async (req, res) => {
       usernames.add(username);
       keycloakUserByUsername.set(username, row);
     });
-    Object.keys(saved || {}).forEach((k) => {
+    Object.keys(userPermissionEntries || {}).forEach((k) => {
       const username = String(k || '').trim().toLowerCase();
       if (!username) return;
       if (usernames.has(username)) usernames.add(username);
@@ -2838,7 +2909,7 @@ app.get('/api/admin/user-permissions', async (req, res) => {
         const defaults = permissionDefaultsByUser.has(username)
           ? permissionDefaultsByUser.get(username)
           : [];
-        const effective = normalizePermissionEntry(saved?.[username], defaults);
+        const effective = normalizePermissionEntry(userPermissionEntries?.[username], defaults);
         return {
           username,
           displayName: [kcUser?.firstName, kcUser?.lastName].map((item) => String(item || '').trim()).filter(Boolean).join(' '),
@@ -2848,7 +2919,8 @@ app.get('/api/admin/user-permissions', async (req, res) => {
           textAdminAccess: effective.textAdminAccess,
           metadataEdit: effective.metadataEdit,
           assetDelete: effective.assetDelete,
-          pdfAdvancedTools: effective.pdfAdvancedTools
+          pdfAdvancedTools: effective.pdfAdvancedTools,
+          documentRightsAdminAccess: effective.documentRightsAdminAccess
         };
       });
     const filteredUsers = q.length >= 2
@@ -2898,13 +2970,23 @@ app.patch('/api/admin/user-permissions/:username', async (req, res) => {
         textAdminAccess: req.body?.textAdminAccess,
         metadataEdit: req.body?.metadataEdit,
         assetDelete: req.body?.assetDelete,
-        pdfAdvancedTools: req.body?.pdfAdvancedTools
+        pdfAdvancedTools: req.body?.pdfAdvancedTools,
+        documentRightsAdminAccess: req.body?.documentRightsAdminAccess
       },
       []
     );
+    const savedUsers = current?.users && typeof current.users === 'object' && !Array.isArray(current.users) ? current.users : {};
+    const savedGroups = current?.groups && typeof current.groups === 'object' && !Array.isArray(current.groups) ? current.groups : {};
+    const legacyUsers = Object.fromEntries(
+      Object.entries(current || {}).filter(([key]) => !['users', 'groups'].includes(String(key || '').trim()))
+    );
     const next = {
-      ...current,
-      [username]: nextEntry
+      users: {
+        ...legacyUsers,
+        ...savedUsers,
+        [username]: nextEntry
+      },
+      groups: savedGroups
     };
     await saveUserPermissionsSettings(next);
     return res.json({
@@ -2914,6 +2996,69 @@ app.patch('/api/admin/user-permissions/:username', async (req, res) => {
     });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to save user permissions' });
+  }
+});
+
+app.patch('/api/admin/group-permissions/:groupName', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const groupName = assetAccessService.normalizeAccessName(req.params.groupName || '');
+    if (!groupName) return res.status(400).json({ error: 'groupName is required' });
+    const [keycloakGroupsData, mamGroups] = await Promise.all([
+      fetchKeycloakGroups(),
+      collectMamAccessGroups()
+    ]);
+    const knownGroups = new Set(
+      []
+        .concat(Array.isArray(keycloakGroupsData?.groups) ? keycloakGroupsData.groups : [])
+        .flatMap((group) => [group?.name, group?.path])
+        .concat(mamGroups)
+        .map((value) => assetAccessService.normalizeAccessName(value))
+        .filter(Boolean)
+    );
+    if (!knownGroups.has(groupName)) {
+      return res.status(404).json({ error: 'Group not found' });
+    }
+    const current = await getUserPermissionsSettings();
+    const requestedPermissionKeys = Array.isArray(req.body?.permissionKeys)
+      ? req.body.permissionKeys.filter((key) => PERMISSION_KEYS.includes(String(key || '').trim()))
+      : null;
+    const nextEntry = normalizePermissionEntry(
+      {
+        permissionKeys: requestedPermissionKeys,
+        adminPageAccess: req.body?.adminPageAccess,
+        textAdminAccess: req.body?.textAdminAccess,
+        metadataEdit: req.body?.metadataEdit,
+        assetDelete: req.body?.assetDelete,
+        pdfAdvancedTools: req.body?.pdfAdvancedTools,
+        documentRightsAdminAccess: req.body?.documentRightsAdminAccess
+      },
+      []
+    );
+    const savedUsers = current?.users && typeof current.users === 'object' && !Array.isArray(current.users) ? current.users : {};
+    const savedGroups = current?.groups && typeof current.groups === 'object' && !Array.isArray(current.groups) ? current.groups : {};
+    const legacyUsers = Object.fromEntries(
+      Object.entries(current || {}).filter(([key]) => !['users', 'groups'].includes(String(key || '').trim()))
+    );
+    const next = {
+      users: {
+        ...legacyUsers,
+        ...savedUsers
+      },
+      groups: {
+        ...savedGroups,
+        [groupName]: nextEntry
+      }
+    };
+    await saveUserPermissionsSettings(next);
+    return res.json({
+      groupName,
+      permissionKeys: nextEntry.permissionKeys,
+      ...nextEntry
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to save group permissions' });
   }
 });
 

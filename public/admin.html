@@ -591,10 +591,14 @@
               <div id="authSessionSettingsMsg" class="admin-note"></div>
             </form>
             <div class="settings-section-head user-settings-head">
-              <h3 data-i18n="user_settings">User Settings</h3>
+              <h3 data-i18n="principal_settings">User / Group Settings</h3>
               <div class="user-settings-search-form">
-                <input id="userPermissionsSearchInput" class="user-settings-search" type="text" data-i18n-placeholder="user_search_ph" placeholder="Search user..." autocomplete="off" aria-label="User Search" />
-                <button id="userPermissionsSearchButton" class="user-settings-search-button" type="button" data-i18n="user_search">User Search</button>
+                <select id="userPermissionsPrincipalType" class="user-settings-principal-type" aria-label="Principal type">
+                  <option value="user" data-i18n="principal_type_user">User</option>
+                  <option value="group" data-i18n="principal_type_group">Group</option>
+                </select>
+                <input id="userPermissionsSearchInput" class="user-settings-search" type="text" data-i18n-placeholder="user_or_group_search_ph" placeholder="Search user or group..." autocomplete="off" aria-label="User or Group Search" />
+                <button id="userPermissionsSearchButton" class="user-settings-search-button" type="button" data-i18n="principal_search">Search</button>
               </div>
             </div>
             <div id="userPermissionsRows" class="rows user-permissions-rows"></div>

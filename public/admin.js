@@ -55,6 +55,7 @@ const overviewCards = Array.from(document.querySelectorAll('[data-overview-targe
 const settingsSubTabs = Array.from(document.querySelectorAll('.settings-subtab'));
 const settingsSubPanels = Array.from(document.querySelectorAll('.settings-subpanel'));
 const userPermissionsSearchInput = document.getElementById('userPermissionsSearchInput');
+const userPermissionsPrincipalType = document.getElementById('userPermissionsPrincipalType');
 const userPermissionsRows = document.getElementById('userPermissionsRows');
 const userPermissionsMsg = document.getElementById('userPermissionsMsg');
 const groupAdminGroupInput = document.getElementById('groupAdminGroupInput');
@@ -495,10 +496,15 @@ let i18n = {
     health_job_status_completed: 'Completed',
     health_job_status_failed: 'Failed',
     user_settings: 'User Settings',
+    principal_settings: 'User / Group Settings',
+    principal_type_user: 'User',
+    principal_type_group: 'Group',
+    principal_search: 'Search',
     user_search: 'User Search',
     user_search_ph: 'Search user...',
-    user_search_required: 'Type a user name and click User Search.',
-    user_search_no_match: 'No matching user found.',
+    user_or_group_search_ph: 'Search user or group...',
+    user_search_required: 'Type a user or group name and click User Search.',
+    user_search_no_match: 'No matching user or group found.',
     user_permissions_empty: 'No user found.',
     perm_admin_access: 'Admin page access',
     perm_metadata_edit: 'Metadata edit',
@@ -929,10 +935,15 @@ let i18n = {
     health_job_status_completed: 'Tamamlandı',
     health_job_status_failed: 'Hatalı',
     user_settings: 'Kullanıcı Ayarları',
+    principal_settings: 'Kullanıcı / Grup Ayarları',
+    principal_type_user: 'Kullanıcı',
+    principal_type_group: 'Grup',
+    principal_search: 'Ara',
     user_search: 'Kullanıcı Ara',
     user_search_ph: 'Kullanıcı ara...',
-    user_search_required: 'Kullanıcı adı yazıp Kullanıcı Ara düğmesine basın.',
-    user_search_no_match: 'Eşleşen kullanıcı bulunamadı.',
+    user_or_group_search_ph: 'Kullanıcı veya grup ara...',
+    user_search_required: 'Kullanıcı veya grup adı yazıp Kullanıcı Ara düğmesine basın.',
+    user_search_no_match: 'Eşleşen kullanıcı veya grup bulunamadı.',
     user_permissions_empty: 'Kullanıcı bulunamadı.',
     perm_admin_access: 'Yönetim sayfasına erişim',
     perm_metadata_edit: 'Metadata düzenleme',
@@ -2357,6 +2368,7 @@ const adminRecordsModule = window.createAdminRecordsModule({
   highlightSuggestion,
   openTextEditorModal,
   userPermissionsSearchInput,
+  userPermissionsPrincipalType,
   userPermissionsSearchButton: document.getElementById('userPermissionsSearchButton'),
   userPermissionsRows,
   userPermissionsMsg,
