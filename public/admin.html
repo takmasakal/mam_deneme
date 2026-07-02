@@ -637,12 +637,30 @@
             <h3 data-i18n="group_admins">Group Admins</h3>
             <div class="filter-row">
               <label>
-                <span data-i18n="group_name">Group</span>
+                <span data-i18n="managed_group">Managed group</span>
                 <input id="groupAdminGroupInput" type="text" placeholder="archive-team" list="identityGroupOptions" />
               </label>
               <label>
-                <span data-i18n="username">User</span>
+                <span data-i18n="manager_principal">Manager user/group</span>
                 <input id="groupAdminUserInput" type="text" placeholder="username" list="identityUserOptions" />
+              </label>
+              <label>
+                <span data-i18n="admin_scope">Scope</span>
+                <select id="groupAdminScopeInput">
+                  <option value="asset-rights" data-i18n="admin_scope_asset_rights">Asset rights</option>
+                  <option value="document-rights" data-i18n="admin_scope_document_rights">Document rights</option>
+                  <option value="text-admin" data-i18n="admin_scope_text_admin">OCR / subtitle</option>
+                </select>
+              </label>
+              <label>
+                <span data-i18n="asset_type_scope">Asset type</span>
+                <div id="groupAdminAssetTypeInput" class="group-admin-type-checks" role="group" aria-label="Asset type">
+                  <label><input type="checkbox" value="document" /> <span data-i18n="asset_type_document">Document</span></label>
+                  <label><input type="checkbox" value="video" /> <span data-i18n="asset_type_video">Video</span></label>
+                  <label><input type="checkbox" value="audio" /> <span data-i18n="asset_type_audio">Audio</span></label>
+                  <label><input type="checkbox" value="photo" /> <span data-i18n="asset_type_photo">Photo</span></label>
+                  <label><input type="checkbox" value="other" /> <span data-i18n="asset_type_other">Other</span></label>
+                </div>
               </label>
               <button id="addGroupAdminBtn" type="button" data-i18n="add_group_admin">Add</button>
             </div>

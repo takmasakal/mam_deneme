@@ -142,9 +142,17 @@ async function initDb() {
       id TEXT PRIMARY KEY,
       group_name TEXT NOT NULL,
       username TEXT NOT NULL,
+      admin_scopes TEXT[] NOT NULL DEFAULT '{}',
+      asset_type_groups TEXT[] NOT NULL DEFAULT '{}',
       created_at TIMESTAMPTZ NOT NULL,
       created_by TEXT NOT NULL DEFAULT ''
     );
+
+    ALTER TABLE group_admins
+    ADD COLUMN IF NOT EXISTS admin_scopes TEXT[] NOT NULL DEFAULT '{}';
+
+    ALTER TABLE group_admins
+    ADD COLUMN IF NOT EXISTS asset_type_groups TEXT[] NOT NULL DEFAULT '{}';
 
     CREATE TABLE IF NOT EXISTS asset_type_access (
       type_group TEXT PRIMARY KEY,

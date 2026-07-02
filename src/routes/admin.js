@@ -389,7 +389,7 @@ function mapTypeAccessPayload(row) {
 function limitGroupsForAssetRightsAdmin(values, context) {
   const list = assetAccessService.normalizeAccessList(values || []);
   if (context?.canManageAllAssetVisibility) return list;
-  const managed = assetAccessService.normalizeAccessList(context?.groupAdminGroups || []);
+  const managed = assetAccessService.getManagedGroupsForScope(context, 'asset-rights');
   return list.filter((group) => managed.includes(group));
 }
 
@@ -446,7 +446,7 @@ app.get('/api/admin/identity/overview', async (req, res) => {
       collectMamAccessGroups(),
       pool.query(
         `
-          SELECT id, group_name, username, created_at, created_by
+          SELECT id, group_name, username, admin_scopes, asset_type_groups, created_at, created_by
           FROM group_admins
           ORDER BY group_name ASC, username ASC
         `
@@ -487,6 +487,8 @@ app.get('/api/admin/identity/overview', async (req, res) => {
         id: row.id,
         groupName: row.group_name,
         username: row.username,
+        adminScopes: row.admin_scopes || [],
+        assetTypeGroups: row.asset_type_groups || [],
         createdAt: row.created_at,
         createdBy: row.created_by || ''
       }))
@@ -502,7 +504,7 @@ app.get('/api/admin/group-admins', async (req, res) => {
     if (!effective) return null;
     const result = await pool.query(
       `
-        SELECT id, group_name, username, created_at, created_by
+        SELECT id, group_name, username, admin_scopes, asset_type_groups, created_at, created_by
         FROM group_admins
         ORDER BY group_name ASC, username ASC
       `
@@ -512,6 +514,8 @@ app.get('/api/admin/group-admins', async (req, res) => {
         id: row.id,
         groupName: row.group_name,
         username: row.username,
+        adminScopes: row.admin_scopes || [],
+        assetTypeGroups: row.asset_type_groups || [],
         createdAt: row.created_at,
         createdBy: row.created_by || ''
       }))
@@ -527,6 +531,8 @@ app.post('/api/admin/group-admins', async (req, res) => {
     if (!effective) return null;
     const groupName = assetAccessService.normalizeAccessName(req.body?.groupName || req.body?.group || '');
     const username = assetAccessService.normalizeAccessName(req.body?.username || req.body?.user || '');
+    const adminScopes = assetAccessService.normalizeAdminScopeList(req.body?.adminScopes || req.body?.admin_scopes, ['asset-rights']);
+    const assetTypeGroups = assetAccessService.normalizeAssetTypeGroupList(req.body?.assetTypeGroups || req.body?.asset_type_groups, []);
     if (!groupName || !username) {
       return res.status(400).json({ error: 'groupName and username are required' });
     }
@@ -534,24 +540,74 @@ app.post('/api/admin/group-admins', async (req, res) => {
     const createdBy = String(effective.username || effective.displayName || '').trim();
     const result = await pool.query(
       `
-        INSERT INTO group_admins (id, group_name, username, created_at, created_by)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO group_admins (id, group_name, username, admin_scopes, asset_type_groups, created_at, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         ON CONFLICT (group_name, username)
-        DO UPDATE SET created_by = EXCLUDED.created_by
+        DO UPDATE SET admin_scopes = EXCLUDED.admin_scopes,
+                      asset_type_groups = EXCLUDED.asset_type_groups,
+                      created_by = EXCLUDED.created_by
         RETURNING *
       `,
-      [resolvedNanoid(), groupName, username, now, createdBy]
+      [resolvedNanoid(), groupName, username, adminScopes, assetTypeGroups, now, createdBy]
     );
     await recordAuditEvent?.(req, {
       action: 'group_admin.saved',
       targetType: 'group_admin',
       targetId: result.rows[0].id,
       targetTitle: `${groupName}:${username}`,
-      details: { groupName, username }
+      details: { groupName, username, adminScopes, assetTypeGroups }
     });
     return res.status(201).json({ groupAdmin: result.rows[0] });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to save group admin' });
+  }
+});
+
+app.patch('/api/admin/group-admins/:id', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const groupName = assetAccessService.normalizeAccessName(req.body?.groupName || req.body?.group || '');
+    const username = assetAccessService.normalizeAccessName(req.body?.username || req.body?.user || '');
+    const adminScopes = assetAccessService.normalizeAdminScopeList(req.body?.adminScopes || req.body?.admin_scopes, ['asset-rights']);
+    const assetTypeGroups = assetAccessService.normalizeAssetTypeGroupList(req.body?.assetTypeGroups || req.body?.asset_type_groups, []);
+    if (!groupName || !username) {
+      return res.status(400).json({ error: 'groupName and username are required' });
+    }
+    const result = await pool.query(
+      `
+        UPDATE group_admins
+        SET group_name = $2,
+            username = $3,
+            admin_scopes = $4,
+            asset_type_groups = $5,
+            created_by = $6
+        WHERE id = $1
+        RETURNING *
+      `,
+      [
+        req.params.id,
+        groupName,
+        username,
+        adminScopes,
+        assetTypeGroups,
+        String(effective.username || effective.displayName || '').trim()
+      ]
+    );
+    if (!result.rowCount) return res.status(404).json({ error: 'Group admin not found' });
+    await recordAuditEvent?.(req, {
+      action: 'group_admin.updated',
+      targetType: 'group_admin',
+      targetId: result.rows[0].id,
+      targetTitle: `${groupName}:${username}`,
+      details: { groupName, username, adminScopes, assetTypeGroups }
+    });
+    return res.json({ groupAdmin: result.rows[0] });
+  } catch (error) {
+    if (String(error?.code || '') === '23505') {
+      return res.status(409).json({ error: 'Group admin already exists' });
+    }
+    return res.status(500).json({ error: 'Failed to update group admin' });
   }
 });
 
@@ -778,6 +834,7 @@ app.get('/api/admin/assets/access', async (req, res) => {
       .map((item) => String(item || '').trim().toLowerCase())
       .filter((item) => ['video', 'audio', 'photo', 'document', 'other'].includes(item));
     const visibility = String(req.query.visibility || '').trim().toLowerCase();
+    const ownerGroupFilter = assetAccessService.normalizeAccessName(req.query.ownerGroup || req.query.owner_group || '');
     const lockedOnly = ['1', 'true', 'yes', 'on'].includes(String(req.query.lockedOnly || '').trim().toLowerCase());
     const limit = Number(req.query.limit) === 50 ? 50 : 20;
     const requestedPage = Math.max(1, Number(req.query.page) || 1);
@@ -841,6 +898,10 @@ app.get('/api/admin/assets/access', async (req, res) => {
     if (['private', 'group', 'groups', 'public'].includes(visibility)) {
       values.push(visibility);
       where.push(`COALESCE(visibility, 'public') = $${values.length}`);
+    }
+    if (ownerGroupFilter) {
+      values.push([ownerGroupFilter]);
+      where.push(`COALESCE(owner_groups, '{}') && $${values.length}::text[]`);
     }
 	    if (lockedOnly) {
       where.push(`EXISTS (
@@ -928,7 +989,7 @@ app.get('/api/admin/assets/access-groups', async (req, res) => {
     if (!accessContext) return null;
     const groupNames = accessContext.canManageAllAssetVisibility
       ? await collectMamAccessGroups()
-      : assetAccessService.normalizeAccessList(accessContext.groupAdminGroups || []);
+      : assetAccessService.getManagedGroupsForScope(accessContext, 'asset-rights');
     return res.json({ groups: groupNames.map((name) => ({ name, path: `/${name}` })), mamGroups: groupNames });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to load asset access groups' });
@@ -1248,6 +1309,8 @@ function normalizeGroupAdminImportRow(row = {}) {
     id: String(row.id || '').trim() || resolvedNanoid(),
     group_name: groupName,
     username,
+    admin_scopes: assetAccessService.normalizeAdminScopeList(row.admin_scopes || row.adminScopes, ['asset-rights']),
+    asset_type_groups: assetAccessService.normalizeAssetTypeGroupList(row.asset_type_groups || row.assetTypeGroups, []),
     created_at: row.created_at || row.createdAt || new Date().toISOString(),
     created_by: String(row.created_by || row.createdBy || 'import').trim() || 'import'
   };
@@ -1301,7 +1364,7 @@ app.get('/api/admin/permission-exports/:kind', async (req, res) => {
     if (kind === 'principal-rights') {
       const [userPermissions, groupAdmins, keycloakGroupsData] = await Promise.all([
         getUserPermissionsSettings(),
-        pool.query('SELECT id, group_name, username, created_at, created_by FROM group_admins ORDER BY group_name, username'),
+        pool.query('SELECT id, group_name, username, admin_scopes, asset_type_groups, created_at, created_by FROM group_admins ORDER BY group_name, username'),
         fetchKeycloakGroups()
       ]);
       const groupNames = (Array.isArray(keycloakGroupsData?.groups) ? keycloakGroupsData.groups : [])
@@ -1539,12 +1602,15 @@ app.post('/api/admin/permission-imports/:kind', async (req, res) => {
         for (const row of groupAdmins) {
           await client.query(
             `
-              INSERT INTO group_admins (id, group_name, username, created_at, created_by)
-              VALUES ($1, $2, $3, $4, $5)
+              INSERT INTO group_admins (id, group_name, username, admin_scopes, asset_type_groups, created_at, created_by)
+              VALUES ($1, $2, $3, $4, $5, $6, $7)
               ON CONFLICT (group_name, username)
-              DO UPDATE SET created_at = EXCLUDED.created_at, created_by = EXCLUDED.created_by
+              DO UPDATE SET admin_scopes = EXCLUDED.admin_scopes,
+                            asset_type_groups = EXCLUDED.asset_type_groups,
+                            created_at = EXCLUDED.created_at,
+                            created_by = EXCLUDED.created_by
             `,
-            [row.id, row.group_name, row.username, row.created_at, row.created_by]
+            [row.id, row.group_name, row.username, row.admin_scopes, row.asset_type_groups, row.created_at, row.created_by]
           );
         }
         await client.query('COMMIT');

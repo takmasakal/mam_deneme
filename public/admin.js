@@ -59,6 +59,8 @@ const userPermissionsRows = document.getElementById('userPermissionsRows');
 const userPermissionsMsg = document.getElementById('userPermissionsMsg');
 const groupAdminGroupInput = document.getElementById('groupAdminGroupInput');
 const groupAdminUserInput = document.getElementById('groupAdminUserInput');
+const groupAdminScopeInput = document.getElementById('groupAdminScopeInput');
+const groupAdminAssetTypeInput = document.getElementById('groupAdminAssetTypeInput');
 const addGroupAdminBtn = document.getElementById('addGroupAdminBtn');
 const groupAdminsRows = document.getElementById('groupAdminsRows');
 const groupAdminsMsg = document.getElementById('groupAdminsMsg');
@@ -158,12 +160,14 @@ let lastAssetRightsAssets = [];
 let lastAssetRightsTypes = [];
 let assetRightsMode = 'asset';
 let assetRightsLockedOnly = false;
+let assetRightsOwnerGroupFilter = '';
 let assetRightsPage = 1;
 let assetRightsPagination = { page: 1, limit: 20, total: 0, totalPages: 1 };
 let lastDocumentRightsAssets = [];
 let documentRightsPage = 1;
 let documentRightsLockedOnly = false;
 let documentRightsPagination = { page: 1, limit: 20, total: 0, totalPages: 1 };
+let editingGroupAdminId = '';
 let currentAdminProfile = null;
 
 let i18n = {
@@ -502,6 +506,7 @@ let i18n = {
     perm_asset_delete: 'Asset delete',
     perm_pdf_advanced: 'PDF advanced tools',
     perm_text_admin: 'OCR / subtitle admin',
+    perm_document_rights_admin: 'Document rights admin',
     user_permissions_saved: 'User permissions saved.',
     page_size: 'Page size',
     prev_page: 'Prev',
@@ -509,13 +514,25 @@ let i18n = {
     page_info: 'Page {page} / {pages} ({total})',
     group_admins: 'Group Admins',
     group_name: 'Group',
+    managed_group: 'Managed group',
     username: 'User',
+    manager_principal: 'Manager user/group',
+    actions: 'Actions',
+    admin_scope: 'Scope',
+    admin_scope_asset_rights: 'Asset rights',
+    admin_scope_document_rights: 'Document rights',
+    admin_scope_text_admin: 'OCR / subtitle',
+    asset_type_scope: 'Asset type',
+    asset_type_scope_all: 'All',
     add_group_admin: 'Add',
     group_admin_none: 'No group admin defined.',
     group_admin_saved: 'Group admin saved.',
     group_admin_load_failed: 'Failed to load group admins.',
     group_admin_save_failed: 'Failed to save group admin.',
     group_admin_delete_failed: 'Failed to delete group admin.',
+    group_admin_edit: 'Edit',
+    group_admin_delete: 'Delete',
+    group_admin_update: 'Update',
     access_denied: 'Access denied.',
     ocr_records: 'OCR Records',
     ocr_search: 'Search OCR',
@@ -923,6 +940,7 @@ let i18n = {
     perm_asset_delete: 'Varlık silme',
     perm_pdf_advanced: 'PDF gelişmiş araçlar',
     perm_text_admin: 'OCR / altyazı yöneticisi',
+    perm_document_rights_admin: 'Doküman yetkileri yöneticisi',
     user_permissions_saved: 'Kullanıcı yetkileri kaydedildi.',
     page_size: 'Sayfa boyutu',
     prev_page: 'Önceki',
@@ -930,13 +948,25 @@ let i18n = {
     page_info: 'Sayfa {page} / {pages} ({total})',
     group_admins: 'Grup Yöneticileri',
     group_name: 'Grup',
+    managed_group: 'Yönetilen grup',
     username: 'Kullanıcı',
+    manager_principal: 'Yönetici kullanıcı/grup',
+    actions: 'İşlemler',
+    admin_scope: 'Kapsam',
+    admin_scope_asset_rights: 'Varlık yetkileri',
+    admin_scope_document_rights: 'Doküman yetkileri',
+    admin_scope_text_admin: 'OCR / altyazı',
+    asset_type_scope: 'Varlık türü',
+    asset_type_scope_all: 'Tümü',
     add_group_admin: 'Ekle',
     group_admin_none: 'Grup yöneticisi tanımlı değil.',
     group_admin_saved: 'Grup yöneticisi kaydedildi.',
     group_admin_load_failed: 'Grup yöneticileri yüklenemedi.',
     group_admin_save_failed: 'Grup yöneticisi kaydedilemedi.',
     group_admin_delete_failed: 'Grup yöneticisi silinemedi.',
+    group_admin_edit: 'Düzenle',
+    group_admin_delete: 'Sil',
+    group_admin_update: 'Güncelle',
     access_denied: 'Erişim engellendi.',
     ocr_records: 'OCR Kayıtları',
     ocr_search: 'OCR Ara',
@@ -1152,6 +1182,7 @@ function openTextEditorModal({
     const mode = String(previewMode || 'audio').trim().toLowerCase();
     const hasAudio = Boolean(mode === 'audio' && safeMediaUrl);
     const hasVideo = Boolean(mode === 'video' && safeMediaUrl);
+    const hasImage = Boolean((mode === 'image' || mode === 'photo') && safeMediaUrl);
     const backdrop = document.createElement('div');
     backdrop.className = 'content-modal-backdrop';
     backdrop.innerHTML = `
@@ -1180,6 +1211,11 @@ function openTextEditorModal({
             <span class="content-modal-audio-tc">${escapeHtml(t('content_audio_tc'))}: <strong id="contentEditorVideoTc">00:00:00:00</strong></span>
           </div>
           <video id="contentEditorVideo" class="content-modal-video-el" controls preload="metadata" src="${escapeHtml(safeMediaUrl)}"></video>
+        </div>
+        ` : ''}
+        ${hasImage ? `
+        <div class="content-modal-video" role="group" aria-label="${escapeHtml(t('type_photo'))}">
+          <img class="content-modal-video-el" alt="${escapeHtml(t('type_photo'))}" src="${escapeHtml(safeMediaUrl)}" />
         </div>
         ` : ''}
         <div class="content-modal-toolbar">
@@ -2361,14 +2397,42 @@ function renderGroupAdmins(rows = []) {
     groupAdminsRows.innerHTML = `<div class="empty">${escapeHtml(t('group_admin_none'))}</div>`;
     return;
   }
-  groupAdminsRows.innerHTML = list.map((row) => `
-    <div class="row" data-group-admin-id="${escapeHtml(row.id || '')}">
+  const scopeLabels = {
+    'asset-rights': t('admin_scope_asset_rights'),
+    'document-rights': t('admin_scope_document_rights'),
+    'text-admin': t('admin_scope_text_admin')
+  };
+  const typeLabels = {
+    video: t('asset_type_video'),
+    audio: t('asset_type_audio'),
+    photo: t('asset_type_photo'),
+    document: t('asset_type_document'),
+    other: t('asset_type_other')
+  };
+  const header = `
+    <div class="group-admins-table-head" aria-hidden="true">
+      <strong>${escapeHtml(t('managed_group'))}</strong>
+      <strong>${escapeHtml(t('manager_principal'))}</strong>
+      <strong>${escapeHtml(t('admin_scope'))}</strong>
+      <strong>${escapeHtml(t('asset_type_scope'))}</strong>
+      <strong>${escapeHtml(t('health_job_updated'))}</strong>
+      <strong>${escapeHtml(t('actions'))}</strong>
+    </div>
+  `;
+  const rowsHtml = list.map((row) => `
+    <div class="group-admins-row" data-group-admin-id="${escapeHtml(row.id || '')}">
       <strong>${escapeHtml(row.groupName || '')}</strong>
       <span>${escapeHtml(row.username || '')}</span>
+      <span>${escapeHtml((Array.isArray(row.adminScopes) && row.adminScopes.length ? row.adminScopes : ['asset-rights']).map((scope) => scopeLabels[scope] || scope).join(', '))}</span>
+      <span>${escapeHtml((Array.isArray(row.assetTypeGroups) && row.assetTypeGroups.length ? row.assetTypeGroups.map((type) => typeLabels[type] || type).join(', ') : t('asset_type_scope_all')))}</span>
       <span>${escapeHtml(formatAdminDateTime(row.createdAt))}</span>
-      <button type="button" class="danger deleteGroupAdminBtn" data-id="${escapeHtml(row.id || '')}">${escapeHtml(t('delete'))}</button>
+      <span class="group-admins-actions">
+        <button type="button" class="editGroupAdminBtn" data-id="${escapeHtml(row.id || '')}" data-group-name="${escapeHtml(row.groupName || '')}" data-username="${escapeHtml(row.username || '')}" data-scopes="${escapeHtml(JSON.stringify(Array.isArray(row.adminScopes) && row.adminScopes.length ? row.adminScopes : ['asset-rights']))}" data-types="${escapeHtml(JSON.stringify(Array.isArray(row.assetTypeGroups) ? row.assetTypeGroups : []))}">${escapeHtml(t('group_admin_edit'))}</button>
+        <button type="button" class="danger deleteGroupAdminBtn" data-id="${escapeHtml(row.id || '')}">${escapeHtml(t('group_admin_delete'))}</button>
+      </span>
     </div>
   `).join('');
+  groupAdminsRows.innerHTML = `<div class="group-admins-table">${header}${rowsHtml}</div>`;
 }
 
 async function loadGroupAdmins() {
@@ -2896,6 +2960,8 @@ function updateAssetRightsTableLanguage() {
   assetRightsRows.querySelectorAll('[data-asset-rights-locked-label]').forEach((el) => {
     el.textContent = labels.lockedItems;
   });
+  const ownerGroupFilterInput = assetRightsRows.querySelector('#assetRightsOwnerGroupFilter');
+  if (ownerGroupFilterInput) ownerGroupFilterInput.setAttribute('placeholder', labels.ownerGroups);
   const empty = assetRightsRows.querySelector('[data-asset-rights-empty="true"]');
   if (empty) empty.textContent = labels.empty;
 }
@@ -2907,11 +2973,19 @@ function syncAssetRightsTableLanguage() {
 }
 
 function renderAssetRightsHeader(labels) {
+  const assetOnlyHeaders = assetRightsMode === 'asset'
+    ? `
+      <span data-asset-rights-label="visibility">${escapeHtml(labels.visibility)}</span>
+      <label class="asset-rights-column-filter">
+        <span data-asset-rights-label="ownerGroups">${escapeHtml(labels.ownerGroups)}</span>
+        <input id="assetRightsOwnerGroupFilter" type="search" value="${escapeHtml(assetRightsOwnerGroupFilter)}" placeholder="${escapeHtml(labels.ownerGroups)}" autocomplete="off" />
+      </label>
+    `
+    : '';
   return `
     <div class="asset-rights-table-head" aria-hidden="true">
       ${renderAssetRightsModeSelect(labels)}
-      <span data-asset-rights-label="visibility">${escapeHtml(labels.visibility)}</span>
-      <span data-asset-rights-label="ownerGroups">${escapeHtml(labels.ownerGroups)}</span>
+      ${assetOnlyHeaders}
       <span data-asset-rights-label="allowedGroups">${escapeHtml(labels.allowedGroups)}</span>
       <span data-asset-rights-label="allowedUsers">${escapeHtml(labels.allowedUsers)}</span>
       <span data-asset-rights-label="deniedGroups">${escapeHtml(labels.deniedGroups)}</span>
@@ -2996,14 +3070,16 @@ function renderAssetRightsRows(assets = []) {
           <span>${escapeHtml(meta)}</span>
           ${lockInfo}
         </div>
-        <label class="asset-rights-cell" data-asset-rights-cell-label="visibility" data-label="${escapeHtml(labels.visibility)}">
-          <span data-asset-rights-label="visibility">${escapeHtml(labels.visibility)}</span>
-          <select name="visibility">${options}</select>
-        </label>
-        <label class="asset-rights-cell" data-asset-rights-cell-label="ownerGroups" data-label="${escapeHtml(labels.ownerGroups)}">
-          <span data-asset-rights-label="ownerGroups">${escapeHtml(labels.ownerGroups)}</span>
-          ${ownerGroupInput}
-        </label>
+        ${!isTypeMode ? `
+          <label class="asset-rights-cell" data-asset-rights-cell-label="visibility" data-label="${escapeHtml(labels.visibility)}">
+            <span data-asset-rights-label="visibility">${escapeHtml(labels.visibility)}</span>
+            <select name="visibility">${options}</select>
+          </label>
+          <label class="asset-rights-cell" data-asset-rights-cell-label="ownerGroups" data-label="${escapeHtml(labels.ownerGroups)}">
+            <span data-asset-rights-label="ownerGroups">${escapeHtml(labels.ownerGroups)}</span>
+            ${ownerGroupInput}
+          </label>
+        ` : ''}
         <label class="asset-rights-cell" data-asset-rights-cell-label="allowedGroups" data-label="${escapeHtml(labels.allowedGroups)}">
           <span data-asset-rights-label="allowedGroups">${escapeHtml(labels.allowedGroups)}</span>
           <input name="allowedGroups" value="${escapeHtml(allowedGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />
@@ -3120,6 +3196,7 @@ async function loadAssetRightsRows() {
     .forEach((item) => params.append('typeGroup', String(item.value || '').trim()));
   const visibility = String(assetRightsVisibilityFilter?.value || '').trim();
   if (visibility) params.set('visibility', visibility);
+  if (assetRightsOwnerGroupFilter) params.set('ownerGroup', assetRightsOwnerGroupFilter);
   if (assetRightsLockedOnly) params.set('lockedOnly', '1');
   const limit = Number(assetRightsPageSize?.value || 20) === 50 ? 50 : 20;
   params.set('limit', String(limit));
@@ -4201,9 +4278,11 @@ assetRightsNextPage?.addEventListener('click', () => {
 assetRightsRows?.addEventListener('change', (event) => {
   const select = event.target.closest('#assetRightsModeSelect');
   const lockedOnlyCheck = event.target.closest('#assetRightsLockedOnlyCheck');
-  if (!select && !lockedOnlyCheck) return;
+  const ownerGroupFilterInput = event.target.closest('#assetRightsOwnerGroupFilter');
+  if (!select && !lockedOnlyCheck && !ownerGroupFilterInput) return;
   if (select) assetRightsMode = select.value === 'type' ? 'type' : 'asset';
   if (lockedOnlyCheck) assetRightsLockedOnly = Boolean(lockedOnlyCheck.checked);
+  if (ownerGroupFilterInput) assetRightsOwnerGroupFilter = String(ownerGroupFilterInput.value || '').trim();
   assetRightsPage = 1;
   loadAssetRightsRows().catch((error) => {
     if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
@@ -4211,6 +4290,11 @@ assetRightsRows?.addEventListener('change', (event) => {
 });
 
 assetRightsRows?.addEventListener('input', (event) => {
+  const ownerGroupFilterInput = event.target.closest('#assetRightsOwnerGroupFilter');
+  if (ownerGroupFilterInput) {
+    assetRightsOwnerGroupFilter = String(ownerGroupFilterInput.value || '').trim();
+    return;
+  }
   const input = event.target.closest('input[data-group-suggest="1"]');
   if (!input) return;
   requestAssetRightsGroupSuggestions(input).catch(() => {});
@@ -4237,6 +4321,18 @@ assetRightsRows?.addEventListener('focusout', (event) => {
 });
 
 assetRightsRows?.addEventListener('keydown', (event) => {
+  const ownerGroupFilterInput = event.target.closest('#assetRightsOwnerGroupFilter');
+  if (ownerGroupFilterInput) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      assetRightsOwnerGroupFilter = String(ownerGroupFilterInput.value || '').trim();
+      assetRightsPage = 1;
+      loadAssetRightsRows().catch((error) => {
+        if (assetRightsMsg) assetRightsMsg.textContent = String(error.message || 'Request failed');
+      });
+    }
+    return;
+  }
   const input = event.target.closest('input[data-group-suggest="1"]');
   if (!input) return;
   const isOpen = Boolean(assetRightsGroupSuggestEl && !assetRightsGroupSuggestEl.classList.contains('hidden'));
@@ -4285,8 +4381,6 @@ assetRightsRows?.addEventListener('submit', async (event) => {
   try {
     const data = new FormData(form);
     const payload = {
-      visibility: String(data.get('visibility') || 'public'),
-      ownerGroups: parseAccessList(data.get('ownerGroups')),
       allowedGroups: parseAccessList(data.get('allowedGroups')),
       allowedUsers: parseAccessList(data.get('allowedUsers')),
       deniedGroups: parseAccessList(data.get('deniedGroups')),
@@ -4305,6 +4399,9 @@ assetRightsRows?.addEventListener('submit', async (event) => {
       payload.uploadAllowedUsers = parseAccessList(data.get('uploadAllowedUsers'));
       payload.uploadDeniedGroups = parseAccessList(data.get('uploadDeniedGroups'));
       payload.uploadDeniedUsers = parseAccessList(data.get('uploadDeniedUsers'));
+    } else {
+      payload.visibility = String(data.get('visibility') || 'public');
+      payload.ownerGroups = parseAccessList(data.get('ownerGroups'));
     }
     const endpoint = accessMode === 'type'
       ? `/api/admin/asset-types/${encodeURIComponent(typeGroup)}/access`
@@ -4447,16 +4544,30 @@ languageSelect?.addEventListener('change', async (event) => {
 addGroupAdminBtn?.addEventListener('click', async () => {
   const groupName = String(groupAdminGroupInput?.value || '').trim();
   const username = String(groupAdminUserInput?.value || '').trim();
+  const scope = String(groupAdminScopeInput?.value || 'asset-rights').trim();
+  const assetTypes = getSelectedGroupAdminAssetTypes();
   if (!groupName || !username) {
     if (groupAdminsMsg) groupAdminsMsg.textContent = `${t('group_name')} / ${t('username')}`;
     return;
   }
   try {
-    await api('/api/admin/group-admins', {
-      method: 'POST',
-      body: JSON.stringify({ groupName, username })
+    const endpoint = editingGroupAdminId
+      ? `/api/admin/group-admins/${encodeURIComponent(editingGroupAdminId)}`
+      : '/api/admin/group-admins';
+    await api(endpoint, {
+      method: editingGroupAdminId ? 'PATCH' : 'POST',
+      body: JSON.stringify({
+        groupName,
+        username,
+        adminScopes: scope ? [scope] : ['asset-rights'],
+        assetTypeGroups: assetTypes
+      })
     });
     if (groupAdminUserInput) groupAdminUserInput.value = '';
+    editingGroupAdminId = '';
+    if (groupAdminScopeInput) groupAdminScopeInput.value = 'asset-rights';
+    setGroupAdminAssetTypes([]);
+    if (addGroupAdminBtn) addGroupAdminBtn.textContent = t('add_group_admin');
     if (groupAdminsMsg) groupAdminsMsg.textContent = t('group_admin_saved');
     await loadIdentityOverview();
     await loadGroupAdmins();
@@ -4481,13 +4592,54 @@ identityUserSearchButton?.addEventListener('click', () => {
   searchIdentityUsers();
 });
 
+function getSelectedGroupAdminAssetTypes() {
+  const checks = Array.from(groupAdminAssetTypeInput?.querySelectorAll?.('input[type="checkbox"]:checked') || []);
+  const values = checks.map((input) => String(input.value || '').trim()).filter(Boolean);
+  if (!values.length) return [];
+  return Array.from(new Set(values));
+}
+
+function setGroupAdminAssetTypes(values = []) {
+  const selected = new Set(Array.isArray(values) ? values.map((value) => String(value || '').trim()).filter(Boolean) : []);
+  Array.from(groupAdminAssetTypeInput?.querySelectorAll?.('input[type="checkbox"]') || []).forEach((input) => {
+    const value = String(input.value || '').trim();
+    input.checked = selected.has(value);
+  });
+}
+
+function parseGroupAdminDatasetJson(value, fallback = []) {
+  try {
+    const parsed = JSON.parse(String(value || '[]'));
+    return Array.isArray(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 groupAdminsRows?.addEventListener('click', async (event) => {
-  const btn = event.target.closest('.deleteGroupAdminBtn');
-  if (!btn) return;
-  const id = String(btn.dataset.id || '').trim();
+  const editBtn = event.target.closest('.editGroupAdminBtn');
+  if (editBtn) {
+    const id = String(editBtn.dataset.id || '').trim();
+    if (!id) return;
+    editingGroupAdminId = id;
+    if (groupAdminGroupInput) groupAdminGroupInput.value = String(editBtn.dataset.groupName || '');
+    if (groupAdminUserInput) groupAdminUserInput.value = String(editBtn.dataset.username || '');
+    const scopes = parseGroupAdminDatasetJson(editBtn.dataset.scopes, []);
+    const types = parseGroupAdminDatasetJson(editBtn.dataset.types, []);
+    if (groupAdminScopeInput) groupAdminScopeInput.value = String(scopes?.[0] || 'asset-rights');
+    setGroupAdminAssetTypes(types);
+    if (addGroupAdminBtn) addGroupAdminBtn.textContent = t('group_admin_update');
+    if (groupAdminsMsg) groupAdminsMsg.textContent = '';
+    groupAdminGroupInput?.focus();
+    return;
+  }
+  const deleteBtn = event.target.closest('.deleteGroupAdminBtn');
+  if (!deleteBtn) return;
+  const id = String(deleteBtn.dataset.id || '').trim();
   if (!id) return;
   try {
     await api(`/api/admin/group-admins/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (editingGroupAdminId === id) editingGroupAdminId = '';
     await loadIdentityOverview();
     await loadGroupAdmins();
   } catch (error) {
