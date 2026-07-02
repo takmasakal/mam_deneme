@@ -7206,6 +7206,13 @@ async function fetchKeycloakAdminJson(url, token, options = {}) {
 
 function getPermissionOverrideForUser(settings, user) {
   const entries = settings && typeof settings === 'object' ? settings : {};
+  const userEntries = entries.users && typeof entries.users === 'object' && !Array.isArray(entries.users)
+    ? entries.users
+    : {};
+  const legacyEntries = Object.fromEntries(
+    Object.entries(entries).filter(([key]) => !['users', 'groups'].includes(String(key || '').trim()))
+  );
+  const mergedEntries = { ...legacyEntries, ...userEntries };
   const candidates = [
     user?.username,
     user?.email,
@@ -7217,11 +7224,11 @@ function getPermissionOverrideForUser(settings, user) {
 
   for (const candidate of candidates) {
     const exactKey = candidate.toLowerCase();
-    if (Object.prototype.hasOwnProperty.call(entries, exactKey)) return entries[exactKey];
+    if (Object.prototype.hasOwnProperty.call(mergedEntries, exactKey)) return mergedEntries[exactKey];
   }
 
   const normalizedEntries = new Map();
-  Object.entries(entries).forEach(([key, value]) => {
+  Object.entries(mergedEntries).forEach(([key, value]) => {
     const normalized = normalizeIdentityKey(key);
     if (normalized && !normalizedEntries.has(normalized)) normalizedEntries.set(normalized, value);
   });
@@ -7231,6 +7238,34 @@ function getPermissionOverrideForUser(settings, user) {
     if (normalizedEntries.has(normalized)) return normalizedEntries.get(normalized);
   }
   return null;
+}
+
+function getPermissionOverridesForGroups(settings, user) {
+  const entries = settings && typeof settings === 'object' ? settings : {};
+  const groupEntries = entries.groups && typeof entries.groups === 'object' && !Array.isArray(entries.groups)
+    ? entries.groups
+    : {};
+  const groups = Array.isArray(user?.groups) ? user.groups : [];
+  const candidates = groups
+    .flatMap((group) => {
+      const raw = String(group || '').trim();
+      const withoutSlash = raw.replace(/^\/+/, '');
+      const last = withoutSlash.split('/').filter(Boolean).pop() || '';
+      return [raw, withoutSlash, last];
+    })
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  const normalizedEntries = new Map();
+  Object.entries(groupEntries).forEach(([key, value]) => {
+    const normalized = normalizeIdentityKey(String(key || '').replace(/^\/+/, ''));
+    if (normalized && !normalizedEntries.has(normalized)) normalizedEntries.set(normalized, value);
+  });
+  return candidates
+    .map((candidate) => normalizeIdentityKey(String(candidate || '').replace(/^\/+/, '')))
+    .filter(Boolean)
+    .filter((candidate, index, list) => list.indexOf(candidate) === index)
+    .map((candidate) => normalizedEntries.get(candidate))
+    .filter(Boolean);
 }
 
 function sanitizeOnlyOfficeUserId(value) {
@@ -7876,10 +7911,17 @@ async function resolveEffectivePermissions(req) {
   const user = await enrichUserProfileFromKeycloak(buildUserContextFromRequest(req));
   const settings = await getUserPermissionsSettings();
   const override = getPermissionOverrideForUser(settings, user);
+  const groupOverrides = getPermissionOverridesForGroups(settings, user);
   const basePermissionKeys = user.baseIsSuperAdmin
     ? PERMISSION_KEYS
     : (user.basePermissionKeys || []);
-  const effective = normalizePermissionEntry(override, basePermissionKeys);
+  const groupPermissionKeys = new Set(basePermissionKeys);
+  groupOverrides.forEach((entry) => {
+    normalizePermissionEntry(entry, []).permissionKeys.forEach((key) => groupPermissionKeys.add(key));
+  });
+  const userOverrideKeys = override ? normalizePermissionEntry(override, []).permissionKeys : [];
+  userOverrideKeys.forEach((key) => groupPermissionKeys.add(key));
+  const effective = normalizePermissionEntry(null, Array.from(groupPermissionKeys));
   if (user.baseIsSuperAdmin) {
     effective.permissionKeys = PERMISSION_KEYS;
     Object.assign(effective, permissionKeysToLegacyFlags(PERMISSION_KEYS));
