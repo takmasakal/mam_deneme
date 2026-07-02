@@ -12,6 +12,7 @@
       t,
       readFileAsBase64,
       showUploadProxyDecisionModal,
+      showShortcutToast,
       currentAssetsRef,
       getDefaultIngestType,
       loadAssets
@@ -61,6 +62,16 @@
 
         xhr.send(JSON.stringify(payload));
       });
+    }
+
+    function notifyUpload(message) {
+      const text = String(message || '').trim();
+      if (!text) return;
+      if (typeof showShortcutToast === 'function') {
+        showShortcutToast(text);
+      } else {
+        alert(text);
+      }
     }
 
     function localizeUploadError(error) {
@@ -199,6 +210,18 @@
       mediaFileInput.setAttribute('accept', acceptByType[selected] || acceptByType.other);
     }
 
+    function resetIngestFormAfterBackgroundStart() {
+      ingestForm?.reset();
+      const typeSelect = ingestForm?.querySelector?.('[name="type"]');
+      if (typeSelect) {
+        typeSelect.value = typeof getDefaultIngestType === 'function'
+          ? getDefaultIngestType()
+          : 'Video';
+      }
+      updateFileAcceptForType();
+      if (mediaFileName) mediaFileName.textContent = '';
+    }
+
     function initIngestHandlers() {
       if (mediaFileBtn && String(mediaFileBtn.tagName || '').toLowerCase() !== 'label') {
         mediaFileBtn.addEventListener('click', () => {
@@ -236,7 +259,6 @@
         const inputFile = mediaFileInput?.files?.[0];
         const formFile = formData.get('mediaFile');
         const mediaFile = inputFile || formFile;
-        const submitBtn = ingestForm.querySelector('button[type="submit"]');
 
         if (!(mediaFile instanceof File)) {
           alert(t('select_media_first'));
@@ -252,28 +274,30 @@
           return;
         }
 
-        const base64 = await readFileAsBase64(mediaFile);
-        const payload = {
+        const payloadBase = {
           title: formData.get('title'),
           type: formData.get('type'),
           tags: formData.get('tags'),
           description: formData.get('description'),
           fileName: mediaFile.name,
-          mimeType: mediaFile.type || 'application/octet-stream',
-          fileData: base64
+          mimeType: mediaFile.type || 'application/octet-stream'
         };
-        payload.dcMetadata = {
-          title: String(payload.title || ''),
-          subject: String(payload.tags || ''),
-          description: String(payload.description || ''),
-          type: String(payload.type || ''),
-          format: String(payload.mimeType || ''),
-          identifier: String(payload.fileName || '')
+        payloadBase.dcMetadata = {
+          title: String(payloadBase.title || ''),
+          subject: String(payloadBase.tags || ''),
+          description: String(payloadBase.description || ''),
+          type: String(payloadBase.type || ''),
+          format: String(payloadBase.mimeType || ''),
+          identifier: String(payloadBase.fileName || '')
         };
 
-        if (submitBtn) submitBtn.disabled = true;
-        try {
+        resetIngestFormAfterBackgroundStart();
+        notifyUpload(t('upload_background_started'));
+
+        void (async () => {
           setUploadProgress(1, t('uploading'));
+          const base64 = await readFileAsBase64(mediaFile);
+          const payload = { ...payloadBase, fileData: base64 };
           let created = null;
           const sendUpload = async (extraPayload = {}) => uploadAssetWithProgress({ ...payload, ...extraPayload }, (pct) => {
             const mapped = Math.min(95, Math.round((Number(pct) || 0) * 0.95));
@@ -294,22 +318,17 @@
               : { skipProxyGeneration: true });
           }
           setUploadProgress(96, t('processing'));
-          ingestForm.reset();
-          ingestForm.querySelector('[name="type"]').value = typeof getDefaultIngestType === 'function'
-            ? getDefaultIngestType()
-            : 'Video';
-          updateFileAcceptForType();
-          if (mediaFileName) mediaFileName.textContent = '';
           await waitUntilAssetVisible(created?.id || null);
           setUploadProgress(100, t('processing'));
+          notifyUpload(t('upload_finished'));
           const warningMessage = formatIngestWarningMessage(created);
           if (warningMessage) alert(warningMessage);
-        } catch (error) {
-          alert(localizeUploadError(error));
-        } finally {
-          if (submitBtn) submitBtn.disabled = false;
+        })().catch((error) => {
+          console.error('Background asset upload failed', error);
+          notifyUpload(`${t('upload_failed')}: ${localizeUploadError(error)}`);
+        }).finally(() => {
           setTimeout(() => hideUploadProgress(), 450);
-        }
+        });
       });
     }
 
@@ -317,6 +336,8 @@
       setUploadProgress,
       hideUploadProgress,
       uploadAssetWithProgress,
+      notifyUpload,
+      localizeUploadError,
       localizeUploadWarning,
       localizeUploadRetryHint,
       formatIngestWarningMessage,

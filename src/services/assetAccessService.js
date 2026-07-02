@@ -375,13 +375,13 @@ function createAssetAccessService({ pool }) {
       if (identifiers.length && rule.deniedUsers.length) {
         values.push(identifiers);
         const deniedSql = `NOT (${typeSql} AND $${values.length}::text[] && ARRAY[${rule.deniedUsers.map((_, idx) => `$${values.length + idx + 1}`).join(', ')}]::text[])`;
-        where.push(explicitAssetViewSql ? `(${deniedSql} OR ${explicitAssetViewSql})` : deniedSql);
+        where.push(deniedSql);
         rule.deniedUsers.forEach((item) => values.push(item));
       }
       if (groups.length && rule.deniedGroups.length) {
         values.push(groups);
         const deniedSql = `NOT (${typeSql} AND $${values.length}::text[] && ARRAY[${rule.deniedGroups.map((_, idx) => `$${values.length + idx + 1}`).join(', ')}]::text[])`;
-        where.push(explicitAssetViewSql ? `(${deniedSql} OR ${explicitAssetViewSql})` : deniedSql);
+        where.push(deniedSql);
         rule.deniedGroups.forEach((item) => values.push(item));
       }
     });
@@ -454,6 +454,12 @@ function createAssetAccessService({ pool }) {
     return false;
   }
 
+  function isDeniedByAssetType(row, context) {
+    const rule = getTypeRuleForAsset(row, context);
+    const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
+    return identityMatchesAny(identity, rule.deniedUsers, rule.deniedGroups);
+  }
+
   function canEditAssetType(row, context) {
     const rule = getTypeRuleForAsset(row, context);
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
@@ -507,6 +513,7 @@ function createAssetAccessService({ pool }) {
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
     if (identityMatchesAny(identity, asset.deniedUsers, asset.deniedGroups)) return false;
     if (context?.canBypassAssetVisibility) return true;
+    if (isDeniedByAssetType(row, context)) return false;
     if (hasExplicitAssetViewGrant(asset, identity)) return true;
     if (!canViewAssetType(row, context)) return false;
     if (asset.visibility === 'public') return true;

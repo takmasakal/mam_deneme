@@ -296,6 +296,9 @@ let i18n = {
     btn_upload_create: 'Upload & Create Asset',
     uploading: 'Uploading',
     processing: 'Processing',
+    upload_background_started: 'Upload continues in background',
+    upload_finished: 'Upload finished',
+    upload_failed: 'Upload failed',
     btn_apply_filters: 'Apply Filters',
     search_result_count: '{count} matches',
     no_assets: 'No assets found.',
@@ -645,6 +648,9 @@ let i18n = {
     btn_upload_create: 'Yükle ve Oluştur',
     uploading: 'Yükleniyor',
     processing: 'İşleniyor',
+    upload_background_started: 'yükleme arka planda devam ediyor',
+    upload_finished: 'yükleme bitti',
+    upload_failed: 'yükleme başarısız',
     btn_apply_filters: 'Filtreleri Uygula',
     search_result_count: '{count} eslesme',
     no_assets: 'Varlık bulunamadı.',
@@ -1684,6 +1690,7 @@ ingestModule = window.createMainIngestModule({
   t,
   readFileAsBase64,
   showUploadProxyDecisionModal,
+  showShortcutToast,
   currentAssetsRef: {
     get: () => currentAssets
   },
