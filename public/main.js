@@ -89,6 +89,9 @@ let currentUsername = '';
 let searchSuggestModule = null;
 const selectedAssetIds = new Set();
 let lastSelectedAssetId = null;
+const accessScopeModule = typeof window.createMainAccessScopeModule === 'function'
+  ? window.createMainAccessScopeModule()
+  : null;
 let currentSearchQuery = '';
 let currentOcrQuery = '';
 let currentSubtitleQuery = '';
@@ -282,6 +285,9 @@ let i18n = {
     btn_upload_create: 'Upload & Create Asset',
     uploading: 'Uploading',
     processing: 'Processing',
+    upload_background_started: 'Upload continues in background',
+    upload_finished: 'Upload finished',
+    upload_failed: 'Upload failed',
     btn_apply_filters: 'Apply Filters',
     search_result_count: '{count} matches',
     no_assets: 'No assets found.',
@@ -615,6 +621,9 @@ let i18n = {
     btn_upload_create: 'Yükle ve Oluştur',
     uploading: 'Yükleniyor',
     processing: 'İşleniyor',
+    upload_background_started: 'yükleme arka planda devam ediyor',
+    upload_finished: 'yükleme bitti',
+    upload_failed: 'yükleme başarısız',
     btn_apply_filters: 'Filtreleri Uygula',
     search_result_count: '{count} eslesme',
     no_assets: 'Varlık bulunamadı.',
@@ -1163,6 +1172,12 @@ async function loadCurrentUser() {
       const canAccessDocumentRightsAdmin = toStrictBool(me.canAccessDocumentRightsAdmin, canAccessAdmin);
       adminMenuLink.classList.toggle('hidden', !(canAccessAdmin || canAccessTextAdmin || canAccessAssetRightsAdmin || canAccessDocumentRightsAdmin));
     }
+    accessScopeModule?.applyAssetTypeScope?.({
+      allowedAssetTypes: Array.isArray(me.allowedAssetTypes) ? me.allowedAssetTypes : null,
+      uploadAllowedAssetTypes: Array.isArray(me.uploadAllowedAssetTypes) ? me.uploadAllowedAssetTypes : null,
+      ingestForm,
+      assetTypeFilters
+    });
   } catch (_error) {
     currentUserCanAccessAdmin = false;
     currentUserCanEditMetadata = false;
@@ -1174,6 +1189,12 @@ async function loadCurrentUser() {
     currentUserBtn.textContent = t('unknown_user');
     currentUserBtn.title = t('unknown_user');
     if (adminMenuLink) adminMenuLink.classList.add('hidden');
+    accessScopeModule?.applyAssetTypeScope?.({
+      allowedAssetTypes: [],
+      uploadAllowedAssetTypes: [],
+      ingestForm,
+      assetTypeFilters
+    });
   }
 }
 
@@ -1537,6 +1558,7 @@ ingestModule = window.createMainIngestModule({
   t,
   readFileAsBase64,
   showUploadProxyDecisionModal,
+  showShortcutToast,
   currentAssetsRef: {
     get: () => currentAssets
   },
