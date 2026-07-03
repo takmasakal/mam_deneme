@@ -4756,59 +4756,35 @@ async function generateVideoProxy(inputPath, outputPath, options = {}) {
       if (!includeAudio || audioStreams.length === 0) {
         args.push('-an');
       } else if (audioStreams.length === 1) {
-        const channels = Math.max(1, Number(audioStreams[0].channels) || 2);
-        if (channels > 2) {
-          // Multichannel in AAC/7.1 can attenuate LFE-designated channel content.
-          // Use Opus for >2 channels to keep channels full-range and faithful.
-          args.push(
-            '-map',
-            '0:a:0',
-            '-c:a',
-            'libopus',
-            '-ac',
-            String(channels),
-            '-b:a',
-            channels >= 8 ? '512k' : '320k'
-          );
-        } else {
-          args.push(
-            '-map',
-            '0:a:0',
-            '-c:a',
-            'aac',
-            '-b:a',
-            '128k'
-          );
-        }
+        // Browser/iOS compatible MP4 proxy: always downmix audio to AAC stereo.
+        args.push(
+          '-map',
+          '0:a:0',
+          '-c:a',
+          'aac',
+          '-ac',
+          '2',
+          '-ar',
+          '48000',
+          '-b:a',
+          '160k'
+        );
       } else {
         const inputs = audioStreams.map((_s, idx) => `[0:a:${idx}]`).join('');
-        const mergedChannels = audioStreams.reduce((acc, s) => acc + Math.max(1, Number(s.channels) || 1), 0);
-        const mergedOutChannels = Math.max(2, mergedChannels);
         args.push(
           '-filter_complex',
           `${inputs}amerge=inputs=${audioStreams.length}[aout]`,
           '-map',
-          '[aout]'
+          '[aout]',
+          '-c:a',
+          'aac',
+          '-ac',
+          '2',
+          '-ar',
+          '48000',
+          '-b:a',
+          '160k'
         );
-        if (mergedOutChannels > 2) {
-          args.push(
-            '-c:a',
-            'libopus',
-            '-ac',
-            String(mergedOutChannels),
-            '-b:a',
-            mergedOutChannels >= 8 ? '512k' : '320k'
-          );
-        } else {
-          args.push(
-            '-c:a',
-            'aac',
-            '-ac',
-            String(mergedOutChannels),
-            '-b:a',
-            '128k'
-          );
-        }
       }
 
       args.push(
