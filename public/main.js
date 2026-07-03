@@ -241,8 +241,8 @@ function setSubtitleOverlayEnabled(assetId, enabled) {
   return shellModule.setSubtitleOverlayEnabled(assetId, enabled);
 }
 
-function showShortcutToast(message, durationMs) {
-  return shellModule.showShortcutToast(message, durationMs);
+function showShortcutToast(message, options) {
+  return shellModule.showShortcutToast(message, options);
 }
 
 let i18n = {

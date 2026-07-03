@@ -57,6 +57,18 @@ body {
   transform: translateX(-50%) translateY(0);
 }
 
+.shortcut-toast.success {
+  border-color: rgba(46, 204, 113, 0.72);
+  background: #16a34a;
+  color: #ffffff;
+}
+
+.shortcut-toast.error {
+  border-color: rgba(239, 68, 68, 0.72);
+  background: #dc2626;
+  color: #ffffff;
+}
+
 .layout {
   display: grid;
   gap: 4px;
