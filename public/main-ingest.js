@@ -320,7 +320,8 @@
           setUploadProgress(96, t('processing'));
           await waitUntilAssetVisible(created?.id || null);
           setUploadProgress(100, t('processing'));
-          notifyUpload(t('upload_finished'));
+          const uploadedTitle = String(created?.title || payloadBase.title || mediaFile.name || '').trim();
+          notifyUpload(uploadedTitle ? `${t('asset_uploaded')}: ${uploadedTitle}` : t('asset_uploaded'));
           const warningMessage = formatIngestWarningMessage(created);
           if (warningMessage) alert(warningMessage);
         })().catch((error) => {

@@ -127,6 +127,7 @@ function createAssetDeletionService({
     if (!publicUrl) return false;
     const assetId = String(options.assetId || '').trim();
     const versionId = String(options.versionId || '').trim();
+    const ignoreSameAssetVersionRefs = Boolean(options.ignoreSameAssetVersionRefs);
     const result = await pool.query(
       `
         SELECT
@@ -145,14 +146,15 @@ function createAssetDeletionService({
             SELECT COUNT(*)::int
             FROM asset_versions
             WHERE ($4 = '' OR version_id <> $4)
+              AND (NOT $5::boolean OR asset_id <> $2)
               AND (
                 snapshot_media_url = $1
                 OR snapshot_thumbnail_url = $1
                 OR snapshot_source_path = $3
               )
-          ) AS ref_count
+        ) AS ref_count
       `,
-      [publicUrl, assetId, safePath, versionId]
+      [publicUrl, assetId, safePath, versionId, ignoreSameAssetVersionRefs]
     );
     return Number(result.rows?.[0]?.ref_count || 0) > 0;
   }

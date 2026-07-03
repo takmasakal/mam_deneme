@@ -4110,7 +4110,7 @@ function hasStoredFile(value, defaultSubdir) {
   }
 }
 
-async function cleanupReplacedUploadUrls(assetId, publicUrls = []) {
+async function cleanupReplacedUploadUrls(assetId, publicUrls = [], cleanupOptions = {}) {
   if (typeof cleanupUnreferencedAssetFiles !== 'function') return;
   const safeAssetId = String(assetId || '').trim();
   const targets = Array.from(new Set(
@@ -4119,7 +4119,7 @@ async function cleanupReplacedUploadUrls(assetId, publicUrls = []) {
       .filter(Boolean)
   ));
   if (!targets.length) return;
-  await cleanupUnreferencedAssetFiles(targets, { assetId: safeAssetId });
+  await cleanupUnreferencedAssetFiles(targets, { assetId: safeAssetId, ...cleanupOptions });
 }
 
 function isPathInsideRoot(filePath, rootDir) {
@@ -6989,7 +6989,7 @@ async function regenerateVideoThumbnailForAsset(row, options = {}) {
     `,
     [row.id, thumbOut.publicUrl, now]
   );
-  await cleanupReplacedUploadUrls(row.id, previousThumbnailUrl);
+  await cleanupReplacedUploadUrls(row.id, previousThumbnailUrl, { ignoreSameAssetVersionRefs: true });
   return {
     row: updated.rows[0],
     thumbnailUrl: thumbOut.publicUrl,
