@@ -339,7 +339,12 @@ function createAssetAccessService({ pool }) {
   }
 
   function appendAssetAccessWhere(where, values, context, alias = 'assets') {
-    if (context?.canBypassAssetTypeAccess) return;
+    if (context?.canBypassAssetTypeAccess) {
+      if (!context?.canViewHiddenAssets) {
+        where.push(`COALESCE(${alias}.visibility, 'public') <> 'private'`);
+      }
+      return;
+    }
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
     const identifiers = identity.identifiers || [];
     const groups = identity.groups || [];
@@ -357,6 +362,9 @@ function createAssetAccessService({ pool }) {
     appendExplicitAssetViewConditions(explicitAssetViewConditions, values, context, alias);
     appendAssetTypeAccessWhere(where, values, context, alias, explicitAssetViewConditions);
     if (context?.canBypassAssetVisibility) return;
+    if (!context?.canViewHiddenAssets) {
+      where.push(`COALESCE(${alias}.visibility, 'public') <> 'private'`);
+    }
     const conditions = [`${alias}.visibility = 'public'`, ...explicitAssetViewConditions];
 
     where.push(`(${conditions.join(' OR ')})`);
@@ -508,8 +516,9 @@ function createAssetAccessService({ pool }) {
   }
 
   function canViewAsset(row, context) {
-    if (context?.canBypassAssetTypeAccess) return true;
     const asset = getAssetAccessSnapshot(row);
+    if (asset.visibility === 'private' && !context?.canViewHiddenAssets) return false;
+    if (context?.canBypassAssetTypeAccess) return true;
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
     if (identityMatchesAny(identity, asset.deniedUsers, asset.deniedGroups)) return false;
     if (context?.canBypassAssetVisibility) return true;

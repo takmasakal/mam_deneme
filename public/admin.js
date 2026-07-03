@@ -230,7 +230,7 @@ let i18n = {
     asset_rights_visibility_filter: 'Visibility',
     asset_rights_visibility_all: 'All',
     asset_visibility: 'Visibility',
-    visibility_private: 'Private',
+    visibility_private: 'Hide',
     visibility_group: 'Owner groups',
     visibility_groups: 'Selected groups/users',
     visibility_public: 'Public',
@@ -669,7 +669,7 @@ let i18n = {
     asset_rights_visibility_filter: 'Görünürlük',
     asset_rights_visibility_all: 'Tümü',
     asset_visibility: 'Görünürlük',
-    visibility_private: 'Özel',
+    visibility_private: 'Gizle',
     visibility_group: 'Sahip gruplar',
     visibility_groups: 'Seçili grup/kullanıcı',
     visibility_public: 'Herkese açık',
@@ -2862,7 +2862,7 @@ const ASSET_RIGHTS_TABLE_LABELS = {
     lockedItems: 'Locked',
     empty: 'No asset found.',
     save: 'Save',
-    visibilityPrivate: 'Private',
+    visibilityPrivate: 'Hide',
     visibilityGroup: 'Owner groups',
     visibilityGroups: 'Selected groups/users',
     visibilityPublic: 'Public'
@@ -2893,7 +2893,7 @@ const ASSET_RIGHTS_TABLE_LABELS = {
     lockedItems: 'Kilitliler',
     empty: 'Varlık bulunamadı.',
     save: 'Kaydet',
-    visibilityPrivate: 'Özel',
+    visibilityPrivate: 'Gizle',
     visibilityGroup: 'Sahip gruplar',
     visibilityGroups: 'Seçili grup/kullanıcı',
     visibilityPublic: 'Herkese açık'
@@ -2982,6 +2982,21 @@ function syncAssetRightsTableLanguage() {
   updateAssetRightsTableLanguage();
   requestAnimationFrame(() => updateAssetRightsTableLanguage());
   setTimeout(() => updateAssetRightsTableLanguage(), 0);
+}
+
+function syncAssetRightsHiddenRowState(row) {
+  if (!row || row.dataset.accessMode !== 'asset') return;
+  const isHidden = row.querySelector('select[name="visibility"]')?.value === 'private';
+  row.classList.toggle('asset-rights-row--hidden', Boolean(isHidden));
+  row.querySelectorAll('input[name]').forEach((input) => {
+    input.readOnly = Boolean(isHidden);
+    input.setAttribute('aria-readonly', isHidden ? 'true' : 'false');
+  });
+}
+
+function syncAssetRightsHiddenRows() {
+  if (!assetRightsRows) return;
+  assetRightsRows.querySelectorAll('.asset-rights-row[data-access-mode="asset"]').forEach(syncAssetRightsHiddenRowState);
 }
 
 function renderAssetRightsHeader(labels) {
@@ -3167,6 +3182,7 @@ function renderAssetRightsRows(assets = []) {
   }).join('');
 
   assetRightsRows.innerHTML = `<div class="asset-rights-table asset-rights-table--${escapeHtml(assetRightsMode === 'type' ? 'type' : 'asset')}">${header}${rows}</div>`;
+  syncAssetRightsHiddenRows();
   syncAssetRightsTableLanguage();
 }
 
@@ -4289,8 +4305,13 @@ assetRightsNextPage?.addEventListener('click', () => {
 
 assetRightsRows?.addEventListener('change', (event) => {
   const select = event.target.closest('#assetRightsModeSelect');
+  const visibilitySelect = event.target.closest('select[name="visibility"]');
   const lockedOnlyCheck = event.target.closest('#assetRightsLockedOnlyCheck');
   const ownerGroupFilterInput = event.target.closest('#assetRightsOwnerGroupFilter');
+  if (visibilitySelect) {
+    syncAssetRightsHiddenRowState(visibilitySelect.closest('.asset-rights-row'));
+    return;
+  }
   if (!select && !lockedOnlyCheck && !ownerGroupFilterInput) return;
   if (select) assetRightsMode = select.value === 'type' ? 'type' : 'asset';
   if (lockedOnlyCheck) assetRightsLockedOnly = Boolean(lockedOnlyCheck.checked);

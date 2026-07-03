@@ -297,7 +297,8 @@ function getDocumentRightsVisibilityContext(gate = {}) {
   return {
     ...(gate.context || {}),
     canBypassAssetTypeAccess: false,
-    canManageAllAssetVisibility: false
+    canManageAllAssetVisibility: false,
+    canViewHiddenAssets: true
   };
 }
 

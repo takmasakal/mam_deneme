@@ -2345,9 +2345,14 @@ body {
   font-size: 12px;
 }
 
-.asset-rights-cell input:disabled {
+.asset-rights-cell input:disabled,
+.asset-rights-row--hidden .asset-rights-cell input[readonly] {
   opacity: 0.72;
   cursor: not-allowed;
+}
+
+.asset-rights-row--hidden .asset-rights-cell:not([data-asset-rights-cell-label="visibility"]) {
+  opacity: 0.76;
 }
 
 .asset-rights-cell input:not(:placeholder-shown) {
