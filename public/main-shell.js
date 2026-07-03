@@ -629,7 +629,7 @@ function setSubtitleOverlayEnabled(assetId, enabled) {
 }
 
 let shortcutToastTimer = null;
-function showShortcutToast(message) {
+function showShortcutToast(message, durationMs = 1000) {
   const text = String(message || '').trim();
   if (!text) return;
   let toast = document.getElementById('shortcutToast');
@@ -644,7 +644,7 @@ function showShortcutToast(message) {
   if (shortcutToastTimer) clearTimeout(shortcutToastTimer);
   shortcutToastTimer = setTimeout(() => {
     toast.classList.remove('visible');
-  }, 1000);
+  }, Math.max(1000, Math.min(10000, Number(durationMs) || 1000)));
 }
 
 

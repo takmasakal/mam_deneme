@@ -68,7 +68,7 @@
       const text = String(message || '').trim();
       if (!text) return;
       if (typeof showShortcutToast === 'function') {
-        showShortcutToast(text);
+        showShortcutToast(text, 3500);
       } else {
         alert(text);
       }
@@ -318,10 +318,10 @@
               : { skipProxyGeneration: true });
           }
           setUploadProgress(96, t('processing'));
-          await waitUntilAssetVisible(created?.id || null);
-          setUploadProgress(100, t('processing'));
           const uploadedTitle = String(created?.title || payloadBase.title || mediaFile.name || '').trim();
           notifyUpload(uploadedTitle ? `${t('asset_uploaded')}: ${uploadedTitle}` : t('asset_uploaded'));
+          await waitUntilAssetVisible(created?.id || null);
+          setUploadProgress(100, t('processing'));
           const warningMessage = formatIngestWarningMessage(created);
           if (warningMessage) alert(warningMessage);
         })().catch((error) => {
