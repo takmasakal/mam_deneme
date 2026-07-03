@@ -98,6 +98,7 @@ services:
       APP_INTERNAL_URL: http://app:3000
     volumes:
       - ./uploads:/app/uploads
+      - /home/belge/depo/netapp/belgelik:/home/belge/depo/netapp/belgelik
     secrets:
       - mam_postgres_password
       - keycloak_db_password
