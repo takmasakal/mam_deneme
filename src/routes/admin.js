@@ -128,7 +128,7 @@ function registerAdminRoutes(app, deps) {
     return resolvedPath;
   }
 
-  async function cleanupReplacedUploadUrls(assetId, publicUrls = []) {
+  async function cleanupReplacedUploadUrls(assetId, publicUrls = [], cleanupOptions = {}) {
     if (typeof cleanupUnreferencedAssetFiles !== 'function') return;
     const targets = Array.from(new Set(
       (Array.isArray(publicUrls) ? publicUrls : [publicUrls])
@@ -136,7 +136,7 @@ function registerAdminRoutes(app, deps) {
         .filter(Boolean)
     ));
     if (!targets.length) return;
-    await cleanupUnreferencedAssetFiles(targets, { assetId: String(assetId || '').trim() });
+    await cleanupUnreferencedAssetFiles(targets, { assetId: String(assetId || '').trim(), ...cleanupOptions });
   }
 
   function isImageAssetRow(row = {}) {
@@ -190,7 +190,8 @@ function registerAdminRoutes(app, deps) {
       ]
     );
     const nextRow = updated.rows?.[0] || row;
-    await cleanupReplacedUploadUrls(row.id, [previousProxyUrl, previousThumbnailUrl]);
+    await cleanupReplacedUploadUrls(row.id, previousProxyUrl);
+    await cleanupReplacedUploadUrls(row.id, previousThumbnailUrl, { ignoreSameAssetVersionRefs: true });
     return {
       row: nextRow,
       previewUrl: resolveStoredUrl(nextRow.proxy_url, 'proxies'),
@@ -219,7 +220,7 @@ function registerAdminRoutes(app, deps) {
       [row.id, thumbOut.publicUrl, new Date().toISOString()]
     );
     const nextRow = updated.rows?.[0] || row;
-    await cleanupReplacedUploadUrls(row.id, previousThumbnailUrl);
+    await cleanupReplacedUploadUrls(row.id, previousThumbnailUrl, { ignoreSameAssetVersionRefs: true });
     return {
       row: nextRow,
       previewUrl: resolveStoredUrl(nextRow.proxy_url, 'proxies') || resolveStoredUrl(nextRow.media_url, ''),
@@ -3525,7 +3526,7 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
               [row.id, thumbOut.publicUrl, new Date().toISOString()]
             );
             row = refreshed.rows?.[0] || row;
-            await cleanupReplacedUploadUrls(row.id, previousThumbnailUrl);
+            await cleanupReplacedUploadUrls(row.id, previousThumbnailUrl, { ignoreSameAssetVersionRefs: true });
           }
         } else if (isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
           row = await ensurePdfThumbnailForRow(row);
