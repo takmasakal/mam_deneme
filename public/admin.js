@@ -373,6 +373,11 @@ let i18n = {
     backup_include_mam_db: 'MAM PostgreSQL dump',
     backup_include_keycloak_db: 'Keycloak PostgreSQL dump',
     backup_include_uploads: 'Uploads archive (.tar.gz)',
+    backup_include_uploads_restic: 'Uploads incremental backup (restic)',
+    backup_restic_repository: 'Restic repository',
+    backup_restic_keep_daily: 'Restic daily snapshots',
+    backup_restic_keep_weekly: 'Restic weekly snapshots',
+    backup_restic_keep_monthly: 'Restic monthly snapshots',
     backup_run_now: 'Run Backup Now',
     backup_saved: 'Backup settings saved.',
     backup_started: 'Backup completed.',
@@ -812,6 +817,11 @@ let i18n = {
     backup_include_mam_db: 'MAM PostgreSQL dump',
     backup_include_keycloak_db: 'Keycloak PostgreSQL dump',
     backup_include_uploads: 'Uploads arşivi (.tar.gz)',
+    backup_include_uploads_restic: 'Uploads artımlı yedek (restic)',
+    backup_restic_repository: 'Restic deposu',
+    backup_restic_keep_daily: 'Restic günlük snapshot',
+    backup_restic_keep_weekly: 'Restic haftalık snapshot',
+    backup_restic_keep_monthly: 'Restic aylık snapshot',
     backup_run_now: 'Şimdi Yedekle',
     backup_saved: 'Yedekleme ayarları kaydedildi.',
     backup_started: 'Yedekleme tamamlandı.',
@@ -3582,6 +3592,11 @@ function readBackupSettingsForm() {
     includeMamDb: Boolean(elements?.backupIncludeMamDb?.checked),
     includeKeycloakDb: Boolean(elements?.backupIncludeKeycloakDb?.checked),
     includeUploadsArchive: Boolean(elements?.backupIncludeUploadsArchive?.checked),
+    includeUploadsRestic: Boolean(elements?.backupIncludeUploadsRestic?.checked),
+    resticRepository: String(elements?.backupResticRepository?.value || '').trim(),
+    resticKeepDaily: Number(elements?.backupResticKeepDaily?.value) || 14,
+    resticKeepWeekly: Number(elements?.backupResticKeepWeekly?.value) || 8,
+    resticKeepMonthly: Number(elements?.backupResticKeepMonthly?.value) || 12,
     retentionDays: Number(elements?.backupRetentionDays?.value) || 14
   };
 }
@@ -3595,6 +3610,11 @@ function writeBackupSettingsForm(backup = {}) {
   elements.backupIncludeMamDb.checked = backup.includeMamDb !== false;
   elements.backupIncludeKeycloakDb.checked = Boolean(backup.includeKeycloakDb);
   elements.backupIncludeUploadsArchive.checked = Boolean(backup.includeUploadsArchive);
+  elements.backupIncludeUploadsRestic.checked = Boolean(backup.includeUploadsRestic);
+  elements.backupResticRepository.value = String(backup.resticRepository || '/home/belge/depo/netapp/belgelik-restic/restic-repo');
+  elements.backupResticKeepDaily.value = String(Number(backup.resticKeepDaily) || 14);
+  elements.backupResticKeepWeekly.value = String(Number(backup.resticKeepWeekly) || 8);
+  elements.backupResticKeepMonthly.value = String(Number(backup.resticKeepMonthly) || 12);
   elements.backupRetentionDays.value = String(Number(backup.retentionDays) || 14);
 }
 

@@ -96,13 +96,16 @@ services:
       ONLYOFFICE_PUBLIC_URL: ${ONLYOFFICE_PUBLIC_URL:-http://localhost:8082}
       ONLYOFFICE_INTERNAL_URL: http://onlyoffice
       APP_INTERNAL_URL: http://app:3000
+      RESTIC_PASSWORD_FILE: /run/secrets/restic_password
     volumes:
       - ./uploads:/app/uploads
       - /home/belge/depo/netapp/belgelik:/home/belge/depo/netapp/belgelik
+      - /home/belge/depo/netapp/belgelik-restic:/home/belge/depo/netapp/belgelik-restic
     secrets:
       - mam_postgres_password
       - keycloak_db_password
       - keycloak_admin_password
+      - restic_password
     restart: unless-stopped
 
   onlyoffice:
@@ -270,6 +273,8 @@ secrets:
     file: ./deploy/secrets/keycloak_db_password
   keycloak_admin_password:
     file: ./deploy/secrets/keycloak_admin_password
+  restic_password:
+    file: ./deploy/secrets/restic_password
   oauth2_proxy_client_secret:
     file: ./deploy/secrets/oauth2_proxy_client_secret
   oauth2_proxy_cookie_secret:

@@ -27,7 +27,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   && wget -qO- https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg \
   && echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
   && apt-get update \
-  && apt-get install -y --no-install-recommends ffmpeg unzip poppler-utils antiword postgresql-client-16 python3 python3-pip \
+  && apt-get install -y --no-install-recommends ffmpeg unzip poppler-utils antiword postgresql-client-16 restic python3 python3-pip \
   && rm -rf /var/lib/apt/lists/*
 
 FROM os-base AS ml-deps

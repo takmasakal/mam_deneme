@@ -45,7 +45,7 @@ else
   keycloak_hostname_strict=true
 fi
 
-if [[ ! -d "${SECRETS_DIR}" || ! -f "${SECRETS_DIR}/mam_superadmin_password" ]]; then
+if [[ ! -d "${SECRETS_DIR}" || ! -f "${SECRETS_DIR}/mam_superadmin_password" || ! -f "${SECRETS_DIR}/restic_password" ]]; then
   "${DEPLOY_DIR}/init.sh" "${mam_host}"
 fi
 

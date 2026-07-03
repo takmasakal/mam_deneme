@@ -535,6 +535,28 @@
                   <input type="checkbox" name="backupIncludeUploadsArchive" />
                   <span data-i18n="backup_include_uploads">Uploads archive (.tar.gz)</span>
                 </label>
+                <label class="toggle-row">
+                  <input type="checkbox" name="backupIncludeUploadsRestic" />
+                  <span data-i18n="backup_include_uploads_restic">Uploads incremental backup (restic)</span>
+                </label>
+                <label>
+                  <span data-i18n="backup_restic_repository">Restic repository</span>
+                  <input name="backupResticRepository" value="/home/belge/depo/netapp/belgelik-restic/restic-repo" />
+                </label>
+                <div class="proxy-tool-grid">
+                  <label>
+                    <span data-i18n="backup_restic_keep_daily">Restic daily snapshots</span>
+                    <input name="backupResticKeepDaily" type="number" min="1" max="3650" step="1" />
+                  </label>
+                  <label>
+                    <span data-i18n="backup_restic_keep_weekly">Restic weekly snapshots</span>
+                    <input name="backupResticKeepWeekly" type="number" min="1" max="520" step="1" />
+                  </label>
+                  <label>
+                    <span data-i18n="backup_restic_keep_monthly">Restic monthly snapshots</span>
+                    <input name="backupResticKeepMonthly" type="number" min="1" max="240" step="1" />
+                  </label>
+                </div>
               </fieldset>
               <div class="settings-submit-row">
                 <button type="submit" data-i18n="save_settings">Save Settings</button>

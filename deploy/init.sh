@@ -99,6 +99,7 @@ ensure_secret mam_postgres_password "${MAM_POSTGRES_PASSWORD:-${POSTGRES_PASSWOR
 ensure_secret keycloak_db_password "${KEYCLOAK_DB_PASSWORD:-}" hex "keycloak"
 ensure_secret keycloak_admin_password "${KEYCLOAK_ADMIN_PASSWORD:-}" hex "admin"
 ensure_secret oauth2_proxy_client_secret "${OAUTH2_PROXY_CLIENT_SECRET:-}" hex "change-me"
+ensure_secret restic_password "${RESTIC_PASSWORD:-}" hex "restic"
 ensure_secret oauth2_proxy_cookie_secret "${OAUTH2_PROXY_COOKIE_SECRET:-}" cookie "0123456789abcdef0123456789abcdef" "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 ensure_secret mam_superadmin_password "${MAM_SUPERADMIN_PASSWORD:-}" hex "mamsup"
 ensure_secret mam_admin_password "${MAM_ADMIN_PASSWORD:-}" hex "mamadmin"
