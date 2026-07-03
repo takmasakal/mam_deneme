@@ -632,9 +632,12 @@ function setSubtitleOverlayEnabled(assetId, enabled) {
 }
 
 let shortcutToastTimer = null;
-function showShortcutToast(message) {
+function showShortcutToast(message, options = {}) {
   const text = String(message || '').trim();
   if (!text) return;
+  const opts = options && typeof options === 'object' ? options : { durationMs: options };
+  const type = String(opts.type || '').trim().toLowerCase();
+  const durationMs = Math.max(1000, Math.min(10000, Number(opts.durationMs) || 1000));
   let toast = document.getElementById('shortcutToast');
   if (!toast) {
     toast = document.createElement('div');
@@ -643,11 +646,13 @@ function showShortcutToast(message) {
     document.body.appendChild(toast);
   }
   toast.textContent = text;
+  toast.classList.remove('success', 'error');
+  if (type === 'success' || type === 'error') toast.classList.add(type);
   toast.classList.add('visible');
   if (shortcutToastTimer) clearTimeout(shortcutToastTimer);
   shortcutToastTimer = setTimeout(() => {
     toast.classList.remove('visible');
-  }, 1000);
+  }, durationMs);
 }
 
 

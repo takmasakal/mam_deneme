@@ -63,11 +63,11 @@
       });
     }
 
-    function notifyUpload(message) {
+    function notifyUpload(message, type = 'info') {
       const text = String(message || '').trim();
       if (!text) return;
       if (typeof showShortcutToast === 'function') {
-        showShortcutToast(text);
+        showShortcutToast(text, { type, durationMs: 4000 });
       } else {
         alert(text);
       }
@@ -232,15 +232,15 @@
               : { skipProxyGeneration: true });
           }
           setUploadProgress(96, t('processing'));
+          const uploadedTitle = String(created?.title || payloadBase.title || mediaFile.name || '').trim();
+          notifyUpload(uploadedTitle ? `${t('asset_uploaded')}: ${uploadedTitle}` : t('asset_uploaded'), 'success');
           await waitUntilAssetVisible(created?.id || null);
           setUploadProgress(100, t('processing'));
-          const uploadedTitle = String(created?.title || payloadBase.title || mediaFile.name || '').trim();
-          notifyUpload(uploadedTitle ? `${t('asset_uploaded')}: ${uploadedTitle}` : t('asset_uploaded'));
           const warningMessage = formatIngestWarningMessage(created);
           if (warningMessage) alert(warningMessage);
         })().catch((error) => {
           console.error('Background asset upload failed', error);
-          notifyUpload(`${t('upload_failed')}: ${localizeUploadError(error)}`);
+          notifyUpload(`${t('upload_failed')}: ${localizeUploadError(error)}`, 'error');
         }).finally(() => {
           setTimeout(() => hideUploadProgress(), 450);
         });
