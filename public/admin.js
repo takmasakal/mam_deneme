@@ -2936,14 +2936,22 @@ function getAssetTypeGroupLabel(typeGroup) {
   return map[key] || key || '-';
 }
 
+function canUseAssetRightsTypeMode() {
+  return Boolean(currentAdminProfile?.isSuperAdmin || currentAdminProfile?.canAccessAdmin || currentAdminProfile?.isAdmin);
+}
+
 function renderAssetRightsModeSelect(labels) {
+  if (!canUseAssetRightsTypeMode() && assetRightsMode === 'type') assetRightsMode = 'asset';
   const mode = assetRightsMode === 'type' ? 'type' : 'asset';
+  const typeOption = canUseAssetRightsTypeMode()
+    ? `<option value="type" ${mode === 'type' ? 'selected' : ''}>${escapeHtml(labels.modeType)}</option>`
+    : '';
   return `
     <label class="asset-rights-mode-switch">
       <span data-asset-rights-label="${mode === 'type' ? 'type' : 'asset'}">${escapeHtml(mode === 'type' ? labels.type : labels.asset)}</span>
       <select id="assetRightsModeSelect">
         <option value="asset" ${mode === 'asset' ? 'selected' : ''}>${escapeHtml(labels.modeAsset)}</option>
-        <option value="type" ${mode === 'type' ? 'selected' : ''}>${escapeHtml(labels.modeType)}</option>
+        ${typeOption}
       </select>
     </label>
   `;
@@ -3212,6 +3220,7 @@ function renderAssetRightsPager() {
 
 async function loadAssetRightsRows() {
   if (!assetRightsRows) return;
+  if (!canUseAssetRightsTypeMode() && assetRightsMode === 'type') assetRightsMode = 'asset';
   if (assetRightsMode === 'type') {
     try {
       const result = await api('/api/admin/asset-types/access');
@@ -4333,7 +4342,7 @@ assetRightsRows?.addEventListener('change', (event) => {
     return;
   }
   if (!select && !lockedOnlyCheck && !ownerGroupFilterInput) return;
-  if (select) assetRightsMode = select.value === 'type' ? 'type' : 'asset';
+  if (select) assetRightsMode = select.value === 'type' && canUseAssetRightsTypeMode() ? 'type' : 'asset';
   if (lockedOnlyCheck) assetRightsLockedOnly = Boolean(lockedOnlyCheck.checked);
   if (ownerGroupFilterInput) assetRightsOwnerGroupFilter = String(ownerGroupFilterInput.value || '').trim();
   assetRightsPage = 1;

@@ -335,7 +335,11 @@ function createAssetAccessService({ pool }) {
   }
 
   function hasExplicitAssetEditGrant(asset = {}, identity = {}) {
-    return Boolean(identityMatchesAny(identity, asset.editAllowedUsers, asset.editAllowedGroups));
+    return Boolean(
+      identityMatchesAny(identity, asset.editAllowedUsers, asset.editAllowedGroups)
+      || (identity.identifiers || []).some((id) => id && id === asset.ownerUser)
+      || (identity.groups || []).some((group) => asset.ownerGroups.includes(group))
+    );
   }
 
   function appendAssetAccessWhere(where, values, context, alias = 'assets') {
@@ -382,13 +386,15 @@ function createAssetAccessService({ pool }) {
       const typeSql = buildAssetTypeGroupSql(rule.typeGroup, alias);
       if (identifiers.length && rule.deniedUsers.length) {
         values.push(identifiers);
-        const deniedSql = `NOT (${typeSql} AND $${values.length}::text[] && ARRAY[${rule.deniedUsers.map((_, idx) => `$${values.length + idx + 1}`).join(', ')}]::text[])`;
+        const explicitBypass = explicitAssetViewSql ? ` AND NOT ${explicitAssetViewSql}` : '';
+        const deniedSql = `NOT (${typeSql} AND $${values.length}::text[] && ARRAY[${rule.deniedUsers.map((_, idx) => `$${values.length + idx + 1}`).join(', ')}]::text[]${explicitBypass})`;
         where.push(deniedSql);
         rule.deniedUsers.forEach((item) => values.push(item));
       }
       if (groups.length && rule.deniedGroups.length) {
         values.push(groups);
-        const deniedSql = `NOT (${typeSql} AND $${values.length}::text[] && ARRAY[${rule.deniedGroups.map((_, idx) => `$${values.length + idx + 1}`).join(', ')}]::text[])`;
+        const explicitBypass = explicitAssetViewSql ? ` AND NOT ${explicitAssetViewSql}` : '';
+        const deniedSql = `NOT (${typeSql} AND $${values.length}::text[] && ARRAY[${rule.deniedGroups.map((_, idx) => `$${values.length + idx + 1}`).join(', ')}]::text[]${explicitBypass})`;
         where.push(deniedSql);
         rule.deniedGroups.forEach((item) => values.push(item));
       }
@@ -522,8 +528,8 @@ function createAssetAccessService({ pool }) {
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
     if (identityMatchesAny(identity, asset.deniedUsers, asset.deniedGroups)) return false;
     if (context?.canBypassAssetVisibility) return true;
-    if (isDeniedByAssetType(row, context)) return false;
     if (hasExplicitAssetViewGrant(asset, identity)) return true;
+    if (isDeniedByAssetType(row, context)) return false;
     if (!canViewAssetType(row, context)) return false;
     if (asset.visibility === 'public') return true;
     return false;

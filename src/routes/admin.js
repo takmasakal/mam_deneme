@@ -1088,6 +1088,7 @@ app.patch('/api/admin/assets/:id/access', async (req, res) => {
 	  try {
 	    const accessContext = await requireAssetRightsAdminRequest(req, res);
 	    if (!accessContext) return null;
+	    if (!accessContext.canManageAllAssetVisibility) return res.status(403).json({ error: 'Forbidden' });
 	    const rows = (await assetAccessService.getAssetTypeAccessRows())
 	      .filter((row) => assetAccessService.canManageAssetTypeAccess(row, accessContext));
 	    return res.json({
@@ -1107,7 +1108,7 @@ app.patch('/api/admin/asset-types/:typeGroup/access', async (req, res) => {
 	    if (!typeGroup) return res.status(400).json({ error: 'Invalid asset type group' });
 	    const currentRows = await assetAccessService.getAssetTypeAccessRows();
 	    const currentRow = currentRows.find((row) => row.typeGroup === typeGroup);
-	    if (!currentRow || !assetAccessService.canManageAssetTypeAccess(currentRow, effective)) {
+	    if (!effective.canManageAllAssetVisibility || !currentRow || !assetAccessService.canManageAssetTypeAccess(currentRow, effective)) {
 	      return res.status(403).json({ error: 'Forbidden' });
 	    }
 	    const payload = req.body || {};
