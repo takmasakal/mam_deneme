@@ -1,3 +1,11 @@
+@font-face {
+  font-family: 'Bakbak One';
+  src: url('/fonts/BakbakOne-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --bg: #1f2128;
   --panel: #2a2d36;
@@ -6,6 +14,7 @@
   --muted: #aab1c1;
   --accent: #39d38f;
   --accent-dark: #2eb57a;
+  --brand-gold: #e2a63b;
 }
 
 * {
@@ -352,6 +361,19 @@ body.video-tools-page-mode #assetDetail {
   margin: 0;
 }
 
+.top-row .app-brand {
+  font-family: "Bakbak One", "IBM Plex Sans", "Segoe UI", sans-serif;
+  font-size: 36px;
+  line-height: 1;
+  font-weight: 400;
+  letter-spacing: 0.2px;
+  color: #ffffff;
+}
+
+.top-row .app-brand span:last-child {
+  color: var(--brand-gold);
+}
+
 .top-controls {
   display: flex;
   align-items: stretch;
@@ -637,6 +659,33 @@ p {
   line-height: 1.2;
 }
 
+.ingest-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ingest-title-row h2 {
+  margin: 0;
+}
+
+.metadata-generate-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.metadata-generate-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
 .ingest-panel-card:first-of-type {
   margin-top: 6px;
 }
@@ -812,6 +861,54 @@ p {
   color: #142033;
   border-radius: 3px;
   padding: 0 2px;
+}
+
+#searchSuggestList.search-suggest,
+#ocrSuggestList.search-suggest,
+#subtitleSuggestList.search-suggest {
+  border-color: #4f576b;
+  background: #1f2431;
+}
+
+#searchSuggestList .search-suggest-item,
+#searchSuggestList .search-suggest-item:hover,
+#searchSuggestList .search-suggest-item.active,
+#ocrSuggestList .search-suggest-item,
+#ocrSuggestList .search-suggest-item:hover,
+#ocrSuggestList .search-suggest-item.active,
+#subtitleSuggestList .search-suggest-item,
+#subtitleSuggestList .search-suggest-item:hover,
+#subtitleSuggestList .search-suggest-item.active {
+  background: transparent;
+  color: #e7ebf2;
+}
+
+#searchSuggestList .search-suggest-item:hover,
+#searchSuggestList .search-suggest-item.active,
+#ocrSuggestList .search-suggest-item:hover,
+#ocrSuggestList .search-suggest-item.active,
+#subtitleSuggestList .search-suggest-item:hover,
+#subtitleSuggestList .search-suggest-item.active {
+  background: #2f3749;
+}
+
+#searchSuggestList .search-suggest-item strong,
+#ocrSuggestList .search-suggest-item strong,
+#subtitleSuggestList .search-suggest-item strong {
+  color: #e7ebf2;
+}
+
+#searchSuggestList .search-suggest-item span,
+#ocrSuggestList .search-suggest-item span,
+#subtitleSuggestList .search-suggest-item span {
+  color: #aeb7ca;
+}
+
+#searchSuggestList .search-suggest-item mark,
+#ocrSuggestList .search-suggest-item mark,
+#subtitleSuggestList .search-suggest-item mark {
+  background: #ffe28a;
+  color: #142033;
 }
 
 .proxy-warning-box {

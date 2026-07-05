@@ -80,6 +80,11 @@ function createAssetDeletionService({
     getOcrItemsFromDc(dc).forEach((item) => {
       addPublicUploadPath(paths, item.ocrUrl);
     });
+    const autoMetadata = asObject(dc.autoMetadata);
+    const keyframes = Array.isArray(autoMetadata.keyframes) ? autoMetadata.keyframes : [];
+    keyframes.forEach((keyframeUrl) => {
+      addPublicUploadPath(paths, keyframeUrl);
+    });
 
     versionRows.forEach((versionRow) => {
       addPublicUploadPath(paths, versionRow.snapshot_media_url);

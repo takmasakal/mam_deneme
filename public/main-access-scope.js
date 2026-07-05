@@ -48,15 +48,36 @@
       : allowedTypes;
     const typeSelect = ingestForm?.querySelector?.('[name="type"]');
     if (typeSelect) {
-      Array.from(typeSelect.options || []).forEach((option) => {
-        const normalized = String(option.value || '').trim().toLowerCase();
-        const allowed = !uploadAllowedTypes || uploadAllowedTypes.has(normalized);
-        option.hidden = !allowed;
-        option.disabled = !allowed;
-      });
+      if (!typeSelect.__mamOriginalTypeOptions) {
+        typeSelect.__mamOriginalTypeOptions = Array.from(typeSelect.options || []).map((option) => ({
+          value: String(option.value || ''),
+          text: String(option.textContent || option.value || ''),
+          i18n: String(option.getAttribute('data-i18n') || '')
+        }));
+      }
       const selected = String(typeSelect.value || '').trim().toLowerCase();
-      if (uploadAllowedTypes && !uploadAllowedTypes.has(selected)) {
-        typeSelect.value = getDefaultIngestType({ allowedAssetTypes: hasExplicitUploadAllowedTypes ? normalizedUploadAllowed : null });
+      const originalOptions = Array.isArray(typeSelect.__mamOriginalTypeOptions)
+        ? typeSelect.__mamOriginalTypeOptions
+        : [];
+      typeSelect.innerHTML = '';
+      originalOptions.forEach((item) => {
+        const normalized = normalizeAssetTypeGroup(item.value);
+        const allowed = !uploadAllowedTypes || uploadAllowedTypes.has(normalized);
+        if (!allowed) return;
+        const option = document.createElement('option');
+        option.value = item.value;
+        option.textContent = item.text;
+        if (item.i18n) option.setAttribute('data-i18n', item.i18n);
+        typeSelect.appendChild(option);
+      });
+      if (typeSelect.options.length && (!uploadAllowedTypes || uploadAllowedTypes.has(selected))) {
+        const existing = Array.from(typeSelect.options).find((option) => String(option.value || '').trim().toLowerCase() === selected);
+        if (existing) typeSelect.value = existing.value;
+      } else if (typeSelect.options.length) {
+        typeSelect.value = typeSelect.options[0].value;
+        typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        typeSelect.value = '';
         typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
       }
     }
@@ -123,15 +144,15 @@
     switchSettingsSubtab = null
   } = {}) {
     const access = getAdminAccessMode(profile);
-    const canShowFullAdminPanels = !access.isTextOnly && !access.isAssetRightsOnly && !access.isDocumentRightsOnly;
+    const canShowFullAdminPanels = access.canAccessAdmin;
     const visibleMainTabs = {
       apiHelp: canShowFullAdminPanels,
       systemHealth: canShowFullAdminPanels,
       runtimeDiagnostics: canShowFullAdminPanels,
       auditEvents: canShowFullAdminPanels,
-      assetRights: canShowFullAdminPanels || (access.canAccessAssetRightsAdmin && !access.isDocumentRightsOnly),
-      documentRights: access.isDocumentRightsOnly,
-      settings: !access.isAssetRightsOnly && !access.isDocumentRightsOnly
+      assetRights: canShowFullAdminPanels || access.canAccessAssetRightsAdmin,
+      documentRights: !access.canAccessAdmin && access.canAccessDocumentRightsAdmin,
+      settings: canShowFullAdminPanels || access.canAccessTextAdmin
     };
     Object.entries(visibleMainTabs).forEach(([tabName, visible]) => {
       setTabVisibility(adminTabs, tabName, 'tab', visible);
@@ -139,34 +160,34 @@
     });
 
     const visibleSettingsTabs = {
-      general: !access.isTextOnly,
-      workflow: !access.isTextOnly,
-      proxy: !access.isTextOnly,
-      backup: !access.isTextOnly,
-      ocr: true,
-      subtitle: true,
-      users: !access.isTextOnly && access.isSuperAdmin
+      general: canShowFullAdminPanels,
+      workflow: canShowFullAdminPanels,
+      proxy: canShowFullAdminPanels,
+      backup: canShowFullAdminPanels,
+      ocr: access.canAccessTextAdmin,
+      subtitle: access.canAccessTextAdmin,
+      users: canShowFullAdminPanels && access.isSuperAdmin
     };
     Object.entries(visibleSettingsTabs).forEach(([tabName, visible]) => {
       setTabVisibility(settingsSubTabs, tabName, 'settingsTab', visible);
       setPanelVisibility(settingsSubPanels, tabName, 'settingsPanel', visible);
     });
 
-    setElementHidden(elements.settingsForm, access.isTextOnly);
-    setElementHidden(elements.settingsMsg, access.isTextOnly);
-    setElementHidden(elements.ocrSettingsForm, access.isTextOnly);
-    setElementHidden(elements.ocrSettingsMsg, access.isTextOnly);
-    setElementHidden(elements.subtitleSettingsForm, false);
-    setElementHidden(elements.subtitleSettingsMsg, false);
-    setElementHidden(elements.authSessionSettingsForm, access.isTextOnly || !access.isSuperAdmin);
-    setElementHidden(elements.authSessionSettingsMsg, access.isTextOnly || !access.isSuperAdmin);
+    setElementHidden(elements.settingsForm, !canShowFullAdminPanels);
+    setElementHidden(elements.settingsMsg, !canShowFullAdminPanels);
+    setElementHidden(elements.ocrSettingsForm, !canShowFullAdminPanels);
+    setElementHidden(elements.ocrSettingsMsg, !canShowFullAdminPanels);
+    setElementHidden(elements.subtitleSettingsForm, !access.canAccessTextAdmin);
+    setElementHidden(elements.subtitleSettingsMsg, !access.canAccessTextAdmin);
+    setElementHidden(elements.authSessionSettingsForm, !canShowFullAdminPanels || !access.isSuperAdmin);
+    setElementHidden(elements.authSessionSettingsMsg, !canShowFullAdminPanels || !access.isSuperAdmin);
 
-    if (access.isTextOnly) {
+    if (!access.canAccessAdmin && access.canAccessTextAdmin) {
       if (typeof switchTab === 'function') switchTab('settings');
       if (typeof switchSettingsSubtab === 'function') switchSettingsSubtab('ocr');
-    } else if (access.isAssetRightsOnly) {
+    } else if (!access.canAccessAdmin && access.canAccessAssetRightsAdmin) {
       if (typeof switchTab === 'function') switchTab('assetRights');
-    } else if (access.isDocumentRightsOnly) {
+    } else if (!access.canAccessAdmin && access.canAccessDocumentRightsAdmin) {
       if (typeof switchTab === 'function') switchTab('documentRights');
     }
 

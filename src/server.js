@@ -138,7 +138,7 @@ const DEFAULT_ADMIN_SETTINGS = {
   auditRetentionDays: 180,
   mediaJobRetentionDays: 30,
   authSession: {
-    rememberMe: false,
+    rememberMe: true,
     ssoIdleMinutes: 30,
     ssoMaxHours: 8,
     clientIdleMinutes: 30,
@@ -4774,59 +4774,35 @@ async function generateVideoProxy(inputPath, outputPath, options = {}) {
       if (!includeAudio || audioStreams.length === 0) {
         args.push('-an');
       } else if (audioStreams.length === 1) {
-        const channels = Math.max(1, Number(audioStreams[0].channels) || 2);
-        if (channels > 2) {
-          // Multichannel in AAC/7.1 can attenuate LFE-designated channel content.
-          // Use Opus for >2 channels to keep channels full-range and faithful.
-          args.push(
-            '-map',
-            '0:a:0',
-            '-c:a',
-            'libopus',
-            '-ac',
-            String(channels),
-            '-b:a',
-            channels >= 8 ? '512k' : '320k'
-          );
-        } else {
-          args.push(
-            '-map',
-            '0:a:0',
-            '-c:a',
-            'aac',
-            '-b:a',
-            '128k'
-          );
-        }
+        // Browser/iOS compatible MP4 proxy: always downmix audio to AAC stereo.
+        args.push(
+          '-map',
+          '0:a:0',
+          '-c:a',
+          'aac',
+          '-ac',
+          '2',
+          '-ar',
+          '48000',
+          '-b:a',
+          '160k'
+        );
       } else {
         const inputs = audioStreams.map((_s, idx) => `[0:a:${idx}]`).join('');
-        const mergedChannels = audioStreams.reduce((acc, s) => acc + Math.max(1, Number(s.channels) || 1), 0);
-        const mergedOutChannels = Math.max(2, mergedChannels);
         args.push(
           '-filter_complex',
           `${inputs}amerge=inputs=${audioStreams.length}[aout]`,
           '-map',
-          '[aout]'
+          '[aout]',
+          '-c:a',
+          'aac',
+          '-ac',
+          '2',
+          '-ar',
+          '48000',
+          '-b:a',
+          '160k'
         );
-        if (mergedOutChannels > 2) {
-          args.push(
-            '-c:a',
-            'libopus',
-            '-ac',
-            String(mergedOutChannels),
-            '-b:a',
-            mergedOutChannels >= 8 ? '512k' : '320k'
-          );
-        } else {
-          args.push(
-            '-c:a',
-            'aac',
-            '-ac',
-            String(mergedOutChannels),
-            '-b:a',
-            '128k'
-          );
-        }
       }
 
       args.push(
@@ -7225,6 +7201,13 @@ async function fetchKeycloakAdminJson(url, token, options = {}) {
 
 function getPermissionOverrideForUser(settings, user) {
   const entries = settings && typeof settings === 'object' ? settings : {};
+  const userEntries = entries.users && typeof entries.users === 'object' && !Array.isArray(entries.users)
+    ? entries.users
+    : {};
+  const legacyEntries = Object.fromEntries(
+    Object.entries(entries).filter(([key]) => !['users', 'groups'].includes(String(key || '').trim()))
+  );
+  const mergedEntries = { ...legacyEntries, ...userEntries };
   const candidates = [
     user?.username,
     user?.email,
@@ -7236,11 +7219,11 @@ function getPermissionOverrideForUser(settings, user) {
 
   for (const candidate of candidates) {
     const exactKey = candidate.toLowerCase();
-    if (Object.prototype.hasOwnProperty.call(entries, exactKey)) return entries[exactKey];
+    if (Object.prototype.hasOwnProperty.call(mergedEntries, exactKey)) return mergedEntries[exactKey];
   }
 
   const normalizedEntries = new Map();
-  Object.entries(entries).forEach(([key, value]) => {
+  Object.entries(mergedEntries).forEach(([key, value]) => {
     const normalized = normalizeIdentityKey(key);
     if (normalized && !normalizedEntries.has(normalized)) normalizedEntries.set(normalized, value);
   });
@@ -7250,6 +7233,34 @@ function getPermissionOverrideForUser(settings, user) {
     if (normalizedEntries.has(normalized)) return normalizedEntries.get(normalized);
   }
   return null;
+}
+
+function getPermissionOverridesForGroups(settings, user) {
+  const entries = settings && typeof settings === 'object' ? settings : {};
+  const groupEntries = entries.groups && typeof entries.groups === 'object' && !Array.isArray(entries.groups)
+    ? entries.groups
+    : {};
+  const groups = Array.isArray(user?.groups) ? user.groups : [];
+  const candidates = groups
+    .flatMap((group) => {
+      const raw = String(group || '').trim();
+      const withoutSlash = raw.replace(/^\/+/, '');
+      const last = withoutSlash.split('/').filter(Boolean).pop() || '';
+      return [raw, withoutSlash, last];
+    })
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  const normalizedEntries = new Map();
+  Object.entries(groupEntries).forEach(([key, value]) => {
+    const normalized = normalizeIdentityKey(String(key || '').replace(/^\/+/, ''));
+    if (normalized && !normalizedEntries.has(normalized)) normalizedEntries.set(normalized, value);
+  });
+  return candidates
+    .map((candidate) => normalizeIdentityKey(String(candidate || '').replace(/^\/+/, '')))
+    .filter(Boolean)
+    .filter((candidate, index, list) => list.indexOf(candidate) === index)
+    .map((candidate) => normalizedEntries.get(candidate))
+    .filter(Boolean);
 }
 
 function sanitizeOnlyOfficeUserId(value) {
@@ -7313,6 +7324,13 @@ const DOCUMENT_RIGHTS_ADMIN_GROUPS = String(process.env.MAM_DOCUMENT_ADMIN_GROUP
 
 function hasDocumentRightsAdminAccess(effective = {}, accessContext = {}) {
   if (effective?.isSuperAdmin || effective?.canAccessAdmin || accessContext?.canManageAllAssetVisibility) return true;
+  if (
+    Array.isArray(effective?.permissionKeys)
+    && effective.permissionKeys.includes('document.rights.admin')
+    && assetAccessService.hasScopedAdminScopeAccess(accessContext, 'document-rights', 'document')
+  ) {
+    return true;
+  }
   const groups = []
     .concat(effective?.groups || [])
     .concat(accessContext?.groupAdminGroups || [])
@@ -7908,10 +7926,17 @@ async function resolveEffectivePermissions(req) {
   const user = await enrichUserProfileFromKeycloak(buildUserContextFromRequest(req));
   const settings = await getUserPermissionsSettings();
   const override = getPermissionOverrideForUser(settings, user);
+  const groupOverrides = getPermissionOverridesForGroups(settings, user);
   const basePermissionKeys = user.baseIsSuperAdmin
     ? PERMISSION_KEYS
     : (user.basePermissionKeys || []);
-  const effective = normalizePermissionEntry(override, basePermissionKeys);
+  const groupPermissionKeys = new Set(basePermissionKeys);
+  groupOverrides.forEach((entry) => {
+    normalizePermissionEntry(entry, []).permissionKeys.forEach((key) => groupPermissionKeys.add(key));
+  });
+  const userOverrideKeys = override ? normalizePermissionEntry(override, []).permissionKeys : [];
+  userOverrideKeys.forEach((key) => groupPermissionKeys.add(key));
+  const effective = normalizePermissionEntry(null, Array.from(groupPermissionKeys));
   if (user.baseIsSuperAdmin) {
     effective.permissionKeys = PERMISSION_KEYS;
     Object.assign(effective, permissionKeysToLegacyFlags(PERMISSION_KEYS));
@@ -7956,6 +7981,10 @@ app.get('/api/me', async (req, res) => {
   try {
     const effective = await resolveEffectivePermissions(req);
     const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+    const canAccessTextAdmin = Boolean(
+      effective.canAccessTextAdmin
+      || assetAccessService.hasScopedAdminScopeAccess(accessContext, 'text-admin')
+    );
     res.json({
       username: effective.username,
       displayName: effective.displayName,
@@ -7966,7 +7995,7 @@ app.get('/api/me', async (req, res) => {
       isSuperAdmin: Boolean(effective.isSuperAdmin),
       isAdmin: effective.isAdmin,
 	      canAccessAdmin: effective.canAccessAdmin,
-	      canAccessTextAdmin: effective.canAccessTextAdmin,
+	      canAccessTextAdmin,
 	      canAccessAssetRightsAdmin: Boolean(effective.canAccessAdmin || assetAccessService.hasScopedAssetRightsAdminAccess(accessContext)),
 	      canAccessDocumentRightsAdmin: hasDocumentRightsAdminAccess(effective, accessContext),
 	      canEditMetadata: effective.canEditMetadata,
@@ -8384,7 +8413,12 @@ async function requireAdminAccess(req, res, next) {
 async function requireTextAdminAccess(req, res, next) {
   try {
     const effective = await resolveEffectivePermissions(req);
-    if (!effective.canAccessTextAdmin) return res.status(403).json({ error: 'Forbidden' });
+    const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+    const canAccessTextAdmin = Boolean(
+      effective.canAccessTextAdmin
+      || assetAccessService.hasScopedAdminScopeAccess(accessContext, 'text-admin')
+    );
+    if (!canAccessTextAdmin) return res.status(403).json({ error: 'Forbidden' });
     req.userPermissions = effective;
     return next();
   } catch (_error) {
@@ -8434,8 +8468,8 @@ async function requireScopedAdminAccess(req, res, next) {
         req.userPermissions = effective;
         return next();
       }
-      const groupAdminGroups = await assetAccessService.getGroupAdminGroupsForUser(effective).catch(() => []);
-      if (Array.isArray(groupAdminGroups) && groupAdminGroups.length) {
+      const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+      if (assetAccessService.hasScopedAssetRightsAdminAccess(accessContext)) {
         req.userPermissions = effective;
         return next();
       }

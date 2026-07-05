@@ -7,7 +7,6 @@ function registerOfficeRoutes(app, deps) {
   const {
     pool,
     officeService,
-    requireOfficeEdit,
     isOfficeDocumentCandidate,
     publicUploadUrlToAbsolutePath,
     indexAssetToElastic,
@@ -18,68 +17,60 @@ function registerOfficeRoutes(app, deps) {
     officeEditorProvider,
     uploadsDir,
     runCommandCapture,
-    sanitizeFileName
+    sanitizeFileName,
+    assetAccessService,
+    assetEditLockService,
+    resolveEffectivePermissions
   } = deps;
 
-  async function convertOfficeToLibreOfficePdf(row, inputPath) {
-    const stat = fs.statSync(inputPath);
-    const assetId = String(row.id || '').trim();
-    const revision = `${Math.round(Number(stat.mtimeMs || 0))}-${Math.max(0, Number(stat.size || 0))}`;
-    const outputDir = path.join(uploadsDir, 'previews', 'libreoffice');
-    fs.mkdirSync(outputDir, { recursive: true });
-    const outputName = `${sanitizeFileName(assetId || 'asset')}-${revision}.pdf`;
-    const outputPath = path.join(outputDir, outputName);
-    if (fs.existsSync(outputPath)) return outputPath;
-
-    const tempDir = path.join('/tmp', `mam-lo-${Date.now()}-${nanoid()}`);
-    fs.mkdirSync(tempDir, { recursive: true });
-    const sourceExt = getFileExtension(row.file_name) || getFileExtension(inputPath) || 'docx';
-    const sourceBase = sanitizeFileName(path.basename(String(row.file_name || assetId || 'document'), path.extname(String(row.file_name || '')))) || 'document';
-    const tempInput = path.join(tempDir, `${sourceBase}.${sourceExt}`);
-    fs.copyFileSync(inputPath, tempInput);
-
-    const args = [
-      '--headless',
-      '--nologo',
-      '--nofirststartwizard',
-      '--nodefault',
-      '--norestore',
-      '--convert-to',
-      'pdf',
-      '--outdir',
-      tempDir,
-      tempInput
-    ];
-    let result = await runCommandCapture('libreoffice', args, { env: { HOME: tempDir } });
-    if (!result.ok) {
-      result = await runCommandCapture('soffice', args, { env: { HOME: tempDir } });
+  async function loadVisibleAssetRow(req, assetId) {
+    const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+    const row = assetResult.rows[0] || null;
+    if (!row) return { status: 404, error: 'Asset not found', row: null, accessContext };
+    if (!assetAccessService.canViewAsset(row, accessContext)) {
+      return { status: 404, error: 'Asset not found', row: null, accessContext };
     }
-    const convertedPath = path.join(tempDir, `${sourceBase}.pdf`);
-    if (!result.ok || !fs.existsSync(convertedPath)) {
-      try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (_cleanupError) {}
-      const message = String(result.stderr || result.stdout || 'LibreOffice conversion failed').slice(0, 500);
-      const error = new Error(message);
-      error.statusCode = 503;
-      throw error;
-    }
-    fs.copyFileSync(convertedPath, outputPath);
-    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch (_cleanupError) {}
-    return outputPath;
+    return { status: 200, row, accessContext };
   }
 
   app.get('/api/assets/:id/office-config', async (req, res) => {
     try {
-      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [req.params.id]);
-      if (!assetResult.rowCount) {
-        return res.status(404).json({ error: 'Asset not found' });
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
       }
-      const row = assetResult.rows[0];
-      const effective = await deps.resolveEffectivePermissions(req).catch(() => null);
+      const row = loaded.row;
+      const canEditAsset = assetAccessService.canEditAsset(row, loaded.accessContext);
+      let canEditOffice = canEditAsset;
+      let editLock = null;
+      let readOnlyReason = '';
+      if (canEditOffice && assetEditLockService) {
+        const lockResult = await assetEditLockService.acquire(req, req.params.id, 'office');
+        if (!lockResult.ok) {
+          canEditOffice = false;
+          readOnlyReason = String(lockResult.error || 'This document is being edited by another user; opened read-only.');
+          editLock = lockResult.lock || null;
+        }
+      }
+      const effective = canEditOffice
+        ? { ...loaded.accessContext, canEditOffice: true }
+        : loaded.accessContext;
       const payload = await officeService.buildOnlyOfficeConfig({
         row,
         effective,
         lang: req.query.lang
       });
+      if (readOnlyReason) payload.readOnlyReason = readOnlyReason;
+      if (editLock) payload.conflictingEditLock = editLock;
+      if (canEditOffice && assetEditLockService) {
+        const activeLock = await assetEditLockService.getActiveLock(req.params.id);
+        payload.editLock = activeLock ? {
+          lockedBy: String(activeLock.locked_by || ''),
+          lockedByName: String(activeLock.locked_by_name || ''),
+          expiresAt: activeLock.expires_at
+        } : null;
+      }
       return res.json(payload);
     } catch (error) {
       if (Number(error?.statusCode || 0) >= 400 && Number(error?.statusCode || 0) < 500) {
@@ -89,11 +80,45 @@ function registerOfficeRoutes(app, deps) {
     }
   });
 
+  app.get('/api/assets/:id/office-document', async (req, res) => {
+    try {
+      const assetId = String(req.params.id || '').trim();
+      const token = String(req.query.token || '').trim();
+      if (!assetId || !token) return res.status(404).json({ error: 'Document not found' });
+      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
+      const row = assetResult.rows[0] || null;
+      if (!row || !officeService.isValidOfficeDocumentToken(row, token)) {
+        return res.status(404).json({ error: 'Document not found' });
+      }
+      if (!isOfficeDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
+        return res.status(400).json({ error: 'Asset is not an Office document' });
+      }
+      let inputPath = String(row.source_path || '').trim();
+      if (!inputPath || !fs.existsSync(inputPath)) {
+        const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
+        if (mediaPath && fs.existsSync(mediaPath)) inputPath = mediaPath;
+      }
+      if (!inputPath || !fs.existsSync(inputPath)) {
+        return res.status(404).json({ error: 'Office source file not found' });
+      }
+      res.set('Cache-Control', 'private, max-age=60');
+      res.set('Content-Type', String(row.mime_type || '').trim() || 'application/octet-stream');
+      const downloadName = sanitizeFileName(row.file_name || row.title || `${assetId}.${getFileExtension(inputPath) || 'docx'}`);
+      res.set('Content-Disposition', `inline; filename="${downloadName}"`);
+      return res.sendFile(inputPath);
+    } catch (_error) {
+      return res.status(500).json({ error: 'Failed to serve Office document' });
+    }
+  });
+
   app.post('/api/assets/:id/office-callback', express.json({ limit: '10mb' }), async (req, res) => {
     try {
       const assetId = String(req.params.id || '').trim();
       if (!assetId) return res.json({ error: 0 });
       const result = await officeService.saveOnlyofficeCallbackVersion(assetId, req.body || {});
+      if ([2, 4].includes(Number(req.body?.status || 0))) {
+        await assetEditLockService?.releaseAsset(assetId).catch(() => {});
+      }
       console.log(JSON.stringify({
         event: 'onlyoffice-callback',
         assetId,
@@ -115,28 +140,17 @@ function registerOfficeRoutes(app, deps) {
     }
   });
 
-  app.get('/api/assets/:id/libreoffice-preview.pdf', async (req, res) => {
+  async function sendLibreOfficePreviewPdf(req, res) {
     try {
-      if (officeEditorProvider !== 'libreoffice') {
-        return res.status(404).json({ error: 'LibreOffice preview is not enabled' });
-      }
       const assetId = String(req.params.id || '').trim();
-      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-      const row = assetResult.rows[0];
-      if (!row) return res.status(404).json({ error: 'Asset not found' });
+      const loaded = await loadVisibleAssetRow(req, assetId);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      const row = loaded.row;
       if (!isOfficeDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
         return res.status(400).json({ error: 'LibreOffice preview is supported only for Office assets' });
       }
 
-      let inputPath = String(row.source_path || '').trim();
-      if (!inputPath || !fs.existsSync(inputPath)) {
-        const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);
-        if (mediaPath && fs.existsSync(mediaPath)) inputPath = mediaPath;
-      }
-      if (!inputPath || !fs.existsSync(inputPath)) {
-        return res.status(404).json({ error: 'Office source file not found' });
-      }
-      const pdfPath = await convertOfficeToLibreOfficePdf(row, inputPath);
+      const pdfPath = await officeService.ensureOfficePreviewPdf(row);
       res.set('Cache-Control', 'private, max-age=60');
       return res.sendFile(pdfPath);
     } catch (error) {
@@ -144,17 +158,32 @@ function registerOfficeRoutes(app, deps) {
         error: `Failed to build LibreOffice preview: ${String(error?.message || 'unknown error').slice(0, 500)}`
       });
     }
+  }
+
+  app.get('/api/assets/:id/libreoffice-preview.pdf', async (req, res) => {
+    return sendLibreOfficePreviewPdf(req, res);
   });
 
-  app.post('/api/assets/:id/office-restore', requireOfficeEdit, async (req, res) => {
+  app.get('/api/assets/:id/office-preview.pdf', async (req, res) => {
+    return sendLibreOfficePreviewPdf(req, res);
+  });
+
+  app.post('/api/assets/:id/office-restore', async (req, res) => {
     try {
       const assetId = String(req.params.id || '').trim();
       const versionId = String(req.body?.versionId || '').trim();
       if (!assetId || !versionId) return res.status(400).json({ error: 'assetId and versionId are required' });
 
-      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-      const currentRow = assetResult.rows[0];
-      if (!currentRow) return res.status(404).json({ error: 'Asset not found' });
+      const loaded = await loadVisibleAssetRow(req, assetId);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      const currentRow = loaded.row;
+      if (!assetAccessService.canDownloadAsset(currentRow, loaded.accessContext)) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      if (assetEditLockService) {
+        const lockResult = await assetEditLockService.assertWritable(req, assetId);
+        if (!lockResult.ok) return assetEditLockService.sendLocked(res, lockResult);
+      }
       if (!isOfficeDocumentCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
         return res.status(400).json({ error: 'Office restore is only supported for Office assets' });
       }
@@ -255,14 +284,21 @@ function registerOfficeRoutes(app, deps) {
     }
   });
 
-  app.post('/api/assets/:id/office-restore-original', requireOfficeEdit, async (req, res) => {
+  app.post('/api/assets/:id/office-restore-original', async (req, res) => {
     try {
       const assetId = String(req.params.id || '').trim();
       if (!assetId) return res.status(400).json({ error: 'assetId is required' });
 
-      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-      const currentRow = assetResult.rows[0];
-      if (!currentRow) return res.status(404).json({ error: 'Asset not found' });
+      const loaded = await loadVisibleAssetRow(req, assetId);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      const currentRow = loaded.row;
+      if (!assetAccessService.canEditAsset(currentRow, loaded.accessContext)) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      if (assetEditLockService) {
+        const lockResult = await assetEditLockService.assertWritable(req, assetId);
+        if (!lockResult.ok) return assetEditLockService.sendLocked(res, lockResult);
+      }
       if (!isOfficeDocumentCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
         return res.status(400).json({ error: 'Office restore is only supported for Office assets' });
       }
@@ -357,14 +393,17 @@ function registerOfficeRoutes(app, deps) {
     }
   });
 
-  app.get('/api/assets/:id/office-original/download', requireOfficeEdit, async (req, res) => {
+  app.get('/api/assets/:id/office-original/download', async (req, res) => {
     try {
       const assetId = String(req.params.id || '').trim();
       if (!assetId) return res.status(400).json({ error: 'assetId is required' });
 
-      const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
-      const currentRow = assetResult.rows[0];
-      if (!currentRow) return res.status(404).json({ error: 'Asset not found' });
+      const loaded = await loadVisibleAssetRow(req, assetId);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      const currentRow = loaded.row;
+      if (!assetAccessService.canEditAsset(currentRow, loaded.accessContext)) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
       if (!isOfficeDocumentCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
         return res.status(400).json({ error: 'Office download is only supported for Office assets' });
       }

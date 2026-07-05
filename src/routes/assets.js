@@ -71,6 +71,7 @@ function registerAssetRoutes(app, deps) {
     canManageVersionRow,
     assetAccessService,
     assetEditLockService,
+    metadataEnrichmentService,
     recordAuditEvent,
     nanoid
   } = deps;
@@ -941,7 +942,15 @@ function registerAssetRoutes(app, deps) {
   });
   
   app.post('/api/assets/upload', async (req, res) => {
-    const { fileName, mimeType, fileData, ...metadata } = req.body || {};
+    const {
+      fileName,
+      mimeType,
+      fileData,
+      generateMetadata: generateMetadataRaw,
+      ...metadata
+    } = req.body || {};
+    const generateMetadata = generateMetadataRaw === true
+      || String(generateMetadataRaw || '').trim().toLowerCase() === 'true';
     const allowSilentProxyFallback = Boolean(req.body?.allowSilentProxyFallback);
     const skipProxyGeneration = Boolean(req.body?.skipProxyGeneration);
     const isVideoUpload = isVideoCandidate({ mimeType, fileName, declaredType: metadata.type });
@@ -1192,6 +1201,9 @@ function registerAssetRoutes(app, deps) {
   
     try {
       const created = await createAssetRecord(payload);
+      const metadataJob = generateMetadata
+        ? metadataEnrichmentService?.queueAsset?.(created)
+        : null;
       await recordAuditEvent?.(req, {
         action: 'asset.uploaded',
         targetType: 'asset',
@@ -1202,13 +1214,16 @@ function registerAssetRoutes(app, deps) {
           mimeType: created.mimeType || String(mimeType || ''),
           type: created.type,
           proxyStatus: created.proxyStatus,
+          metadataGenerationRequested: generateMetadata,
+          metadataJobId: String(metadataJob?.jobId || ''),
           warnings: ingestWarnings.map((item) => item.code).filter(Boolean)
         }
       });
       return res.status(201).json({
         ...created,
         ingestWarnings,
-        ingestSucceededWithWarnings: ingestWarnings.length > 0
+        ingestSucceededWithWarnings: ingestWarnings.length > 0,
+        metadataJob
       });
     } catch (_error) {
       console.warn(JSON.stringify({

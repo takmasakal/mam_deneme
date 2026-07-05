@@ -28,6 +28,11 @@ const PERMISSION_DEFINITIONS = [
     key: 'text.admin',
     legacyField: 'textAdminAccess',
     labelKey: 'perm_text_admin'
+  },
+  {
+    key: 'document.rights.admin',
+    legacyField: 'documentRightsAdminAccess',
+    labelKey: 'perm_document_rights_admin'
   }
 ];
 

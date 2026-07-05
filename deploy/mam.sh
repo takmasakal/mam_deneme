@@ -30,6 +30,52 @@ dc() {
   ${DOCKER_CMD} compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
 }
 
+sync_keycloak_remember_me() {
+  if [[ ! -f "${ENV_FILE}" ]]; then
+    return 0
+  fi
+
+  # shellcheck disable=SC1090
+  source "${ENV_FILE}"
+
+  local admin_user admin_password admin_password_file
+  admin_user="${KEYCLOAK_ADMIN:-admin}"
+  admin_password_file="${KEYCLOAK_ADMIN_PASSWORD_FILE:-deploy/secrets/keycloak_admin_password}"
+  admin_password="${KEYCLOAK_ADMIN_PASSWORD:-}"
+  if [[ -z "${admin_password}" && -f "${admin_password_file}" ]]; then
+    admin_password="$(<"${admin_password_file}")"
+  fi
+  admin_password="${admin_password:-admin}"
+
+  # Existing local realms are not re-imported after first init; keep the login
+  # remember-me switch in sync without overwriting session lifetime settings.
+  local attempt authenticated
+  authenticated=false
+  for attempt in $(seq 1 24); do
+    if ${DOCKER_CMD} exec mam-keycloak /opt/keycloak/bin/kcadm.sh config credentials \
+      --server http://localhost:8080 \
+      --realm master \
+      --user "${admin_user}" \
+      --password "${admin_password}" >/dev/null 2>&1; then
+      authenticated=true
+      break
+    fi
+    sleep 5
+  done
+
+  if [[ "${authenticated}" != "true" ]]; then
+    echo "WARN: Keycloak remember-me sync skipped; admin credentials were not accepted."
+    return 0
+  fi
+
+  if ! ${DOCKER_CMD} exec mam-keycloak /opt/keycloak/bin/kcadm.sh update realms/mam \
+    -s rememberMe=true \
+    -s ssoSessionIdleTimeoutRememberMe=2592000 \
+    -s ssoSessionMaxLifespanRememberMe=7776000 >/dev/null 2>&1; then
+    echo "WARN: Keycloak remember-me sync failed."
+  fi
+}
+
 ensure_init() {
   if [[ ! -f "${ENV_FILE}" || ! -f "deploy/keycloak/mam-realm.json" ]]; then
     echo "Initializing deployment files..."
@@ -45,6 +91,7 @@ Usage:
   ./deploy/mam.sh down
   ./deploy/mam.sh restart
   ./deploy/mam.sh ps
+  ./deploy/mam.sh sync-keycloak
   ./deploy/mam.sh logs [SERVICE...]
   ./deploy/mam.sh urls
   ./deploy/mam.sh reset
@@ -63,17 +110,22 @@ case "${cmd}" in
     ;;
   up)
     ensure_init "${2:-}"
-    dc up -d
+    dc up -d --no-build
+    sync_keycloak_remember_me
     ;;
   down)
     dc down
     ;;
   restart)
     dc down
-    dc up -d
+    dc up -d --no-build
+    sync_keycloak_remember_me
     ;;
   ps)
     dc ps
+    ;;
+  sync-keycloak)
+    sync_keycloak_remember_me
     ;;
   logs)
     shift || true

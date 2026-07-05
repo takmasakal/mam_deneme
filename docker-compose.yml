@@ -79,6 +79,7 @@ services:
       - "3001:3000"
     volumes:
       - ./uploads:/app/uploads
+      - ./mountvolume/backup:/mountvolume/backup
     restart: unless-stopped
 
   onlyoffice:
@@ -172,6 +173,7 @@ services:
       OAUTH2_PROXY_SKIP_OIDC_DISCOVERY: "true"
       OAUTH2_PROXY_INSECURE_OIDC_SKIP_ISSUER_VERIFICATION: "true"
       OAUTH2_PROXY_LOGIN_URL: ${OAUTH2_PROXY_LOGIN_URL:-http://localhost:8081/realms/mam/protocol/openid-connect/auth}
+      OAUTH2_PROXY_APPROVAL_PROMPT: ${OAUTH2_PROXY_APPROVAL_PROMPT:-auto}
       OAUTH2_PROXY_REDEEM_URL: ${OAUTH2_PROXY_REDEEM_URL:-http://keycloak:8080/realms/mam/protocol/openid-connect/token}
       OAUTH2_PROXY_OIDC_JWKS_URL: ${OAUTH2_PROXY_OIDC_JWKS_URL:-http://keycloak:8080/realms/mam/protocol/openid-connect/certs}
       OAUTH2_PROXY_CLIENT_ID: ${OAUTH2_PROXY_CLIENT_ID:-mam-web}
@@ -182,6 +184,8 @@ services:
       OAUTH2_PROXY_EMAIL_DOMAINS: "*"
       OAUTH2_PROXY_COOKIE_SECURE: "false"
       OAUTH2_PROXY_COOKIE_SAMESITE: "lax"
+      OAUTH2_PROXY_COOKIE_EXPIRE: ${OAUTH2_PROXY_COOKIE_EXPIRE:-8h}
+      OAUTH2_PROXY_COOKIE_REFRESH: ${OAUTH2_PROXY_COOKIE_REFRESH:-30m}
       OAUTH2_PROXY_COOKIE_DOMAINS: ${OAUTH2_PROXY_COOKIE_DOMAINS:-}
       OAUTH2_PROXY_WHITELIST_DOMAINS: ${OAUTH2_PROXY_WHITELIST_DOMAINS:-localhost,localhost:*}
       OAUTH2_PROXY_REDIRECT_URL: ${OAUTH2_PROXY_REDIRECT_URL:-http://localhost:3000/oauth2/callback}

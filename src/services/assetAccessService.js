@@ -335,11 +335,20 @@ function createAssetAccessService({ pool }) {
   }
 
   function hasExplicitAssetEditGrant(asset = {}, identity = {}) {
-    return Boolean(identityMatchesAny(identity, asset.editAllowedUsers, asset.editAllowedGroups));
+    return Boolean(
+      identityMatchesAny(identity, asset.editAllowedUsers, asset.editAllowedGroups)
+      || (identity.identifiers || []).some((id) => id && id === asset.ownerUser)
+      || (identity.groups || []).some((group) => asset.ownerGroups.includes(group))
+    );
   }
 
   function appendAssetAccessWhere(where, values, context, alias = 'assets') {
-    if (context?.canBypassAssetTypeAccess) return;
+    if (context?.canBypassAssetTypeAccess) {
+      if (!context?.canViewHiddenAssets) {
+        where.push(`COALESCE(${alias}.visibility, 'public') <> 'private'`);
+      }
+      return;
+    }
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
     const identifiers = identity.identifiers || [];
     const groups = identity.groups || [];
@@ -357,6 +366,9 @@ function createAssetAccessService({ pool }) {
     appendExplicitAssetViewConditions(explicitAssetViewConditions, values, context, alias);
     appendAssetTypeAccessWhere(where, values, context, alias, explicitAssetViewConditions);
     if (context?.canBypassAssetVisibility) return;
+    if (!context?.canViewHiddenAssets) {
+      where.push(`COALESCE(${alias}.visibility, 'public') <> 'private'`);
+    }
     const conditions = [`${alias}.visibility = 'public'`, ...explicitAssetViewConditions];
 
     where.push(`(${conditions.join(' OR ')})`);
@@ -369,18 +381,19 @@ function createAssetAccessService({ pool }) {
     const identifiers = identity.identifiers || [];
     const groups = identity.groups || [];
     const explicitAssetViewSql = explicitAssetViewConditions.length ? `(${explicitAssetViewConditions.join(' OR ')})` : '';
+    const explicitBypass = explicitAssetViewSql ? ` AND NOT ${explicitAssetViewSql}` : '';
 
     rules.forEach((rule) => {
       const typeSql = buildAssetTypeGroupSql(rule.typeGroup, alias);
       if (identifiers.length && rule.deniedUsers.length) {
         values.push(identifiers);
-        const deniedSql = `NOT (${typeSql} AND $${values.length}::text[] && ARRAY[${rule.deniedUsers.map((_, idx) => `$${values.length + idx + 1}`).join(', ')}]::text[])`;
+        const deniedSql = `NOT (${typeSql} AND $${values.length}::text[] && ARRAY[${rule.deniedUsers.map((_, idx) => `$${values.length + idx + 1}`).join(', ')}]::text[]${explicitBypass})`;
         where.push(deniedSql);
         rule.deniedUsers.forEach((item) => values.push(item));
       }
       if (groups.length && rule.deniedGroups.length) {
         values.push(groups);
-        const deniedSql = `NOT (${typeSql} AND $${values.length}::text[] && ARRAY[${rule.deniedGroups.map((_, idx) => `$${values.length + idx + 1}`).join(', ')}]::text[])`;
+        const deniedSql = `NOT (${typeSql} AND $${values.length}::text[] && ARRAY[${rule.deniedGroups.map((_, idx) => `$${values.length + idx + 1}`).join(', ')}]::text[]${explicitBypass})`;
         where.push(deniedSql);
         rule.deniedGroups.forEach((item) => values.push(item));
       }
@@ -508,13 +521,14 @@ function createAssetAccessService({ pool }) {
   }
 
   function canViewAsset(row, context) {
-    if (context?.canBypassAssetTypeAccess) return true;
     const asset = getAssetAccessSnapshot(row);
+    if (asset.visibility === 'private' && !context?.canViewHiddenAssets) return false;
+    if (context?.canBypassAssetTypeAccess) return true;
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
     if (identityMatchesAny(identity, asset.deniedUsers, asset.deniedGroups)) return false;
     if (context?.canBypassAssetVisibility) return true;
-    if (isDeniedByAssetType(row, context)) return false;
     if (hasExplicitAssetViewGrant(asset, identity)) return true;
+    if (isDeniedByAssetType(row, context)) return false;
     if (!canViewAssetType(row, context)) return false;
     if (asset.visibility === 'public') return true;
     return false;

@@ -73,7 +73,7 @@ Bu filtre şu kuralları uygular:
 - Sahip gruplar
 - İzinli kullanıcılar
 - İzinli gruplar
-- Değiştirme izni verilmiş kullanıcı ve gruplar
+- Değiştirme izni verilmiş kullanıcı ve gruplar görünürlük izni sayılmaz; kullanıcı/grup dokümanı önce sahip, görebilen veya public kurallarından biriyle görebilmelidir.
 
 ### 3.2 Doğrudan yetki güncelleme
 
@@ -115,6 +115,7 @@ function getDocumentRightsVisibilityContext(gate = {}) {
   return {
     ...(gate.context || {}),
     canBypassAssetTypeAccess: false,
+    canBypassAssetVisibility: false,
     canManageAllAssetVisibility: false
   };
 }
@@ -126,6 +127,8 @@ Sonuç:
 - Diğer doküman yöneticileri admin unvanından dolayı görünürlük kurallarını atlayamaz.
 - Varlık türü seviyesindeki doküman erişim kuralı da uygulanır.
 - Varlık seviyesindeki görünürlük kuralları da uygulanır.
+
+2026-06-27 notu: Ortak erişim servisinde `canManageAllAssetVisibility` ile normal liste görünürlüğünü atlama davranışı ayrıldı. `canManageAllAssetVisibility` yönetim ekranında yetki değiştirebilme anlamını korur; normal varlık listesinde görünürlük atlama artık `canBypassAssetVisibility` ile yalnızca superadmin için yapılır.
 
 ## 5. Gelecekte `muhasebedocadmin` Modeli
 
@@ -218,6 +221,8 @@ ORDER BY group_name, username;
 group_name = muhasebe
 username   = muhasebedocadmin
 ```
+
+2026-06-27 güncellemesi: Yeni yüklenen varlıklarda superadmin olmayan kullanıcı için `group_admins` eşleşmesi varsa varsayılan `owner_groups` kullanıcının yönettiği içerik gruplarından oluşturulur. Örneğin `muhasebedocadmin -> muhasebe` eşleşmesinde muhasebe yöneticisinin yüklediği doküman `owner_groups={muhasebe}` ile oluşur; genel `dokadmin` grubu otomatik sahip yapılmaz.
 
 Buradaki `username` alanı yalnızca bireysel kullanıcı adı olmak zorunda değildir. Erişim çözümleme kodu kullanıcı adı, kullanıcının grupları ve rolleri üzerinden eşleştirme yapar. Bu nedenle yönetici grubunun principal adı da kullanılabilir.
 

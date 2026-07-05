@@ -6,6 +6,7 @@
       api,
       deleteApi,
       escapeHtml,
+      isImage,
       isVideo,
       isAudio,
       isOfficeDocument,
@@ -125,6 +126,7 @@
 
     function detailMarkup(asset, workflow) {
       const dc = asset.dcMetadata || {};
+      const isImageAsset = Boolean(isImage?.(asset));
       const hasPlayableVideoProxy = isVideo(asset) && Boolean(String(asset.proxyUrl || '').trim());
       const trashStatus = asset.inTrash ? `<strong>${t('in_trash')}</strong>` : t('active');
       const searchHighlightClass = effectiveSearchHighlightClass(currentSearchQuery(), currentSearchHighlightQuery(), currentSearchFuzzyUsed());

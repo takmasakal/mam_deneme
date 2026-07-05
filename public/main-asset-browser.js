@@ -40,6 +40,9 @@
       setPanelVideoToolsButtonState
     } = deps || {};
     const assetHitPageSize = 10;
+    const assetPageSizes = [20, 50, 100];
+    let assetPageSize = 20;
+    let assetPage = 1;
 
 function thumbnailMarkup(asset) {
   const thumbSrc = escapeHtml(asset.thumbnailUrl || '');
@@ -137,9 +140,54 @@ function renderAssetHitPager({ asset, type, requestQuery }) {
   `;
 }
 
-function renderAssets(assets) {
+function renderAssetListPager(totalCount, visibleStart, visibleEnd, totalPages) {
+  if (totalCount <= 0) return '';
+  const pageOptions = assetPageSizes
+    .map((size) => `<option value="${escapeHtml(String(size))}" ${size === assetPageSize ? 'selected' : ''}>${escapeHtml(String(size))}</option>`)
+    .join('');
+  return `
+    <div class="asset-list-pager" data-asset-list-pager="1">
+      <div class="asset-list-pager-range">${escapeHtml(String(visibleStart + 1))}-${escapeHtml(String(visibleEnd))} / ${escapeHtml(String(totalCount))}</div>
+      <label class="asset-list-page-size">
+        <span>${escapeHtml(t('asset_page_size'))}</span>
+        <select class="asset-list-page-size-select" aria-label="${escapeHtml(t('asset_page_size'))}">${pageOptions}</select>
+      </label>
+      <div class="asset-list-page-actions">
+        <button type="button" class="asset-list-page-btn" data-asset-page="prev" ${assetPage <= 1 ? 'disabled' : ''} aria-label="${escapeHtml(t('previous_page'))}">&lt;</button>
+        <span class="asset-list-page-current">${escapeHtml(String(assetPage))} / ${escapeHtml(String(totalPages))}</span>
+        <button type="button" class="asset-list-page-btn" data-asset-page="next" ${assetPage >= totalPages ? 'disabled' : ''} aria-label="${escapeHtml(t('next_page'))}">&gt;</button>
+      </div>
+    </div>
+  `;
+}
+
+function attachAssetListPagerHandlers() {
+  assetGrid.querySelectorAll('.asset-list-page-btn').forEach((btn) => {
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const direction = String(event.currentTarget?.dataset?.assetPage || '').trim();
+      const assets = currentAssetsRef.get();
+      const totalPages = Math.max(1, Math.ceil(assets.length / assetPageSize));
+      if (direction === 'prev') assetPage = Math.max(1, assetPage - 1);
+      if (direction === 'next') assetPage = Math.min(totalPages, assetPage + 1);
+      renderAssets(assets);
+    });
+  });
+  assetGrid.querySelectorAll('.asset-list-page-size-select').forEach((select) => {
+    select.addEventListener('change', (event) => {
+      const nextSize = Number(event.currentTarget?.value) || 20;
+      assetPageSize = assetPageSizes.includes(nextSize) ? nextSize : 20;
+      assetPage = 1;
+      renderAssets(currentAssetsRef.get());
+    });
+  });
+}
+
+function renderAssets(assets, options = {}) {
   applyAssetViewModeUI();
   const searchNoticeHtml = buildAssetSearchNoticeHtml();
+  if (options?.resetPage) assetPage = 1;
   if (!assets.length) {
     assetGrid.innerHTML = `${searchNoticeHtml}<div class="empty">${escapeHtml(t('no_assets'))}</div>`;
     assetGrid.querySelectorAll('[data-search-did-you-mean]').forEach((btn) => {
@@ -155,8 +203,15 @@ function renderAssets(assets) {
     return;
   }
 
+  const totalAssets = assets.length;
+  const totalPages = Math.max(1, Math.ceil(totalAssets / assetPageSize));
+  assetPage = Math.max(1, Math.min(assetPage, totalPages));
+  const pageStart = (assetPage - 1) * assetPageSize;
+  const pageEnd = Math.min(totalAssets, pageStart + assetPageSize);
+  const visibleAssets = assets.slice(pageStart, pageEnd);
+  const pagerHtml = renderAssetListPager(totalAssets, pageStart, pageEnd, totalPages);
   const searchHighlightClass = effectiveSearchHighlightClass(currentSearchQuery, currentSearchHighlightQuery, currentSearchFuzzyUsed);
-  assetGrid.innerHTML = `${searchNoticeHtml}${assets
+  assetGrid.innerHTML = `${searchNoticeHtml}${pagerHtml}${visibleAssets
     .map((asset) => {
       const selected = selectedAssetIdsRef.get().has(asset.id) ? 'selected' : '';
       const trashClass = asset.inTrash ? 'in-trash' : '';
@@ -231,7 +286,8 @@ function renderAssets(assets) {
         </article>
       `;
     })
-    .join('')}`;
+    .join('')}${pagerHtml}`;
+  attachAssetListPagerHandlers();
   assetGrid.querySelectorAll('[data-search-did-you-mean]').forEach((btn) => {
     btn.addEventListener('click', async (event) => {
       const type = String(event.currentTarget?.dataset?.searchDidYouMean || '').trim();
