@@ -366,7 +366,7 @@ let i18n = {
     backup_schedule: 'Schedule',
     backup_enabled: 'Enable daily backup',
     backup_directory: 'Backup directory',
-    backup_directory_ph: '/app/uploads/_backups',
+    backup_directory_ph: '/home/belge/depo/netapp/belgelik-restic/db-backups',
     backup_daily_hour: 'Daily hour',
     backup_retention_days: 'Retention (days)',
     backup_contents: 'Contents',
@@ -810,7 +810,7 @@ let i18n = {
     backup_schedule: 'Zamanlama',
     backup_enabled: 'Günlük yedeklemeyi aç',
     backup_directory: 'Yedekleme dizini',
-    backup_directory_ph: '/app/uploads/_backups',
+    backup_directory_ph: '/home/belge/depo/netapp/belgelik-restic/db-backups',
     backup_daily_hour: 'Günlük saat',
     backup_retention_days: 'Saklama süresi (gün)',
     backup_contents: 'İçerik',
@@ -3605,7 +3605,7 @@ function writeBackupSettingsForm(backup = {}) {
   const elements = backupSettingsForm?.elements;
   if (!elements) return;
   elements.backupEnabled.checked = Boolean(backup.enabled);
-  elements.backupDirectory.value = String(backup.directory || '/app/uploads/_backups');
+  elements.backupDirectory.value = String(backup.directory || '/home/belge/depo/netapp/belgelik-restic/db-backups');
   elements.backupDailyHour.value = String(Number.isFinite(Number(backup.dailyHour)) ? Number(backup.dailyHour) : 2);
   elements.backupIncludeMamDb.checked = backup.includeMamDb !== false;
   elements.backupIncludeKeycloakDb.checked = Boolean(backup.includeKeycloakDb);

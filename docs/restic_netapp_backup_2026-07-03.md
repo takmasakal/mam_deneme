@@ -18,7 +18,7 @@ Restic repository varsayılan olarak şuraya yazılır:
 /home/belge/depo/netapp/belgelik-restic/restic-repo
 ```
 
-Önceki `/home/belge/depo/netapp/belgelik` path'i klasik dosya tabanlı yedek dizini olarak korunmuştur. Yeni restic akışı ayrı path kullanır.
+Klasik DB dump yedekleri ve restic repository aynı NetApp mount altında, ayrı alt dizinlerde tutulur. Eski `/home/belge/depo/netapp/belgelik` path'i artık Kaisha yedekleme hedefi olarak kullanılmaz.
 
 ## Kod değişiklikleri
 
@@ -71,6 +71,7 @@ restic_password:
 Varsayılan değerler:
 
 ```text
+Klasik DB dump dizini: /home/belge/depo/netapp/belgelik-restic/db-backups
 Restic deposu: /home/belge/depo/netapp/belgelik-restic/restic-repo
 Günlük snapshot: 14
 Haftalık snapshot: 8
