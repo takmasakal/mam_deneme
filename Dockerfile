@@ -23,7 +23,7 @@ ENV NODE_ENV=production \
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ffmpeg unzip poppler-utils antiword python3 python3-pip \
+  && apt-get install -y --no-install-recommends ffmpeg unzip poppler-utils antiword restic python3 python3-pip \
   && if [ "$INSTALL_LIBREOFFICE" = "true" ]; then \
       apt-get install -y --no-install-recommends libreoffice-core libreoffice-writer libreoffice-calc libreoffice-impress fonts-dejavu fonts-liberation; \
     fi \

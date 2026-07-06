@@ -74,6 +74,9 @@ services:
       ONLYOFFICE_PUBLIC_URL: ${ONLYOFFICE_PUBLIC_URL:-http://localhost:8082}
       ONLYOFFICE_INTERNAL_URL: http://onlyoffice
       APP_INTERNAL_URL: http://app:3000
+      MAM_BACKUP_DIR: ${MAM_BACKUP_DIR:-/mountvolume/backup/db-backups}
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:-/mountvolume/backup/restic-repo}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:-metmam-local-restic-change-me}
     ports:
       - "3001:3000"
     volumes:

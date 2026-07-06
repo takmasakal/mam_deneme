@@ -76,6 +76,7 @@ const SUBTITLES_DIR = path.join(UPLOADS_DIR, 'subtitles');
 const OCR_DIR = path.join(UPLOADS_DIR, 'ocr');
 const AUDIT_EXPORTS_DIR = path.join(UPLOADS_DIR, '_audit_exports');
 const DEFAULT_BACKUP_DIR = process.env.MAM_BACKUP_DIR || path.join(UPLOADS_DIR, '_backups');
+const DEFAULT_RESTIC_REPOSITORY = process.env.RESTIC_REPOSITORY || '/mountvolume/backup/restic-repo';
 const OCR_FRAMES_DIR = path.join(OCR_DIR, '_frames');
 const OCR_FRAME_CACHE_DIR = path.join(OCR_FRAMES_DIR, '_cache');
 const OCR_FRAME_CACHE_ENABLED = String(process.env.OCR_FRAME_CACHE_ENABLE || 'false').trim().toLowerCase() === 'true';
@@ -151,6 +152,11 @@ const DEFAULT_ADMIN_SETTINGS = {
     includeMamDb: true,
     includeKeycloakDb: false,
     includeUploadsArchive: false,
+    includeUploadsRestic: false,
+    resticRepository: DEFAULT_RESTIC_REPOSITORY,
+    resticKeepDaily: 14,
+    resticKeepWeekly: 8,
+    resticKeepMonthly: 12,
     retentionDays: 14
   },
   apiTokenEnabled: false,
@@ -234,6 +240,11 @@ function normalizeBackupSettings(value = {}) {
     includeMamDb: Object.prototype.hasOwnProperty.call(input, 'includeMamDb') ? Boolean(input.includeMamDb) : defaults.includeMamDb,
     includeKeycloakDb: Object.prototype.hasOwnProperty.call(input, 'includeKeycloakDb') ? Boolean(input.includeKeycloakDb) : defaults.includeKeycloakDb,
     includeUploadsArchive: Object.prototype.hasOwnProperty.call(input, 'includeUploadsArchive') ? Boolean(input.includeUploadsArchive) : defaults.includeUploadsArchive,
+    includeUploadsRestic: Object.prototype.hasOwnProperty.call(input, 'includeUploadsRestic') ? Boolean(input.includeUploadsRestic) : defaults.includeUploadsRestic,
+    resticRepository: String(input.resticRepository || defaults.resticRepository || DEFAULT_RESTIC_REPOSITORY).trim() || DEFAULT_RESTIC_REPOSITORY,
+    resticKeepDaily: clampNumber(input.resticKeepDaily, 1, 3650, defaults.resticKeepDaily),
+    resticKeepWeekly: clampNumber(input.resticKeepWeekly, 1, 520, defaults.resticKeepWeekly),
+    resticKeepMonthly: clampNumber(input.resticKeepMonthly, 1, 240, defaults.resticKeepMonthly),
     retentionDays: clampNumber(input.retentionDays, 1, 3650, defaults.retentionDays)
   };
 }
@@ -6072,6 +6083,74 @@ async function runTarArchiveBackup(targetPath, sourcePath) {
   return targetPath;
 }
 
+function getResticEnv() {
+  const env = {};
+  if (process.env.RESTIC_PASSWORD_FILE) {
+    env.RESTIC_PASSWORD_FILE = process.env.RESTIC_PASSWORD_FILE;
+    return env;
+  }
+  const password = readEnvOrFile('RESTIC_PASSWORD');
+  if (password) {
+    env.RESTIC_PASSWORD = password;
+    return env;
+  }
+  throw new Error('Restic password is not configured. Set RESTIC_PASSWORD_FILE or RESTIC_PASSWORD.');
+}
+
+async function ensureResticRepository(repository, env) {
+  const repo = path.resolve(String(repository || DEFAULT_RESTIC_REPOSITORY));
+  await fs.promises.mkdir(path.dirname(repo), { recursive: true });
+  const configPath = path.join(repo, 'config');
+  const hasConfig = await fs.promises.access(configPath).then(() => true).catch(() => false);
+  if (hasConfig) {
+    const snapshots = await runCommandCapture('restic', ['-r', repo, 'snapshots', '--json'], { env });
+    if (!snapshots.ok) {
+      throw new Error(compactCommandOutput(snapshots.stderr || snapshots.stdout || 'restic snapshots failed'));
+    }
+    return repo;
+  }
+  const init = await runCommandCapture('restic', ['-r', repo, 'init'], { env });
+  if (!init.ok) {
+    throw new Error(compactCommandOutput(init.stderr || init.stdout || 'restic init failed'));
+  }
+  return repo;
+}
+
+function extractResticSnapshotId(output) {
+  const match = String(output || '').match(/snapshot\s+([0-9a-f]{8,})\s+saved/i);
+  return match ? match[1] : '';
+}
+
+async function runResticUploadsBackup(repository, backup) {
+  const env = getResticEnv();
+  const repo = await ensureResticRepository(repository, env);
+  const backupResult = await runCommandCapture('restic', [
+    '-r', repo,
+    'backup', UPLOADS_DIR,
+    '--exclude', path.join(UPLOADS_DIR, '_backups'),
+    '--exclude', path.join(UPLOADS_DIR, '_audit_exports')
+  ], { env });
+  if (!backupResult.ok) {
+    throw new Error(compactCommandOutput(backupResult.stderr || backupResult.stdout || 'restic backup failed'));
+  }
+  const forget = await runCommandCapture('restic', [
+    '-r', repo,
+    'forget',
+    '--keep-daily', String(backup.resticKeepDaily),
+    '--keep-weekly', String(backup.resticKeepWeekly),
+    '--keep-monthly', String(backup.resticKeepMonthly),
+    '--prune'
+  ], { env });
+  if (!forget.ok) {
+    throw new Error(compactCommandOutput(forget.stderr || forget.stdout || 'restic forget failed'));
+  }
+  return {
+    repository: repo,
+    snapshotId: extractResticSnapshotId(backupResult.stdout || backupResult.stderr),
+    output: compactCommandOutput(backupResult.stdout || backupResult.stderr)
+  };
+}
+
 async function cleanupExpiredBackupFiles(directory, retentionDays) {
   const days = clampNumber(retentionDays, 1, 3650, DEFAULT_ADMIN_SETTINGS.backup.retentionDays);
   const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
@@ -6157,6 +6236,10 @@ async function runSystemBackup(settings = DEFAULT_ADMIN_SETTINGS.backup, request
       await runTarArchiveBackup(filePath, UPLOADS_DIR);
       const stat = await fs.promises.stat(filePath).catch(() => null);
       result.files.push({ type: 'uploads_archive', path: filePath, size: stat ? Number(stat.size || 0) : 0 });
+    }
+    if (backup.includeUploadsRestic) {
+      const restic = await runResticUploadsBackup(backup.resticRepository, backup);
+      result.files.push({ type: 'uploads_restic', path: restic.repository, size: 0, snapshotId: restic.snapshotId, output: restic.output });
     }
     await cleanupExpiredBackupFiles(directory, backup.retentionDays);
     result.finishedAt = new Date().toISOString();
