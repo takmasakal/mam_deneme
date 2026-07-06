@@ -7978,8 +7978,11 @@ async function resolveEffectivePermissions(req) {
   groupOverrides.forEach((entry) => {
     normalizePermissionEntry(entry, []).permissionKeys.forEach((key) => groupPermissionKeys.add(key));
   });
-  const userOverrideKeys = override ? normalizePermissionEntry(override, []).permissionKeys : [];
-  userOverrideKeys.forEach((key) => groupPermissionKeys.add(key));
+  const userOverride = override ? normalizePermissionEntry(override, []) : null;
+  (userOverride?.permissionKeys || []).forEach((key) => groupPermissionKeys.add(key));
+  if (!user.baseIsSuperAdmin) {
+    (userOverride?.deniedPermissionKeys || []).forEach((key) => groupPermissionKeys.delete(key));
+  }
   const effective = normalizePermissionEntry(null, Array.from(groupPermissionKeys));
   if (user.baseIsSuperAdmin) {
     effective.permissionKeys = PERMISSION_KEYS;
@@ -8000,7 +8003,8 @@ async function resolveEffectivePermissions(req) {
     canDeleteAssets: Boolean(effective.assetDelete),
     canUsePdfAdvancedTools: Boolean(effective.pdfAdvancedTools),
     permissions: effective,
-    permissionKeys: effective.permissionKeys
+    permissionKeys: effective.permissionKeys,
+    deniedPermissionKeys: userOverride?.deniedPermissionKeys || []
   };
   if (req && typeof req === 'object') req.__mamEffectivePermissions = effectiveUser;
   return effectiveUser;
@@ -8045,7 +8049,8 @@ app.get('/api/me', async (req, res) => {
 	      allowedAssetTypes: assetAccessService.getAllowedAssetTypeGroups(accessContext),
 	      uploadAllowedAssetTypes: assetAccessService.getAllowedUploadAssetTypeGroups(accessContext),
 	      officeEditorProvider: OFFICE_EDITOR_PROVIDER,
-      permissionKeys: effective.permissionKeys
+      permissionKeys: effective.permissionKeys,
+      deniedPermissionKeys: effective.deniedPermissionKeys || []
     });
   } catch (_error) {
     console.warn(JSON.stringify({
@@ -8732,6 +8737,7 @@ registerAdminRoutes(app, {
   regenerateVideoThumbnailForAsset,
   ensurePdfThumbnailForRow,
   isPdfCandidate,
+  isOfficeDocumentCandidate,
   isDocumentCandidate,
   ensureDocumentThumbnailForRow,
   imageDerivativeService,

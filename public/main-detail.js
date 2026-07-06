@@ -51,7 +51,10 @@
     function getVersionSectionAccess(asset) {
       const assetIsPdf = String(asset?.mimeType || '').toLowerCase().includes('pdf');
       const assetIsOffice = isOfficeDocument(asset);
-      const canEditThisAsset = Boolean(asset?.canEditAsset);
+      const canEditMetadataAsset = Boolean(asset?.canEditAssetMetadata ?? asset?.canEditAsset);
+      const canEditOfficeAsset = Boolean(asset?.canEditAssetOffice ?? asset?.canEditAsset);
+      const canEditPdfAsset = Boolean(asset?.canEditAssetPdf ?? asset?.canEditAsset);
+      const canEditThisAsset = Boolean(canEditMetadataAsset || canEditOfficeAsset || canEditPdfAsset);
       const canDownloadThisAsset = asset?.canDownloadAsset !== false;
       return {
         assetIsPdf,
@@ -59,16 +62,16 @@
         canDownloadAsset: canDownloadThisAsset,
         canViewVersions: Boolean(
           assetIsPdf
-            ? (currentUserCanUsePdfAdvancedTools() || canEditThisAsset)
+            ? (currentUserCanUsePdfAdvancedTools() || canEditPdfAsset)
             : assetIsOffice
-              ? (currentUserCanEditOffice() || canEditThisAsset)
+              ? (currentUserCanEditOffice() || canEditOfficeAsset)
               : (currentUserCanAccessAdmin() || canEditThisAsset)
         ),
         canManageVersions: Boolean(
           assetIsPdf
-            ? (currentUserCanUsePdfAdvancedTools() || canEditThisAsset)
+            ? (currentUserCanUsePdfAdvancedTools() || canEditPdfAsset)
             : assetIsOffice
-              ? (currentUserCanEditOffice() || canEditThisAsset)
+              ? (currentUserCanEditOffice() || canEditOfficeAsset)
               : (currentUserCanAccessAdmin() || canEditThisAsset)
         )
       };
@@ -161,7 +164,7 @@
           </div>
         `
         : '';
-      const canEditMetadata = Boolean(currentUserCanEditMetadata() || asset.canEditAsset);
+      const canEditMetadata = Boolean(currentUserCanEditMetadata() || (asset.canEditAssetMetadata ?? asset.canEditAsset));
       const metadataLockNotice = canEditMetadata
         ? ''
         : `<div class="asset-meta metadata-lock-note">${escapeHtml(t('metadata_edit_locked'))}</div>`;
@@ -264,10 +267,9 @@
 
         <h4>${t('versions')}</h4>
         ${(
-          currentUserCanAccessAdmin()
-          && currentUserCanUsePdfAdvancedTools()
-	          && asset.canDownloadAsset !== false
-	          && assetIsPdf
+          (currentUserCanUsePdfAdvancedTools() || (asset.canEditAssetPdf ?? asset.canEditAsset))
+          && asset.canDownloadAsset !== false
+          && assetIsPdf
         ) ? `
           <div class="timecode-bar" style="margin: 0 0 8px 0;">
             <button type="button" id="restorePdfOriginalBtn">${escapeHtml(t('restore_pdf_original'))}</button>
@@ -275,7 +277,7 @@
           </div>
         ` : ''}
         ${(
-          (currentUserCanEditOffice() || asset.canEditAsset)
+          (currentUserCanEditOffice() || (asset.canEditAssetOffice ?? asset.canEditAsset))
 	          && asset.canDownloadAsset !== false
 	          && assetIsOffice
         ) ? `

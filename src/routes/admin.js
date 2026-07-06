@@ -89,6 +89,7 @@ function registerAdminRoutes(app, deps) {
     regenerateVideoThumbnailForAsset,
     ensurePdfThumbnailForRow,
     isPdfCandidate,
+    isOfficeDocumentCandidate,
     isDocumentCandidate,
     ensureDocumentThumbnailForRow,
     imageDerivativeService,
@@ -416,6 +417,8 @@ async function collectMamAccessGroups() {
 	        SELECT group_name FROM group_admins
 	        UNION ALL
 	        SELECT unnest(download_allowed_groups) AS group_name FROM assets WHERE cardinality(download_allowed_groups) > 0
+	        UNION ALL
+	        SELECT unnest(edit_allowed_groups) AS group_name FROM assets WHERE cardinality(edit_allowed_groups) > 0
 	        UNION ALL
 	        SELECT unnest(download_denied_groups) AS group_name FROM assets WHERE cardinality(download_denied_groups) > 0
 	        UNION ALL
@@ -2800,6 +2803,89 @@ app.get('/api/admin/audit-events/export', async (req, res) => {
   }
 });
 
+function uniquePermissionKeys(keys) {
+  const seen = new Set();
+  (Array.isArray(keys) ? keys : []).forEach((key) => {
+    const normalized = String(key || '').trim();
+    if (PERMISSION_KEYS.includes(normalized)) seen.add(normalized);
+  });
+  return PERMISSION_KEYS.filter((key) => seen.has(key));
+}
+
+function normalizeGroupPermissionLookup(groups) {
+  const lookup = new Map();
+  Object.entries(groups && typeof groups === 'object' ? groups : {}).forEach(([groupName, entry]) => {
+    const normalized = assetAccessService.normalizeAccessName(String(groupName || '').replace(/^\/+/, ''));
+    if (normalized && !lookup.has(normalized)) lookup.set(normalized, entry);
+  });
+  return lookup;
+}
+
+function getPermissionGroupCandidateNames(savedGroups) {
+  const names = new Set([
+    'superadmin',
+    'super admin',
+    'super-admin',
+    'super_admin',
+    'admin',
+    'standart yönetici',
+    'standart yonetici',
+    'altyazı_ocr_operator',
+    'altyazi_ocr_operator'
+  ]);
+  Object.keys(savedGroups && typeof savedGroups === 'object' ? savedGroups : {}).forEach((name) => {
+    const normalized = assetAccessService.normalizeAccessName(String(name || '').replace(/^\/+/, ''));
+    if (normalized) names.add(normalized);
+  });
+  return Array.from(names);
+}
+
+function resolveInheritedPermissionKeysForGroups(groupPaths, savedGroups) {
+  const groupValues = Array.isArray(groupPaths) ? groupPaths : [];
+  const inherited = new Set(resolvePermissionKeysFromPrincipals({ groups: groupValues }).permissionKeys);
+  const groupPermissionLookup = normalizeGroupPermissionLookup(savedGroups);
+  groupValues
+    .flatMap((group) => {
+      const raw = String(group || '').trim();
+      const withoutSlash = raw.replace(/^\/+/, '');
+      const last = withoutSlash.split('/').filter(Boolean).pop() || '';
+      return [raw, withoutSlash, last];
+    })
+    .map((value) => assetAccessService.normalizeAccessName(String(value || '').replace(/^\/+/, '')))
+    .filter(Boolean)
+    .forEach((candidate) => {
+      const entry = groupPermissionLookup.get(candidate);
+      if (!entry) return;
+      normalizePermissionEntry(entry, []).permissionKeys.forEach((key) => inherited.add(key));
+    });
+  return uniquePermissionKeys(Array.from(inherited));
+}
+
+function resolveAssetDerivedPermissionKeysForUser({ username, displayName, email, groups, assetRows }) {
+  const context = {
+    username,
+    displayName,
+    email,
+    groups: Array.isArray(groups) ? groups : [],
+    roles: [],
+    canAccessAdmin: false,
+    canEditMetadata: false,
+    canDeleteAssets: false,
+    canUsePdfAdvancedTools: false,
+    canEditOffice: false,
+    deniedPermissionKeys: []
+  };
+  const keys = new Set();
+  (Array.isArray(assetRows) ? assetRows : []).some((row) => {
+    if (!assetAccessService.canEditAsset(row, context)) return false;
+    keys.add('metadata.edit');
+    if (isOfficeDocumentCandidate?.({ mimeType: row.mime_type, fileName: row.file_name })) keys.add('office.edit');
+    if (isPdfCandidate?.({ mimeType: row.mime_type, fileName: row.file_name })) keys.add('pdf.advanced');
+    return keys.has('metadata.edit') && keys.has('office.edit') && keys.has('pdf.advanced');
+  });
+  return uniquePermissionKeys(Array.from(keys));
+}
+
 app.get('/api/admin/user-permissions', async (req, res) => {
   try {
     const effective = await requireSuperAdminRequest(req, res);
@@ -2868,6 +2954,9 @@ app.get('/api/admin/user-permissions', async (req, res) => {
             ...group,
             principalType: 'group',
             permissionKeys: entry.permissionKeys,
+            explicitPermissionKeys: entry.permissionKeys,
+            inheritedPermissionKeys: [],
+            deniedPermissionKeys: entry.deniedPermissionKeys,
             adminPageAccess: entry.adminPageAccess,
             textAdminAccess: entry.textAdminAccess,
             metadataEdit: entry.metadataEdit,
@@ -2890,7 +2979,16 @@ app.get('/api/admin/user-permissions', async (req, res) => {
     const kcData = await fetchKeycloakUsers({ search: q, max: 100 });
     const kcUsersAll = Array.isArray(kcData?.users) ? kcData.users : [];
     const kcUsers = kcUsersAll.filter((row) => isVisibleKeycloakUser(row));
-    const permissionDefaultsByUser = await fetchKeycloakUserPermissionDefaults(kcUsers, kcData?.realmByUsername);
+    const mamAccessGroups = await collectMamAccessGroups();
+    const [permissionDefaultsByUser, permissionGroupMembers, assetRowsResult] = await Promise.all([
+      fetchKeycloakUserPermissionDefaults(kcUsers, kcData?.realmByUsername),
+      fetchKeycloakGroupMembers(
+        Array.from(new Set([...getPermissionGroupCandidateNames(savedGroups), ...mamAccessGroups])),
+        { maxPerGroup: 1000 }
+      ),
+      pool.query('SELECT * FROM assets')
+    ]);
+    const assetRowsForPermissionDerivation = Array.isArray(assetRowsResult?.rows) ? assetRowsResult.rows : [];
     const keycloakUserByUsername = new Map();
     const usernames = new Set();
     kcUsers.forEach((row) => {
@@ -2912,12 +3010,34 @@ app.get('/api/admin/user-permissions', async (req, res) => {
         const defaults = permissionDefaultsByUser.has(username)
           ? permissionDefaultsByUser.get(username)
           : [];
-        const effective = normalizePermissionEntry(userPermissionEntries?.[username], defaults);
+        const userGroups = permissionGroupMembers?.groupPathsByUsername?.get(username) || [];
+        const assetDerivedPermissionKeys = resolveAssetDerivedPermissionKeysForUser({
+          username,
+          displayName: [kcUser?.firstName, kcUser?.lastName].map((item) => String(item || '').trim()).filter(Boolean).join(' '),
+          email: String(kcUser?.email || '').trim(),
+          groups: userGroups,
+          assetRows: assetRowsForPermissionDerivation
+        });
+        const inheritedPermissionKeys = uniquePermissionKeys([
+          ...defaults,
+          ...resolveInheritedPermissionKeysForGroups(userGroups, savedGroups),
+          ...assetDerivedPermissionKeys
+        ]);
+        const userEntry = normalizePermissionEntry(userPermissionEntries?.[username], []);
+        const deniedPermissionKeys = uniquePermissionKeys(userEntry.deniedPermissionKeys || []);
+        const merged = new Set([...inheritedPermissionKeys, ...userEntry.permissionKeys]);
+        deniedPermissionKeys.forEach((key) => merged.delete(key));
+        const effective = normalizePermissionEntry(null, uniquePermissionKeys(Array.from(merged)));
         return {
           username,
           displayName: [kcUser?.firstName, kcUser?.lastName].map((item) => String(item || '').trim()).filter(Boolean).join(' '),
           email: String(kcUser?.email || '').trim(),
           permissionKeys: effective.permissionKeys,
+          explicitPermissionKeys: userEntry.permissionKeys,
+          inheritedPermissionKeys,
+          assetDerivedPermissionKeys,
+          deniedPermissionKeys,
+          groups: userGroups,
           adminPageAccess: effective.adminPageAccess,
           textAdminAccess: effective.textAdminAccess,
           metadataEdit: effective.metadataEdit,
@@ -2966,9 +3086,13 @@ app.patch('/api/admin/user-permissions/:username', async (req, res) => {
     const requestedPermissionKeys = Array.isArray(req.body?.permissionKeys)
       ? req.body.permissionKeys.filter((key) => PERMISSION_KEYS.includes(String(key || '').trim()))
       : null;
+    const deniedPermissionKeys = Array.isArray(req.body?.deniedPermissionKeys)
+      ? req.body.deniedPermissionKeys.filter((key) => PERMISSION_KEYS.includes(String(key || '').trim()))
+      : [];
     const nextEntry = normalizePermissionEntry(
       {
         permissionKeys: requestedPermissionKeys,
+        deniedPermissionKeys,
         adminPageAccess: req.body?.adminPageAccess,
         textAdminAccess: req.body?.textAdminAccess,
         metadataEdit: req.body?.metadataEdit,
@@ -2995,6 +3119,7 @@ app.patch('/api/admin/user-permissions/:username', async (req, res) => {
     return res.json({
       username,
       permissionKeys: nextEntry.permissionKeys,
+      deniedPermissionKeys: nextEntry.deniedPermissionKeys,
       ...nextEntry
     });
   } catch (_error) {

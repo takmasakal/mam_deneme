@@ -42,6 +42,18 @@ function registerPdfRoutes(app, deps) {
     return { status: 200, row, accessContext };
   }
 
+  function canEditLoadedAsset(loaded) {
+    return Boolean(
+      loaded?.row
+      && loaded?.accessContext
+      && assetAccessService.canEditAssetPdf(loaded.row, loaded.accessContext)
+    );
+  }
+
+  function canUsePdfAdvancedOrEditAsset(req, loaded) {
+    return Boolean(req.userPermissions?.canUsePdfAdvancedTools || canEditLoadedAsset(loaded));
+  }
+
   async function resolvePdfCompatiblePath(row) {
     if (isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
       let inputPath = row.source_path;
@@ -206,13 +218,16 @@ app.get('/api/assets/:id/pdf-page-image', async (req, res) => {
   }
 });
 
-app.post('/api/assets/:id/pdf/save', requirePdfAdvancedTools, async (req, res) => {
+app.post('/api/assets/:id/pdf/save', async (req, res) => {
   try {
     const assetId = String(req.params.id || '').trim();
     if (!assetId) return res.status(400).json({ error: 'Invalid asset id' });
     const loaded = await loadVisibleAssetRow(req, assetId);
     if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
     const row = loaded.row;
+    if (!canUsePdfAdvancedOrEditAsset(req, loaded)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     if (!isPdfCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
       return res.status(400).json({ error: 'PDF save is only supported for PDF assets' });
     }
@@ -374,17 +389,17 @@ app.post('/api/assets/:id/pdf/save', requirePdfAdvancedTools, async (req, res) =
   }
 });
 
-app.post('/api/assets/:id/pdf-restore-original', requireAdminAccess, async (req, res) => {
+app.post('/api/assets/:id/pdf-restore-original', async (req, res) => {
   try {
-    if (!req.userPermissions?.canUsePdfAdvancedTools) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
     const assetId = String(req.params.id || '').trim();
     if (!assetId) return res.status(400).json({ error: 'assetId is required' });
 
     const loaded = await loadVisibleAssetRow(req, assetId);
     if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
     const currentRow = loaded.row;
+    if (!canUsePdfAdvancedOrEditAsset(req, loaded)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     if (!assetAccessService.canDownloadAsset(currentRow, loaded.accessContext)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -488,17 +503,20 @@ app.post('/api/assets/:id/pdf-restore-original', requireAdminAccess, async (req,
   }
 });
 
-app.get('/api/assets/:id/pdf-original/download', requireAdminAccess, async (req, res) => {
+app.get('/api/assets/:id/pdf-original/download', async (req, res) => {
   try {
-    if (!req.userPermissions?.canUsePdfAdvancedTools) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
     const assetId = String(req.params.id || '').trim();
     if (!assetId) return res.status(400).json({ error: 'assetId is required' });
 
     const loaded = await loadVisibleAssetRow(req, assetId);
     if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
     const currentRow = loaded.row;
+    if (!canUsePdfAdvancedOrEditAsset(req, loaded)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    if (!assetAccessService.canDownloadAsset(currentRow, loaded.accessContext)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     if (!isPdfCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
       return res.status(400).json({ error: 'PDF download is only supported for PDF assets' });
     }
@@ -511,11 +529,8 @@ app.get('/api/assets/:id/pdf-original/download', requireAdminAccess, async (req,
   }
 });
 
-app.post('/api/assets/:id/pdf-restore', requireAdminAccess, async (req, res) => {
+app.post('/api/assets/:id/pdf-restore', async (req, res) => {
   try {
-    if (!req.userPermissions?.canUsePdfAdvancedTools) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
     const assetId = String(req.params.id || '').trim();
     const versionId = String(req.body?.versionId || '').trim();
     if (!assetId || !versionId) return res.status(400).json({ error: 'assetId and versionId are required' });
@@ -523,6 +538,9 @@ app.post('/api/assets/:id/pdf-restore', requireAdminAccess, async (req, res) => 
     const loaded = await loadVisibleAssetRow(req, assetId);
     if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
     const currentRow = loaded.row;
+    if (!canUsePdfAdvancedOrEditAsset(req, loaded)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     if (!isPdfCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {
       return res.status(400).json({ error: 'PDF restore is only supported for PDF assets' });
     }

@@ -245,6 +245,7 @@
       const isPdf = file.toLowerCase().endsWith('.pdf');
       const uiLang = String(params.get('lang') || 'en').trim().toLowerCase() === 'tr' ? 'tr' : 'en';
       const requestedPdfAdvanced = String(params.get('pdfAdvanced') || '').trim() === '1';
+      let cachedAssetProfile = null;
 
       const topBar = document.getElementById('topBar');
       const searchInput = document.getElementById('searchInput');
@@ -722,7 +723,12 @@
           const response = await fetch('/api/me', { credentials: 'include' });
           if (!response.ok) return requestedPdfAdvanced;
           cachedUserProfile = await response.json().catch(() => ({}));
-          return toStrictBool(cachedUserProfile?.canUsePdfAdvancedTools, toStrictBool(cachedUserProfile?.isAdmin, requestedPdfAdvanced));
+          if (toStrictBool(cachedUserProfile?.canUsePdfAdvancedTools, toStrictBool(cachedUserProfile?.isAdmin, false))) {
+            return true;
+          }
+          if (!assetId) return requestedPdfAdvanced;
+          const asset = await resolveCurrentAssetProfile();
+          return toStrictBool(asset?.canEditAssetPdf, toStrictBool(asset?.canEditAsset, requestedPdfAdvanced));
         } catch (_error) {
           return requestedPdfAdvanced;
         }
@@ -738,6 +744,26 @@
         } catch (_error) {
           return {};
         }
+      };
+
+      const resolveCurrentAssetProfile = async () => {
+        if (cachedAssetProfile && typeof cachedAssetProfile === 'object') return cachedAssetProfile;
+        if (!assetId) return {};
+        try {
+          const response = await fetch(`/api/assets/${encodeURIComponent(assetId)}`, { credentials: 'include' });
+          if (!response.ok) return {};
+          cachedAssetProfile = await response.json().catch(() => ({}));
+          return cachedAssetProfile || {};
+        } catch (_error) {
+          return {};
+        }
+      };
+
+      const resolvePdfSavePermission = async () => {
+        const me = await resolveCurrentUserProfile();
+        if (toStrictBool(me?.canUsePdfAdvancedTools, toStrictBool(me?.isAdmin, false))) return true;
+        const asset = await resolveCurrentAssetProfile();
+        return toStrictBool(asset?.canEditAssetPdf, toStrictBool(asset?.canEditAsset, false));
       };
 
       let pdfEditLockActive = false;
@@ -1379,8 +1405,7 @@
           }
           await applyEmbedPdfTurkishLocale(embedInstance, embedPdfContainer);
           applyEmbedPdfTurkishUiPatch(embedPdfContainer);
-          const me = await resolveCurrentUserProfile();
-          const allowPdfSave = canEditPdf && toStrictBool(me?.canUsePdfAdvancedTools, toStrictBool(me?.isAdmin, false));
+          const allowPdfSave = canEditPdf && await resolvePdfSavePermission();
           mountPdfSaveActions(embedInstance, allowPdfSave);
           return true;
         } catch (_err) {
