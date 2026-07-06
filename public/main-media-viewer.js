@@ -329,7 +329,8 @@ function mediaViewer(asset, options = {}) {
   }
 
   if (isPdf(asset)) {
-    const viewerSrc = `/pdf-viewer.html?file=${encodeURIComponent(String(asset.mediaUrl || '').split('#')[0])}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&pdfAdvanced=${currentUserCanUsePdfAdvancedTools ? '1' : '0'}`;
+    const canEditPdfAsset = Boolean(currentUserCanUsePdfAdvancedTools || (asset.canEditAssetPdf ?? asset.canEditAsset));
+    const viewerSrc = `/pdf-viewer.html?file=${encodeURIComponent(String(asset.mediaUrl || '').split('#')[0])}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&pdfAdvanced=${canEditPdfAsset ? '1' : '0'}`;
     return `
       <div class="viewer-resizable pdf-viewer-resizable">
         <iframe id="pdfViewerFrame" class="asset-viewer pdf-viewer-frame" src="${escapeHtml(viewerSrc)}" title="PDF Viewer" loading="lazy"></iframe>
@@ -352,7 +353,7 @@ function mediaViewer(asset, options = {}) {
       ? (currentOfficeEditorProvider === 'libreoffice'
         ? `/pdf-viewer.html?file=${encodeURIComponent(`/api/assets/${encodeURIComponent(asset.id)}/libreoffice-preview.pdf`)}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&pdfAdvanced=0&provider=libreoffice`
         : `/office-viewer.html?assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&v=oo-save-v9`)
-      : `/pdf-viewer.html?file=${encodeURIComponent(String(asset.mediaUrl || '').split('#')[0])}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&pdfAdvanced=${currentUserCanUsePdfAdvancedTools ? '1' : '0'}`;
+      : `/pdf-viewer.html?file=${encodeURIComponent(String(asset.mediaUrl || '').split('#')[0])}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&pdfAdvanced=${(currentUserCanUsePdfAdvancedTools || (asset.canEditAssetPdf ?? asset.canEditAsset)) ? '1' : '0'}`;
     return `
       <div class="viewer-resizable">
         <iframe id="docViewerFrame" class="asset-viewer pdf-viewer-frame" src="${escapeHtml(viewerSrc)}" title="Document Viewer" loading="lazy"></iframe>

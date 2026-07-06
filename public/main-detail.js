@@ -51,22 +51,28 @@
     function getVersionSectionAccess(asset) {
       const assetIsPdf = String(asset?.mimeType || '').toLowerCase().includes('pdf');
       const assetIsOffice = isOfficeDocument(asset);
+      const canEditMetadataAsset = Boolean(asset?.canEditAssetMetadata ?? asset?.canEditAsset);
+      const canEditOfficeAsset = Boolean(asset?.canEditAssetOffice ?? asset?.canEditAsset);
+      const canEditPdfAsset = Boolean(asset?.canEditAssetPdf ?? asset?.canEditAsset);
+      const canEditThisAsset = Boolean(canEditMetadataAsset || canEditOfficeAsset || canEditPdfAsset);
+      const canDownloadThisAsset = asset?.canDownloadAsset !== false;
       return {
         assetIsPdf,
         assetIsOffice,
+        canDownloadAsset: canDownloadThisAsset,
         canViewVersions: Boolean(
           assetIsPdf
-            ? currentUserCanUsePdfAdvancedTools()
+            ? (currentUserCanUsePdfAdvancedTools() || canEditPdfAsset)
             : assetIsOffice
-              ? currentUserCanEditOffice()
-              : currentUserCanAccessAdmin()
+              ? (currentUserCanEditOffice() || canEditOfficeAsset)
+              : (currentUserCanAccessAdmin() || canEditThisAsset)
         ),
         canManageVersions: Boolean(
           assetIsPdf
-            ? currentUserCanUsePdfAdvancedTools()
+            ? (currentUserCanUsePdfAdvancedTools() || canEditPdfAsset)
             : assetIsOffice
-              ? currentUserCanEditOffice()
-              : currentUserCanAccessAdmin()
+              ? (currentUserCanEditOffice() || canEditOfficeAsset)
+              : (currentUserCanAccessAdmin() || canEditThisAsset)
         )
       };
     }
@@ -79,15 +85,16 @@
       const isOwnVersion = Boolean(username && actorUsername && username === actorUsername);
       const canEditOrDelete = Boolean(
         access.assetIsPdf
-          ? (currentUserCanUsePdfAdvancedTools() && (currentUserCanAccessAdmin() || isOwnVersion))
+          ? ((currentUserCanUsePdfAdvancedTools() || access.canManageVersions) && (currentUserCanAccessAdmin() || isOwnVersion || access.canManageVersions))
           : access.assetIsOffice
-            ? currentUserCanEditOffice()
-            : currentUserCanAccessAdmin()
+            ? (currentUserCanEditOffice() || access.canManageVersions)
+            : (currentUserCanAccessAdmin() || access.canManageVersions)
       );
       return {
         actionType,
-        canRestorePdf: Boolean(currentUserCanAccessAdmin() && access.assetIsPdf && hasSnapshot),
-        canRestoreOffice: Boolean(currentUserCanEditOffice() && access.assetIsOffice && hasSnapshot),
+        canRestorePdf: Boolean(access.canManageVersions && access.assetIsPdf && hasSnapshot),
+        canRestoreOffice: Boolean(access.canManageVersions && access.assetIsOffice && hasSnapshot),
+        canDownloadVersion: Boolean(hasSnapshot && access.canDownloadAsset),
         canEditVersion: canEditOrDelete,
         canDeleteVersion: canEditOrDelete
       };
@@ -100,12 +107,16 @@
       const cleanNote = cleanVersionNoteText(version.note);
       const rowClass = rowState.canRestorePdf ? 'version version-restorable' : 'version';
       const restoreAttr = rowState.canRestorePdf ? ` data-restore-version-id="${escapeHtml(version.versionId)}"` : '';
-      const actionBar = interactive ? `
+      const downloadButton = rowState.canDownloadVersion
+        ? `<button type="button" class="downloadVersionBtn" data-version-id="${escapeHtml(version.versionId)}">${escapeHtml(t('download_version'))}</button>`
+        : '';
+      const actionBar = (interactive || downloadButton) ? `
         <div class="timecode-bar" style="margin-top:8px;">
           ${access.assetIsPdf ? `<button type="button" class="restorePdfVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canRestorePdf ? '' : 'disabled'}>${escapeHtml(rowState.canRestorePdf ? t('restore_pdf_version') : t('restore_pdf_unavailable'))}</button>` : ''}
           ${access.assetIsOffice ? `<button type="button" class="restoreOfficeVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canRestoreOffice ? '' : 'disabled'}>${escapeHtml(rowState.canRestoreOffice ? t('restore_office_version') : t('restore_pdf_unavailable'))}</button>` : ''}
-          <button type="button" class="editVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canEditVersion ? '' : 'disabled'}>${escapeHtml(t('edit_version_name'))}</button>
-          ${rowState.canDeleteVersion ? `<button type="button" class="deleteVersionBtn danger" data-version-id="${escapeHtml(version.versionId)}">${escapeHtml(t('delete_version'))}</button>` : ''}
+          ${downloadButton}
+          ${interactive ? `<button type="button" class="editVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canEditVersion ? '' : 'disabled'}>${escapeHtml(t('edit_version_name'))}</button>` : ''}
+          ${interactive && rowState.canDeleteVersion ? `<button type="button" class="deleteVersionBtn danger" data-version-id="${escapeHtml(version.versionId)}">${escapeHtml(t('delete_version'))}</button>` : ''}
         </div>
       ` : '';
       return `
@@ -149,7 +160,7 @@
           </div>
         `
         : '';
-      const canEditMetadata = currentUserCanEditMetadata();
+      const canEditMetadata = Boolean(currentUserCanEditMetadata() || (asset.canEditAssetMetadata ?? asset.canEditAsset));
       const metadataLockNotice = canEditMetadata
         ? ''
         : `<div class="asset-meta metadata-lock-note">${escapeHtml(t('metadata_edit_locked'))}</div>`;
@@ -170,8 +181,8 @@
         ${dcHighlightSnippet(asset, currentSearchHighlightQuery(), searchHighlightClass) ? `<div class="asset-meta dc-hit-row">${dcHighlightSnippet(asset, currentSearchHighlightQuery(), searchHighlightClass)}</div>` : ''}
         ${tagsMarkup}
         <div class="timecode-bar">
-          ${asset.mediaUrl ? `<button type="button" id="downloadAssetBtn">${t('download_asset')}</button>` : ''}
-          ${currentUserCanAccessAdmin() && isVideo(asset) && asset.proxyUrl ? `<button type="button" id="downloadProxyBtn">${t('download_proxy')}</button>` : ''}
+          ${asset.mediaUrl && asset.canDownloadAsset !== false ? `<button type="button" id="downloadAssetBtn">${t('download_asset')}</button>` : ''}
+          ${currentUserCanAccessAdmin() && asset.canDownloadAsset !== false && isVideo(asset) && asset.proxyUrl ? `<button type="button" id="downloadProxyBtn">${t('download_proxy')}</button>` : ''}
           ${currentUserCanDeleteAssets() && !asset.inTrash ? `<button type="button" id="moveToTrashBtn" class="danger">${t('delete_asset')}</button>` : ''}
           ${currentUserCanDeleteAssets() && asset.inTrash ? `<button type="button" id="restoreAssetBtn">${t('restore')}</button><button type="button" id="deleteAssetBtn" class="danger">${t('delete_permanent')}</button>` : ''}
         </div>
@@ -236,8 +247,8 @@
 
         <h4>${t('versions')}</h4>
         ${(
-          currentUserCanAccessAdmin()
-          && currentUserCanUsePdfAdvancedTools()
+          (currentUserCanUsePdfAdvancedTools() || (asset.canEditAssetPdf ?? asset.canEditAsset))
+          && asset.canDownloadAsset !== false
           && assetIsPdf
         ) ? `
           <div class="timecode-bar" style="margin: 0 0 8px 0;">
@@ -246,7 +257,8 @@
           </div>
         ` : ''}
         ${(
-          currentUserCanEditOffice()
+          (currentUserCanEditOffice() || (asset.canEditAssetOffice ?? asset.canEditAsset))
+          && asset.canDownloadAsset !== false
           && assetIsOffice
         ) ? `
           <div class="timecode-bar" style="margin: 0 0 8px 0;">

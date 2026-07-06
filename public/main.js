@@ -2213,7 +2213,7 @@ async function openAsset(id, workflow, options = {}) {
   });
   document.getElementById('editForm').addEventListener('submit', async (event) => {
     event.preventDefault();
-    if (!currentUserCanEditMetadata) {
+    if (!currentUserCanEditMetadata && !(asset.canEditAssetMetadata ?? asset.canEditAsset)) {
       alert(t('metadata_edit_locked'));
       return;
     }
@@ -2252,7 +2252,7 @@ async function openAsset(id, workflow, options = {}) {
 
   const restorePdfOriginalBtn = document.getElementById('restorePdfOriginalBtn');
   restorePdfOriginalBtn?.addEventListener('click', async () => {
-    if (!currentUserCanAccessAdmin || !currentUserCanUsePdfAdvancedTools) return;
+    if (!currentUserCanUsePdfAdvancedTools && !(asset.canEditAssetPdf ?? asset.canEditAsset)) return;
     const ok = confirm(t('restore_pdf_original_confirm'));
     if (!ok) return;
     await api(`/api/assets/${id}/pdf-restore-original`, { method: 'POST', body: '{}' });
@@ -2261,7 +2261,7 @@ async function openAsset(id, workflow, options = {}) {
 
   const downloadPdfOriginalBtn = document.getElementById('downloadPdfOriginalBtn');
   downloadPdfOriginalBtn?.addEventListener('click', () => {
-    if (!currentUserCanAccessAdmin || !currentUserCanUsePdfAdvancedTools) return;
+    if (asset.canDownloadAsset === false || (!currentUserCanUsePdfAdvancedTools && !(asset.canEditAssetPdf ?? asset.canEditAsset))) return;
     const link = document.createElement('a');
     link.href = `/api/assets/${encodeURIComponent(id)}/pdf-original/download`;
     link.setAttribute('download', '');
@@ -2273,7 +2273,7 @@ async function openAsset(id, workflow, options = {}) {
 
   const restoreOfficeOriginalBtn = document.getElementById('restoreOfficeOriginalBtn');
   restoreOfficeOriginalBtn?.addEventListener('click', async () => {
-    if (!currentUserCanEditOffice) return;
+    if (!currentUserCanEditOffice && !(asset.canEditAssetOffice ?? asset.canEditAsset)) return;
     const ok = confirm(t('restore_office_original_confirm'));
     if (!ok) return;
     await api(`/api/assets/${id}/office-restore-original`, { method: 'POST', body: '{}' });
@@ -2282,7 +2282,7 @@ async function openAsset(id, workflow, options = {}) {
 
   const downloadOfficeOriginalBtn = document.getElementById('downloadOfficeOriginalBtn');
   downloadOfficeOriginalBtn?.addEventListener('click', () => {
-    if (!currentUserCanEditOffice) return;
+    if (asset.canDownloadAsset === false || (!currentUserCanEditOffice && !(asset.canEditAssetOffice ?? asset.canEditAsset))) return;
     const link = document.createElement('a');
     link.href = `/api/assets/${encodeURIComponent(id)}/office-original/download`;
     link.setAttribute('download', '');
@@ -2294,7 +2294,7 @@ async function openAsset(id, workflow, options = {}) {
 
   const assetVersionsListEl = document.getElementById('assetVersionsList');
   const handleRestoreVersion = async (restoreBtn) => {
-      if (!currentUserCanAccessAdmin || !currentUserCanUsePdfAdvancedTools) return;
+      if (!currentUserCanUsePdfAdvancedTools && !(asset.canEditAssetPdf ?? asset.canEditAsset)) return;
       const versionId = String(restoreBtn.dataset.versionId || '').trim();
       if (!versionId) return;
       const ok = confirm(t('restore_pdf_confirm'));
@@ -2403,6 +2403,22 @@ async function openAsset(id, workflow, options = {}) {
     });
   });
 
+  assetVersionsListEl?.querySelectorAll('.downloadVersionBtn').forEach((btn) => {
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const versionId = String(event.currentTarget?.dataset?.versionId || '').trim();
+      if (!versionId || asset.canDownloadAsset === false) return;
+      const link = document.createElement('a');
+      link.href = `/api/assets/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/download`;
+      link.setAttribute('download', '');
+      link.rel = 'noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    });
+  });
+
   assetVersionsListEl?.querySelectorAll('.editVersionBtn').forEach((btn) => {
     btn.addEventListener('click', async (event) => {
       event.preventDefault();
@@ -2420,7 +2436,7 @@ async function openAsset(id, workflow, options = {}) {
     if (!row) return;
     const ignore = target.closest('button, a, input, textarea, select, label');
     if (ignore) return;
-    if (!currentUserCanAccessAdmin || !currentUserCanUsePdfAdvancedTools) return;
+    if (!currentUserCanUsePdfAdvancedTools && !(asset.canEditAssetPdf ?? asset.canEditAsset)) return;
     const versionId = String(row.dataset.restoreVersionId || '').trim();
     if (!versionId) return;
     const ok = confirm(t('restore_pdf_confirm'));

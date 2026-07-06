@@ -41,7 +41,7 @@ function registerOfficeRoutes(app, deps) {
         return res.status(loaded.status).json({ error: loaded.error });
       }
       const row = loaded.row;
-      const canEditAsset = assetAccessService.canEditAsset(row, loaded.accessContext);
+      const canEditAsset = assetAccessService.canEditAssetOffice(row, loaded.accessContext);
       let canEditOffice = canEditAsset;
       let editLock = null;
       let readOnlyReason = '';
@@ -292,7 +292,7 @@ function registerOfficeRoutes(app, deps) {
       const loaded = await loadVisibleAssetRow(req, assetId);
       if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
       const currentRow = loaded.row;
-      if (!assetAccessService.canEditAsset(currentRow, loaded.accessContext)) {
+      if (!assetAccessService.canEditAssetOffice(currentRow, loaded.accessContext)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
       if (assetEditLockService) {
@@ -401,7 +401,7 @@ function registerOfficeRoutes(app, deps) {
       const loaded = await loadVisibleAssetRow(req, assetId);
       if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
       const currentRow = loaded.row;
-      if (!assetAccessService.canEditAsset(currentRow, loaded.accessContext)) {
+      if (!assetAccessService.canEditAssetOffice(currentRow, loaded.accessContext)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
       if (!isOfficeDocumentCandidate({ mimeType: currentRow.mime_type, fileName: currentRow.file_name })) {

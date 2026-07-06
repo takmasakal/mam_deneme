@@ -174,8 +174,22 @@
           ? [user.path || displayName || t('principal_type_group')].filter(Boolean).join(' · ')
           : [displayName, email].filter(Boolean).join(' · ');
         const activeKeys = new Set(Array.isArray(user.permissionKeys) ? user.permissionKeys : []);
+        const inheritedKeys = new Set(Array.isArray(user.inheritedPermissionKeys) ? user.inheritedPermissionKeys : []);
+        const explicitKeys = new Set(Array.isArray(user.explicitPermissionKeys) ? user.explicitPermissionKeys : []);
+        const assetDerivedKeys = new Set(Array.isArray(user.assetDerivedPermissionKeys) ? user.assetDerivedPermissionKeys : []);
+        const deniedKeys = new Set(Array.isArray(user.deniedPermissionKeys) ? user.deniedPermissionKeys : []);
+        const inheritedPayload = escapeHtml(encodeURIComponent(JSON.stringify(Array.from(inheritedKeys))));
+        const explicitPayload = escapeHtml(encodeURIComponent(JSON.stringify(Array.from(explicitKeys))));
         const checkboxes = defs.map((definition) => {
           const checked = activeKeys.has(definition.key) || Boolean(user?.[definition.legacyField]);
+          const sourceLabel = principalType === 'user' && assetDerivedKeys.has(definition.key)
+            ? `<small class="perm-source">${escapeHtml(t('perm_source_asset'))}</small>`
+            : principalType === 'user' && inheritedKeys.has(definition.key)
+            ? `<small class="perm-source">${escapeHtml(t('perm_source_inherited'))}</small>`
+            : '';
+          const deniedLabel = principalType === 'user' && deniedKeys.has(definition.key)
+            ? `<small class="perm-denied">${escapeHtml(t('perm_source_denied'))}</small>`
+            : '';
           return `
             <label class="perm-option">
               <input
@@ -184,12 +198,17 @@
                 data-permission-key="${escapeHtml(definition.key)}"
                 ${checked ? 'checked' : ''}
               />
-              <span>${escapeHtml(formatPermissionLabel(definition))}</span>
+              <span>${escapeHtml(formatPermissionLabel(definition))}${sourceLabel}${deniedLabel}</span>
             </label>
           `;
         }).join('');
         return `
-          <div class="row user-perm-row" data-username="${uname}">
+          <div
+            class="row user-perm-row"
+            data-username="${uname}"
+            data-inherited-permission-keys="${inheritedPayload}"
+            data-explicit-permission-keys="${explicitPayload}"
+          >
             <div class="user-perm-identity">
               <strong>${uname}</strong>
               ${meta ? `<small>${escapeHtml(meta)}</small>` : ''}
@@ -210,20 +229,42 @@
           const permissionKeys = Array.from(rowEl.querySelectorAll('.perm-checkbox:checked'))
             .map((input) => String(input?.dataset?.permissionKey || '').trim())
             .filter(Boolean);
-          const legacyFlags = Object.fromEntries(
-            (availableUserPermissions || []).map((definition) => [
-              definition.legacyField,
-              permissionKeys.includes(definition.key)
-            ])
-          );
+          let deniedPermissionKeys = [];
+          let savedPermissionKeys = permissionKeys;
+          if (getUserPermissionPrincipalType() !== 'group') {
+            let inheritedKeys = [];
+            let explicitKeys = [];
+            try {
+              inheritedKeys = JSON.parse(decodeURIComponent(rowEl?.dataset?.inheritedPermissionKeys || '%5B%5D'));
+            } catch (_error) {
+              inheritedKeys = [];
+            }
+            try {
+              explicitKeys = JSON.parse(decodeURIComponent(rowEl?.dataset?.explicitPermissionKeys || '%5B%5D'));
+            } catch (_error) {
+              explicitKeys = [];
+            }
+            const selected = new Set(permissionKeys);
+            const inherited = new Set(Array.isArray(inheritedKeys) ? inheritedKeys : []);
+            const explicit = new Set(Array.isArray(explicitKeys) ? explicitKeys : []);
+            deniedPermissionKeys = Array.from(inherited).filter((key) => !selected.has(key));
+            savedPermissionKeys = permissionKeys.filter((key) => !inherited.has(key) || explicit.has(key));
+          }
           btn.disabled = true;
           try {
             const endpoint = getUserPermissionPrincipalType() === 'group'
               ? `/api/admin/group-permissions/${encodeURIComponent(username)}`
               : `/api/admin/user-permissions/${encodeURIComponent(username)}`;
+            const legacySourceKeys = getUserPermissionPrincipalType() === 'group' ? permissionKeys : savedPermissionKeys;
+            const legacyFlags = Object.fromEntries(
+              (availableUserPermissions || []).map((definition) => [
+                definition.legacyField,
+                legacySourceKeys.includes(definition.key)
+              ])
+            );
             await api(endpoint, {
               method: 'PATCH',
-              body: JSON.stringify({ permissionKeys, ...legacyFlags })
+              body: JSON.stringify({ permissionKeys: savedPermissionKeys, deniedPermissionKeys, ...legacyFlags })
             });
             notifyUserPermissionChange(username);
             await loadUserPermissions();

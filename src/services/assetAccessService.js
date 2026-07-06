@@ -629,6 +629,22 @@ function createAssetAccessService({ pool }) {
     return Boolean(context?.canEditMetadata || context?.canAccessAdmin);
   }
 
+  function isPermissionDenied(context, key) {
+    return Array.isArray(context?.deniedPermissionKeys) && context.deniedPermissionKeys.includes(key);
+  }
+
+  function canEditAssetMetadata(row, context) {
+    return Boolean(canEditAsset(row, context) && !isPermissionDenied(context, 'metadata.edit'));
+  }
+
+  function canEditAssetOffice(row, context) {
+    return Boolean(canEditAsset(row, context) && !isPermissionDenied(context, 'office.edit'));
+  }
+
+  function canEditAssetPdf(row, context) {
+    return Boolean(canEditAsset(row, context) && !isPermissionDenied(context, 'pdf.advanced'));
+  }
+
   function canDeleteAsset(row, context) {
     if (!canViewAsset(row, context)) return false;
     const asset = getAssetAccessSnapshot(row);
@@ -809,6 +825,9 @@ function createAssetAccessService({ pool }) {
     hasScopedAssetRightsAdminAccess,
     canViewAsset,
     canEditAsset,
+    canEditAssetMetadata,
+    canEditAssetOffice,
+    canEditAssetPdf,
     canDownloadAsset,
     canDeleteAsset,
     canManageAssetVisibility,

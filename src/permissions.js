@@ -96,6 +96,25 @@ function permissionKeysToLegacyFlags(keys) {
   return result;
 }
 
+function normalizeDeniedPermissionKeys(input) {
+  const raw = input && typeof input === 'object' ? input : {};
+  const deniedKeys = new Set();
+  if (Array.isArray(raw.deniedPermissionKeys)) {
+    raw.deniedPermissionKeys.forEach((key) => {
+      const normalized = String(key || '').trim();
+      if (PERMISSION_KEYS.includes(normalized)) deniedKeys.add(normalized);
+    });
+  }
+  if (raw.deniedPermissions && typeof raw.deniedPermissions === 'object') {
+    Object.entries(raw.deniedPermissions).forEach(([key, value]) => {
+      const normalized = String(key || '').trim();
+      if (!PERMISSION_KEYS.includes(normalized)) return;
+      if (value === true || value === 1 || String(value).trim().toLowerCase() === 'true') deniedKeys.add(normalized);
+    });
+  }
+  return PERMISSION_KEYS.filter((key) => deniedKeys.has(key));
+}
+
 function normalizePermissionEntry(input, fallbackPermissions) {
   const raw = input && typeof input === 'object' ? input : {};
   const toBool = (value, fallback) => {
@@ -148,8 +167,10 @@ function normalizePermissionEntry(input, fallbackPermissions) {
   }
 
   const permissionKeys = PERMISSION_KEYS.filter((key) => mergedKeys.has(key));
+  const deniedPermissionKeys = normalizeDeniedPermissionKeys(raw);
   return {
     permissionKeys,
+    deniedPermissionKeys,
     ...permissionKeysToLegacyFlags(permissionKeys)
   };
 }
@@ -161,5 +182,6 @@ module.exports = {
   getPermissionDefinitionsPayload,
   resolvePermissionKeysFromPrincipals,
   permissionKeysToLegacyFlags,
+  normalizeDeniedPermissionKeys,
   normalizePermissionEntry
 };

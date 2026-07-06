@@ -177,6 +177,9 @@ function registerAssetRoutes(app, deps) {
     const mapped = mapAssetRow(row);
     mapped.canManageVisibility = assetAccessService.canManageAssetVisibility(row, accessContext);
     mapped.canEditAsset = assetAccessService.canEditAsset(row, accessContext);
+    mapped.canEditAssetMetadata = assetAccessService.canEditAssetMetadata(row, accessContext);
+    mapped.canEditAssetOffice = assetAccessService.canEditAssetOffice(row, accessContext);
+    mapped.canEditAssetPdf = assetAccessService.canEditAssetPdf(row, accessContext);
     mapped.canDownloadAsset = assetAccessService.canDownloadAsset(row, accessContext);
     mapped.canDeleteAsset = assetAccessService.canDeleteAsset(row, accessContext);
     return mapped;
@@ -228,7 +231,7 @@ function registerAssetRoutes(app, deps) {
       if (!assetEditLockService) return res.status(503).json({ error: 'Edit lock service is not available' });
       const loaded = await loadVisibleAssetRow(req, req.params.id);
       if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
-      if (!assetAccessService.canEditAsset(loaded.row, loaded.accessContext)) {
+      if (!assetAccessService.canEditAssetMetadata(loaded.row, loaded.accessContext)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
       req.userPermissions = loaded.accessContext;
@@ -245,7 +248,7 @@ function registerAssetRoutes(app, deps) {
       if (!assetEditLockService) return res.status(503).json({ error: 'Edit lock service is not available' });
       const loaded = await loadVisibleAssetRow(req, req.params.id);
       if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
-      if (!assetAccessService.canEditAsset(loaded.row, loaded.accessContext)) {
+      if (!assetAccessService.canEditAssetMetadata(loaded.row, loaded.accessContext)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
       req.userPermissions = loaded.accessContext;
@@ -1624,7 +1627,7 @@ function registerAssetRoutes(app, deps) {
       if (loaded.status !== 200) {
         return res.status(loaded.status).json({ error: loaded.error });
       }
-      if (!assetAccessService.canEditAsset(loaded.row, loaded.accessContext)) {
+      if (!assetAccessService.canEditAssetMetadata(loaded.row, loaded.accessContext)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
       if (await rejectIfForeignEditLock(req, res, req.params.id)) return undefined;
@@ -1719,7 +1722,7 @@ function registerAssetRoutes(app, deps) {
         return res.status(loaded.status).json({ error: loaded.error });
       }
       const row = loaded.row;
-      if (!assetAccessService.canEditAsset(row, loaded.accessContext) && !canCreateVersionForAsset(req.userPermissions, row)) {
+      if (!assetAccessService.canEditAssetMetadata(row, loaded.accessContext) && !canCreateVersionForAsset(req.userPermissions, row)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
       if (await rejectIfForeignEditLock(req, res, req.params.id)) return undefined;
@@ -1815,7 +1818,7 @@ function registerAssetRoutes(app, deps) {
       const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
       const row = versionResult.rows[0];
       if (!row) return res.status(404).json({ error: 'Version not found' });
-      if (!assetAccessService.canEditAsset(assetRow, loaded.accessContext) && !canManageVersionRow(req.userPermissions, assetRow, row)) {
+      if (!assetAccessService.canEditAssetMetadata(assetRow, loaded.accessContext) && !canManageVersionRow(req.userPermissions, assetRow, row)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
       if (await rejectIfForeignEditLock(req, res, assetId)) return undefined;
@@ -1847,7 +1850,7 @@ function registerAssetRoutes(app, deps) {
       const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
       const row = versionResult.rows[0];
       if (!row) return res.status(404).json({ error: 'Version not found' });
-      if (!assetAccessService.canEditAsset(assetRow, loaded.accessContext) && !canManageVersionRow(req.userPermissions, assetRow, row)) {
+      if (!assetAccessService.canEditAssetMetadata(assetRow, loaded.accessContext) && !canManageVersionRow(req.userPermissions, assetRow, row)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
       if (await rejectIfForeignEditLock(req, res, assetId)) return undefined;
