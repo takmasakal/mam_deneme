@@ -2639,6 +2639,7 @@ async function openAsset(id, workflow, options = {}) {
   });
 
   moveToTrashBtn?.addEventListener('click', async () => {
+    if (asset?.canDeleteAsset === false) return;
     const ok = confirm(t('move_to_trash_confirm'));
     if (!ok) return;
     await api(`/api/assets/${encodeURIComponent(asset.id)}/trash`, { method: 'POST', body: '{}' });
@@ -2646,11 +2647,13 @@ async function openAsset(id, workflow, options = {}) {
   });
 
   restoreAssetBtn?.addEventListener('click', async () => {
+    if (asset?.canDeleteAsset === false) return;
     await api(`/api/assets/${encodeURIComponent(asset.id)}/restore`, { method: 'POST', body: '{}' });
     await refreshAssetDetail(asset.id, workflow);
   });
 
   deleteAssetBtn?.addEventListener('click', async () => {
+    if (asset?.canDeleteAsset === false) return;
     const ok = confirm(t('trash_confirm'));
     if (!ok) return;
     const wasSelected = selectedAssetId === asset.id;

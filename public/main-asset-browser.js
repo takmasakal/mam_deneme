@@ -290,7 +290,7 @@ function renderAssets(assets, options = {}) {
             ${asset.inTrash ? `
               <div class="card-actions">
                 <button type="button" data-card-action="restore" data-id="${asset.id}">${t('restore')}</button>
-                ${(currentUserCanDeleteAssetsRef?.get?.() || asset.canDeleteAsset) ? `<button type="button" class="danger" data-card-action="delete" data-id="${asset.id}">${t('delete_permanent')}</button>` : ''}
+                ${(currentUserCanDeleteAssetsRef?.get?.() && asset.canDeleteAsset !== false) ? `<button type="button" class="danger" data-card-action="delete" data-id="${asset.id}">${t('delete_permanent')}</button>` : ''}
               </div>
             ` : ''}
           </div>
