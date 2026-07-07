@@ -645,7 +645,7 @@ app.get('/api/admin/document-rights/assets', async (req, res) => {
     const limit = [20, 50, 100].includes(requestedLimit) ? requestedLimit : 20;
     const lockedOnly = ['1', 'true', 'yes', 'on'].includes(String(req.query.lockedOnly || '').trim().toLowerCase());
     const values = [];
-    const where = [DOCUMENT_ASSET_SQL];
+    const where = ['assets.deleted_at IS NULL', DOCUMENT_ASSET_SQL];
     const visibilityContext = getDocumentRightsVisibilityContext(gate);
     assetAccessService.appendAssetAccessWhere(where, values, visibilityContext, 'assets');
     if (q) {
@@ -933,7 +933,7 @@ app.get('/api/admin/assets/access', async (req, res) => {
 	          assets.allowed_users, assets.allowed_groups, assets.denied_users, assets.denied_groups,
 	          assets.edit_allowed_users, assets.edit_allowed_groups, assets.edit_denied_users, assets.edit_denied_groups,
 	          assets.download_allowed_users, assets.download_allowed_groups, assets.download_denied_users, assets.download_denied_groups,
-	          assets.updated_at,
+	          assets.deleted_at, assets.updated_at,
           asset_edit_locks.locked_by,
           asset_edit_locks.locked_by_name,
           asset_edit_locks.purpose AS lock_purpose,
@@ -972,6 +972,7 @@ app.get('/api/admin/assets/access', async (req, res) => {
 	        downloadAllowedGroups: row.download_allowed_groups || [],
 	        downloadDeniedUsers: row.download_denied_users || [],
 	        downloadDeniedGroups: row.download_denied_groups || [],
+        inTrash: Boolean(row.deleted_at),
         editLock: row.locked_by ? {
           lockedBy: row.locked_by || '',
           lockedByName: row.locked_by_name || row.locked_by || '',

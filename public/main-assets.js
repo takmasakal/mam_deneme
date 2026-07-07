@@ -19,6 +19,18 @@
       searchStateRef
     } = deps || {};
 
+    function getSelectedAssetTypesForRequest() {
+      const enabledFilters = assetTypeFilters.filter((el) => !el.disabled);
+      const selectedTypes = enabledFilters
+        .filter((el) => el.checked)
+        .map((el) => String(el.value || '').toLowerCase())
+        .filter(Boolean);
+      return {
+        selectedTypes,
+        isNarrowed: enabledFilters.length > 0 && selectedTypes.length > 0 && selectedTypes.length < enabledFilters.length
+      };
+    }
+
     async function loadWorkflow() {
       const workflow = await api('/api/workflow');
       statusSelect.innerHTML = `<option value="">${escapeHtml(t('any_status'))}</option>`;
@@ -34,7 +46,7 @@
     async function loadAssets() {
       const filters = serializeForm(searchForm);
       const params = new URLSearchParams();
-      const selectedTypes = assetTypeFilters.filter((el) => el.checked).map((el) => String(el.value || '').toLowerCase());
+      const { selectedTypes, isNarrowed: isTypeFilterNarrowed } = getSelectedAssetTypesForRequest();
       const trashScopeRaw = String(filters.trash || 'active').trim().toLowerCase();
       const trashScope = ['active', 'trash', 'all'].includes(trashScopeRaw) ? trashScopeRaw : 'active';
       searchStateRef.currentSearchQuery = String(filters.q || '').trim();
@@ -66,7 +78,7 @@
       if (String(filters.tag || '').trim()) params.set('tag', String(filters.tag).trim());
       if (String(filters.status || '').trim()) params.set('status', String(filters.status).trim());
       params.set('trash', trashScope);
-      if (selectedTypes.length > 0 && selectedTypes.length < assetTypeFilters.length) {
+      if (isTypeFilterNarrowed) {
         params.set('types', selectedTypes.join(','));
       }
 
