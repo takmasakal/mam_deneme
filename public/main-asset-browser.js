@@ -216,6 +216,7 @@ function renderAssets(assets, options = {}) {
       const selected = selectedAssetIdsRef.get().has(asset.id) ? 'selected' : '';
       const trashClass = asset.inTrash ? 'in-trash' : '';
       const styleClass = 'card-art-glass';
+      const canDeleteThisAsset = Boolean(currentUserCanDeleteAssetsRef.get() && asset.canDeleteAsset !== false);
       const metadataHits = metadataHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass);
       const dcHits = dcHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass);
       const tagHits = tagHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass);
@@ -279,7 +280,7 @@ function renderAssets(assets, options = {}) {
             ${asset.inTrash ? `
               <div class="card-actions">
                 <button type="button" data-card-action="restore" data-id="${asset.id}">${t('restore')}</button>
-                ${currentUserCanDeleteAssets ? `<button type="button" class="danger" data-card-action="delete" data-id="${asset.id}">${t('delete_permanent')}</button>` : ''}
+                ${canDeleteThisAsset ? `<button type="button" class="danger" data-card-action="delete" data-id="${asset.id}">${t('delete_permanent')}</button>` : ''}
               </div>
             ` : ''}
           </div>

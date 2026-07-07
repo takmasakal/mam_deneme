@@ -77,6 +77,10 @@
       };
     }
 
+    function canDeleteAssetInUi(asset) {
+      return Boolean(currentUserCanDeleteAssets() && asset?.canDeleteAsset !== false);
+    }
+
     function getVersionRowState(version, access) {
       const actionType = String(version?.actionType || 'manual').toLowerCase();
       const hasSnapshot = String(version?.snapshotMediaUrl || '').startsWith('/uploads/');
@@ -183,8 +187,8 @@
         <div class="timecode-bar">
           ${asset.mediaUrl && asset.canDownloadAsset !== false ? `<button type="button" id="downloadAssetBtn">${t('download_asset')}</button>` : ''}
           ${currentUserCanAccessAdmin() && asset.canDownloadAsset !== false && isVideo(asset) && asset.proxyUrl ? `<button type="button" id="downloadProxyBtn">${t('download_proxy')}</button>` : ''}
-          ${currentUserCanDeleteAssets() && !asset.inTrash ? `<button type="button" id="moveToTrashBtn" class="danger">${t('delete_asset')}</button>` : ''}
-          ${currentUserCanDeleteAssets() && asset.inTrash ? `<button type="button" id="restoreAssetBtn">${t('restore')}</button><button type="button" id="deleteAssetBtn" class="danger">${t('delete_permanent')}</button>` : ''}
+          ${canDeleteAssetInUi(asset) && !asset.inTrash ? `<button type="button" id="moveToTrashBtn" class="danger">${t('delete_asset')}</button>` : ''}
+          ${canDeleteAssetInUi(asset) && asset.inTrash ? `<button type="button" id="restoreAssetBtn">${t('restore')}</button><button type="button" id="deleteAssetBtn" class="danger">${t('delete_permanent')}</button>` : ''}
         </div>
         ${isVideo(asset) ? `
           <div class="tech-info-box">
@@ -303,7 +307,7 @@
             ${selectedAssets.slice(0, 40).map((asset) => `<span class="chip multi-chip" style="${assetTagChipStyle(asset)}">${escapeHtml(asset.title)}</span>`).join('')}
           </div>
           <div class="timecode-bar">
-            ${currentUserCanDeleteAssets() ? `<button type="button" id="bulkDeleteBtn">${escapeHtml(t('bulk_delete_selected'))}</button>` : ''}
+            ${currentUserCanDeleteAssets() && selectedAssets.some(canDeleteAssetInUi) ? `<button type="button" id="bulkDeleteBtn">${escapeHtml(t('bulk_delete_selected'))}</button>` : ''}
             <button type="button" id="bulkClearBtn">${escapeHtml(t('bulk_clear_selection'))}</button>
           </div>
         </div>
@@ -335,7 +339,9 @@
 
       bulkDeleteBtn?.addEventListener('click', async () => {
         if (!currentUserCanDeleteAssets()) return;
-        const ids = [...selectedAssetIds()];
+        const ids = currentAssets()
+          .filter((asset) => selectedAssetIds().has(asset.id) && canDeleteAssetInUi(asset))
+          .map((asset) => asset.id);
         if (!ids.length) return;
         const ok = confirm(tf('bulk_delete_confirm', { count: ids.length }));
         if (!ok) return;
