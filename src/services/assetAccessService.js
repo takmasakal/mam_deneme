@@ -479,7 +479,7 @@ function createAssetAccessService({ pool }) {
     if (identityMatchesAny(identity, rule.editDeniedUsers, rule.editDeniedGroups)) return false;
     if (context?.canBypassAssetVisibility) return true;
     if (identityMatchesAny(identity, rule.editAllowedUsers, rule.editAllowedGroups)) return true;
-    return rule.visibility === 'public' || canViewAssetType(row, context);
+    return canViewAssetType(row, context);
   }
 
   function getAllowedAssetTypeGroups(context = {}) {
