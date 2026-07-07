@@ -2292,6 +2292,11 @@ body {
   background: #168da8;
 }
 
+.asset-rights-row--trash > .asset-rights-asset,
+.asset-rights-row--trash:nth-child(odd) > .asset-rights-asset {
+  background: #5f6875;
+}
+
 .asset-rights-row:hover > .asset-rights-asset {
   border-color: var(--princeton-orange);
   box-shadow: 0 0 0 2px rgba(251, 133, 0, 0.26);

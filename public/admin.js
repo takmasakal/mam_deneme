@@ -3108,8 +3108,10 @@ function renderAssetRightsRows(assets = []) {
         ` : '';
     const ownerGroupInput = `<input name="ownerGroups" value="${escapeHtml(ownerGroups)}" placeholder="group-a, group-b" autocomplete="off" data-group-suggest="1" />`;
 
+    const trashClass = !isTypeMode && asset.inTrash ? ' asset-rights-row--trash' : '';
+
     return `
-      <form class="asset-rights-row" data-access-mode="${escapeHtml(assetRightsMode)}" data-asset-id="${escapeHtml(asset.id || '')}" data-type-group="${escapeHtml(asset.typeGroup || '')}">
+      <form class="asset-rights-row${trashClass}" data-access-mode="${escapeHtml(assetRightsMode)}" data-asset-id="${escapeHtml(asset.id || '')}" data-type-group="${escapeHtml(asset.typeGroup || '')}">
         <div class="asset-rights-asset" data-asset-rights-cell-label="${isTypeMode ? 'type' : 'asset'}" data-label="${escapeHtml(isTypeMode ? labels.type : labels.asset)}">
           <strong ${isTypeMode ? `data-asset-rights-type-label="${escapeHtml(asset.typeGroup || '')}"` : ''}>${escapeHtml(title)}</strong>
           <span>${escapeHtml(meta)}</span>
