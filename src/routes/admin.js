@@ -645,7 +645,7 @@ app.get('/api/admin/document-rights/assets', async (req, res) => {
     const limit = [20, 50, 100].includes(requestedLimit) ? requestedLimit : 20;
     const lockedOnly = ['1', 'true', 'yes', 'on'].includes(String(req.query.lockedOnly || '').trim().toLowerCase());
     const values = [];
-    const where = [DOCUMENT_ASSET_SQL];
+    const where = ['assets.deleted_at IS NULL', DOCUMENT_ASSET_SQL];
     const visibilityContext = getDocumentRightsVisibilityContext(gate);
     assetAccessService.appendAssetAccessWhere(where, values, visibilityContext, 'assets');
     if (q) {
@@ -844,7 +844,7 @@ app.get('/api/admin/assets/access', async (req, res) => {
     const limit = Number(req.query.limit) === 50 ? 50 : 20;
     const requestedPage = Math.max(1, Number(req.query.page) || 1);
     const values = [];
-    const where = [];
+    const where = ['assets.deleted_at IS NULL'];
     if (q) {
       values.push(`%${q}%`);
       where.push(`(LOWER(title) LIKE $${values.length} OR LOWER(file_name) LIKE $${values.length} OR LOWER(owner) LIKE $${values.length})`);

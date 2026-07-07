@@ -46,6 +46,18 @@
       return ['active', 'trash', 'all'].includes(raw) ? raw : 'active';
     }
 
+    function getSelectedAssetTypesForRequest() {
+      const enabledFilters = assetTypeFilters.filter((el) => !el.disabled);
+      const selectedTypes = enabledFilters
+        .filter((el) => el.checked)
+        .map((el) => String(el.value || '').toLowerCase())
+        .filter(Boolean);
+      return {
+        selectedTypes,
+        isNarrowed: enabledFilters.length > 0 && selectedTypes.length > 0 && selectedTypes.length < enabledFilters.length
+      };
+    }
+
     function hideSearchSuggestions() {
       if (!searchSuggestList) return;
       searchSuggestList.classList.add('hidden');
@@ -111,10 +123,7 @@
         return;
       }
 
-      const selectedTypes = assetTypeFilters
-        .filter((el) => el.checked)
-        .map((el) => String(el.value || '').toLowerCase())
-        .filter(Boolean);
+      const { selectedTypes, isNarrowed: isTypeFilterNarrowed } = getSelectedAssetTypesForRequest();
       if (!selectedTypes.length) {
         hideSearchSuggestions();
         return;
@@ -128,7 +137,7 @@
       params.set('trash', normalizeTrashScopeForSuggest(filters.trash));
       if (String(filters.tag || '').trim()) params.set('tag', String(filters.tag).trim());
       if (String(filters.type || '').trim()) params.set('type', String(filters.type).trim());
-      if (selectedTypes.length < assetTypeFilters.length) params.set('types', selectedTypes.join(','));
+      if (isTypeFilterNarrowed) params.set('types', selectedTypes.join(','));
 
       try {
         const result = await api(`/api/assets/suggest?${params.toString()}`);
@@ -209,10 +218,7 @@
         hideOcrSuggestions();
         return;
       }
-      const selectedTypes = assetTypeFilters
-        .filter((el) => el.checked)
-        .map((el) => String(el.value || '').toLowerCase())
-        .filter(Boolean);
+      const { selectedTypes, isNarrowed: isTypeFilterNarrowed } = getSelectedAssetTypesForRequest();
       if (!selectedTypes.length) {
         hideOcrSuggestions();
         return;
@@ -225,7 +231,7 @@
       params.set('trash', normalizeTrashScopeForSuggest(filters.trash));
       if (String(filters.tag || '').trim()) params.set('tag', String(filters.tag).trim());
       if (String(filters.type || '').trim()) params.set('type', String(filters.type).trim());
-      if (selectedTypes.length < assetTypeFilters.length) params.set('types', selectedTypes.join(','));
+      if (isTypeFilterNarrowed) params.set('types', selectedTypes.join(','));
       try {
         const result = await api(`/api/assets/ocr-suggest?${params.toString()}`);
         if (reqId !== ocrSuggestReqSeq) return;
@@ -305,10 +311,7 @@
         hideSubtitleSuggestions();
         return;
       }
-      const selectedTypes = assetTypeFilters
-        .filter((el) => el.checked)
-        .map((el) => String(el.value || '').toLowerCase())
-        .filter(Boolean);
+      const { selectedTypes, isNarrowed: isTypeFilterNarrowed } = getSelectedAssetTypesForRequest();
       if (!selectedTypes.length) {
         hideSubtitleSuggestions();
         return;
@@ -321,7 +324,7 @@
       params.set('trash', normalizeTrashScopeForSuggest(filters.trash));
       if (String(filters.tag || '').trim()) params.set('tag', String(filters.tag).trim());
       if (String(filters.type || '').trim()) params.set('type', String(filters.type).trim());
-      if (selectedTypes.length < assetTypeFilters.length) params.set('types', selectedTypes.join(','));
+      if (isTypeFilterNarrowed) params.set('types', selectedTypes.join(','));
       try {
         const result = await api(`/api/assets/subtitle-suggest?${params.toString()}`);
         if (reqId !== subtitleSuggestReqSeq) return;
