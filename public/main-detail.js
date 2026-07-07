@@ -101,7 +101,7 @@
     }
 
     function canDeleteAsset(asset) {
-      return Boolean(currentUserCanDeleteAssets() || asset?.canDeleteAsset);
+      return Boolean(currentUserCanDeleteAssets() && asset?.canDeleteAsset !== false);
     }
 
     function renderVersionRow(asset, version, access, interactive) {
