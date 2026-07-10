@@ -63,7 +63,7 @@
 }
 
 #kc-header-wrapper::before {
-  content: 'TRT ';
+  content: '';
   color: #ffffff;
 }
 

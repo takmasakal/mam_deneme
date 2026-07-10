@@ -247,7 +247,7 @@ function showShortcutToast(message, options) {
 
 let i18n = {
   en: {
-    app_title: 'TRT Belgelik',
+    app_title: 'Belgelik',
     app_subtitle: 'Dalet-style MVP: ingest, metadata, versions',
     current_user: 'Current User',
     user_loading: 'Loading...',
@@ -600,7 +600,7 @@ let i18n = {
     subtitle_overlay_enabled: 'Show subtitles'
   },
   tr: {
-    app_title: 'TRT Belgelik',
+    app_title: 'Belgelik',
     app_subtitle: 'Dalet benzeri MVP: ingest, metadata, iş akışı, versiyonlar',
     current_user: 'Giriş yapan',
     user_loading: 'Yükleniyor...',

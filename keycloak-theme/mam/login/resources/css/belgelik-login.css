@@ -69,7 +69,7 @@ body.login-pf,
 }
 
 #kc-header-wrapper::before {
-  content: 'TRT ';
+  content: '';
   color: #ffffff !important;
   font-size: var(--belgelik-login-brand-size) !important;
 }
@@ -78,7 +78,7 @@ body.login-pf,
   content: 'Belgelik';
   color: #e2a63b !important;
   font-size: var(--belgelik-login-brand-size) !important;
-  margin-left: var(--belgelik-login-brand-gap) !important;
+  margin-left: 0 !important;
 }
 
 .mam-brand-accent {
