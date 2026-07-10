@@ -566,14 +566,22 @@
                 <strong data-i18n="permission_backup_asset_rights">Asset rights</strong>
                 <input id="assetRightsExportName" data-i18n-placeholder="permission_backup_export_file_name_ph" placeholder="Optional file name" />
                 <button id="exportAssetRightsBtn" type="button" data-i18n="permission_backup_export">Export</button>
-                <input id="assetRightsImportFile" type="file" accept="application/json,.json" />
+                <div class="permission-file-picker">
+                  <input id="assetRightsImportFile" type="file" accept="application/json,.json" />
+                  <label for="assetRightsImportFile" class="permission-file-picker-button" data-i18n="permission_backup_choose_file">Select file</label>
+                  <span id="assetRightsImportFileName" class="permission-file-picker-name" data-i18n="permission_backup_no_file">No file chosen</span>
+                </div>
                 <button id="importAssetRightsBtn" type="button" class="secondary" data-i18n="permission_backup_import">Import</button>
               </div>
               <div class="permission-backup-row">
                 <strong data-i18n="permission_backup_principal_rights">User and group rights</strong>
                 <input id="principalRightsExportName" data-i18n-placeholder="permission_backup_export_file_name_ph" placeholder="Optional file name" />
                 <button id="exportPrincipalRightsBtn" type="button" data-i18n="permission_backup_export">Export</button>
-                <input id="principalRightsImportFile" type="file" accept="application/json,.json" />
+                <div class="permission-file-picker">
+                  <input id="principalRightsImportFile" type="file" accept="application/json,.json" />
+                  <label for="principalRightsImportFile" class="permission-file-picker-button" data-i18n="permission_backup_choose_file">Select file</label>
+                  <span id="principalRightsImportFileName" class="permission-file-picker-name" data-i18n="permission_backup_no_file">No file chosen</span>
+                </div>
                 <button id="importPrincipalRightsBtn" type="button" class="secondary" data-i18n="permission_backup_import">Import</button>
               </div>
               <div id="permissionBackupMsg" class="admin-note"></div>

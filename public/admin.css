@@ -1682,14 +1682,54 @@ body {
 }
 
 .permission-backup-row > strong,
-.permission-backup-row > input {
+.permission-backup-row > input,
+.permission-backup-row > .permission-file-picker {
   min-width: 0;
 }
 
 .permission-backup-row > input[type='file'] {
-  width: 100%;
-  max-width: 100%;
-  padding: 6px 8px;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+  border: 0;
+  padding: 0;
+}
+
+.permission-file-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.permission-file-picker-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #71809b;
+  border-radius: 6px;
+  background: #33415f;
+  color: #ffffff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.permission-file-picker-button:hover,
+.permission-file-picker-button:focus-within {
+  background: #405277;
+}
+
+.permission-file-picker-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #d8e3fb;
 }
 
 .permission-backup-row > button {
@@ -1706,7 +1746,7 @@ body {
     grid-template-columns: minmax(140px, 180px) minmax(180px, 1fr) auto;
   }
 
-  .permission-backup-row > input[type='file'] {
+  .permission-backup-row > .permission-file-picker {
     grid-column: 2;
   }
 }
@@ -1720,7 +1760,7 @@ body {
     grid-column: 1 / -1;
   }
 
-  .permission-backup-row > input[type='file'] {
+  .permission-backup-row > .permission-file-picker {
     grid-column: 1;
   }
 }
