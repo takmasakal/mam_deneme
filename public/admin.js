@@ -397,6 +397,8 @@ let i18n = {
     permission_backup_export_file_name_ph: 'Optional file name',
     permission_backup_export: 'Export',
     permission_backup_import: 'Import',
+    permission_backup_choose_file: 'Select file',
+    permission_backup_no_file: 'No file chosen',
     permission_backup_select_file: 'Select a JSON file first.',
     permission_backup_import_confirm: 'Importing this file will overwrite the selected permission settings. Continue?',
     permission_backup_exported: 'Permission export downloaded.',
@@ -841,6 +843,8 @@ let i18n = {
     permission_backup_export_file_name_ph: 'Opsiyonel dosya adı',
     permission_backup_export: 'Dışa Aktar',
     permission_backup_import: 'İçe Aktar',
+    permission_backup_choose_file: 'Dosya Seç',
+    permission_backup_no_file: 'Dosya seçilmedi',
     permission_backup_select_file: 'Önce bir JSON dosyası seçin.',
     permission_backup_import_confirm: 'Bu dosyayı içe aktarmak seçili yetki ayarlarının üzerine yazacak. Devam edilsin mi?',
     permission_backup_exported: 'Yetki yedeği indirildi.',
@@ -1119,6 +1123,19 @@ function applyI18n() {
   renderApiHelp();
   renderApiGuide();
   syncAssetRightsTableLanguage();
+  syncPermissionBackupFileLabels();
+}
+
+function syncPermissionBackupFileLabels() {
+  [
+    ['assetRightsImportFile', 'assetRightsImportFileName'],
+    ['principalRightsImportFile', 'principalRightsImportFileName']
+  ].forEach(([inputId, labelId]) => {
+    const input = document.getElementById(inputId);
+    const label = document.getElementById(labelId);
+    if (!input || !label) return;
+    label.textContent = input.files?.[0]?.name || t('permission_backup_no_file');
+  });
 }
 
 function row(label, value) {
@@ -3782,6 +3799,9 @@ exportPrincipalRightsBtn?.addEventListener('click', async () => {
   }
 });
 
+assetRightsImportFile?.addEventListener('change', syncPermissionBackupFileLabels);
+principalRightsImportFile?.addEventListener('change', syncPermissionBackupFileLabels);
+
 importAssetRightsBtn?.addEventListener('click', async () => {
   if (!window.confirm(t('permission_backup_import_confirm'))) return;
   importAssetRightsBtn.disabled = true;
@@ -3789,6 +3809,7 @@ importAssetRightsBtn?.addEventListener('click', async () => {
   try {
     const result = await importPermissionBackup('asset-rights', assetRightsImportFile);
     if (assetRightsImportFile) assetRightsImportFile.value = '';
+    syncPermissionBackupFileLabels();
     const skipped = Number(result?.missingAssetIds?.length || 0);
     if (permissionBackupMsg) {
       permissionBackupMsg.textContent = skipped
@@ -3809,6 +3830,7 @@ importPrincipalRightsBtn?.addEventListener('click', async () => {
   try {
     await importPermissionBackup('principal-rights', principalRightsImportFile);
     if (principalRightsImportFile) principalRightsImportFile.value = '';
+    syncPermissionBackupFileLabels();
     if (permissionBackupMsg) permissionBackupMsg.textContent = t('permission_backup_imported');
   } catch (error) {
     if (permissionBackupMsg) permissionBackupMsg.textContent = error.message || t('permission_backup_import_failed');
