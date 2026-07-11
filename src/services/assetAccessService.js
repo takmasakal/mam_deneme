@@ -657,8 +657,9 @@ function createAssetAccessService({ pool }) {
       (identity.identifiers || []).some((id) => id && id === asset.ownerUser)
     );
     if (isAssetOwnerUser) return true;
+    if (context?.canDeleteAssets) return true;
     if (!canEditAssetType(row, context) && !hasExplicitAssetViewGrant(asset, identity)) return false;
-    return Boolean(context?.canDeleteAssets);
+    return false;
   }
 
   function buildNewAssetAccess(input = {}, context = {}) {
