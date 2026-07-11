@@ -29,7 +29,7 @@ body.login-pf,
   align-items: center !important;
   justify-content: center !important;
   flex-direction: column !important;
-  gap: 8px !important;
+  gap: 4px !important;
   background: transparent !important;
 }
 
@@ -64,7 +64,7 @@ body.login-pf,
   position: static !important;
   z-index: 2 !important;
   padding: 0 !important;
-  margin: 0 0 28px !important;
+  margin: 0 0 14px !important;
   white-space: nowrap !important;
 }
 

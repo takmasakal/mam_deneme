@@ -1687,7 +1687,7 @@ body {
   min-width: 0;
 }
 
-.permission-backup-row > input[type='file'] {
+.permission-file-picker > input[type='file'] {
   position: absolute;
   width: 1px;
   height: 1px;
