@@ -9,6 +9,7 @@
       ocrQueryInput,
       subtitleQueryInput,
       currentUserCanDeleteAssetsRef,
+      currentUserCanDeleteAssetInUi,
       currentAssetsRef,
       selectedAssetIdsRef,
       selectedAssetIdRef,
@@ -290,7 +291,11 @@ function renderAssets(assets, options = {}) {
             ${asset.inTrash ? `
               <div class="card-actions">
                 <button type="button" data-card-action="restore" data-id="${asset.id}">${t('restore')}</button>
-                ${(currentUserCanDeleteAssetsRef?.get?.() && asset.canDeleteAsset !== false) ? `<button type="button" class="danger" data-card-action="delete" data-id="${asset.id}">${t('delete_permanent')}</button>` : ''}
+                ${(typeof currentUserCanDeleteAssetInUi === 'function'
+                  ? currentUserCanDeleteAssetInUi(asset)
+                  : (currentUserCanDeleteAssetsRef?.get?.() && asset.canDeleteAsset !== false))
+                  ? `<button type="button" class="danger" data-card-action="delete" data-id="${asset.id}">${t('delete_permanent')}</button>`
+                  : ''}
               </div>
             ` : ''}
           </div>

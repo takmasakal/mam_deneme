@@ -651,8 +651,13 @@ function createAssetAccessService({ pool }) {
     const asset = getAssetAccessSnapshot(row);
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
     if (identityMatchesAny(identity, asset.editDeniedUsers, asset.editDeniedGroups)) return false;
-    if (!canEditAssetType(row, context)) return false;
     if (context?.canManageAllAssetVisibility) return true;
+    if (isPermissionDenied(context, 'asset.delete')) return false;
+    const isAssetOwnerUser = Boolean(
+      (identity.identifiers || []).some((id) => id && id === asset.ownerUser)
+    );
+    if (isAssetOwnerUser) return true;
+    if (!canEditAssetType(row, context) && !hasExplicitAssetViewGrant(asset, identity)) return false;
     return Boolean(context?.canDeleteAssets);
   }
 

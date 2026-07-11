@@ -91,6 +91,7 @@ let currentUserCanDeleteAssets = false;
 let currentUserCanUsePdfAdvancedTools = false;
 let currentOfficeEditorProvider = 'none';
 let currentUsername = '';
+let currentUserIdentityCandidates = new Set();
 let currentUserGroups = [];
 let currentUserRoles = [];
 let currentUserAllowedAssetTypes = null;
@@ -121,6 +122,40 @@ let panelLayoutSyncRaf = 0;
 let dynamicDetailMinPx = DETAIL_PANEL_BASE_MIN_PX;
 let assetViewMode = localStorage.getItem(LOCAL_ASSET_VIEW_MODE) === 'list' ? 'list' : 'grid';
 const accessScopeModule = window.createMainAccessScopeModule();
+
+function normalizeIdentity(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return '';
+  return normalized
+    .replaceAll('ı', 'i')
+    .replaceAll('i̇', 'i')
+    .replaceAll('ş', 's')
+    .replaceAll('ğ', 'g')
+    .replaceAll('ü', 'u')
+    .replaceAll('ö', 'o')
+    .replaceAll('ç', 'c');
+}
+
+function setCurrentUserIdentityCandidates(values) {
+  currentUserIdentityCandidates = new Set(
+    values
+      .map((value) => normalizeIdentity(value))
+      .filter(Boolean)
+  );
+}
+
+function currentUserOwnsAsset(asset) {
+  if (!asset) return false;
+  const owner = normalizeIdentity(asset.owner);
+  if (!owner) return false;
+  return currentUserIdentityCandidates.has(owner);
+}
+
+function currentUserCanDeleteAssetInUi(asset) {
+  if (asset?.canDeleteAsset === true) return true;
+  if (asset?.canDeleteAsset === false) return false;
+  return Boolean(currentUserCanDeleteAssets || currentUserOwnsAsset(asset));
+}
 
 function hideSearchSuggestions() {
   return searchSuggestModule?.hideSearchSuggestions?.();
@@ -1281,6 +1316,12 @@ async function loadCurrentUser(options = {}) {
       ? String(me.officeEditorProvider || '').trim().toLowerCase()
       : 'none';
     currentUsername = username.toLowerCase();
+    setCurrentUserIdentityCandidates([
+      username,
+      displayName,
+      email,
+      email.includes('@') ? email.split('@')[0] : ''
+    ]);
     const value = displayName || username || (email.includes('@') ? email.split('@')[0] : '') || t('unknown_user');
     currentUserBtn.dataset.value = value;
     currentUserBtn.textContent = value;
@@ -1307,6 +1348,7 @@ async function loadCurrentUser(options = {}) {
     currentUserBtn.dataset.value = '';
     currentUserBtn.textContent = t('unknown_user');
     currentUserBtn.title = t('unknown_user');
+    setCurrentUserIdentityCandidates([]);
     if (adminMenuLink) adminMenuLink.classList.add('hidden');
     applyCurrentUserAssetTypeScope();
     currentUserPermissionSignature = buildCurrentUserPermissionSignature();
@@ -1721,6 +1763,11 @@ const assetBrowserModule = window.createMainAssetBrowserModule({
   currentUserCanDeleteAssetsRef: {
     get: () => currentUserCanDeleteAssets
   },
+  currentUserCanDeleteAssetInUi,
+  currentUserOwnsAsset,
+  currentUserIdentityCandidatesRef: {
+    get: () => currentUserIdentityCandidates
+  },
   currentAssetsRef: {
     get: () => currentAssets
   },
@@ -1884,6 +1931,8 @@ detailModule = window.createMainDetailModule({
   currentUserIsSuperAdmin: () => currentUserIsSuperAdmin,
   currentUserCanAccessAdmin: () => currentUserCanAccessAdmin,
   currentUserCanDeleteAssets: () => currentUserCanDeleteAssets,
+  currentUserCanDeleteAssetInUi,
+  currentUserOwnsAsset,
   currentUserCanEditMetadata: () => currentUserCanEditMetadata,
   currentUsername: () => currentUsername,
   currentSearchQuery: () => currentSearchQuery,

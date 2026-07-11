@@ -25,6 +25,7 @@
       currentUserIsSuperAdmin,
       currentUserCanAccessAdmin,
       currentUserCanDeleteAssets,
+      currentUserCanDeleteAssetInUi,
       currentUserCanEditMetadata,
       currentUsername,
       currentSearchQuery,
@@ -101,7 +102,12 @@
     }
 
     function canDeleteAsset(asset) {
-      return Boolean(currentUserCanDeleteAssets() && asset?.canDeleteAsset !== false);
+      if (typeof currentUserCanDeleteAssetInUi === 'function') {
+        return currentUserCanDeleteAssetInUi(asset);
+      }
+      if (asset?.canDeleteAsset === true) return true;
+      if (asset?.canDeleteAsset === false) return false;
+      return Boolean(currentUserCanDeleteAssets());
     }
 
     function renderVersionRow(asset, version, access, interactive) {
