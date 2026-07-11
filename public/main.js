@@ -1742,6 +1742,8 @@ detailModule = window.createMainDetailModule({
   currentUserCanEditOffice: () => currentUserCanEditOffice,
   currentUserCanAccessAdmin: () => currentUserCanAccessAdmin,
   currentUserCanDeleteAssets: () => currentUserCanDeleteAssets,
+  currentUserCanDeleteAssetInUi,
+  currentUserOwnsAsset,
   currentUserCanEditMetadata: () => currentUserCanEditMetadata,
   currentUsername: () => currentUsername,
   currentSearchQuery: () => currentSearchQuery,

@@ -20,21 +20,28 @@ function createImageDerivativeService(deps) {
   }
 
   async function generateHeicPreview(inputPath, outputPath) {
-    const heifResult = await runCommandCapture('heif-convert', [inputPath, outputPath]);
-    if (heifResult.ok && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
-      return;
-    }
-
+    const intermediatePath = `${outputPath}.heif-convert.jpg`;
+    const heifResult = await runCommandCapture('heif-convert', [inputPath, intermediatePath]);
+    const sourcePath = heifResult.ok && fs.existsSync(intermediatePath) && fs.statSync(intermediatePath).size > 0
+      ? intermediatePath
+      : inputPath;
     const ffmpegResult = await runCommandCapture('ffmpeg', [
       '-y',
       '-i',
-      inputPath,
+      sourcePath,
       '-frames:v',
       '1',
+      '-vf',
+      'scale=min(1280\\,iw):-2',
       '-q:v',
-      '2',
+      '5',
       outputPath
     ]);
+    try {
+      if (fs.existsSync(intermediatePath)) fs.unlinkSync(intermediatePath);
+    } catch (_error) {
+      // Keep the generated preview even if temporary-file cleanup fails.
+    }
     if (!ffmpegResult.ok || !fs.existsSync(outputPath) || fs.statSync(outputPath).size <= 0) {
       throw new Error(
         compactCommandOutput([
