@@ -2340,6 +2340,8 @@ async function openAsset(id, workflow, options = {}) {
     focusCutRowInDetail(assetDetail, focusCutId);
   }
   const imageFullscreenBtn = document.getElementById('imageFullscreenBtn');
+  const imageViewerFullscreenTarget = document.getElementById('imageViewerFullscreenTarget');
+  imageViewerFullscreenTarget?.addEventListener('contextmenu', (event) => event.preventDefault());
   imageFullscreenBtn?.addEventListener('click', async () => {
     const target = document.getElementById('imageViewerFullscreenTarget') || imageFullscreenBtn.closest('.viewer-resizable');
     await toggleFullscreenForElement(target);
