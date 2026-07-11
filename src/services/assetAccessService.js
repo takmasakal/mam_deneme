@@ -650,8 +650,9 @@ function createAssetAccessService({ pool }) {
     const asset = getAssetAccessSnapshot(row);
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
     if (identityMatchesAny(identity, asset.editDeniedUsers, asset.editDeniedGroups)) return false;
-    if (!canEditAssetType(row, context)) return false;
     if (context?.canManageAllAssetVisibility) return true;
+    if (context?.canDeleteAssets) return true;
+    if (!canEditAssetType(row, context)) return false;
     if (
       getManagedGroupsForScope(context, 'asset-rights', getAssetTypeGroup(row)).length
       && asset.ownerUser
@@ -659,7 +660,7 @@ function createAssetAccessService({ pool }) {
     ) {
       return true;
     }
-    return Boolean(context?.canDeleteAssets);
+    return false;
   }
 
   function buildNewAssetAccess(input = {}, context = {}) {
