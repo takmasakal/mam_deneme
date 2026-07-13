@@ -253,6 +253,10 @@ body {
   min-width: 0;
 }
 
+.hidden {
+  display: none !important;
+}
+
 .admin-panel {
   display: none;
   min-width: 0;
