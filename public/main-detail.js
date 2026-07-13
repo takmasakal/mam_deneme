@@ -25,6 +25,7 @@
       currentUserCanEditOffice,
       currentUserCanAccessAdmin,
       currentUserCanDeleteAssets,
+      currentUserCanDeleteAssetInUi,
       currentUserCanEditMetadata,
       currentUsername,
       currentSearchQuery,
@@ -56,6 +57,7 @@
       const canEditPdfAsset = Boolean(asset?.canEditAssetPdf ?? asset?.canEditAsset);
       const canEditThisAsset = Boolean(canEditMetadataAsset || canEditOfficeAsset || canEditPdfAsset);
       const canDownloadThisAsset = asset?.canDownloadAsset !== false;
+      const canChangeThisAsset = !asset?.inTrash;
       return {
         assetIsPdf,
         assetIsOffice,
@@ -67,18 +69,23 @@
               ? (currentUserCanEditOffice() || canEditOfficeAsset)
               : (currentUserCanAccessAdmin() || canEditThisAsset)
         ),
-        canManageVersions: Boolean(
+        canManageVersions: Boolean(canChangeThisAsset && (
           assetIsPdf
             ? (currentUserCanUsePdfAdvancedTools() || canEditPdfAsset)
             : assetIsOffice
               ? (currentUserCanEditOffice() || canEditOfficeAsset)
               : (currentUserCanAccessAdmin() || canEditThisAsset)
-        )
+        ))
       };
     }
 
     function canDeleteAssetInUi(asset) {
-      return Boolean(currentUserCanDeleteAssets() && asset?.canDeleteAsset !== false);
+      if (typeof currentUserCanDeleteAssetInUi === 'function') {
+        return currentUserCanDeleteAssetInUi(asset);
+      }
+      if (asset?.canDeleteAsset === true) return true;
+      if (asset?.canDeleteAsset === false) return false;
+      return Boolean(currentUserCanDeleteAssets());
     }
 
     function getVersionRowState(version, access) {
@@ -169,6 +176,7 @@
         ? ''
         : `<div class="asset-meta metadata-lock-note">${escapeHtml(t('metadata_edit_locked'))}</div>`;
       const metadataFieldsetOpen = canEditMetadata ? '<fieldset class="metadata-fieldset">' : '<fieldset class="metadata-fieldset" disabled>';
+      const workflowDisabled = asset.inTrash ? ' disabled' : '';
       const durationSeconds = Number(asset.durationSeconds) || 0;
       const hasDuration = (isVideo(asset) || (typeof isAudio === 'function' && isAudio(asset))) && durationSeconds > 0;
       const durationMeta = hasDuration ? ` | ${t('duration')}: ${escapeHtml(durationSeconds)}s` : '';
@@ -230,12 +238,12 @@
 
         <form id="transitionForm" class="inline-grid">
           <h4>${t('workflow_transition')}</h4>
-          <select name="status">
+          <select name="status"${workflowDisabled}>
             ${workflow
               .map((status) => `<option value="${escapeHtml(status)}" ${status === asset.status ? 'selected' : ''}>${escapeHtml(workflowLabel(status))}</option>`)
               .join('')}
           </select>
-          <button type="submit">${t('move_status')}</button>
+          <button type="submit"${workflowDisabled}>${t('move_status')}</button>
         </form>
       `;
 
@@ -307,7 +315,7 @@
             ${selectedAssets.slice(0, 40).map((asset) => `<span class="chip multi-chip" style="${assetTagChipStyle(asset)}">${escapeHtml(asset.title)}</span>`).join('')}
           </div>
           <div class="timecode-bar">
-            ${currentUserCanDeleteAssets() && selectedAssets.some(canDeleteAssetInUi) ? `<button type="button" id="bulkDeleteBtn">${escapeHtml(t('bulk_delete_selected'))}</button>` : ''}
+            ${selectedAssets.some(canDeleteAssetInUi) ? `<button type="button" id="bulkDeleteBtn">${escapeHtml(t('bulk_delete_selected'))}</button>` : ''}
             <button type="button" id="bulkClearBtn">${escapeHtml(t('bulk_clear_selection'))}</button>
           </div>
         </div>

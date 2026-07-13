@@ -8,6 +8,7 @@
       searchQueryInput,
       ocrQueryInput,
       currentUserCanDeleteAssetsRef,
+      currentUserCanDeleteAssetInUi,
       currentAssetsRef,
       selectedAssetIdsRef,
       selectedAssetIdRef,
@@ -43,6 +44,25 @@
     const assetPageSizes = [20, 50, 100];
     let assetPageSize = 20;
     let assetPage = 1;
+    const acceptedDidYouMean = { q: '', ocr: '', subtitle: '' };
+
+    function rememberAcceptedDidYouMean(type, suggestion) {
+      const safeType = ['q', 'ocr', 'subtitle'].includes(type) ? type : '';
+      if (!safeType) return;
+      acceptedDidYouMean[safeType] = String(suggestion || '').trim();
+    }
+
+    function acceptedDidYouMeanHighlightClass(type, query, defaultClass) {
+      const safeType = ['q', 'ocr', 'subtitle'].includes(type) ? type : '';
+      if (!safeType) return defaultClass;
+      const accepted = String(acceptedDidYouMean[safeType] || '').trim();
+      const current = String(query || '').trim();
+      if (!accepted || !current || foldSearchText(accepted) !== foldSearchText(current)) {
+        acceptedDidYouMean[safeType] = '';
+        return defaultClass;
+      }
+      return 'search-hit-exact';
+    }
 
 function thumbnailMarkup(asset) {
   const thumbSrc = escapeHtml(asset.thumbnailUrl || '');
@@ -88,7 +108,7 @@ function buildAssetSearchNoticeHtml() {
       notices.push(`
         <div class="subtitle-item-empty">
           ${escapeHtml(t('subtitle_did_you_mean'))}:
-          <button type="button" class="subtitle-item-use-btn" data-search-did-you-mean="${escapeHtml(type)}">${escapeHtml(safeSuggestion)}</button>
+          <button type="button" class="subtitle-item-use-btn" data-search-did-you-mean="${escapeHtml(type)}">${highlightMatch(safeSuggestion, safeSuggestion, 'search-hit-fuzzy')}</button>
         </div>
       `);
       return;
@@ -195,6 +215,7 @@ function renderAssets(assets, options = {}) {
         const type = String(event.currentTarget?.dataset?.searchDidYouMean || '').trim();
         const suggestion = String(event.currentTarget?.textContent || '').trim();
         if (!suggestion) return;
+        rememberAcceptedDidYouMean(type, suggestion);
         if (type === 'ocr' && ocrQueryInput) ocrQueryInput.value = suggestion;
         else if (type === 'q' && searchQueryInput) searchQueryInput.value = suggestion;
         await loadAssets();
@@ -210,13 +231,23 @@ function renderAssets(assets, options = {}) {
   const pageEnd = Math.min(totalAssets, pageStart + assetPageSize);
   const visibleAssets = assets.slice(pageStart, pageEnd);
   const pagerHtml = renderAssetListPager(totalAssets, pageStart, pageEnd, totalPages);
-  const searchHighlightClass = effectiveSearchHighlightClass(currentSearchQuery, currentSearchHighlightQuery, currentSearchFuzzyUsed);
+  const searchHighlightClass = acceptedDidYouMeanHighlightClass(
+    'q',
+    currentSearchQuery,
+    effectiveSearchHighlightClass(currentSearchQuery, currentSearchHighlightQuery, currentSearchFuzzyUsed)
+  );
   assetGrid.innerHTML = `${searchNoticeHtml}${pagerHtml}${visibleAssets
     .map((asset) => {
       const selected = selectedAssetIdsRef.get().has(asset.id) ? 'selected' : '';
       const trashClass = asset.inTrash ? 'in-trash' : '';
       const styleClass = 'card-art-glass';
-      const canDeleteThisAsset = Boolean(currentUserCanDeleteAssetsRef.get() && asset.canDeleteAsset !== false);
+      const canDeleteThisAsset = typeof currentUserCanDeleteAssetInUi === 'function'
+        ? currentUserCanDeleteAssetInUi(asset)
+        : asset.canDeleteAsset === true
+          ? true
+          : asset.canDeleteAsset === false
+            ? false
+            : Boolean(currentUserCanDeleteAssetsRef.get());
       const metadataHits = metadataHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass);
       const dcHits = dcHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass);
       const tagHits = tagHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass);
@@ -225,7 +256,11 @@ function renderAssets(assets, options = {}) {
       const ocrHitsRaw = Array.isArray(asset?.ocrSearchHits) && asset.ocrSearchHits.length
         ? asset.ocrSearchHits
         : (asset?.ocrSearchHit ? [asset.ocrSearchHit] : []);
-      const ocrHitClass = effectiveSearchHighlightClass(currentOcrQuery, ocrHitQuery, currentOcrFuzzyUsed);
+      const ocrHitClass = acceptedDidYouMeanHighlightClass(
+        'ocr',
+        currentOcrQuery,
+        effectiveSearchHighlightClass(currentOcrQuery, ocrHitQuery, currentOcrFuzzyUsed)
+      );
       const ocrHit = renderAssetHitList({
         asset,
         type: 'ocr',
@@ -240,9 +275,13 @@ function renderAssets(assets, options = {}) {
         requestQuery: currentOcrQuery
       });
       const subtitleHitQuery = String(asset?.subtitleSearchHit?.query || currentSubtitleQuery || '').trim();
-      const subtitleHitClass = foldSearchText(subtitleHitQuery) !== foldSearchText(currentSubtitleQuery || '')
-        ? 'search-hit-fuzzy'
-        : 'search-hit';
+      const subtitleHitClass = acceptedDidYouMeanHighlightClass(
+        'subtitle',
+        currentSubtitleQuery,
+        foldSearchText(subtitleHitQuery) !== foldSearchText(currentSubtitleQuery || '')
+          ? 'search-hit-fuzzy'
+          : 'search-hit'
+      );
       const subtitleHitsRaw = Array.isArray(asset?.subtitleSearchHits) && asset.subtitleSearchHits.length
         ? asset.subtitleSearchHits
         : (asset?.subtitleSearchHit ? [asset.subtitleSearchHit] : []);
@@ -294,6 +333,7 @@ function renderAssets(assets, options = {}) {
       const type = String(event.currentTarget?.dataset?.searchDidYouMean || '').trim();
       const suggestion = String(event.currentTarget?.textContent || '').trim();
       if (!suggestion) return;
+      rememberAcceptedDidYouMean(type, suggestion);
       if (type === 'ocr' && ocrQueryInput) ocrQueryInput.value = suggestion;
       else if (type === 'q' && searchQueryInput) searchQueryInput.value = suggestion;
       await loadAssets();

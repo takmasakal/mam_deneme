@@ -610,3 +610,215 @@ standart yönetici -> görmez
 ```
 
 Ancak standart yönetici `Varlık Yetkileri` ekranında yetki yönetme hakkına sahipse, yönetim ekranında yetki kayıtlarını düzenleyebilir. Bu, normal varlık listesinde varlığı görme hakkı anlamına gelmez.
+
+## 14. Veritabanı Sorgu Referansı
+
+Bu sorgular teşhis ve denetim içindir. Uygulamanın kesin efektif kararı `src/services/assetAccessService.js` içindeki `canViewAsset()`, `canDownloadAsset()`, `canEditAsset()` ve `canDeleteAsset()` fonksiyonlarında verilir.
+
+Konteyner adını ortama göre değiştirin:
+
+```bash
+# MetMAM lokal
+DB_CONTAINER=mam-postgres
+
+# Kaisha/Belgelik
+DB_CONTAINER=kaisha-postgres
+```
+
+### 14.1 `x` kullanıcısının sahibi veya açıkça izinli olduğu varlıklar
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+WITH p AS (SELECT lower(trim('x')) AS username)
+SELECT a.id, a.title, a.type, a.visibility, a.owner_user, a.owner_groups,
+       a.allowed_users, a.allowed_groups, a.denied_users, a.denied_groups,
+       a.edit_allowed_users, a.download_allowed_users, a.deleted_at
+FROM assets a CROSS JOIN p
+WHERE a.deleted_at IS NULL
+  AND (
+    lower(trim(coalesce(a.owner_user, ''))) = p.username
+    OR EXISTS (
+      SELECT 1 FROM unnest(coalesce(a.allowed_users, '{}')) u
+      WHERE lower(trim(u)) = p.username
+    )
+  )
+ORDER BY a.updated_at DESC;
+"
+```
+
+Bu sorgu açık varlık grantlerini gösterir; tür seviyesi kurallarını ve Keycloak grup üyeliğini ayrıca kontrol etmek gerekir.
+
+### 14.2 `y` grubunun görebildiği doküman adayları
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+WITH p AS (SELECT lower(trim('y')) AS group_name)
+SELECT a.id, a.title, a.type, a.visibility, a.owner_user, a.owner_groups,
+       a.allowed_groups, a.denied_groups, a.edit_allowed_groups,
+       a.download_allowed_groups, a.deleted_at
+FROM assets a CROSS JOIN p
+WHERE a.deleted_at IS NULL
+  AND lower(coalesce(a.type, '')) IN ('document', 'doc')
+  AND NOT EXISTS (
+    SELECT 1 FROM unnest(coalesce(a.denied_groups, '{}')) g
+    WHERE lower(trim(g)) = p.group_name
+  )
+  AND (
+    a.visibility = 'public'
+    OR EXISTS (SELECT 1 FROM unnest(coalesce(a.owner_groups, '{}')) g WHERE lower(trim(g)) = p.group_name)
+    OR EXISTS (SELECT 1 FROM unnest(coalesce(a.allowed_groups, '{}')) g WHERE lower(trim(g)) = p.group_name)
+  )
+ORDER BY a.updated_at DESC;
+"
+```
+
+`asset_type_access` içindeki `document.denied_groups` de ayrıca kontrol edilmelidir; tür bazlı engel normal `public` görünürlüğü aşabilir.
+
+### 14.3 Tür bazlı görünürlük, yükleme ve indirme kuralları
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+SELECT type_group, visibility, owner_groups, allowed_users, allowed_groups,
+       denied_users, denied_groups, edit_allowed_users, edit_allowed_groups,
+       edit_denied_users, edit_denied_groups, download_allowed_users,
+       download_allowed_groups, download_denied_users, download_denied_groups,
+       upload_allowed_users, upload_allowed_groups, upload_denied_users,
+       upload_denied_groups
+FROM asset_type_access
+ORDER BY type_group;
+"
+```
+
+### 14.4 Belirli varlığın tüm izin kolonları
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+SELECT id, title, type, visibility, owner_user, owner_groups,
+       allowed_users, allowed_groups, denied_users, denied_groups,
+       edit_allowed_users, edit_allowed_groups, edit_denied_users,
+       edit_denied_groups, download_allowed_users, download_allowed_groups,
+       download_denied_users, download_denied_groups, deleted_at, updated_at
+FROM assets
+WHERE id = 'ASSET_ID';
+"
+```
+
+### 14.5 Kullanıcı ve grup uygulama yetkileri
+
+Kullanıcı/Grup Ayarları `admin_settings.value` içinde `user_permissions` anahtarı altında JSON olarak tutulur:
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+SELECT key, jsonb_pretty(value)
+FROM admin_settings
+WHERE key = 'user_permissions';
+"
+```
+
+`x` kullanıcısı veya grubu için:
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+WITH settings AS (
+  SELECT value FROM admin_settings WHERE key = 'user_permissions'
+), principals AS (
+  SELECT 'user' AS principal_type, key AS principal_name, value AS permissions
+  FROM settings, jsonb_each(coalesce(value->'users', '{}'))
+  UNION ALL
+  SELECT 'group', key, value
+  FROM settings, jsonb_each(coalesce(value->'groups', '{}'))
+)
+SELECT principal_type, principal_name, jsonb_pretty(permissions)
+FROM principals
+WHERE lower(principal_name) = lower('x');
+"
+```
+
+Özellikle `assetDelete`, `metadataEdit`, `officeEdit`, `pdfAdvancedTools` ve `textAdminAccess` alanlarını kontrol edin.
+
+### 14.6 Grup yöneticileri
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+SELECT id, group_name, username, admin_scopes, asset_type_groups,
+       created_at, created_by
+FROM group_admins
+ORDER BY group_name, username;
+"
+```
+
+`asset_type_groups = {}` tüm türleri, dolu liste yalnızca belirtilen türleri ifade eder.
+
+### 14.7 Boşluklu grup adlarının bölünüp bölünmediğini bulma
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+SELECT id, title, owner_groups, allowed_groups, denied_groups
+FROM assets
+WHERE EXISTS (
+  SELECT 1
+  FROM unnest(coalesce(owner_groups, '{}') || coalesce(allowed_groups, '{}') || coalesce(denied_groups, '{}')) g
+  WHERE lower(trim(g)) IN ('standart', 'yönetici', 'kullanıcı')
+)
+ORDER BY updated_at DESC;
+"
+```
+
+Yanlış kayıt: `{standart,yönetici}`. Doğru kayıt: `{"standart yönetici"}`.
+
+### 14.8 Silme, düzenleme ve indirme denetimi
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+SELECT id, title, owner_user, allowed_users, edit_allowed_users,
+       download_allowed_users, denied_users, edit_denied_users,
+       download_denied_users, deleted_at
+FROM assets
+WHERE owner_user IS NOT NULL
+   OR cardinality(coalesce(allowed_users, '{}')) > 0
+   OR cardinality(coalesce(edit_allowed_users, '{}')) > 0
+   OR cardinality(coalesce(download_allowed_users, '{}')) > 0
+ORDER BY updated_at DESC;
+"
+```
+
+### 14.9 Şema ve silinmiş varlık kontrolü
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+SELECT column_name, data_type
+FROM information_schema.columns
+WHERE table_name IN ('assets', 'asset_type_access', 'group_admins', 'admin_settings')
+ORDER BY table_name, ordinal_position;
+"
+
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+SELECT id, title, type, owner_user, deleted_at
+FROM assets
+WHERE deleted_at IS NOT NULL
+ORDER BY deleted_at DESC;
+"
+```
+
+## 15. SQL Sonrası API Doğrulaması
+
+```javascript
+fetch('/api/me?ts=' + Date.now(), { cache: 'no-store' })
+  .then(async r => console.log('me', r.status, await r.text()));
+
+fetch('/api/assets/ASSET_ID?ts=' + Date.now(), { cache: 'no-store' })
+  .then(async r => console.log('asset', r.status, await r.text()));
+```
+
+Tekil varlık cevabında şu alanları kontrol edin:
+
+```text
+canDownloadAsset
+canEditAsset
+canEditAssetMetadata
+canEditAssetOffice
+canEditAssetPdf
+canDeleteAsset
+```
+
+SQL ham DB kayıtlarını gösterir. Kesin efektif sonuç için aynı kullanıcıyla `/api/me`, `/api/assets` ve tekil asset API cevabı birlikte değerlendirilmelidir.

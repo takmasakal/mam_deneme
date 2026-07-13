@@ -327,6 +327,13 @@ function createAssetAccessService({ pool }) {
     );
   }
 
+  function hasExplicitAssetViewOnlyGrant(asset = {}, identity = {}) {
+    return Boolean(
+      (identity.identifiers || []).some((id) => id && asset.allowedUsers.includes(id))
+      || (identity.groups || []).some((group) => asset.allowedGroups.includes(group))
+    );
+  }
+
   function hasExplicitAssetDownloadGrant(asset = {}, identity = {}) {
     return Boolean(
       (identity.identifiers || []).some((id) => id && (id === asset.ownerUser || asset.downloadAllowedUsers.includes(id)))
@@ -619,6 +626,7 @@ function createAssetAccessService({ pool }) {
   }
 
   function canEditAsset(row, context) {
+    if (row?.deleted_at) return false;
     if (!canViewAsset(row, context)) return false;
     const asset = getAssetAccessSnapshot(row);
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
@@ -650,17 +658,17 @@ function createAssetAccessService({ pool }) {
     const asset = getAssetAccessSnapshot(row);
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
     if (identityMatchesAny(identity, asset.editDeniedUsers, asset.editDeniedGroups)) return false;
+    if (context?.canBypassAssetVisibility) return true;
+    if (isPermissionDenied(context, 'asset.delete')) return false;
+    const isAssetOwnerUser = Boolean(
+      (identity.identifiers || []).some((id) => id && id === asset.ownerUser)
+    );
+    if (isAssetOwnerUser) return true;
+    if (!canEditAssetType(row, context) && !hasExplicitAssetViewGrant(asset, identity)) return false;
     if (context?.canManageAllAssetVisibility) return true;
-    if (context?.canDeleteAssets) return true;
-    if (!canEditAssetType(row, context)) return false;
-    if (
-      getManagedGroupsForScope(context, 'asset-rights', getAssetTypeGroup(row)).length
-      && asset.ownerUser
-      && identity.identifiers.includes(asset.ownerUser)
-    ) {
-      return true;
-    }
-    return false;
+    const managedGroups = getManagedGroupsForScope(context, 'asset-rights', getAssetTypeGroup(row));
+    if (managedGroups.some((group) => asset.ownerGroups.includes(group))) return true;
+    return Boolean(context?.canDeleteAssets);
   }
 
   function buildNewAssetAccess(input = {}, context = {}) {

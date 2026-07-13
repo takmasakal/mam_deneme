@@ -86,6 +86,7 @@ let currentUserCanDeleteAssets = false;
 let currentUserCanUsePdfAdvancedTools = false;
 let currentOfficeEditorProvider = 'none';
 let currentUsername = '';
+let currentUserIdentityCandidates = new Set();
 let searchSuggestModule = null;
 const selectedAssetIds = new Set();
 let lastSelectedAssetId = null;
@@ -108,6 +109,40 @@ let panelSizes = Object.fromEntries(PANELS.map((p) => [p.id, p.defaultSize]));
 let panelVisibility = { panelIngest: true, panelAssets: true, panelDetail: true };
 let dynamicDetailMinPx = DETAIL_PANEL_BASE_MIN_PX;
 let assetViewMode = localStorage.getItem(LOCAL_ASSET_VIEW_MODE) === 'list' ? 'list' : 'grid';
+
+function normalizeIdentity(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return '';
+  return normalized
+    .replaceAll('ı', 'i')
+    .replaceAll('i̇', 'i')
+    .replaceAll('ş', 's')
+    .replaceAll('ğ', 'g')
+    .replaceAll('ü', 'u')
+    .replaceAll('ö', 'o')
+    .replaceAll('ç', 'c');
+}
+
+function setCurrentUserIdentityCandidates(values) {
+  currentUserIdentityCandidates = new Set(
+    values
+      .map((value) => normalizeIdentity(value))
+      .filter(Boolean)
+  );
+}
+
+function currentUserOwnsAsset(asset) {
+  if (!asset) return false;
+  const owner = normalizeIdentity(asset.owner);
+  if (!owner) return false;
+  return currentUserIdentityCandidates.has(owner);
+}
+
+function currentUserCanDeleteAssetInUi(asset) {
+  if (asset?.canDeleteAsset === true) return true;
+  if (asset?.canDeleteAsset === false) return false;
+  return Boolean(currentUserCanDeleteAssets || currentUserOwnsAsset(asset));
+}
 
 function hideSearchSuggestions() {
   return searchSuggestModule?.hideSearchSuggestions?.();
@@ -1165,6 +1200,12 @@ async function loadCurrentUser() {
       ? String(me.officeEditorProvider || '').trim().toLowerCase()
       : 'none';
     currentUsername = username.toLowerCase();
+    setCurrentUserIdentityCandidates([
+      username,
+      displayName,
+      email,
+      email.includes('@') ? email.split('@')[0] : ''
+    ]);
     const value = displayName || username || (email.includes('@') ? email.split('@')[0] : '') || t('unknown_user');
     currentUserBtn.dataset.value = value;
     currentUserBtn.textContent = value;
@@ -1190,6 +1231,7 @@ async function loadCurrentUser() {
     currentUserBtn.dataset.value = '';
     currentUserBtn.textContent = t('unknown_user');
     currentUserBtn.title = t('unknown_user');
+    setCurrentUserIdentityCandidates([]);
     if (adminMenuLink) adminMenuLink.classList.add('hidden');
     accessScopeModule?.applyAssetTypeScope?.({
       allowedAssetTypes: [],
@@ -1586,6 +1628,11 @@ const assetBrowserModule = window.createMainAssetBrowserModule({
   ocrQueryInput,
   currentUserCanDeleteAssetsRef: {
     get: () => currentUserCanDeleteAssets
+  },
+  currentUserCanDeleteAssetInUi,
+  currentUserOwnsAsset,
+  currentUserIdentityCandidatesRef: {
+    get: () => currentUserIdentityCandidates
   },
   currentAssetsRef: {
     get: () => currentAssets
@@ -2196,6 +2243,8 @@ async function openAsset(id, workflow, options = {}) {
     focusCutRowInDetail(assetDetail, focusCutId);
   }
   const imageFullscreenBtn = document.getElementById('imageFullscreenBtn');
+  const imageViewerFullscreenTarget = document.getElementById('imageViewerFullscreenTarget');
+  imageViewerFullscreenTarget?.addEventListener('contextmenu', (event) => event.preventDefault());
   imageFullscreenBtn?.addEventListener('click', async () => {
     const target = document.getElementById('imageViewerFullscreenTarget') || imageFullscreenBtn.closest('.viewer-resizable');
     await toggleFullscreenForElement(target);
@@ -2484,7 +2533,7 @@ async function openAsset(id, workflow, options = {}) {
   });
 
   moveToTrashBtn?.addEventListener('click', async () => {
-    if (asset?.canDeleteAsset === false) return;
+    if (!currentUserCanDeleteAssetInUi(asset)) return;
     const ok = confirm(t('move_to_trash_confirm'));
     if (!ok) return;
     await api(`/api/assets/${encodeURIComponent(asset.id)}/trash`, { method: 'POST', body: '{}' });
@@ -2492,13 +2541,13 @@ async function openAsset(id, workflow, options = {}) {
   });
 
   restoreAssetBtn?.addEventListener('click', async () => {
-    if (asset?.canDeleteAsset === false) return;
+    if (!currentUserCanDeleteAssetInUi(asset)) return;
     await api(`/api/assets/${encodeURIComponent(asset.id)}/restore`, { method: 'POST', body: '{}' });
     await refreshAssetDetail(asset.id, workflow);
   });
 
   deleteAssetBtn?.addEventListener('click', async () => {
-    if (asset?.canDeleteAsset === false) return;
+    if (!currentUserCanDeleteAssetInUi(asset)) return;
     const ok = confirm(t('trash_confirm'));
     if (!ok) return;
     const wasSelected = selectedAssetId === asset.id;
@@ -2587,9 +2636,8 @@ assetGrid.addEventListener('click', async (event) => {
       return;
     }
     if (action === 'delete') {
-      if (!currentUserCanDeleteAssets) return;
       const asset = currentAssets.find((item) => item.id === id);
-      if (asset?.canDeleteAsset === false) return;
+      if (!currentUserCanDeleteAssetInUi(asset)) return;
       const ok = confirm(t('trash_confirm'));
       if (!ok) return;
       await deleteApi(`/api/assets/${id}`);
