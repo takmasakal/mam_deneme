@@ -1662,6 +1662,7 @@ async function api(path, options = {}) {
   }
 
   if (!response.ok) {
+    window.mamSessionExpiry?.handle(response.status, textBody, parsedBody);
     const fallback = textBody
       ? textBody.replace(/\s+/g, ' ').trim().slice(0, 220)
       : '';
@@ -1692,7 +1693,12 @@ function showAssetLoadError(error) {
 async function deleteApi(path) {
   const response = await fetch(path, { method: 'DELETE' });
   if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
+    const textBody = await response.text();
+    let body = {};
+    try {
+      body = textBody ? JSON.parse(textBody) : {};
+    } catch (_error) {}
+    window.mamSessionExpiry?.handle(response.status, textBody, body);
     throw new Error(body.error || 'Request failed');
   }
 }
@@ -2610,7 +2616,12 @@ async function openAsset(id, workflow, options = {}) {
         body: JSON.stringify({ versionId })
       });
       if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
+        const textBody = await res.text();
+        let payload = {};
+        try {
+          payload = textBody ? JSON.parse(textBody) : {};
+        } catch (_error) {}
+        window.mamSessionExpiry?.handle(res.status, textBody, payload);
         alert(payload.error || 'Failed to restore Office version');
         return;
       }

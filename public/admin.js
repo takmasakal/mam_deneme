@@ -1081,11 +1081,16 @@ async function api(path, options = {}) {
     headers: { 'Content-Type': 'application/json' },
     ...options
   });
+  const textBody = await response.text();
+  let body = {};
+  try {
+    body = textBody ? JSON.parse(textBody) : {};
+  } catch (_error) {}
   if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
+    window.mamSessionExpiry?.handle(response.status, textBody, body);
     throw new Error(formatApiError(body));
   }
-  return response.json();
+  return body;
 }
 
 async function loadI18nFile() {
@@ -3455,7 +3460,12 @@ async function exportAuditEvents() {
   try {
     const response = await fetch(`/api/admin/audit-events/export?${params.toString()}`);
     if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
+      const textBody = await response.text();
+      let body = {};
+      try {
+        body = textBody ? JSON.parse(textBody) : {};
+      } catch (_error) {}
+      window.mamSessionExpiry?.handle(response.status, textBody, body);
       throw new Error(body.error || t('audit_export_failed'));
     }
     const blob = await response.blob();
@@ -3582,11 +3592,14 @@ async function exportPermissionBackup(kind, nameInput, fallbackName) {
     cache: 'no-store'
   });
   if (!response.ok) {
+    const textBody = await response.text();
     let message = t('permission_backup_export_failed');
+    let body = {};
     try {
-      const body = await response.json();
+      body = textBody ? JSON.parse(textBody) : {};
       if (body?.error) message = body.error;
     } catch {}
+    window.mamSessionExpiry?.handle(response.status, textBody, body);
     throw new Error(message);
   }
   const blob = await response.blob();
