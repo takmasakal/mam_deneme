@@ -123,15 +123,15 @@
     switchSettingsSubtab = null
   } = {}) {
     const access = getAdminAccessMode(profile);
-    const canShowFullAdminPanels = !access.isTextOnly && !access.isAssetRightsOnly && !access.isDocumentRightsOnly;
+    const canShowFullAdminPanels = access.canAccessAdmin;
     const visibleMainTabs = {
       apiHelp: canShowFullAdminPanels,
       systemHealth: canShowFullAdminPanels,
       runtimeDiagnostics: canShowFullAdminPanels,
       auditEvents: canShowFullAdminPanels,
-      assetRights: canShowFullAdminPanels || (access.canAccessAssetRightsAdmin && !access.isDocumentRightsOnly),
-      documentRights: access.isDocumentRightsOnly,
-      settings: !access.isAssetRightsOnly && !access.isDocumentRightsOnly
+      assetRights: canShowFullAdminPanels || access.canAccessAssetRightsAdmin,
+      documentRights: !access.canAccessAdmin && access.canAccessDocumentRightsAdmin,
+      settings: canShowFullAdminPanels || access.canAccessTextAdmin
     };
     Object.entries(visibleMainTabs).forEach(([tabName, visible]) => {
       setTabVisibility(adminTabs, tabName, 'tab', visible);
@@ -139,34 +139,34 @@
     });
 
     const visibleSettingsTabs = {
-      general: !access.isTextOnly,
-      workflow: !access.isTextOnly,
-      proxy: !access.isTextOnly,
-      backup: !access.isTextOnly,
-      ocr: true,
-      subtitle: true,
-      users: !access.isTextOnly && access.isSuperAdmin
+      general: canShowFullAdminPanels,
+      workflow: canShowFullAdminPanels,
+      proxy: canShowFullAdminPanels,
+      backup: canShowFullAdminPanels,
+      ocr: access.canAccessTextAdmin,
+      subtitle: access.canAccessTextAdmin,
+      users: canShowFullAdminPanels && access.isSuperAdmin
     };
     Object.entries(visibleSettingsTabs).forEach(([tabName, visible]) => {
       setTabVisibility(settingsSubTabs, tabName, 'settingsTab', visible);
       setPanelVisibility(settingsSubPanels, tabName, 'settingsPanel', visible);
     });
 
-    setElementHidden(elements.settingsForm, access.isTextOnly);
-    setElementHidden(elements.settingsMsg, access.isTextOnly);
-    setElementHidden(elements.ocrSettingsForm, access.isTextOnly);
-    setElementHidden(elements.ocrSettingsMsg, access.isTextOnly);
-    setElementHidden(elements.subtitleSettingsForm, false);
-    setElementHidden(elements.subtitleSettingsMsg, false);
-    setElementHidden(elements.authSessionSettingsForm, access.isTextOnly || !access.isSuperAdmin);
-    setElementHidden(elements.authSessionSettingsMsg, access.isTextOnly || !access.isSuperAdmin);
+    setElementHidden(elements.settingsForm, !canShowFullAdminPanels);
+    setElementHidden(elements.settingsMsg, !canShowFullAdminPanels);
+    setElementHidden(elements.ocrSettingsForm, !canShowFullAdminPanels);
+    setElementHidden(elements.ocrSettingsMsg, !canShowFullAdminPanels);
+    setElementHidden(elements.subtitleSettingsForm, !access.canAccessTextAdmin);
+    setElementHidden(elements.subtitleSettingsMsg, !access.canAccessTextAdmin);
+    setElementHidden(elements.authSessionSettingsForm, !canShowFullAdminPanels || !access.isSuperAdmin);
+    setElementHidden(elements.authSessionSettingsMsg, !canShowFullAdminPanels || !access.isSuperAdmin);
 
-    if (access.isTextOnly) {
+    if (!access.canAccessAdmin && access.canAccessTextAdmin) {
       if (typeof switchTab === 'function') switchTab('settings');
       if (typeof switchSettingsSubtab === 'function') switchSettingsSubtab('ocr');
-    } else if (access.isAssetRightsOnly) {
+    } else if (!access.canAccessAdmin && access.canAccessAssetRightsAdmin) {
       if (typeof switchTab === 'function') switchTab('assetRights');
-    } else if (access.isDocumentRightsOnly) {
+    } else if (!access.canAccessAdmin && access.canAccessDocumentRightsAdmin) {
       if (typeof switchTab === 'function') switchTab('documentRights');
     }
 

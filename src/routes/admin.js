@@ -294,6 +294,33 @@ async function requireDocumentRightsAdminRequest(req, res) {
   return { effective, context };
 }
 
+async function requireTextAdminRequest(req, res) {
+  const effective = await resolveEffectivePermissions(req);
+  const context = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+  const allowed = Boolean(
+    effective?.isSuperAdmin
+    || effective?.canAccessAdmin
+    || effective?.canAccessTextAdmin
+    || assetAccessService.hasScopedAdminScopeAccess(context, 'text-admin')
+  );
+  if (!allowed) {
+    res.status(403).json({ error: 'Text admin permission is required' });
+    return null;
+  }
+  return { effective, context };
+}
+
+function canTextAdminViewAsset(row, gate = {}) {
+  if (gate?.effective?.isSuperAdmin || gate?.effective?.canAccessAdmin) return true;
+  return assetAccessService.canViewAsset(row, gate.context || {});
+}
+
+function appendTextAdminAssetAccessWhere(where, values, gate = {}, alias = 'assets') {
+  where.push(`${alias}.deleted_at IS NULL`);
+  if (gate?.effective?.isSuperAdmin || gate?.effective?.canAccessAdmin) return;
+  assetAccessService.appendAssetAccessWhere(where, values, gate.context || {}, alias);
+}
+
 function getDocumentRightsVisibilityContext(gate = {}) {
   if (gate?.effective?.isSuperAdmin) return gate.context || {};
   return {
@@ -1882,22 +1909,27 @@ function paginateAdminRecords(records = [], pagination = {}) {
 
 app.get('/api/admin/ocr-records', async (req, res) => {
   try {
+    const gate = await requireTextAdminRequest(req, res);
+    if (!gate) return null;
     const q = String(req.query.q || '').trim();
     const pagination = getAdminRecordPagination(req.query || {});
     const assetScanLimit = 5000;
-    const params = [assetScanLimit];
-    let whereSql = '';
+    const params = [];
+    const where = [];
+    appendTextAdminAssetAccessWhere(where, params, gate, 'assets');
     if (q) {
       params.push(`%${q}%`);
-      whereSql = 'WHERE COALESCE(title, \'\') ILIKE $2 OR COALESCE(file_name, \'\') ILIKE $2';
+      where.push(`(COALESCE(assets.title, '') ILIKE $${params.length} OR COALESCE(assets.file_name, '') ILIKE $${params.length})`);
     }
+    params.push(assetScanLimit);
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const result = await pool.query(
       `
-        SELECT id, title, file_name, type, owner, updated_at, dc_metadata
+        SELECT assets.id, assets.title, assets.file_name, assets.type, assets.owner, assets.updated_at, assets.dc_metadata
         FROM assets
         ${whereSql}
-        ORDER BY updated_at DESC
-        LIMIT $1
+        ORDER BY assets.updated_at DESC
+        LIMIT $${params.length}
       `,
       params
     );
@@ -1959,6 +1991,8 @@ app.get('/api/admin/ocr-records', async (req, res) => {
 
 app.patch('/api/admin/ocr-records', async (req, res) => {
   try {
+    const gate = await requireTextAdminRequest(req, res);
+    if (!gate) return null;
     const assetId = String(req.body?.assetId || '').trim();
     const itemId = String(req.body?.itemId || '').trim();
     const nextLabel = String(req.body?.ocrLabel || '').trim();
@@ -1968,6 +2002,7 @@ app.patch('/api/admin/ocr-records', async (req, res) => {
     const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
     if (!rowResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
     const row = rowResult.rows[0];
+    if (!canTextAdminViewAsset(row, gate)) return res.status(404).json({ error: 'Asset not found' });
     const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
     const allItems = getOcrItemsFromDc(dc, row.updated_at || row.created_at || '');
     const target = allItems.find((item) => String(item.id || '') === itemId);
@@ -1991,6 +2026,8 @@ app.patch('/api/admin/ocr-records', async (req, res) => {
 
 app.delete('/api/admin/ocr-records', async (req, res) => {
   try {
+    const gate = await requireTextAdminRequest(req, res);
+    if (!gate) return null;
     const assetId = String(req.body?.assetId || '').trim();
     const itemId = String(req.body?.itemId || '').trim();
     const deleteFile = Boolean(req.body?.deleteFile);
@@ -1999,6 +2036,7 @@ app.delete('/api/admin/ocr-records', async (req, res) => {
     const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
     if (!rowResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
     const row = rowResult.rows[0];
+    if (!canTextAdminViewAsset(row, gate)) return res.status(404).json({ error: 'Asset not found' });
     const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
     const items = getOcrItemsFromDc(dc, row.updated_at || row.created_at || '');
     const target = items.find((item) => String(item.id || '') === itemId);
@@ -2042,12 +2080,15 @@ function computeOcrStatsFromContent(content) {
 
 app.get('/api/admin/ocr-records/content', async (req, res) => {
   try {
+    const gate = await requireTextAdminRequest(req, res);
+    if (!gate) return null;
     const assetId = String(req.query.assetId || '').trim();
     const itemId = String(req.query.itemId || '').trim();
     if (!assetId || !itemId) return res.status(400).json({ error: 'assetId and itemId are required' });
     const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
     if (!rowResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
     const row = rowResult.rows[0];
+    if (!canTextAdminViewAsset(row, gate)) return res.status(404).json({ error: 'Asset not found' });
     const resolved = resolveAdminOcrItemForAssetRow(row, itemId);
     const item = resolved.item;
     if (!item) return res.status(404).json({ error: 'OCR record not found' });
@@ -2064,6 +2105,8 @@ app.get('/api/admin/ocr-records/content', async (req, res) => {
 
 app.patch('/api/admin/ocr-records/content', async (req, res) => {
   try {
+    const gate = await requireTextAdminRequest(req, res);
+    if (!gate) return null;
     const assetId = String(req.body?.assetId || '').trim();
     const itemId = String(req.body?.itemId || '').trim();
     const content = String(req.body?.content || '');
@@ -2071,6 +2114,7 @@ app.patch('/api/admin/ocr-records/content', async (req, res) => {
     const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
     if (!rowResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
     const row = rowResult.rows[0];
+    if (!canTextAdminViewAsset(row, gate)) return res.status(404).json({ error: 'Asset not found' });
     const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
     const resolved = resolveAdminOcrItemForAssetRow(row, itemId);
     const target = resolved.item;
@@ -2148,17 +2192,25 @@ function findSubtitleMatchInText(text, queryNorm) {
 
 app.get('/api/admin/subtitle-records', async (req, res) => {
   try {
+    const gate = await requireTextAdminRequest(req, res);
+    if (!gate) return null;
     const q = String(req.query.q || '').trim().toLocaleLowerCase('tr');
     const pagination = getAdminRecordPagination(req.query || {});
     const assetScanLimit = 5000;
+    const params = [];
+    const where = [];
+    appendTextAdminAssetAccessWhere(where, params, gate, 'assets');
+    params.push(assetScanLimit);
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const result = await pool.query(
       `
-        SELECT id, title, file_name, type, owner, updated_at, dc_metadata
+        SELECT assets.id, assets.title, assets.file_name, assets.type, assets.owner, assets.updated_at, assets.dc_metadata
         FROM assets
-        ORDER BY updated_at DESC
-        LIMIT $1
+        ${whereSql}
+        ORDER BY assets.updated_at DESC
+        LIMIT $${params.length}
       `,
-      [assetScanLimit]
+      params
     );
 
     const records = [];
@@ -2196,6 +2248,8 @@ app.get('/api/admin/subtitle-records', async (req, res) => {
 
 app.patch('/api/admin/subtitle-records', async (req, res) => {
   try {
+    const gate = await requireTextAdminRequest(req, res);
+    if (!gate) return null;
     const assetId = String(req.body?.assetId || '').trim();
     const itemId = String(req.body?.itemId || '').trim();
     const nextLabel = String(req.body?.subtitleLabel || '').trim();
@@ -2207,6 +2261,7 @@ app.patch('/api/admin/subtitle-records', async (req, res) => {
     const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
     if (!rowResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
     const row = rowResult.rows[0];
+    if (!canTextAdminViewAsset(row, gate)) return res.status(404).json({ error: 'Asset not found' });
     const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
     const items = getSubtitleItemsFromDc(dc);
     const idx = items.findIndex((item) => String(item.id || '') === itemId);
@@ -2239,6 +2294,8 @@ app.patch('/api/admin/subtitle-records', async (req, res) => {
 
 app.delete('/api/admin/subtitle-records', async (req, res) => {
   try {
+    const gate = await requireTextAdminRequest(req, res);
+    if (!gate) return null;
     const assetId = String(req.body?.assetId || '').trim();
     const itemId = String(req.body?.itemId || '').trim();
     const deleteFile = Boolean(req.body?.deleteFile);
@@ -2247,6 +2304,7 @@ app.delete('/api/admin/subtitle-records', async (req, res) => {
     const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
     if (!rowResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
     const row = rowResult.rows[0];
+    if (!canTextAdminViewAsset(row, gate)) return res.status(404).json({ error: 'Asset not found' });
     const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
     const items = getSubtitleItemsFromDc(dc);
     const target = items.find((item) => String(item.id || '') === itemId);
@@ -2283,12 +2341,15 @@ app.delete('/api/admin/subtitle-records', async (req, res) => {
 
 app.get('/api/admin/subtitle-records/content', async (req, res) => {
   try {
+    const gate = await requireTextAdminRequest(req, res);
+    if (!gate) return null;
     const assetId = String(req.query.assetId || '').trim();
     const itemId = String(req.query.itemId || '').trim();
     if (!assetId || !itemId) return res.status(400).json({ error: 'assetId and itemId are required' });
     const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
     if (!rowResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
     const row = rowResult.rows[0];
+    if (!canTextAdminViewAsset(row, gate)) return res.status(404).json({ error: 'Asset not found' });
     const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
     const items = getSubtitleItemsFromDc(dc);
     const item = items.find((it) => String(it.id || '') === itemId);
@@ -2306,6 +2367,8 @@ app.get('/api/admin/subtitle-records/content', async (req, res) => {
 
 app.patch('/api/admin/subtitle-records/content', async (req, res) => {
   try {
+    const gate = await requireTextAdminRequest(req, res);
+    if (!gate) return null;
     const assetId = String(req.body?.assetId || '').trim();
     const itemId = String(req.body?.itemId || '').trim();
     const rawContent = String(req.body?.content || '');
@@ -2313,6 +2376,7 @@ app.patch('/api/admin/subtitle-records/content', async (req, res) => {
     const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
     if (!rowResult.rowCount) return res.status(404).json({ error: 'Asset not found' });
     const row = rowResult.rows[0];
+    if (!canTextAdminViewAsset(row, gate)) return res.status(404).json({ error: 'Asset not found' });
     const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
     const items = getSubtitleItemsFromDc(dc);
     const idx = items.findIndex((it) => String(it.id || '') === itemId);
