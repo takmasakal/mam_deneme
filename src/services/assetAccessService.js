@@ -620,6 +620,7 @@ function createAssetAccessService({ pool }) {
   }
 
   function canEditAsset(row, context) {
+    if (row?.deleted_at) return false;
     if (!canViewAsset(row, context)) return false;
     const asset = getAssetAccessSnapshot(row);
     const identity = context?.accessIdentity || getUserAccessIdentity(context || {});

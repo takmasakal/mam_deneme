@@ -1710,6 +1710,7 @@ function registerAssetRoutes(app, deps) {
         return res.status(loaded.status).json({ error: loaded.error });
       }
       const row = loaded.row;
+      if (row.deleted_at) return res.status(403).json({ error: 'Trash assets cannot be changed' });
       if (!assetAccessService.canEditAssetMetadata(row, loaded.accessContext) && !canCreateVersionForAsset(req.userPermissions, row)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
@@ -1803,6 +1804,7 @@ function registerAssetRoutes(app, deps) {
       const loaded = await loadVisibleAssetRow(req, assetId);
       if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
       const assetRow = loaded.row;
+      if (assetRow.deleted_at) return res.status(403).json({ error: 'Trash assets cannot be changed' });
       const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
       const row = versionResult.rows[0];
       if (!row) return res.status(404).json({ error: 'Version not found' });
@@ -1834,6 +1836,7 @@ function registerAssetRoutes(app, deps) {
       const loaded = await loadVisibleAssetRow(req, assetId);
       if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
       const assetRow = loaded.row;
+      if (assetRow.deleted_at) return res.status(403).json({ error: 'Trash assets cannot be changed' });
 
       const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
       const row = versionResult.rows[0];
@@ -1875,6 +1878,7 @@ function registerAssetRoutes(app, deps) {
       if (loaded.status !== 200) {
         return res.status(loaded.status).json({ error: loaded.error });
       }
+      if (loaded.row.deleted_at) return res.status(403).json({ error: 'Trash assets cannot be changed' });
 
       const currentIndex = WORKFLOW.indexOf(loaded.row.status);
       const nextIndex = WORKFLOW.indexOf(nextStatus);

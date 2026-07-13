@@ -57,6 +57,7 @@
       const canEditPdfAsset = Boolean(asset?.canEditAssetPdf ?? asset?.canEditAsset);
       const canEditThisAsset = Boolean(canEditMetadataAsset || canEditOfficeAsset || canEditPdfAsset);
       const canDownloadThisAsset = asset?.canDownloadAsset !== false;
+      const canChangeThisAsset = !asset?.inTrash;
       return {
         assetIsPdf,
         assetIsOffice,
@@ -68,13 +69,13 @@
               ? (currentUserCanEditOffice() || canEditOfficeAsset)
               : (currentUserCanAccessAdmin() || canEditThisAsset)
         ),
-        canManageVersions: Boolean(
+        canManageVersions: Boolean(canChangeThisAsset && (
           assetIsPdf
             ? (currentUserCanUsePdfAdvancedTools() || canEditPdfAsset)
             : assetIsOffice
               ? (currentUserCanEditOffice() || canEditOfficeAsset)
               : (currentUserCanAccessAdmin() || canEditThisAsset)
-        )
+        ))
       };
     }
 
