@@ -1087,7 +1087,8 @@ async function api(path, options = {}) {
     body = textBody ? JSON.parse(textBody) : {};
   } catch (_error) {}
   if (!response.ok) {
-    window.mamSessionExpiry?.handle(response.status, textBody, body);
+    const isProfileFailure = String(path).split('?')[0] === '/api/me' && response.status >= 500;
+    window.mamSessionExpiry?.handle(response.status, textBody, body, { force: isProfileFailure });
     throw new Error(formatApiError(body));
   }
   return body;
@@ -4760,6 +4761,7 @@ document.addEventListener('keydown', onLanguageShortcut, true);
 (async () => {
   try {
     const me = await api('/api/me');
+    window.mamSessionExpiry?.start(me.authSession || {});
     const access = applyAdminAccessMode(me);
     if (!access.canAccessAdmin && !access.canAccessTextAdmin && !access.canAccessAssetRightsAdmin && !access.canAccessDocumentRightsAdmin) {
       window.location.href = '/';

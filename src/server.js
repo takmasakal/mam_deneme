@@ -8028,6 +8028,10 @@ app.get('/api/me', async (req, res) => {
   res.set('Surrogate-Control', 'no-store');
   try {
     const effective = await resolveEffectivePermissions(req);
+    if (!String(effective.username || '').trim() && !String(effective.email || '').trim()) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const authSession = normalizeAuthSessionSettings((await getAdminSettings()).authSession);
     const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
     res.json({
       username: effective.username,
@@ -8050,7 +8054,11 @@ app.get('/api/me', async (req, res) => {
 	      uploadAllowedAssetTypes: assetAccessService.getAllowedUploadAssetTypeGroups(accessContext),
 	      officeEditorProvider: OFFICE_EDITOR_PROVIDER,
       permissionKeys: effective.permissionKeys,
-      deniedPermissionKeys: effective.deniedPermissionKeys || []
+      deniedPermissionKeys: effective.deniedPermissionKeys || [],
+      authSession: {
+        clientIdleMinutes: authSession.clientIdleMinutes,
+        clientMaxHours: authSession.clientMaxHours
+      }
     });
   } catch (_error) {
     console.warn(JSON.stringify({

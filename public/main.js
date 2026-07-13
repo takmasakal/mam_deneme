@@ -1292,6 +1292,7 @@ async function loadCurrentUser(options = {}) {
   }
   try {
     const me = await api('/api/me');
+    window.mamSessionExpiry?.start(me.authSession || {});
     const username = String(me.username || '').trim();
     const displayName = String(me.displayName || '').trim();
     const email = String(me.email || '').trim();
@@ -1662,7 +1663,8 @@ async function api(path, options = {}) {
   }
 
   if (!response.ok) {
-    window.mamSessionExpiry?.handle(response.status, textBody, parsedBody);
+    const isProfileFailure = String(path).split('?')[0] === '/api/me' && response.status >= 500;
+    window.mamSessionExpiry?.handle(response.status, textBody, parsedBody, { force: isProfileFailure });
     const fallback = textBody
       ? textBody.replace(/\s+/g, ' ').trim().slice(0, 220)
       : '';
