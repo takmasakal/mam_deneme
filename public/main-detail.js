@@ -59,6 +59,7 @@
       const canDownloadThisAsset = asset?.canDownloadAsset !== false;
       const canChangeThisAsset = !asset?.inTrash;
       return {
+        assetIsImage: Boolean(isImage(asset)),
         assetIsPdf,
         assetIsOffice,
         canDownloadAsset: canDownloadThisAsset,
@@ -96,6 +97,7 @@
         actionType,
         canRestorePdf: Boolean(access.canManageVersions && access.assetIsPdf && hasSnapshot),
         canRestoreOffice: Boolean(access.canManageVersions && access.assetIsOffice && hasSnapshot),
+        canPreviewVersion: Boolean(access.assetIsImage && hasSnapshot),
         canDownloadVersion: Boolean(hasSnapshot && access.canDownloadAsset),
         canEditVersion: canEditOrDelete,
         canDeleteVersion: canEditOrDelete
@@ -121,10 +123,14 @@
       const downloadButton = rowState.canDownloadVersion
         ? `<button type="button" class="downloadVersionBtn" data-version-id="${escapeHtml(version.versionId)}">${escapeHtml(t('download_version'))}</button>`
         : '';
-      const actionBar = (interactive || downloadButton) ? `
+      const previewButton = rowState.canPreviewVersion
+        ? `<button type="button" class="previewVersionBtn" data-version-id="${escapeHtml(version.versionId)}">${escapeHtml(t('preview_version'))}</button>`
+        : '';
+      const actionBar = (interactive || downloadButton || previewButton) ? `
         <div class="timecode-bar" style="margin-top:8px;">
           ${access.assetIsPdf ? `<button type="button" class="restorePdfVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canRestorePdf ? '' : 'disabled'}>${escapeHtml(rowState.canRestorePdf ? t('restore_pdf_version') : t('restore_pdf_unavailable'))}</button>` : ''}
           ${access.assetIsOffice ? `<button type="button" class="restoreOfficeVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canRestoreOffice ? '' : 'disabled'}>${escapeHtml(rowState.canRestoreOffice ? t('restore_office_version') : t('restore_pdf_unavailable'))}</button>` : ''}
+          ${previewButton}
           ${downloadButton}
           ${interactive ? `<button type="button" class="editVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canEditVersion ? '' : 'disabled'}>${escapeHtml(t('edit_version_name'))}</button>` : ''}
           ${interactive && rowState.canDeleteVersion ? `<button type="button" class="deleteVersionBtn danger" data-version-id="${escapeHtml(version.versionId)}">${escapeHtml(t('delete_version'))}</button>` : ''}
@@ -269,6 +275,7 @@
           <h4>${t('add_version')}</h4>
           <input name="label" placeholder="${escapeHtml(t('ph_version_label'))}" />
           <input name="note" placeholder="${t('what_changed')}" />
+          <input name="versionFile" type="file" accept="image/*,.heic,.heif" />
           <button type="submit">${t('create_version')}</button>
         </form>
 

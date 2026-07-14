@@ -1702,6 +1702,8 @@ function registerAssetRoutes(app, deps) {
   });
 
   app.post('/api/assets/:id/versions', async (req, res) => {
+    let replacementPath = '';
+    const replacementArtifactPaths = [];
     try {
       const effective = await resolveEffectivePermissions(req);
       req.userPermissions = effective;
@@ -1718,6 +1720,157 @@ function registerAssetRoutes(app, deps) {
 
       const countResult = await pool.query('SELECT COUNT(*)::int AS c FROM asset_versions WHERE asset_id = $1', [req.params.id]);
       const count = countResult.rows[0].c;
+      const replacementFileData = String(req.body?.fileData || '').trim();
+      const replacementFileName = sanitizeFileName(String(req.body?.fileName || '').trim());
+      const replacementMimeType = String(req.body?.mimeType || row.mime_type || '').trim().toLowerCase();
+
+      if (replacementFileData) {
+        const isImageReplacement = replacementMimeType.startsWith('image/')
+          || imageDerivativeService?.isHeicCandidate({
+            mimeType: replacementMimeType,
+            fileName: replacementFileName
+          });
+        if (!replacementFileName || !isImageReplacement) {
+          return res.status(400).json({ error: 'Only image files can replace this asset version' });
+        }
+
+        let replacementBuffer;
+        try {
+          replacementBuffer = Buffer.from(replacementFileData, 'base64');
+        } catch (_error) {
+          return res.status(400).json({ error: 'Could not decode replacement file' });
+        }
+        if (!replacementBuffer.length) return res.status(400).json({ error: 'Replacement file is empty' });
+
+        const replacementHash = computeBufferSha256(replacementBuffer);
+        const duplicateAsset = await findDuplicateAssetByHash(replacementHash);
+        if (duplicateAsset && duplicateAsset.id !== req.params.id) {
+          return res.status(409).json({
+            error: 'An identical asset file already exists',
+            code: 'duplicate_asset_content',
+            existingAsset: buildDuplicateAssetPayload(duplicateAsset)
+          });
+        }
+
+        const ingestStorage = getIngestStoragePath({
+          type: row.type,
+          mimeType: replacementMimeType,
+          fileName: replacementFileName
+        });
+        const storedName = `${Date.now()}-${nanoid()}-${replacementFileName}`;
+        replacementPath = path.join(ingestStorage.absoluteDir, storedName);
+        const replacementMediaUrl = `/uploads/${ingestStorage.relativeDir.replace(/\\/g, '/')}/${storedName}`;
+        fs.writeFileSync(replacementPath, replacementBuffer);
+
+        const derivatives = await imageDerivativeService.ensureImageDerivativesForUpload({
+          mimeType: replacementMimeType,
+          fileName: replacementFileName,
+          inputPath: replacementPath,
+          createdAt: new Date()
+        });
+        const replacementProxyUrl = String(derivatives.proxyUrl || '').trim();
+        const replacementThumbnailUrl = String(derivatives.thumbnailUrl || replacementProxyUrl || '').trim();
+        if (replacementProxyUrl) replacementArtifactPaths.push(publicUploadUrlToAbsolutePath(replacementProxyUrl));
+        if (replacementThumbnailUrl) replacementArtifactPaths.push(publicUploadUrlToAbsolutePath(replacementThumbnailUrl));
+
+        const actorUsername = String(req.userPermissions?.username || req.userPermissions?.displayName || row.owner || 'user').trim() || 'user';
+        const createdAt = new Date().toISOString();
+        const version = {
+          versionId: nanoid(),
+          label: req.body.label?.trim() || `v${count + 1}`,
+          note: req.body.note?.trim() || 'Version update',
+          snapshot: {
+            snapshotMediaUrl: replacementMediaUrl,
+            snapshotSourcePath: replacementPath,
+            snapshotFileName: replacementFileName,
+            snapshotMimeType: replacementMimeType,
+            snapshotThumbnailUrl: replacementThumbnailUrl
+          },
+          actorUsername,
+          actionType: 'manual',
+          createdAt
+        };
+        const dcMetadata = {
+          ...(row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {}),
+          identifier: replacementFileName,
+          format: replacementMimeType
+        };
+        const dbClient = await pool.connect();
+        try {
+          await dbClient.query('BEGIN');
+          const insertVersion = async (entry) => dbClient.query(
+            `
+              INSERT INTO asset_versions (
+                version_id, asset_id, label, note,
+                snapshot_media_url, snapshot_source_path, snapshot_file_name, snapshot_mime_type, snapshot_thumbnail_url,
+                actor_username, action_type, restored_from_version_id,
+                created_at
+              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+            `,
+            [
+              entry.versionId, req.params.id, entry.label, entry.note,
+              entry.snapshot.snapshotMediaUrl, entry.snapshot.snapshotSourcePath, entry.snapshot.snapshotFileName, entry.snapshot.snapshotMimeType, entry.snapshot.snapshotThumbnailUrl,
+              entry.actorUsername, entry.actionType, null,
+              entry.createdAt
+            ]
+          );
+          if (count === 0) {
+            await insertVersion({
+              versionId: nanoid(),
+              label: 'v1',
+              note: 'Original version',
+              snapshot: buildVersionSnapshotFromRow(row),
+              actorUsername,
+              actionType: 'manual',
+              createdAt
+            });
+          }
+          await insertVersion(version);
+          await dbClient.query(
+            `
+              UPDATE assets
+              SET file_name = $2,
+                  mime_type = $3,
+                  media_url = $4,
+                  source_path = $5,
+                  file_hash = $6,
+                  proxy_url = $7,
+                  proxy_status = $8,
+                  thumbnail_url = $9,
+                  dc_metadata = $10::jsonb,
+                  updated_at = $11
+              WHERE id = $1
+            `,
+            [
+              req.params.id, replacementFileName, replacementMimeType, replacementMediaUrl, replacementPath,
+              replacementHash, replacementProxyUrl, replacementProxyUrl ? 'ready' : 'not_applicable', replacementThumbnailUrl,
+              JSON.stringify(dcMetadata), createdAt
+            ]
+          );
+          await dbClient.query('COMMIT');
+        } catch (error) {
+          await dbClient.query('ROLLBACK').catch(() => {});
+          throw error;
+        } finally {
+          dbClient.release();
+        }
+        await indexAssetToElastic(req.params.id).catch(() => {});
+        return res.status(201).json(mapVersionRow({
+          version_id: version.versionId,
+          asset_id: req.params.id,
+          label: version.label,
+          note: version.note,
+          snapshot_media_url: version.snapshot.snapshotMediaUrl,
+          snapshot_source_path: version.snapshot.snapshotSourcePath,
+          snapshot_file_name: version.snapshot.snapshotFileName,
+          snapshot_mime_type: version.snapshot.snapshotMimeType,
+          snapshot_thumbnail_url: version.snapshot.snapshotThumbnailUrl,
+          actor_username: version.actorUsername,
+          action_type: version.actionType,
+          restored_from_version_id: null,
+          created_at: version.createdAt
+        }));
+      }
 
       const version = {
         versionId: nanoid(),
@@ -1749,6 +1902,12 @@ function registerAssetRoutes(app, deps) {
 
       res.status(201).json(version);
     } catch (_error) {
+      if (replacementPath) {
+        try { if (fs.existsSync(replacementPath)) fs.unlinkSync(replacementPath); } catch (_cleanupError) {}
+      }
+      for (const artifactPath of replacementArtifactPaths) {
+        try { if (artifactPath && fs.existsSync(artifactPath)) fs.unlinkSync(artifactPath); } catch (_cleanupError) {}
+      }
       res.status(500).json({ error: 'Failed to create version' });
     }
   });
@@ -1791,6 +1950,41 @@ function registerAssetRoutes(app, deps) {
       });
     } catch (_error) {
       return res.status(500).json({ error: 'Failed to download version' });
+    }
+  });
+
+  app.get('/api/assets/:id/versions/:versionId/preview', async (req, res) => {
+    try {
+      const assetId = String(req.params.id || '').trim();
+      const versionId = String(req.params.versionId || '').trim();
+      if (!assetId || !versionId) return res.status(400).json({ error: 'assetId and versionId are required' });
+
+      const loaded = await loadVisibleAssetRow(req, assetId);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      const versionResult = await pool.query(
+        'SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2',
+        [assetId, versionId]
+      );
+      const versionRow = versionResult.rows[0];
+      if (!versionRow) return res.status(404).json({ error: 'Version not found' });
+
+      const mimeType = String(versionRow.snapshot_mime_type || '').trim().toLowerCase();
+      if (!mimeType.startsWith('image/')) return res.status(400).json({ error: 'Only image versions can be previewed' });
+      let sourcePath = publicUploadUrlToAbsolutePath(String(versionRow.snapshot_thumbnail_url || '').trim());
+      if (!sourcePath || !fs.existsSync(sourcePath)) sourcePath = String(versionRow.snapshot_source_path || '').trim();
+      if (!sourcePath || !fs.existsSync(sourcePath)) {
+        const resolved = publicUploadUrlToAbsolutePath(String(versionRow.snapshot_media_url || '').trim());
+        sourcePath = resolved && fs.existsSync(resolved) ? resolved : '';
+      }
+      if (!sourcePath || !fs.existsSync(sourcePath)) return res.status(404).json({ error: 'Version snapshot file is missing on disk' });
+
+      res.type(mimeType);
+      res.set('Accept-Ranges', 'bytes');
+      res.set('Cache-Control', 'private, no-store');
+      res.set('Content-Disposition', 'inline');
+      return res.sendFile(sourcePath);
+    } catch (_error) {
+      return res.status(500).json({ error: 'Failed to preview version' });
     }
   });
 

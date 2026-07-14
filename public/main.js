@@ -453,6 +453,7 @@ let i18n = {
     add_version: 'Add Version',
     what_changed: 'What changed',
     create_version: 'Create Version',
+    preview_version: 'Preview',
     ph_inline_tags: 'tag1, tag2',
     ph_version_label: 'v2',
     versions: 'Versions',
@@ -806,6 +807,7 @@ let i18n = {
     add_version: 'Versiyon Ekle',
     what_changed: 'Ne değişti',
     create_version: 'Versiyon Oluştur',
+    preview_version: 'Önizle',
     ph_inline_tags: 'etiket1, etiket2',
     ph_version_label: 'v2',
     versions: 'Versiyonlar',
@@ -2476,6 +2478,12 @@ async function openAsset(id, workflow, options = {}) {
   versionFormEl?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const payload = serializeForm(event.target);
+    const versionFile = event.target.elements.versionFile?.files?.[0];
+    if (versionFile) {
+      payload.fileName = versionFile.name;
+      payload.mimeType = versionFile.type || 'application/octet-stream';
+      payload.fileData = await readFileAsBase64(versionFile);
+    }
     await api(`/api/assets/${id}/versions`, { method: 'POST', body: JSON.stringify(payload) });
     await loadAssets();
     await openAsset(id, workflow);
@@ -2652,6 +2660,17 @@ async function openAsset(id, workflow, options = {}) {
       document.body.appendChild(link);
       link.click();
       link.remove();
+    });
+  });
+
+  assetVersionsListEl?.querySelectorAll('.previewVersionBtn').forEach((btn) => {
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const versionId = String(event.currentTarget?.dataset?.versionId || '').trim();
+      if (!versionId) return;
+      const previewUrl = `/api/assets/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/preview`;
+      window.open(previewUrl, '_blank', 'noopener,noreferrer');
     });
   });
 

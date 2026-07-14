@@ -52,6 +52,24 @@ function createImageDerivativeService(deps) {
     }
   }
 
+  async function generateImagePreview(inputPath, outputPath) {
+    const result = await runCommandCapture('ffmpeg', [
+      '-y',
+      '-i',
+      inputPath,
+      '-frames:v',
+      '1',
+      '-vf',
+      'scale=min(1280\\,iw):-2',
+      '-q:v',
+      '5',
+      outputPath
+    ]);
+    if (!result.ok || !fs.existsSync(outputPath) || fs.statSync(outputPath).size <= 0) {
+      throw new Error(compactCommandOutput(result.stderr || result.stdout || 'Image preview generation failed'));
+    }
+  }
+
   async function generateImageThumbnail(inputPath, outputPath) {
     const result = await runCommandCapture('ffmpeg', [
       '-y',
@@ -78,13 +96,13 @@ function createImageDerivativeService(deps) {
     inputPath,
     createdAt = new Date()
   } = {}) {
-    if (!isHeicCandidate({ mimeType, fileName })) {
-      return { proxyUrl: '', thumbnailUrl: '' };
-    }
-
     const previewStoredName = `${Date.now()}-${nanoid()}-image-preview.jpg`;
     const previewOut = buildArtifactPath('proxies', previewStoredName, createdAt);
-    await generateHeicPreview(inputPath, previewOut.absolutePath);
+    if (isHeicCandidate({ mimeType, fileName })) {
+      await generateHeicPreview(inputPath, previewOut.absolutePath);
+    } else {
+      await generateImagePreview(inputPath, previewOut.absolutePath);
+    }
 
     const thumbStoredName = `${Date.now()}-${nanoid()}-image-thumb.jpg`;
     const thumbOut = buildArtifactPath('thumbnails', thumbStoredName, createdAt);
@@ -106,6 +124,7 @@ function createImageDerivativeService(deps) {
   return {
     isHeicCandidate,
     generateHeicPreview,
+    generateImagePreview,
     generateImageThumbnail,
     ensureImageDerivativesForUpload
   };
