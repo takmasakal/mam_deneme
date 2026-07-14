@@ -660,10 +660,16 @@ function createAssetAccessService({ pool }) {
     if (identityMatchesAny(identity, asset.editDeniedUsers, asset.editDeniedGroups)) return false;
     if (context?.canBypassAssetVisibility) return true;
     if (isPermissionDenied(context, 'asset.delete')) return false;
+    const ownerName = normalizeAccessName(row?.owner || '');
     const isAssetOwnerUser = Boolean(
-      (identity.identifiers || []).some((id) => id && id === asset.ownerUser)
+      (identity.identifiers || []).some(
+        (id) => id && (id === asset.ownerUser || id === ownerName)
+      )
     );
     if (isAssetOwnerUser) return true;
+    if ((identity.groups || []).some((group) => asset.ownerGroups.includes(group))) {
+      return true;
+    }
     if (context?.canDeleteAssets) return true;
     if (!canEditAssetType(row, context) && !hasExplicitAssetViewGrant(asset, identity)) return false;
     if (context?.canManageAllAssetVisibility) return true;
