@@ -96,6 +96,7 @@ const auditFromInput = document.getElementById('auditFromInput');
 const auditToInput = document.getElementById('auditToInput');
 const runAuditSearchBtn = document.getElementById('runAuditSearchBtn');
 const exportAuditEventsBtn = document.getElementById('exportAuditEventsBtn');
+const cleanupAuditEventsBtn = document.getElementById('cleanupAuditEventsBtn');
 const auditEventsRows = document.getElementById('auditEventsRows');
 const auditEventsMsg = document.getElementById('auditEventsMsg');
 const assetRightsSearchInput = document.getElementById('assetRightsSearchInput');
@@ -319,6 +320,11 @@ let i18n = {
     audit_filter_to: 'To',
     audit_filter_run: 'Filter',
     audit_export_excel: 'Export to Excel',
+    audit_cleanup: 'Clean audit log',
+    audit_cleanup_confirm: 'Archive audit records older than the retention period?',
+    audit_cleanup_done: '{count} audit event(s) archived.',
+    audit_cleanup_none: 'No audit events older than the retention period were found.',
+    audit_cleanup_failed: 'Failed to clean audit events.',
     audit_export_failed: 'Failed to export audit events.',
     audit_none: 'No audit event found.',
     audit_load_failed: 'Failed to load audit events.',
@@ -765,6 +771,11 @@ let i18n = {
     audit_filter_to: 'Bitiş',
     audit_filter_run: 'Filtrele',
     audit_export_excel: "Excel'e aktar",
+    audit_cleanup: 'Audit temizle',
+    audit_cleanup_confirm: 'Saklama süresinden eski audit kayıtları arşivlensin mi?',
+    audit_cleanup_done: '{count} audit kaydı arşivlendi.',
+    audit_cleanup_none: 'Saklama süresinden eski audit kaydı bulunamadı.',
+    audit_cleanup_failed: 'Audit kayıtları temizlenemedi.',
     audit_export_failed: 'İşlem geçmişi dışa aktarılamadı.',
     audit_none: 'İşlem kaydı bulunamadı.',
     audit_load_failed: 'İşlem geçmişi yüklenemedi.',
@@ -2588,6 +2599,7 @@ adminRecordsModule.init();
 function applyAdminAccessMode(me = {}) {
   currentAdminProfile = me && typeof me === 'object' ? me : {};
   if (permissionBackupGroup) permissionBackupGroup.hidden = !currentAdminProfile?.isSuperAdmin;
+  if (cleanupAuditEventsBtn) cleanupAuditEventsBtn.hidden = !currentAdminProfile?.isSuperAdmin;
   return accessScopeModule.applyAdminAccessMode({
     profile: currentAdminProfile,
     adminTabs,
@@ -3477,6 +3489,26 @@ async function exportAuditEvents() {
   }
 }
 
+async function cleanupAuditEvents() {
+  if (!cleanupAuditEventsBtn || !window.confirm(t('audit_cleanup_confirm'))) return;
+  if (auditEventsMsg) auditEventsMsg.textContent = '';
+  cleanupAuditEventsBtn.disabled = true;
+  try {
+    const data = await api('/api/admin/audit-events/cleanup', { method: 'POST' });
+    const count = Number(data?.archivedEvents || 0);
+    if (auditEventsMsg) {
+      auditEventsMsg.textContent = count
+        ? t('audit_cleanup_done').replace('{count}', String(count))
+        : t('audit_cleanup_none');
+    }
+    await loadAuditEvents();
+  } catch (error) {
+    if (auditEventsMsg) auditEventsMsg.textContent = error.message || t('audit_cleanup_failed');
+  } finally {
+    cleanupAuditEventsBtn.disabled = false;
+  }
+}
+
 async function loadSettings() {
   const settings = await api('/api/admin/settings');
   settingsForm.elements.autoProxyBackfillOnUpload.checked = Boolean(settings.autoProxyBackfillOnUpload);
@@ -4200,6 +4232,12 @@ runAuditSearchBtn?.addEventListener('click', () => {
 exportAuditEventsBtn?.addEventListener('click', () => {
   exportAuditEvents().catch((error) => {
     if (auditEventsMsg) auditEventsMsg.textContent = String(error.message || t('audit_export_failed'));
+  });
+});
+
+cleanupAuditEventsBtn?.addEventListener('click', () => {
+  cleanupAuditEvents().catch((error) => {
+    if (auditEventsMsg) auditEventsMsg.textContent = String(error.message || t('audit_cleanup_failed'));
   });
 });
 

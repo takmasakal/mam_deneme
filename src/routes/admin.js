@@ -2791,6 +2791,30 @@ app.get('/api/admin/audit-events', async (req, res) => {
   }
 });
 
+app.post('/api/admin/audit-events/cleanup', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return null;
+    const settings = await getAdminSettings();
+    const retentionDays = normalizeAuditRetentionDays(settings.auditRetentionDays);
+    const archivedEvents = await cleanupAuditEvents(retentionDays);
+    await recordAuditEvent?.(req, {
+      action: 'audit.cleaned',
+      targetType: 'system',
+      targetId: 'audit_events',
+      targetTitle: 'Audit Log',
+      details: {
+        retentionDays,
+        archivedEvents: Number(archivedEvents || 0),
+        requestedBy: effective.username || effective.displayName || 'admin'
+      }
+    });
+    return res.json({ ok: true, retentionDays, archivedEvents: Number(archivedEvents || 0) });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to clean audit events' });
+  }
+});
+
 async function buildAuditEventFilters(req) {
   const where = [];
   const values = [];
