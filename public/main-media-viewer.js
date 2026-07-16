@@ -256,7 +256,10 @@ function mediaViewer(asset, options = {}) {
               <div class="tool-actions">
                 <button type="button" id="videoOcrExtractBtn">${t('video_ocr_extract')}</button>
                 <a id="videoOcrDownloadLink" class="subtitle-item-download-btn hidden" href="#" download target="_blank" rel="noreferrer">${t('video_ocr_download')}</a>
-                <button type="button" id="videoOcrSaveBtn" class="hidden">${t('video_ocr_save_db')}</button>
+              </div>
+              <div class="subtitle-list-wrap">
+                <div class="viewer-meta"><strong>${t('video_ocr_list')}:</strong></div>
+                <div id="videoOcrItems" class="subtitle-items"></div>
               </div>
             </div>
           </div>

@@ -3220,6 +3220,11 @@ async function saveAssetVideoOcrMetadata(assetId, row, job) {
   const now = new Date().toISOString();
   const existingDc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
   const items = sanitizeVideoOcrItems(existingDc.videoOcrItems);
+  const resultUrl = String(job.resultUrl || '').trim();
+  const existingItem = items.find((item) => String(item.ocrUrl || '').trim() === resultUrl);
+  if (existingItem) {
+    return { row, item: existingItem };
+  }
   const nextVersion = items.length + 1;
   const requestedLabel = normalizeRequestedOcrLabel(
     job.ocrLabel,
@@ -3233,7 +3238,7 @@ async function saveAssetVideoOcrMetadata(assetId, row, job) {
   );
   items.push({
     id: nanoid(),
-    ocrUrl: String(job.resultUrl || '').trim(),
+    ocrUrl: resultUrl,
     ocrLabel: requestedLabel,
     ocrEngine: normalizeOcrEngine(job.ocrEngine || job.requestedEngine || 'paddle'),
     lineCount: Math.max(0, Number(job.lineCount) || 0),
