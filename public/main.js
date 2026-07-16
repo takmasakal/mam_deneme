@@ -2507,8 +2507,9 @@ async function openAsset(id, workflow, options = {}) {
 
   downloadBtn?.addEventListener('click', () => {
     // Varlık indir her zaman asıl kaynağı indirir; proxy bunun yerine geçmez.
-    const downloadUrl = String(asset.mediaUrl || '').trim();
-    if (!downloadUrl) return;
+    const sourceUrl = String(asset.mediaUrl || '').trim();
+    if (!sourceUrl) return;
+    const downloadUrl = `${sourceUrl}${sourceUrl.includes('?') ? '&' : '?'}download=1`;
     const link = document.createElement('a');
     link.href = downloadUrl;
     // Empty download attribute lets browser suggest a filename.
@@ -2521,8 +2522,9 @@ async function openAsset(id, workflow, options = {}) {
 
   downloadProxyBtn?.addEventListener('click', () => {
     // Proxy indirme yalnızca admin için ek bir kolaylık olarak sunuluyor.
-    const downloadUrl = String(asset.proxyUrl || '').trim();
-    if (!downloadUrl) return;
+    const sourceUrl = String(asset.proxyUrl || '').trim();
+    if (!sourceUrl) return;
+    const downloadUrl = `${sourceUrl}${sourceUrl.includes('?') ? '&' : '?'}download=1`;
     const link = document.createElement('a');
     link.href = downloadUrl;
     link.setAttribute('download', '');

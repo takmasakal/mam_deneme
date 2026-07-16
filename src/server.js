@@ -3849,7 +3849,9 @@ function pruneDownloadAuditCache(now = Date.now()) {
   }
 }
 
-function shouldAuditUploadAccess(publicUrl) {
+function shouldAuditUploadAccess(publicUrl, req = null) {
+  const downloadFlag = String(req?.query?.download || '').trim().toLowerCase();
+  if (!['1', 'true', 'yes'].includes(downloadFlag)) return false;
   const safeUrl = String(publicUrl || '').split('?')[0];
   if (!safeUrl.startsWith('/uploads/')) return false;
   const lower = safeUrl.toLowerCase();
@@ -3942,7 +3944,7 @@ async function secureUploadAssetAccess(req, res, next) {
 function auditUploadDownloadRequest(req, res, next) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return next();
   const publicUrl = `/uploads/${String(req.path || '').replace(/^\/+/, '')}`;
-  if (!shouldAuditUploadAccess(publicUrl)) return next();
+  if (!shouldAuditUploadAccess(publicUrl, req)) return next();
   res.on('finish', () => {
     if (res.statusCode < 200 || res.statusCode >= 300) return;
     setTimeout(async () => {
