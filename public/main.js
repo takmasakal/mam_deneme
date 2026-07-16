@@ -1079,7 +1079,10 @@ function formatDuration(seconds) { return commonModule.formatDuration(seconds); 
 async function loadAssetTechnicalInfo(asset) { return commonModule.loadAssetTechnicalInfo(asset); }
 
 function openDownloadInNewTab(downloadUrl) {
-  const safeUrl = String(downloadUrl || '').trim();
+  const sourceUrl = String(downloadUrl || '').trim();
+  const safeUrl = sourceUrl
+    ? `${sourceUrl}${sourceUrl.includes('?') ? '&' : '?'}download=1`
+    : '';
   if (!safeUrl) return;
   const link = document.createElement('a');
   link.href = safeUrl;
