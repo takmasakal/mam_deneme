@@ -6258,14 +6258,18 @@ function scheduleSystemBackups() {
 let auditCleanupInProgress = false;
 
 async function cleanupAuditEvents(retentionDays = DEFAULT_ADMIN_SETTINGS.auditRetentionDays) {
-  if (auditCleanupInProgress) return;
+  if (auditCleanupInProgress) return null;
   auditCleanupInProgress = true;
   const days = normalizeAuditRetentionDays(retentionDays);
+  let total = 0;
   try {
     for (let i = 0; i < 20; i += 1) {
       const archived = await archiveExpiredAuditEvents(days);
-      if (!archived || archived.count < 50000) return;
+      if (!archived) return total;
+      total += Number(archived.count || 0);
+      if (archived.count < 50000) return total;
     }
+    return total;
   } finally {
     auditCleanupInProgress = false;
   }
