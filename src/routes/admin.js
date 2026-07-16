@@ -2795,21 +2795,22 @@ app.post('/api/admin/audit-events/cleanup', async (req, res) => {
   try {
     const effective = await requireSuperAdminRequest(req, res);
     if (!effective) return null;
-    const settings = await getAdminSettings();
-    const retentionDays = normalizeAuditRetentionDays(settings.auditRetentionDays);
-    const archivedEvents = await cleanupAuditEvents(retentionDays);
-    await recordAuditEvent?.(req, {
-      action: 'audit.cleaned',
-      targetType: 'system',
-      targetId: 'audit_events',
-      targetTitle: 'Audit Log',
-      details: {
-        retentionDays,
-        archivedEvents: Number(archivedEvents || 0),
-        requestedBy: effective.username || effective.displayName || 'admin'
-      }
-    });
-    return res.json({ ok: true, retentionDays, archivedEvents: Number(archivedEvents || 0) });
+    const from = String(req.body?.from || '').trim();
+    const to = String(req.body?.to || '').trim();
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    if (!datePattern.test(from) || !datePattern.test(to)) {
+      return res.status(400).json({ error: 'Audit silme için başlangıç ve bitiş tarihi gereklidir' });
+    }
+    if (from > to) {
+      return res.status(400).json({ error: 'Başlangıç tarihi bitiş tarihinden sonra olamaz' });
+    }
+    const result = await pool.query(
+      `DELETE FROM audit_events
+       WHERE created_at >= $1::date
+         AND created_at < ($2::date + INTERVAL '1 day')`,
+      [from, to]
+    );
+    return res.json({ ok: true, from, to, deletedEvents: Number(result.rowCount || 0) });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to clean audit events' });
   }
