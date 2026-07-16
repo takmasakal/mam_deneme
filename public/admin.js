@@ -320,11 +320,12 @@ let i18n = {
     audit_filter_to: 'To',
     audit_filter_run: 'Filter',
     audit_export_excel: 'Export to Excel',
-    audit_cleanup: 'Clean audit log',
-    audit_cleanup_confirm: 'Archive audit records older than the retention period?',
-    audit_cleanup_done: '{count} audit event(s) archived.',
-    audit_cleanup_none: 'No audit events older than the retention period were found.',
-    audit_cleanup_failed: 'Failed to clean audit events.',
+    audit_cleanup: 'Delete audit events',
+    audit_cleanup_confirm: 'Delete audit events between the selected dates? This cannot be undone.',
+    audit_cleanup_date_required: 'Enter a start and end date.',
+    audit_cleanup_done: '{count} audit event(s) deleted.',
+    audit_cleanup_none: 'No audit events found in the selected date range.',
+    audit_cleanup_failed: 'Failed to delete audit events.',
     audit_export_failed: 'Failed to export audit events.',
     audit_none: 'No audit event found.',
     audit_load_failed: 'Failed to load audit events.',
@@ -771,11 +772,12 @@ let i18n = {
     audit_filter_to: 'Bitiş',
     audit_filter_run: 'Filtrele',
     audit_export_excel: "Excel'e aktar",
-    audit_cleanup: 'Audit temizle',
-    audit_cleanup_confirm: 'Saklama süresinden eski audit kayıtları arşivlensin mi?',
-    audit_cleanup_done: '{count} audit kaydı arşivlendi.',
-    audit_cleanup_none: 'Saklama süresinden eski audit kaydı bulunamadı.',
-    audit_cleanup_failed: 'Audit kayıtları temizlenemedi.',
+    audit_cleanup: 'Audit sil',
+    audit_cleanup_confirm: 'Seçilen tarih aralığındaki audit kayıtları silinsin mi? Bu işlem geri alınamaz.',
+    audit_cleanup_date_required: 'Başlangıç ve bitiş tarihi girin.',
+    audit_cleanup_done: '{count} audit kaydı silindi.',
+    audit_cleanup_none: 'Seçilen tarih aralığında audit kaydı bulunamadı.',
+    audit_cleanup_failed: 'Audit kayıtları silinemedi.',
     audit_export_failed: 'İşlem geçmişi dışa aktarılamadı.',
     audit_none: 'İşlem kaydı bulunamadı.',
     audit_load_failed: 'İşlem geçmişi yüklenemedi.',
@@ -3501,12 +3503,26 @@ async function exportAuditEvents() {
 }
 
 async function cleanupAuditEvents() {
-  if (!cleanupAuditEventsBtn || !window.confirm(t('audit_cleanup_confirm'))) return;
+  if (!cleanupAuditEventsBtn) return;
+  const from = String(auditFromInput?.value || '').trim();
+  const to = String(auditToInput?.value || '').trim();
+  if (!from || !to) {
+    if (auditEventsMsg) auditEventsMsg.textContent = t('audit_cleanup_date_required');
+    return;
+  }
+  if (from > to) {
+    if (auditEventsMsg) auditEventsMsg.textContent = t('audit_cleanup_date_required');
+    return;
+  }
+  if (!window.confirm(t('audit_cleanup_confirm'))) return;
   if (auditEventsMsg) auditEventsMsg.textContent = '';
   cleanupAuditEventsBtn.disabled = true;
   try {
-    const data = await api('/api/admin/audit-events/cleanup', { method: 'POST' });
-    const count = Number(data?.archivedEvents || 0);
+    const data = await api('/api/admin/audit-events/cleanup', {
+      method: 'POST',
+      body: JSON.stringify({ from, to })
+    });
+    const count = Number(data?.deletedEvents || 0);
     if (auditEventsMsg) {
       auditEventsMsg.textContent = count
         ? t('audit_cleanup_done').replace('{count}', String(count))

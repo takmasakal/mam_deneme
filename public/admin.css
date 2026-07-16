@@ -1615,6 +1615,12 @@ body {
   filter: brightness(1.06);
 }
 
+.audit-events-toolbar .proxy-tool-actions button.danger {
+  border-color: rgba(255, 92, 92, 0.72);
+  background: #ff5c5c;
+  color: #fff7f7;
+}
+
 .admin-card .filter-row {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
