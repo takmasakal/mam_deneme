@@ -131,6 +131,17 @@
           </div>
           <div id="auditEventsRows" class="rows"></div>
           <div id="auditEventsMsg" class="admin-note"></div>
+          <fieldset class="settings-group">
+            <legend data-i18n="settings_group_audit">Audit Log</legend>
+            <label>
+              <span data-i18n="audit_retention_days">Log saklama süresi (gün)</span>
+              <input form="settingsForm" name="auditRetentionDays" type="number" min="1" max="3650" step="1" />
+            </label>
+            <label>
+              <span data-i18n="media_job_retention_days">Son medya işleri saklama süresi (gün)</span>
+              <input form="settingsForm" name="mediaJobRetentionDays" type="number" min="1" max="3650" step="1" />
+            </label>
+          </fieldset>
         </article>
 
         <article class="admin-card admin-panel" data-panel="assetRights">
@@ -281,18 +292,6 @@
                   <button id="rotateApiTokenBtn" type="button" data-i18n="rotate_token">Rotate Token</button>
                   <button id="copyApiTokenBtn" type="button" data-i18n="copy_token">Copy Token</button>
                 </div>
-              </fieldset>
-
-              <fieldset class="settings-group">
-                <legend data-i18n="settings_group_audit">Audit Log</legend>
-                <label>
-                  <span data-i18n="audit_retention_days">Log saklama süresi (gün)</span>
-                  <input name="auditRetentionDays" type="number" min="1" max="3650" step="1" />
-                </label>
-                <label>
-                  <span data-i18n="media_job_retention_days">Son medya işleri saklama süresi (gün)</span>
-                  <input name="mediaJobRetentionDays" type="number" min="1" max="3650" step="1" />
-                </label>
               </fieldset>
 
               <fieldset class="settings-group">
