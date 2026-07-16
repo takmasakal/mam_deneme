@@ -886,7 +886,7 @@ function initVideoOcrTools(asset, root = document) {
   const mergeGapInput = byId('videoOcrMergeGapInput');
   const extractBtn = byId('videoOcrExtractBtn');
   const downloadLink = byId('videoOcrDownloadLink');
-  const saveBtn = byId('videoOcrSaveBtn');
+  const itemsEl = byId('videoOcrItems');
   if (!statusEl
     || !busyEl
     || !intervalInput
@@ -907,10 +907,9 @@ function initVideoOcrTools(asset, root = document) {
     || !mergeGapInput
     || !extractBtn
     || !downloadLink
-    || !saveBtn) return () => {};
+    || !itemsEl) return () => {};
 
   let disposed = false;
-  let saveTargetJobId = '';
 
   const setBusy = (busy) => {
     busyEl.classList.toggle('hidden', !busy);
@@ -931,7 +930,6 @@ function initVideoOcrTools(asset, root = document) {
     ignorePhrasesInput.disabled = busy;
     minDisplayInput.disabled = busy;
     mergeGapInput.disabled = busy;
-    saveBtn.disabled = busy;
   };
   const setStatus = (text) => {
     statusEl.textContent = text;
@@ -945,9 +943,75 @@ function initVideoOcrTools(asset, root = document) {
     downloadLink.classList.remove('hidden');
     downloadLink.href = String(url);
   };
-  const setSaveVisible = (visible, jobId = '') => {
-    saveTargetJobId = visible ? String(jobId || '') : '';
-    saveBtn.classList.toggle('hidden', !visible);
+  const ocrItems = () => Array.isArray(asset.videoOcrItems) ? asset.videoOcrItems : [];
+  const applyAssetFromApi = (mappedAsset) => {
+    if (!mappedAsset || typeof mappedAsset !== 'object') return;
+    asset.videoOcrUrl = mappedAsset.videoOcrUrl || asset.videoOcrUrl || '';
+    asset.videoOcrLabel = mappedAsset.videoOcrLabel || asset.videoOcrLabel || '';
+    asset.videoOcrItems = Array.isArray(mappedAsset.videoOcrItems) ? mappedAsset.videoOcrItems : (asset.videoOcrItems || []);
+  };
+  const renderOcrItems = () => {
+    const items = ocrItems();
+    if (!items.length) {
+      itemsEl.innerHTML = `<div class="subtitle-item-empty">${escapeHtml(t('video_ocr_no_items'))}</div>`;
+      return;
+    }
+    itemsEl.innerHTML = items.map((item) => {
+      const url = String(item.ocrUrl || '').trim();
+      const active = url && url === String(asset.videoOcrUrl || '').trim();
+      const label = String(item.ocrLabel || 'video-ocr').trim();
+      const stats = `${String(item.ocrEngine || '-')} | ${Number(item.lineCount || 0)} ${t('ocr_lines_short')} | ${Number(item.segmentCount || 0)} ${t('ocr_segments_short')}`;
+      return `
+        <div class="subtitle-item-row ${active ? 'active' : ''}" data-ocr-item-id="${escapeHtml(String(item.id || ''))}">
+          <span class="subtitle-item-label">${escapeHtml(label)}</span>
+          <span class="subtitle-item-lang">${escapeHtml(stats)}${active ? ` | ${escapeHtml(t('video_ocr_active'))}` : ''}</span>
+          <a class="subtitle-item-download-btn" href="${escapeHtml(url)}" download target="_blank" rel="noreferrer">${escapeHtml(t('video_ocr_download'))}</a>
+          ${currentUserCanDeleteAssetsRef.get() ? `<button type="button" class="subtitle-item-remove-btn">${escapeHtml(t('video_ocr_remove'))}</button>` : ''}
+          <button type="button" class="subtitle-item-use-btn">${escapeHtml(active ? t('video_ocr_active') : t('video_ocr_use'))}</button>
+        </div>
+      `;
+    }).join('');
+
+    itemsEl.querySelectorAll('.subtitle-item-use-btn').forEach((btn) => {
+      btn.addEventListener('click', async (event) => {
+        const rowEl = event.currentTarget.closest('.subtitle-item-row');
+        const itemId = String(rowEl?.dataset?.ocrItemId || '').trim();
+        if (!itemId) return;
+        setBusy(true);
+        try {
+          const result = await api(`/api/assets/${asset.id}/video-ocr`, {
+            method: 'PATCH',
+            body: JSON.stringify({ itemId })
+          });
+          applyAssetFromApi(result.asset);
+          renderOcrItems();
+        } catch (error) {
+          alert(String(error?.message || 'OCR selection failed'));
+        } finally {
+          setBusy(false);
+        }
+      });
+    });
+    itemsEl.querySelectorAll('.subtitle-item-remove-btn').forEach((btn) => {
+      btn.addEventListener('click', async (event) => {
+        const rowEl = event.currentTarget.closest('.subtitle-item-row');
+        const itemId = String(rowEl?.dataset?.ocrItemId || '').trim();
+        if (!itemId || !confirm(t('video_ocr_remove_confirm'))) return;
+        setBusy(true);
+        try {
+          const result = await api(`/api/assets/${asset.id}/video-ocr`, {
+            method: 'DELETE',
+            body: JSON.stringify({ itemId })
+          });
+          applyAssetFromApi(result.asset);
+          renderOcrItems();
+        } catch (error) {
+          alert(String(error?.message || 'OCR remove failed'));
+        } finally {
+          setBusy(false);
+        }
+      });
+    });
   };
   const applyPresetDefaults = () => {
     const preset = String(presetSelect.value || 'general').trim();
@@ -1003,7 +1067,6 @@ function initVideoOcrTools(asset, root = document) {
     if (status === 'failed') {
       setStatus(`${t('video_ocr_failed')} ${String(job?.error || '').trim()}`.trim());
       setDownload('');
-      setSaveVisible(false, '');
       return;
     }
     const isDone = status === 'completed';
@@ -1013,8 +1076,6 @@ function initVideoOcrTools(asset, root = document) {
     const modeTag = String(job?.mode || '').trim();
     const url = String(job?.downloadUrl || '').trim() || String(job?.resultUrl || '').trim();
     setDownload(isDone ? url : '');
-    const isDbSaved = Boolean(job?.saved) || String(job?.source || '') === 'db';
-    setSaveVisible(isDone && !isDbSaved && String(job?.jobId || '').trim(), String(job?.jobId || '').trim());
     if (isDone) {
       setStatus(`${t('video_ocr_done')} ${engineTag ? `[${engineTag}]` : ''} ${modeTag ? `[${modeTag}]` : ''} ${lineTag} ${segmentTag}`.trim());
       if (options.showSavedToast) setStatus(t('video_ocr_saved'));
@@ -1041,7 +1102,17 @@ function initVideoOcrTools(asset, root = document) {
     try {
       const done = await poll(jobId);
       if (!done || disposed) return;
-      applyJobStatus(done);
+      if (done.status === 'completed' && String(done.resultUrl || '').trim()) {
+        const saved = await api(`/api/assets/${asset.id}/video-ocr/save`, {
+          method: 'POST',
+          body: JSON.stringify({ jobId })
+        });
+        applyAssetFromApi(saved.asset);
+        renderOcrItems();
+        applyJobStatus({ ...done, saved: true, source: 'db' }, { showSavedToast: true });
+      } else {
+        applyJobStatus(done);
+      }
       const warnTag = String(done.warning || '').trim();
       if (warnTag) alert(warnTag);
     } catch (error) {
@@ -1056,7 +1127,18 @@ function initVideoOcrTools(asset, root = document) {
     try {
       const latest = await api(`/api/assets/${asset.id}/video-ocr/latest`);
       if (disposed || !latest) return;
-      applyJobStatus(latest);
+      if (latest.status === 'completed' && String(latest.resultUrl || '').trim() && latest.source !== 'db') {
+        const saved = await api(`/api/assets/${asset.id}/video-ocr/save`, {
+          method: 'POST',
+          body: JSON.stringify({ jobId: latest.jobId })
+        });
+        applyAssetFromApi(saved.asset);
+        renderOcrItems();
+        applyJobStatus({ ...latest, saved: true, source: 'db' }, { showSavedToast: true });
+      } else {
+        applyJobStatus(latest);
+        renderOcrItems();
+      }
       if (latest.status === 'queued' || latest.status === 'running') {
         watchJob(latest.jobId);
       }
@@ -1067,7 +1149,6 @@ function initVideoOcrTools(asset, root = document) {
 
   const onExtract = async () => {
     setBusy(true);
-    setSaveVisible(false, '');
     setStatus(t('video_ocr_running'));
     try {
       const queued = await api(`/api/assets/${asset.id}/video-ocr/extract`, {
@@ -1098,36 +1179,18 @@ function initVideoOcrTools(asset, root = document) {
       setBusy(false);
     }
   };
-  const onSave = async () => {
-    if (!saveTargetJobId) return;
-    saveBtn.disabled = true;
-    try {
-      await api(`/api/assets/${asset.id}/video-ocr/save`, {
-        method: 'POST',
-        body: JSON.stringify({ jobId: saveTargetJobId })
-      });
-      setSaveVisible(false, '');
-      setStatus(t('video_ocr_saved'));
-    } catch (error) {
-      alert(String(error?.message || 'Failed to save OCR result'));
-    } finally {
-      saveBtn.disabled = false;
-    }
-  };
 
   extractBtn.addEventListener('click', onExtract);
-  saveBtn.addEventListener('click', onSave);
   presetSelect.addEventListener('change', applyPresetDefaults);
   setStatus('');
   setDownload('');
-  setSaveVisible(false, '');
+  renderOcrItems();
   applyPresetDefaults();
   restoreLatest();
 
   return () => {
     disposed = true;
     extractBtn.removeEventListener('click', onExtract);
-    saveBtn.removeEventListener('click', onSave);
     presetSelect.removeEventListener('change', applyPresetDefaults);
   };
 }

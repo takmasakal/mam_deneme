@@ -589,6 +589,81 @@ function registerTextProcessingRoutes(app, deps) {
       return res.status(500).json({ error: 'Failed to save OCR result to database' });
     }
   });
+
+  app.patch('/api/assets/:id/video-ocr', async (req, res) => {
+    try {
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      const row = loaded.row;
+      if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+        return res.status(400).json({ error: 'OCR selection is supported only for video assets' });
+      }
+      const itemId = String(req.body?.itemId || '').trim();
+      if (!itemId) return res.status(400).json({ error: 'itemId is required' });
+      const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+      const items = sanitizeVideoOcrItems(dc.videoOcrItems);
+      const selected = items.find((item) => String(item.id || '') === itemId);
+      if (!selected) return res.status(404).json({ error: 'OCR item not found' });
+      const updatedDc = {
+        ...dc,
+        videoOcrUrl: String(selected.ocrUrl || '').trim(),
+        videoOcrLabel: String(selected.ocrLabel || '').trim(),
+        videoOcrEngine: String(selected.ocrEngine || '').trim(),
+        videoOcrLineCount: Math.max(0, Number(selected.lineCount) || 0),
+        videoOcrSegmentCount: Math.max(0, Number(selected.segmentCount) || 0),
+        videoOcrItems: items
+      };
+      const updated = await pool.query(
+        'UPDATE assets SET dc_metadata = $2::jsonb, updated_at = $3 WHERE id = $1 RETURNING *',
+        [req.params.id, JSON.stringify(updatedDc), new Date().toISOString()]
+      );
+      return res.json({ ok: true, asset: mapAssetRow(updated.rows[0]) });
+    } catch (error) {
+      console.error(`Failed to activate OCR for asset ${req.params.id}: ${error?.message || error}`);
+      return res.status(500).json({ error: 'Failed to activate OCR result' });
+    }
+  });
+
+  app.delete('/api/assets/:id/video-ocr', requireAssetDelete, async (req, res) => {
+    try {
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      const row = loaded.row;
+      if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+        return res.status(400).json({ error: 'OCR removal is supported only for video assets' });
+      }
+      const itemId = String(req.body?.itemId || '').trim();
+      if (!itemId) return res.status(400).json({ error: 'itemId is required' });
+      const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+      const items = sanitizeVideoOcrItems(dc.videoOcrItems);
+      const target = items.find((item) => String(item.id || '') === itemId);
+      if (!target) return res.status(404).json({ error: 'OCR item not found' });
+      const nextItems = items.filter((item) => String(item.id || '') !== itemId);
+      const previousActive = String(dc.videoOcrUrl || '').trim();
+      const nextActive = nextItems.find((item) => String(item.ocrUrl || '').trim() === previousActive)
+        || nextItems[nextItems.length - 1]
+        || null;
+      const updatedDc = {
+        ...dc,
+        videoOcrUrl: nextActive ? String(nextActive.ocrUrl || '').trim() : '',
+        videoOcrLabel: nextActive ? String(nextActive.ocrLabel || '').trim() : '',
+        videoOcrEngine: nextActive ? String(nextActive.ocrEngine || '').trim() : '',
+        videoOcrLineCount: nextActive ? Math.max(0, Number(nextActive.lineCount) || 0) : 0,
+        videoOcrSegmentCount: nextActive ? Math.max(0, Number(nextActive.segmentCount) || 0) : 0,
+        videoOcrItems: nextItems
+      };
+      const updated = await pool.query(
+        'UPDATE assets SET dc_metadata = $2::jsonb, updated_at = $3 WHERE id = $1 RETURNING *',
+        [req.params.id, JSON.stringify(updatedDc), new Date().toISOString()]
+      );
+      const filePath = publicUploadUrlToAbsolutePath(String(target.ocrUrl || '').trim());
+      if (filePath && typeof cleanupAssetFiles === 'function') cleanupAssetFiles([filePath]);
+      return res.json({ ok: true, removed: target.ocrUrl || '', asset: mapAssetRow(updated.rows[0]) });
+    } catch (error) {
+      console.error(`Failed to remove OCR for asset ${req.params.id}: ${error?.message || error}`);
+      return res.status(500).json({ error: 'Failed to remove OCR result' });
+    }
+  });
   
   app.get('/api/video-ocr-jobs/:jobId/download', async (req, res) => {
     const jobId = String(req.params.jobId || '').trim();
