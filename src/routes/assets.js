@@ -123,6 +123,19 @@ function registerAssetRoutes(app, deps) {
     return res.sendFile(filePath);
   }
 
+  function auditDownloadResponse(req, res, row, details = {}) {
+    res.on('finish', () => {
+      if (res.statusCode < 200 || res.statusCode >= 300) return;
+      Promise.resolve(recordAuditEvent?.(req, {
+        action: 'asset.downloaded',
+        targetType: 'asset',
+        targetId: row?.id,
+        targetTitle: String(row?.title || row?.file_name || row?.id || ''),
+        details
+      })).catch(() => {});
+    });
+  }
+
   async function ensureHeicDerivativesForRow(row = {}) {
     if (!imageDerivativeService?.isHeicCandidate({
       mimeType: row.mime_type,
@@ -1279,6 +1292,11 @@ function registerAssetRoutes(app, deps) {
       if (loaded.status !== 200) {
         return res.status(loaded.status).json({ error: loaded.error });
       }
+      auditDownloadResponse(req, res, loaded.row, {
+        source: 'api_asset_file',
+        transport: 'api',
+        url: `/api/assets/${encodeURIComponent(req.params.id)}/file`
+      });
       return sendStoredAssetFile(res, resolveAssetFilePath(loaded.row), loaded.row);
     } catch (_error) {
       return res.status(500).json({ error: 'Failed to load asset file' });
@@ -1943,6 +1961,12 @@ function registerAssetRoutes(app, deps) {
 
       const fallbackName = `${String(loaded.row.file_name || loaded.row.title || assetId).trim() || assetId}-version`;
       const downloadName = sanitizeFileName(String(versionRow.snapshot_file_name || fallbackName || path.basename(snapshotSourcePath)));
+      auditDownloadResponse(req, res, loaded.row, {
+        source: 'api_asset_version',
+        transport: 'api',
+        versionId,
+        url: `/api/assets/${encodeURIComponent(assetId)}/versions/${encodeURIComponent(versionId)}/download`
+      });
       return res.download(snapshotSourcePath, downloadName, (error) => {
         if (error && !res.headersSent) {
           res.status(500).json({ error: 'Failed to download version snapshot' });
