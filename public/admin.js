@@ -772,7 +772,7 @@ let i18n = {
     audit_filter_to: 'Bitiş',
     audit_filter_run: 'Filtrele',
     audit_export_excel: "Excel'e aktar",
-    audit_cleanup: 'Audit sil',
+    audit_cleanup: 'Kayıt Sil',
     audit_cleanup_confirm: 'Seçilen tarih aralığındaki audit kayıtları silinsin mi? Bu işlem geri alınamaz.',
     audit_cleanup_date_required: 'Başlangıç ve bitiş tarihi girin.',
     audit_cleanup_done: '{count} audit kaydı silindi.',
@@ -3517,6 +3517,8 @@ async function cleanupAuditEvents() {
         ? t('audit_cleanup_done').replace('{count}', String(count))
         : t('audit_cleanup_none');
     }
+    if (auditFromInput) auditFromInput.value = '';
+    if (auditToInput) auditToInput.value = '';
     await loadAuditEvents();
   } catch (error) {
     if (auditEventsMsg) auditEventsMsg.textContent = error.message || t('audit_cleanup_failed');

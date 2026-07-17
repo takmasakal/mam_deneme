@@ -6458,7 +6458,11 @@ async function recordAuditEvent(req, event = {}) {
     const settings = await getAdminSettings().catch(() => DEFAULT_ADMIN_SETTINGS);
     cleanupAuditEvents(settings.auditRetentionDays).catch(() => {});
   } catch (_error) {
-    // Audit logging must never block the primary user action.
+    // Audit logging must never block the primary user action, but failures must remain diagnosable.
+    console.warn('Audit event write failed', {
+      action: String(event?.action || '').trim(),
+      error: String(_error?.message || _error || '')
+    });
   }
 }
 
@@ -8745,6 +8749,7 @@ registerAdminRoutes(app, {
   listBackupFiles,
   getRuntimeErrorLogs,
   getActiveUsers,
+  recordAuditEvent,
   normalizePlayerUiMode,
   normalizeNewAssetDefaultVisibility,
   normalizeSubtitleStyle,
