@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { parseMultipartUpload } = require('../services/multipartUploadParser');
 
 function registerAssetRoutes(app, deps) {
   const {
@@ -43,6 +44,8 @@ function registerAssetRoutes(app, deps) {
     createAssetRecord,
     isVideoCandidate,
     computeBufferSha256,
+    computeFileSha256,
+    computeFileSha256Stream,
     findDuplicateAssetByHash,
     buildDuplicateAssetPayload,
     sanitizeFileName,
@@ -957,20 +960,30 @@ function registerAssetRoutes(app, deps) {
     }
   });
   
-  app.post('/api/assets/upload', async (req, res) => {
+  app.post('/api/assets/upload', parseMultipartUpload, async (req, res) => {
     const {
-      fileName,
-      mimeType,
+      fileName: bodyFileName,
+      mimeType: bodyMimeType,
       fileData,
       generateMetadata: generateMetadataRaw,
       ...metadata
     } = req.body || {};
+    const multipartUpload = req.multipartUpload || null;
+    const fileName = String(bodyFileName || multipartUpload?.fileName || '').trim();
+    const mimeType = String(bodyMimeType || multipartUpload?.mimeType || '').trim();
+    const cleanupMultipartUpload = () => {
+      const tempPath = String(multipartUpload?.path || '').trim();
+      if (tempPath && fs.existsSync(tempPath)) {
+        try { fs.unlinkSync(tempPath); } catch (_error) {}
+      }
+    };
+    res.on('finish', cleanupMultipartUpload);
     const generateMetadata = generateMetadataRaw === true
       || String(generateMetadataRaw || '').trim().toLowerCase() === 'true';
     const allowSilentProxyFallback = Boolean(req.body?.allowSilentProxyFallback);
     const skipProxyGeneration = Boolean(req.body?.skipProxyGeneration);
     const isVideoUpload = isVideoCandidate({ mimeType, fileName, declaredType: metadata.type });
-    if (!fileData) {
+    if (!fileData && !multipartUpload?.path) {
       return res.status(400).json({ error: 'fileData (base64) is required' });
     }
   
@@ -987,12 +1000,16 @@ function registerAssetRoutes(app, deps) {
     let fileHash = '';
   
     try {
-      buffer = Buffer.from(String(fileData), 'base64');
-      fileHash = computeBufferSha256(buffer);
+      if (multipartUpload?.path) {
+        fileHash = await computeFileSha256Stream(multipartUpload.path);
+      } else {
+        buffer = Buffer.from(String(fileData), 'base64');
+        fileHash = computeBufferSha256(buffer);
+      }
     } catch (_error) {
       return res.status(400).json({ error: 'Could not decode or save file' });
     }
-    if (!buffer || !buffer.length) {
+    if ((!buffer || !buffer.length) && !multipartUpload?.path) {
       return res.status(400).json({
         error: 'Uploaded file is empty',
         code: 'empty_upload_file'
