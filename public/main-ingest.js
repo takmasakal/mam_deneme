@@ -38,7 +38,21 @@
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/api/assets/upload');
-        xhr.setRequestHeader('Content-Type', 'application/json');
+        const file = payload?.file instanceof File ? payload.file : null;
+        let requestBody = payload;
+        if (file) {
+          const formData = new FormData();
+          Object.entries(payload || {}).forEach(([key, value]) => {
+            if (key === 'file') return;
+            if (value == null) return;
+            formData.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
+          });
+          formData.append('mediaFile', file, file.name);
+          requestBody = formData;
+        } else {
+          xhr.setRequestHeader('Content-Type', 'application/json');
+          requestBody = JSON.stringify(payload);
+        }
 
         xhr.upload.onprogress = (event) => {
           if (!event.lengthComputable) return;
@@ -60,7 +74,7 @@
           }
         };
 
-        xhr.send(JSON.stringify(payload));
+        xhr.send(requestBody);
       });
     }
 
@@ -296,8 +310,7 @@
 
         void (async () => {
           setUploadProgress(1, t('uploading'));
-          const base64 = await readFileAsBase64(mediaFile);
-          const payload = { ...payloadBase, fileData: base64 };
+          const payload = { ...payloadBase, file: mediaFile };
           let created = null;
           const sendUpload = async (extraPayload = {}) => uploadAssetWithProgress({ ...payload, ...extraPayload }, (pct) => {
             const mapped = Math.min(95, Math.round((Number(pct) || 0) * 0.95));

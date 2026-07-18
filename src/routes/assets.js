@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { parseMultipartUpload } = require('../services/multipartUploadParser');
 
 function registerAssetRoutes(app, deps) {
   const {
@@ -43,6 +44,8 @@ function registerAssetRoutes(app, deps) {
     createAssetRecord,
     isVideoCandidate,
     computeBufferSha256,
+    computeFileSha256,
+    computeFileSha256Stream,
     findDuplicateAssetByHash,
     buildDuplicateAssetPayload,
     sanitizeFileName,
@@ -956,19 +959,31 @@ function registerAssetRoutes(app, deps) {
     }
   });
   
-  app.post('/api/assets/upload', async (req, res) => {
+  app.post('/api/assets/upload', parseMultipartUpload, async (req, res) => {
     const { fileName, mimeType, fileData, ...metadata } = req.body || {};
+    const multipartUpload = req.multipartUpload || null;
+    const effectiveFileName = String(fileName || multipartUpload?.fileName || '').trim();
+    const effectiveMimeType = String(mimeType || multipartUpload?.mimeType || '').trim();
+    const cleanupMultipartUpload = () => {
+      const tempPath = String(multipartUpload?.path || '').trim();
+      if (tempPath && fs.existsSync(tempPath)) {
+        try { fs.unlinkSync(tempPath); } catch (_error) {}
+      }
+    };
+    res.on('finish', cleanupMultipartUpload);
+    const inputFileName = effectiveFileName;
+    const inputMimeType = effectiveMimeType;
     const allowSilentProxyFallback = Boolean(req.body?.allowSilentProxyFallback);
     const skipProxyGeneration = Boolean(req.body?.skipProxyGeneration);
-    const isVideoUpload = isVideoCandidate({ mimeType, fileName, declaredType: metadata.type });
-    if (!fileData) {
+    const isVideoUpload = isVideoCandidate({ mimeType: inputMimeType, fileName: inputFileName, declaredType: metadata.type });
+    if (!fileData && !multipartUpload?.path) {
       return res.status(400).json({ error: 'fileData (base64) is required' });
     }
   
-    const safeName = sanitizeFileName(fileName);
+    const safeName = sanitizeFileName(inputFileName);
     const typeValidation = validateDeclaredUploadType({
       declaredType: metadata.type,
-      mimeType,
+      mimeType: inputMimeType,
       fileName: safeName
     });
     if (!typeValidation.ok) {
@@ -978,12 +993,16 @@ function registerAssetRoutes(app, deps) {
     let fileHash = '';
   
     try {
-      buffer = Buffer.from(String(fileData), 'base64');
-      fileHash = computeBufferSha256(buffer);
+      if (multipartUpload?.path) {
+        fileHash = await computeFileSha256Stream(multipartUpload.path);
+      } else {
+        buffer = Buffer.from(String(fileData), 'base64');
+        fileHash = computeBufferSha256(buffer);
+      }
     } catch (_error) {
       return res.status(400).json({ error: 'Could not decode or save file' });
     }
-    if (!buffer || !buffer.length) {
+    if ((!buffer || !buffer.length) && !multipartUpload?.path) {
       return res.status(400).json({
         error: 'Uploaded file is empty',
         code: 'empty_upload_file'
@@ -1005,7 +1024,7 @@ function registerAssetRoutes(app, deps) {
     });
     const typeAllowed = assetAccessService.canUploadAssetType({
       type: metadata.type,
-      mimeType,
+      mimeType: inputMimeType,
       fileName: safeName
     }, context);
     if (!typeAllowed) {
@@ -1021,7 +1040,18 @@ function registerAssetRoutes(app, deps) {
     const mediaUrl = `/uploads/${ingestPath.relativeDir.replace(/\\/g, '/')}/${storedName}`;
   
     try {
-      fs.writeFileSync(absolutePath, buffer);
+      if (multipartUpload?.path) {
+        try {
+          fs.renameSync(multipartUpload.path, absolutePath);
+        } catch (error) {
+          if (error?.code !== 'EXDEV') throw error;
+          fs.copyFileSync(multipartUpload.path, absolutePath);
+          fs.unlinkSync(multipartUpload.path);
+        }
+        multipartUpload.path = '';
+      } else {
+        fs.writeFileSync(absolutePath, buffer);
+      }
     } catch (_error) {
       return res.status(400).json({ error: 'Could not decode or save file' });
     }

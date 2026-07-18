@@ -4009,6 +4009,18 @@ function computeFileSha256(filePath) {
   return hash.digest('hex');
 }
 
+function computeFileSha256Stream(filePath) {
+  const safePath = String(filePath || '').trim();
+  if (!safePath || !fs.existsSync(safePath)) return Promise.resolve('');
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const input = fs.createReadStream(safePath);
+    input.on('data', (chunk) => hash.update(chunk));
+    input.on('error', reject);
+    input.on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
 async function persistAssetFileHash(assetId, fileHash) {
   const safeId = String(assetId || '').trim();
   const safeHash = String(fileHash || '').trim().toLowerCase();
@@ -8866,7 +8878,9 @@ registerAssetRoutes(app, {
   buildUserContextFromRequest,
   createAssetRecord,
   isVideoCandidate,
-  computeBufferSha256,
+    computeBufferSha256,
+    computeFileSha256,
+    computeFileSha256Stream,
   findDuplicateAssetByHash,
   buildDuplicateAssetPayload,
   sanitizeFileName,
