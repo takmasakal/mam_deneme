@@ -17,6 +17,31 @@
       getDefaultIngestType,
       loadAssets
     } = deps || {};
+    let uploadInProgress = false;
+
+    function setUploadInProgress(value) {
+      uploadInProgress = Boolean(value);
+      global.mamUploadInProgress = uploadInProgress;
+    }
+
+    function protectUploadNavigation() {
+      document.addEventListener('click', (event) => {
+        if (!uploadInProgress) return;
+        const target = event.target;
+        const link = target && typeof target.closest === 'function'
+          ? target.closest('#adminMenuLink')
+          : null;
+        if (!link) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        notifyUpload(t('upload_navigation_warning'), 'info');
+      }, true);
+      window.addEventListener('beforeunload', (event) => {
+        if (!uploadInProgress) return;
+        event.preventDefault();
+        event.returnValue = '';
+      });
+    }
 
     function setUploadProgress(percent, label = '') {
       if (!uploadProgressWrap || !uploadProgressText) return;
@@ -237,6 +262,7 @@
     }
 
     function initIngestHandlers() {
+      protectUploadNavigation();
       if (mediaFileBtn && String(mediaFileBtn.tagName || '').toLowerCase() !== 'label') {
         mediaFileBtn.addEventListener('click', () => {
           mediaFileInput?.click();
@@ -307,6 +333,7 @@
 
         resetIngestFormAfterBackgroundStart();
         notifyUpload(t('upload_background_started'));
+        setUploadInProgress(true);
 
         void (async () => {
           setUploadProgress(1, t('uploading'));
@@ -341,6 +368,7 @@
           console.error('Background asset upload failed', error);
           notifyUpload(`${t('upload_failed')}: ${localizeUploadError(error)}`, 'error');
         }).finally(() => {
+          setUploadInProgress(false);
           setTimeout(() => hideUploadProgress(), 450);
         });
       });
