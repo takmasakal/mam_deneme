@@ -292,6 +292,8 @@
       const escapeRegExp = (v) => String(v || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
       const EMBEDPDF_TR_REPLACEMENTS = [
+        ['This file is protected and some features may be disabled. Go to Security in the document menu to view or unlock permissions.', 'Bu dosya korumalıdır ve bazı özellikler devre dışı olabilir. İzinleri görmek veya kilidi açmak için belge menüsündeki Güvenlik bölümüne gidin.'],
+        ['This Document is Protected', 'Bu belge korumalı'],
         ['Search in document', 'Belgede ara'],
         ['Search in PDF', 'PDF içinde ara'],
         ['Search', 'Ara'],
