@@ -113,6 +113,15 @@ function registerAssetRoutes(app, deps) {
     return '';
   }
 
+  function resolveDerivativeUrl(value, subdir) {
+    const url = resolveStoredUrl(value, subdir);
+    const normalizedSubdir = String(subdir || '').trim().replace(/^\/+|\/+$/g, '').toLowerCase();
+    const markers = normalizedSubdir === 'proxies'
+      ? ['/uploads/proxies/', '/uploads/previews/']
+      : [`/uploads/${normalizedSubdir}/`];
+    return url && markers.some((marker) => url.toLowerCase().includes(marker)) ? url : '';
+  }
+
   function sendStoredAssetFile(res, filePath, row = {}) {
     if (!filePath || !fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'Asset file not found' });
@@ -139,53 +148,53 @@ function registerAssetRoutes(app, deps) {
     });
   }
 
-  async function ensureHeicDerivativesForRow(row = {}) {
-    if (!imageDerivativeService?.isHeicCandidate({
+  async function ensureImageDerivativesForRow(row = {}) {
+    if (!imageDerivativeService?.isImageCandidate({
       mimeType: row.mime_type,
       fileName: row.file_name
     })) {
       return row;
     }
 
-    const existingProxy = resolveStoredUrl(row.proxy_url, 'proxies');
-    const existingThumbnail = resolveStoredUrl(row.thumbnail_url, 'thumbnails');
+    const existingProxy = resolveDerivativeUrl(row.proxy_url, 'proxies');
+    const existingThumbnail = resolveDerivativeUrl(row.thumbnail_url, 'thumbnails');
     if (existingProxy && existingThumbnail) return row;
-
-    if (existingProxy && !existingThumbnail) {
-      const updated = await pool.query(
-        `UPDATE assets SET thumbnail_url = $2, updated_at = $3 WHERE id = $1 RETURNING *`,
-        [row.id, existingProxy, new Date().toISOString()]
-      );
-      return updated.rows?.[0] || { ...row, thumbnail_url: existingProxy };
-    }
 
     const inputPath = resolveAssetSourcePath(row);
     if (!inputPath) return row;
-
-    const derivatives = await imageDerivativeService.ensureImageDerivativesForUpload({
-      mimeType: row.mime_type,
-      fileName: row.file_name,
-      inputPath,
-      createdAt: row.created_at || new Date()
-    });
-    const updated = await pool.query(
-      `
-        UPDATE assets
-        SET proxy_url = $2,
-            proxy_status = 'ready',
-            thumbnail_url = $3,
-            updated_at = $4
-        WHERE id = $1
-        RETURNING *
-      `,
-      [
-        row.id,
-        String(derivatives.proxyUrl || '').trim(),
-        String(derivatives.thumbnailUrl || derivatives.proxyUrl || '').trim(),
-        new Date().toISOString()
-      ]
-    );
-    return updated.rows?.[0] || row;
+    try {
+      const derivatives = await imageDerivativeService.ensureImageDerivativesForUpload({
+        mimeType: row.mime_type,
+        fileName: row.file_name,
+        inputPath,
+        createdAt: row.created_at || new Date()
+      });
+      const updated = await pool.query(
+        `
+          UPDATE assets
+          SET proxy_url = $2,
+              proxy_status = 'ready',
+              thumbnail_url = $3,
+              updated_at = $4
+          WHERE id = $1
+          RETURNING *
+        `,
+        [
+          row.id,
+          String(derivatives.proxyUrl || '').trim(),
+          String(derivatives.thumbnailUrl || derivatives.proxyUrl || '').trim(),
+          new Date().toISOString()
+        ]
+      );
+      return updated.rows?.[0] || row;
+    } catch (error) {
+      console.warn('Image derivative repair failed', {
+        assetId: row?.id,
+        fileName: row?.file_name,
+        error: String(error?.message || error || '')
+      });
+      return row;
+    }
   }
 
   function mapAssetRowForUser(row, accessContext) {
@@ -663,9 +672,9 @@ function registerAssetRoutes(app, deps) {
       for (const row of pagedRows) {
         let nextRow = row;
         try {
-          nextRow = await ensureHeicDerivativesForRow(nextRow);
+          nextRow = await ensureImageDerivativesForRow(nextRow);
         } catch (error) {
-          console.warn('HEIC derivative repair failed', {
+          console.warn('Image derivative repair failed', {
             assetId: nextRow?.id,
             fileName: nextRow?.file_name,
             error: String(error?.message || error || '')
@@ -1172,9 +1181,9 @@ function registerAssetRoutes(app, deps) {
       }
     } else if (
       String(mimeType || '').toLowerCase().startsWith('image/') ||
-      imageDerivativeService?.isHeicCandidate({ mimeType, fileName: safeName })
+      imageDerivativeService?.isImageCandidate({ mimeType, fileName: safeName })
     ) {
-      if (imageDerivativeService?.isHeicCandidate({ mimeType, fileName: safeName })) {
+      if (imageDerivativeService?.isImageCandidate({ mimeType, fileName: safeName })) {
         try {
           const derivatives = await imageDerivativeService.ensureImageDerivativesForUpload({
             mimeType,
@@ -1184,17 +1193,17 @@ function registerAssetRoutes(app, deps) {
           });
           proxyUrl = String(derivatives.proxyUrl || '').trim();
           thumbnailUrl = String(derivatives.thumbnailUrl || '').trim();
+          proxyStatus = proxyUrl ? 'ready' : 'failed';
         } catch (error) {
           proxyUrl = '';
-          thumbnailUrl = '';
+          thumbnailUrl = mediaUrl;
+          proxyStatus = 'failed';
           ingestWarnings.push({
-            code: 'heic_derivative_generation_failed',
-            message: `HEIC preview generation failed: ${String(error?.message || error || '').slice(0, 240)}`,
-            retryHint: 'You can keep the original file and regenerate HEIC preview derivatives later.'
+            code: 'image_derivative_generation_failed',
+            message: `Image preview generation failed: ${String(error?.message || error || '').slice(0, 240)}`,
+            retryHint: 'The original file was kept. You can regenerate image derivatives later from admin tools.'
           });
         }
-      } else {
-        thumbnailUrl = mediaUrl;
       }
     }
   
@@ -1276,9 +1285,9 @@ function registerAssetRoutes(app, deps) {
       }
       let row = loaded.row;
       try {
-        row = await ensureHeicDerivativesForRow(row);
+        row = await ensureImageDerivativesForRow(row);
       } catch (error) {
-        console.warn('HEIC derivative repair failed', {
+        console.warn('Image derivative repair failed', {
           assetId: row?.id,
           fileName: row?.file_name,
           error: String(error?.message || error || '')

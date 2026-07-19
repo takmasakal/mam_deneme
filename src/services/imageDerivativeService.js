@@ -19,6 +19,17 @@ function createImageDerivativeService(deps) {
     );
   }
 
+  function isImageCandidate({ mimeType = '', fileName = '' } = {}) {
+    const mime = String(mimeType || '').trim().toLowerCase();
+    const ext = String(getFileExtension(fileName) || '').trim().toLowerCase();
+    return mime.startsWith('image/') || [
+      'jpg', 'jpeg', 'png', 'webp', 'gif', 'tif', 'tiff', 'bmp', 'heic', 'heif'
+    ].includes(ext);
+  }
+
+  const previewScaleFilter = 'scale=1280:1280:force_original_aspect_ratio=decrease';
+  const thumbnailScaleFilter = 'scale=480:480:force_original_aspect_ratio=decrease';
+
   async function generateHeicPreview(inputPath, outputPath) {
     const intermediatePath = `${outputPath}.heif-convert.jpg`;
     const heifResult = await runCommandCapture('heif-convert', [inputPath, intermediatePath]);
@@ -32,7 +43,7 @@ function createImageDerivativeService(deps) {
       '-frames:v',
       '1',
       '-vf',
-      'scale=min(1280\\,iw):-2',
+      previewScaleFilter,
       '-q:v',
       '5',
       outputPath
@@ -60,7 +71,7 @@ function createImageDerivativeService(deps) {
       '-frames:v',
       '1',
       '-vf',
-      'scale=min(1280\\,iw):-2',
+      previewScaleFilter,
       '-q:v',
       '5',
       outputPath
@@ -78,7 +89,7 @@ function createImageDerivativeService(deps) {
       '-frames:v',
       '1',
       '-vf',
-      'scale=480:-1',
+      thumbnailScaleFilter,
       '-q:v',
       '4',
       outputPath
@@ -123,6 +134,7 @@ function createImageDerivativeService(deps) {
 
   return {
     isHeicCandidate,
+    isImageCandidate,
     generateHeicPreview,
     generateImagePreview,
     generateImageThumbnail,

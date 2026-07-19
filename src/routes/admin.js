@@ -157,13 +157,6 @@ function registerAdminRoutes(app, deps) {
       err.statusCode = 404;
       throw err;
     }
-    if (!imageDerivativeService.isHeicCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
-      return {
-        row,
-        previewUrl: resolveStoredUrl(row.proxy_url, 'proxies') || resolveStoredUrl(row.media_url, ''),
-        thumbnailUrl: resolveStoredUrl(row.thumbnail_url, 'thumbnails')
-      };
-    }
     const derivatives = await imageDerivativeService.ensureImageDerivativesForUpload({
       mimeType: row.mime_type,
       fileName: row.file_name,
@@ -203,30 +196,7 @@ function registerAdminRoutes(app, deps) {
   async function regenerateImageThumbnailForRow(row = {}) {
     if (!imageDerivativeService) throw new Error('Image derivative service is unavailable');
     if (!isImageAssetRow(row)) throw new Error('Image thumbnail generation is supported only for image assets');
-    if (imageDerivativeService.isHeicCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
-      return ensureImagePreviewAndThumbnailForRow(row);
-    }
-    const inputPath = resolveAssetInputPath(row);
-    if (!inputPath || !fs.existsSync(inputPath)) {
-      const err = new Error('Source file not found');
-      err.statusCode = 404;
-      throw err;
-    }
-    const thumbStoredName = `${Date.now()}-${resolvedNanoid()}-image-thumb.jpg`;
-    const thumbOut = buildArtifactPath('thumbnails', thumbStoredName, row.created_at || new Date());
-    await imageDerivativeService.generateImageThumbnail(inputPath, thumbOut.absolutePath);
-    const previousThumbnailUrl = resolveStoredUrl(row.thumbnail_url, 'thumbnails');
-    const updated = await pool.query(
-      `UPDATE assets SET thumbnail_url = $2, updated_at = $3 WHERE id = $1 RETURNING *`,
-      [row.id, thumbOut.publicUrl, new Date().toISOString()]
-    );
-    const nextRow = updated.rows?.[0] || row;
-    await cleanupReplacedUploadUrls(row.id, previousThumbnailUrl, { ignoreSameAssetVersionRefs: true });
-    return {
-      row: nextRow,
-      previewUrl: resolveStoredUrl(nextRow.proxy_url, 'proxies') || resolveStoredUrl(nextRow.media_url, ''),
-      thumbnailUrl: resolveStoredUrl(nextRow.thumbnail_url, 'thumbnails')
-    };
+    return ensureImagePreviewAndThumbnailForRow(row);
   }
 app.use('/api/admin', requireScopedAdminAccess);
 
@@ -3554,6 +3524,51 @@ app.post('/api/admin/search/reindex', async (_req, res) => {
     return res.json({ indexed });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to reindex search' });
+  }
+});
+
+app.post('/api/admin/image-derivatives/repair', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return undefined;
+    const requestedLimit = Number(req.body?.limit || req.query?.limit || 20);
+    const limit = Math.min(100, Math.max(1, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 20));
+    const result = await pool.query(
+      `
+        SELECT *
+        FROM assets
+        WHERE deleted_at IS NULL
+          AND (
+            LOWER(COALESCE(type, '')) IN ('photo', 'image', 'picture')
+            OR LOWER(COALESCE(mime_type, '')) LIKE 'image/%'
+            OR LOWER(COALESCE(file_name, '')) ~ '\\.(jpg|jpeg|png|gif|webp|tif|tiff|bmp|heic|heif)$'
+          )
+          AND (
+            COALESCE(proxy_url, '') = ''
+            OR COALESCE(thumbnail_url, '') = ''
+            OR LOWER(COALESCE(thumbnail_url, '')) NOT LIKE '%/thumbnails/%'
+          )
+        ORDER BY created_at ASC NULLS FIRST
+        LIMIT $1
+      `,
+      [limit]
+    );
+    const repaired = [];
+    const failed = [];
+    for (const row of result.rows) {
+      try {
+        const nextRow = await ensureImagePreviewAndThumbnailForRow(row);
+        const hasPreview = Boolean(resolveStoredUrl(nextRow.proxy_url, 'proxies'));
+        const hasThumbnail = Boolean(resolveStoredUrl(nextRow.thumbnail_url, 'thumbnails'));
+        if (hasPreview && hasThumbnail) repaired.push(row.id);
+        else failed.push({ id: row.id, fileName: row.file_name, error: 'Derivative output is missing' });
+      } catch (error) {
+        failed.push({ id: row.id, fileName: row.file_name, error: String(error?.message || error || '') });
+      }
+    }
+    return res.json({ ok: true, scanned: result.rows.length, repaired, failed });
+  } catch (error) {
+    return res.status(error?.statusCode || 500).json({ error: String(error?.message || 'Failed to repair image derivatives') });
   }
 });
 

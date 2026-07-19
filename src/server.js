@@ -102,7 +102,15 @@ app.get('/api/health', (_req, res) => {
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/uploads', secureUploadAssetAccess);
 app.use('/uploads', auditUploadDownloadRequest);
-app.use('/uploads', express.static(UPLOADS_DIR));
+app.use('/uploads', express.static(UPLOADS_DIR, {
+  setHeaders(res, filePath) {
+    const relativePath = path.relative(UPLOADS_DIR, filePath).split(path.sep).join('/').toLowerCase();
+    if (relativePath.startsWith('proxies/') || relativePath.startsWith('previews/') || relativePath.startsWith('thumbnails/')) {
+      // Derivative names are immutable; Express still supplies the ETag.
+      res.setHeader('Cache-Control', 'private, max-age=86400, must-revalidate');
+    }
+  }
+}));
 app.use((error, _req, res, next) => {
   if (error?.type === 'entity.too.large' || Number(error?.status || 0) === 413) {
     return res.status(413).json({
