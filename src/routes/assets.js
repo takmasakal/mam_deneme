@@ -115,11 +115,13 @@ function registerAssetRoutes(app, deps) {
 
   function resolveDerivativeUrl(value, subdir) {
     const url = resolveStoredUrl(value, subdir);
+    const normalizedUrl = String(url || '').toLowerCase();
     const normalizedSubdir = String(subdir || '').trim().replace(/^\/+|\/+$/g, '').toLowerCase();
-    const markers = normalizedSubdir === 'proxies'
-      ? ['/uploads/proxies/', '/uploads/previews/']
-      : [`/uploads/${normalizedSubdir}/`];
-    return url && markers.some((marker) => url.toLowerCase().includes(marker)) ? url : '';
+    const derivativeDirs = normalizedSubdir === 'proxies'
+      ? ['proxies', 'previews']
+      : [normalizedSubdir];
+    const isStoredUpload = normalizedUrl.includes('/uploads/');
+    return isStoredUpload && derivativeDirs.some((dir) => normalizedUrl.includes(`/${dir}/`)) ? url : '';
   }
 
   function sendStoredAssetFile(res, filePath, row = {}) {
