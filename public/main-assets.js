@@ -10,6 +10,7 @@
       syncOcrQueryInputs,
       ocrQueryInput,
       renderAssets,
+      getAssetPagingRequest,
       currentAssetsRef,
       selectedAssetIdsRef,
       selectedAssetIdRef,
@@ -33,7 +34,10 @@
       return [];
     }
 
-    async function loadAssets() {
+    async function loadAssets(options = {}) {
+      const paging = typeof getAssetPagingRequest === 'function'
+        ? getAssetPagingRequest(options)
+        : { limit: 20, offset: 0 };
       const filters = serializeForm(searchForm);
       const params = new URLSearchParams();
       const { selectedTypes, isNarrowed: isTypeFilterNarrowed } = getSelectedAssetTypesForRequest();
@@ -55,8 +59,9 @@
       if (selectedTypes.length === 0) {
         if (!searchStateRef.currentSearchQuery && !searchStateRef.currentOcrQuery && !searchStateRef.currentSubtitleQuery) {
           currentAssetsRef.value = [];
-          renderAssets(currentAssetsRef.value, { resetPage: true });
-          return;
+          const emptyPayload = { assets: [], searchMeta: {}, pagination: { total: 0, ...paging } };
+          renderAssets(currentAssetsRef.value, { pagination: emptyPayload.pagination });
+          return emptyPayload;
         }
       }
 
@@ -65,6 +70,8 @@
       } else if (ocrQueryInput) {
         ocrQueryInput.value = '';
       }
+      params.set('limit', String(paging.limit));
+      params.set('offset', String(paging.offset));
       if (searchStateRef.currentSearchQuery) params.set('q', searchStateRef.currentSearchQuery);
       if (searchStateRef.currentOcrQuery) params.set('ocrQ', searchStateRef.currentOcrQuery);
       if (searchStateRef.currentSubtitleQuery) params.set('subtitleQ', searchStateRef.currentSubtitleQuery);
@@ -76,6 +83,9 @@
 
       const result = await api(`/api/assets?${params.toString()}`);
       const payload = Array.isArray(result) ? { assets: result, searchMeta: {} } : (result || {});
+      const pagination = payload.pagination && typeof payload.pagination === 'object'
+        ? payload.pagination
+        : { total: Array.isArray(payload.assets) ? payload.assets.length : 0, ...paging };
       currentAssetsRef.value = Array.isArray(payload.assets) ? payload.assets : [];
       const qMeta = payload.searchMeta?.q && typeof payload.searchMeta.q === 'object' ? payload.searchMeta.q : null;
       const ocrMeta = payload.searchMeta?.ocrQ && typeof payload.searchMeta.ocrQ === 'object' ? payload.searchMeta.ocrQ : null;
@@ -99,7 +109,8 @@
       if (!selectedAssetIdsRef.value.size) {
         lastSelectedAssetIdRef.value = null;
       }
-      renderAssets(currentAssetsRef.value, { resetPage: true });
+      renderAssets(currentAssetsRef.value, { pagination });
+      return { ...payload, pagination };
     }
 
     return { loadWorkflow, loadAssets };

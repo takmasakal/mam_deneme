@@ -65,6 +65,7 @@ const PANELS = [
 ];
 
 let currentAssets = [];
+let currentAssetTotal = 0;
 let activePlayerCleanup = null;
 let activeDetailPinCleanup = null;
 let playerUiMode = 'vidstack';
@@ -194,7 +195,7 @@ function updateSearchResultCounter() {
     searchResultCounter.classList.add('hidden');
     return;
   }
-  const count = Array.isArray(currentAssets) ? currentAssets.length : 0;
+  const count = currentAssetTotal;
   searchResultCounter.textContent = String(count);
   searchResultCounter.classList.remove('hidden');
 }
@@ -2163,6 +2164,7 @@ const assetsModule = window.createMainAssetsModule({
   syncOcrQueryInputs,
   ocrQueryInput,
   renderAssets: renderAssetsPage,
+  getAssetPagingRequest: (...args) => assetBrowserModule.getAssetPagingRequest(...args),
   currentAssetsRef: {
     get value() { return currentAssets; },
     set value(next) { currentAssets = next; }
@@ -2210,8 +2212,9 @@ async function loadWorkflow() {
   return assetsModule.loadWorkflow();
 }
 
-async function loadAssets() {
-  const result = await assetsModule.loadAssets();
+async function loadAssets(options = {}) {
+  const result = await assetsModule.loadAssets(options);
+  currentAssetTotal = Math.max(0, Number(result?.pagination?.total) || 0);
   updateSearchResultCounter();
   return result;
 }

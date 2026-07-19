@@ -44,6 +44,7 @@
     const assetPageSizes = [20, 50, 100];
     let assetPageSize = 20;
     let assetPage = 1;
+    let assetTotal = 0;
 
 function thumbnailMarkup(asset) {
   const thumbSrc = escapeHtml(asset.thumbnailUrl || '');
@@ -169,25 +170,50 @@ function renderAssetListPager(totalCount, visibleStart, visibleEnd, totalPages) 
   `;
 }
 
+function getAssetPagingRequest(options = {}) {
+  const requestedSize = Number(options.pageSize);
+  if (assetPageSizes.includes(requestedSize)) assetPageSize = requestedSize;
+  if (options.resetPage !== false) assetPage = 1;
+  if (Number.isFinite(Number(options.page))) assetPage = Math.max(1, Number(options.page));
+  return {
+    limit: assetPageSize,
+    offset: (assetPage - 1) * assetPageSize
+  };
+}
+
 function attachAssetListPagerHandlers() {
   assetGrid.querySelectorAll('.asset-list-page-btn').forEach((btn) => {
-    btn.addEventListener('click', (event) => {
+    btn.addEventListener('click', async (event) => {
       event.preventDefault();
       event.stopPropagation();
-      const direction = String(event.currentTarget?.dataset?.assetPage || '').trim();
-      const assets = currentAssetsRef.get();
-      const totalPages = Math.max(1, Math.ceil(assets.length / assetPageSize));
-      if (direction === 'prev') assetPage = Math.max(1, assetPage - 1);
-      if (direction === 'next') assetPage = Math.min(totalPages, assetPage + 1);
-      renderAssets(assets);
+      const target = event.currentTarget;
+      const direction = String(target?.dataset?.assetPage || '').trim();
+      const totalPages = Math.max(1, Math.ceil(assetTotal / assetPageSize));
+      const nextPage = direction === 'prev'
+        ? Math.max(1, assetPage - 1)
+        : Math.min(totalPages, assetPage + 1);
+      if (nextPage === assetPage) return;
+      target.disabled = true;
+      try {
+        await loadAssets({ resetPage: false, page: nextPage });
+      } catch (_error) {
+        renderAssets(currentAssetsRef.get());
+      } finally {
+        target.disabled = false;
+      }
     });
   });
   assetGrid.querySelectorAll('.asset-list-page-size-select').forEach((select) => {
-    select.addEventListener('change', (event) => {
+    select.addEventListener('change', async (event) => {
       const nextSize = Number(event.currentTarget?.value) || 20;
-      assetPageSize = assetPageSizes.includes(nextSize) ? nextSize : 20;
-      assetPage = 1;
-      renderAssets(currentAssetsRef.get());
+      event.currentTarget.disabled = true;
+      try {
+        await loadAssets({ resetPage: true, pageSize: nextSize });
+      } catch (_error) {
+        renderAssets(currentAssetsRef.get());
+      } finally {
+        event.currentTarget.disabled = false;
+      }
     });
   });
 }
@@ -195,7 +221,15 @@ function attachAssetListPagerHandlers() {
 function renderAssets(assets, options = {}) {
   applyAssetViewModeUI();
   const searchNoticeHtml = buildAssetSearchNoticeHtml();
-  if (options?.resetPage) assetPage = 1;
+  const pagination = options?.pagination && typeof options.pagination === 'object'
+    ? options.pagination
+    : null;
+  if (pagination) {
+    const nextLimit = Number(pagination.limit);
+    if (assetPageSizes.includes(nextLimit)) assetPageSize = nextLimit;
+    assetTotal = Math.max(0, Number(pagination.total) || 0);
+    assetPage = Math.floor(Math.max(0, Number(pagination.offset) || 0) / assetPageSize) + 1;
+  }
   if (!assets.length) {
     assetGrid.innerHTML = `${searchNoticeHtml}<div class="empty">${escapeHtml(t('no_assets'))}</div>`;
     assetGrid.querySelectorAll('[data-search-did-you-mean]').forEach((btn) => {
@@ -211,12 +245,12 @@ function renderAssets(assets, options = {}) {
     return;
   }
 
-  const totalAssets = assets.length;
+  const totalAssets = Math.max(assetTotal, assets.length);
   const totalPages = Math.max(1, Math.ceil(totalAssets / assetPageSize));
   assetPage = Math.max(1, Math.min(assetPage, totalPages));
   const pageStart = (assetPage - 1) * assetPageSize;
-  const pageEnd = Math.min(totalAssets, pageStart + assetPageSize);
-  const visibleAssets = assets.slice(pageStart, pageEnd);
+  const pageEnd = Math.min(totalAssets, pageStart + assets.length);
+  const visibleAssets = assets;
   const pagerHtml = renderAssetListPager(totalAssets, pageStart, pageEnd, totalPages);
   const searchHighlightClass = effectiveSearchHighlightClass(currentSearchQuery, currentSearchHighlightQuery, currentSearchFuzzyUsed);
   assetGrid.innerHTML = `${searchNoticeHtml}${pagerHtml}${visibleAssets
@@ -450,6 +484,7 @@ function resetSelectedAssetDetailPanel() {
     return {
       thumbnailMarkup,
       assetTypeIcon,
+      getAssetPagingRequest,
       buildAssetSearchNoticeHtml,
       renderAssets,
       setSingleSelection,
