@@ -67,7 +67,7 @@
 function thumbnailMarkup(asset) {
   const thumbSrc = escapeHtml(asset.thumbnailUrl || '');
   if (isImage(asset)) {
-    return `<img class="asset-thumb" src="${escapeHtml(asset.thumbnailUrl || asset.mediaUrl || '')}" alt="${escapeHtml(asset.title)}" />`;
+    return `<img class="asset-thumb" src="${escapeHtml(asset.thumbnailUrl || asset.proxyUrl || asset.mediaUrl || '')}" alt="${escapeHtml(asset.title)}" />`;
   }
   if (isVideo(asset)) {
     if (thumbSrc) {

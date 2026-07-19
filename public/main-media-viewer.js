@@ -32,7 +32,10 @@ function mediaViewer(asset, options = {}) {
   const tcInControlBar = options.tcInControlBar === true;
   if (!asset.mediaUrl) return `<div class="empty">${escapeHtml(t('no_media'))}</div>`;
 
-  const playbackUrl = escapeHtml(isVideo(asset) ? (asset.proxyUrl || '') : asset.mediaUrl);
+  const playbackSource = isVideo(asset)
+    ? (asset.proxyUrl || '')
+    : (isImage(asset) ? (asset.proxyUrl || asset.mediaUrl) : asset.mediaUrl);
+  const playbackUrl = escapeHtml(playbackSource);
   const proxyStatus = escapeHtml(asset.proxyStatus || 'not_applicable');
   const audioChannelsAttr = Number(asset.audioChannels) > 0 ? ` data-audio-channels="${Number(asset.audioChannels)}"` : '';
 
