@@ -19,6 +19,7 @@ function registerTextProcessingRoutes(app, deps) {
     subtitleJobs,
     getMediaProcessingJobById,
     mapSubtitleJobFromDbRow,
+    mapVideoOcrJobFromDbRow,
     queueVideoOcrJob,
     extractPhotoOcrToText,
     videoOcrJobs,
@@ -500,6 +501,11 @@ function registerTextProcessingRoutes(app, deps) {
         saved: true
       });
     } catch (_error) {
+      console.warn(JSON.stringify({
+        event: 'video-ocr-latest-error',
+        assetId: String(req.params.id || '').trim(),
+        message: String(_error?.message || _error || 'Unknown error')
+      }));
       return res.status(500).json({ error: 'Failed to load latest OCR job' });
     }
   });
