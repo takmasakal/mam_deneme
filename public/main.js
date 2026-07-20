@@ -48,6 +48,7 @@ const requestedRestorePanels = String(pageParams.get('restorePanels') || '').tri
 const LOCAL_PANEL_SIZE = 'mam.panel.sizes';
 const LOCAL_PANEL_VIS = 'mam.panel.visibility';
 const LOCAL_LANG = 'mam.lang';
+const LOGIN_LANG_COOKIE = 'mam.login.lang';
 const LOCAL_VIDEO_TOOLS_ORDER = 'mam.video.tools.order';
 const LOCAL_ASSET_VIEW_MODE = 'mam.assets.view.mode';
 const LOCAL_DETAIL_VIDEO_PIN = 'mam.detail.video.pin';
@@ -962,7 +963,22 @@ let i18n = {
     subtitle_overlay_enabled: 'Altyazı göster'
   }
 };
-let currentLang = localStorage.getItem(LOCAL_LANG) || 'en';
+function readLanguageCookie() {
+  const entry = document.cookie.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${LOGIN_LANG_COOKIE}=`));
+  const value = entry ? decodeURIComponent(entry.slice(LOGIN_LANG_COOKIE.length + 1)).toLowerCase().split('-')[0] : '';
+  return value === 'tr' || value === 'en' ? value : '';
+}
+
+function writeLanguageCookie(value) {
+  const normalized = value === 'tr' ? 'tr' : 'en';
+  const host = String(window.location.hostname || '').toLowerCase();
+  const domain = host.endsWith('.trt.net.tr') ? '; Domain=.trt.net.tr' : '';
+  document.cookie = `${LOGIN_LANG_COOKIE}=${normalized}; Path=/; Max-Age=31536000; SameSite=Lax${window.location.protocol === 'https:' ? '; Secure' : ''}${domain}`;
+}
+
+const loginLanguage = readLanguageCookie();
+let currentLang = loginLanguage || localStorage.getItem(LOCAL_LANG) || 'en';
+if (loginLanguage) localStorage.setItem(LOCAL_LANG, loginLanguage);
 
 async function loadI18nFile() {
   try {
@@ -2807,6 +2823,7 @@ clearSearchBtn?.addEventListener('click', async () => {
 languageSelect?.addEventListener('change', async (event) => {
   currentLang = event.target.value === 'tr' ? 'tr' : 'en';
   localStorage.setItem(LOCAL_LANG, currentLang);
+  writeLanguageCookie(currentLang);
   hideSearchSuggestions();
   hideOcrSuggestions();
   hideSubtitleSuggestions();
