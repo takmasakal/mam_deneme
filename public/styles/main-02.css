@@ -452,6 +452,26 @@ button:hover {
   font-size: 13px;
 }
 
+.detail-artifact-badges {
+  display: flex;
+  gap: 6px;
+  margin: -2px 0 8px;
+}
+
+.detail-artifact-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid #2fae69;
+  border-radius: 5px;
+  background: #35d07f;
+  color: #07251a;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .chips {
   display: flex;
   gap: 6px;

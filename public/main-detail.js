@@ -113,6 +113,26 @@
       return Boolean(currentUserCanDeleteAssets());
     }
 
+    function detailArtifactBadges(asset) {
+      const eligible = Boolean(isVideo?.(asset) || isImage?.(asset) || isAudio?.(asset));
+      if (!eligible) return '';
+      const dc = asset?.dcMetadata && typeof asset.dcMetadata === 'object' ? asset.dcMetadata : {};
+      const hasOcr = Boolean(
+        String(asset?.videoOcrUrl || asset?.photoOcrUrl || dc.videoOcrUrl || dc.photoOcrUrl || '').trim()
+        || (Array.isArray(asset?.videoOcrItems) && asset.videoOcrItems.length)
+        || (Array.isArray(asset?.photoOcrItems) && asset.photoOcrItems.length)
+      );
+      const hasSubtitle = Boolean(
+        String(asset?.subtitleUrl || dc.subtitleUrl || '').trim()
+        || (Array.isArray(asset?.subtitleItems) && asset.subtitleItems.length)
+      );
+      if (!hasOcr && !hasSubtitle) return '';
+      return `<div class="detail-artifact-badges" aria-label="${escapeHtml(t('asset_artifacts'))}">
+        ${hasOcr ? `<span class="detail-artifact-badge">${escapeHtml(t('ocr_badge'))}</span>` : ''}
+        ${hasSubtitle ? `<span class="detail-artifact-badge">${escapeHtml(t('subtitle_badge'))}</span>` : ''}
+      </div>`;
+    }
+
     function renderVersionRow(asset, version, access, interactive) {
       const rowState = getVersionRowState(version, access);
       if (rowState.actionType === 'pdf_original') return '';
@@ -216,6 +236,7 @@
 
       const metadataTopSection = `
         <h3>${highlightMatch(asset.title, currentSearchHighlightQuery(), searchHighlightClass)}</h3>
+        ${detailArtifactBadges(asset)}
         <p>${highlightMatch(asset.description || t('no_description'), currentSearchHighlightQuery(), searchHighlightClass)}</p>
         <div class="asset-meta">${t('owner')}: ${highlightMatch(asset.owner, currentSearchHighlightQuery(), searchHighlightClass)} | ${t('type')}: ${highlightMatch(asset.type, currentSearchHighlightQuery(), searchHighlightClass)}${durationMeta}</div>
         <div class="asset-meta">${t('trash')}: ${trashStatus}</div>
