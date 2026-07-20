@@ -62,6 +62,12 @@ const PANELS = [
 ];
 
 let currentAssets = [];
+const assetPaginationState = {
+  page: 1,
+  pageSize: 20,
+  total: 0,
+  serverSide: false
+};
 let activePlayerCleanup = null;
 let activeDetailPinCleanup = null;
 let playerUiMode = 'vidstack';
@@ -75,7 +81,7 @@ let subtitleStyleSettings = {
   horizontalPadding: 16,
   maxWidth: 82
 };
-let detailVideoPinned = localStorage.getItem(LOCAL_DETAIL_VIDEO_PIN) === '1';
+let detailVideoPinned = localStorage.getItem(LOCAL_DETAIL_VIDEO_PIN) !== '0';
 let commonModule = null;
 let detailModule = null;
 let ingestModule = null;
@@ -1741,6 +1747,7 @@ const assetBrowserModule = window.createMainAssetBrowserModule({
   isDocument,
   PLAYER_FPS,
   loadAssets: (...args) => loadAssets(...args),
+  assetPaginationRef: assetPaginationState,
   setPanelVideoToolsButtonState
 });
 
@@ -1762,6 +1769,13 @@ function renderAssets(assets) {
 
 function renderAssetsPage(assets, options = {}) {
   return assetBrowserModule.renderAssets(assets, options);
+}
+
+function updateAssetSelectionUi() {
+  assetGrid.querySelectorAll('.asset-card').forEach((card) => {
+    const id = String(card.dataset?.id || '').trim();
+    card.classList.toggle('selected', Boolean(id && selectedAssetIds.has(id)));
+  });
 }
 
 function setSingleSelection(assetId) {
@@ -2059,6 +2073,7 @@ const assetsModule = window.createMainAssetsModule({
     get value() { return lastSelectedAssetId; },
     set value(next) { lastSelectedAssetId = next; }
   },
+  assetPaginationRef: assetPaginationState,
   searchStateRef: {
     get currentSearchQuery() { return currentSearchQuery; },
     set currentSearchQuery(next) { currentSearchQuery = next; },
@@ -2085,8 +2100,8 @@ async function loadWorkflow() {
   return assetsModule.loadWorkflow();
 }
 
-async function loadAssets() {
-  const result = await assetsModule.loadAssets();
+async function loadAssets(options = {}) {
+  const result = await assetsModule.loadAssets(options);
   updateSearchResultCounter();
   return result;
 }
@@ -2200,7 +2215,7 @@ async function openAsset(id, workflow, options = {}) {
   selectedAssetId = id;
   selectedAssetIds.add(id);
   lastSelectedAssetId = id;
-  renderAssets(currentAssets);
+  updateAssetSelectionUi();
 
   if (activePlayerCleanup) {
     activePlayerCleanup();
@@ -2734,7 +2749,7 @@ assetGrid.addEventListener('click', async (event) => {
 
   if (event.metaKey || event.ctrlKey) {
     toggleMultiSelection(cardId);
-    renderAssets(currentAssets);
+    updateAssetSelectionUi();
     if (selectedAssetIds.size > 1) {
       await openMultiSelectionDetail();
       return;
@@ -2763,7 +2778,7 @@ assetGrid.addEventListener('click', async (event) => {
 
   if (event.shiftKey) {
     addShiftRangeSelection(cardId);
-    renderAssets(currentAssets);
+    updateAssetSelectionUi();
     await openMultiSelectionDetail();
     return;
   }

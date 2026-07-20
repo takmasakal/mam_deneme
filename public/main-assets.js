@@ -16,7 +16,8 @@
       selectedAssetIdsRef,
       selectedAssetIdRef,
       lastSelectedAssetIdRef,
-      searchStateRef
+      searchStateRef,
+      assetPaginationRef
     } = deps || {};
 
     function getSelectedAssetTypesForRequest() {
@@ -43,7 +44,10 @@
       return workflow;
     }
 
-    async function loadAssets() {
+    async function loadAssets(options = {}) {
+      const pagination = assetPaginationRef || { page: 1, pageSize: 20, total: 0, serverSide: false };
+      const preservePage = Boolean(options?.preservePage);
+      if (!preservePage) pagination.page = 1;
       const filters = serializeForm(searchForm);
       const params = new URLSearchParams();
       const { selectedTypes, isNarrowed: isTypeFilterNarrowed } = getSelectedAssetTypesForRequest();
@@ -62,6 +66,8 @@
       if (selectedTypes.length === 0) {
         if (!searchStateRef.currentSearchQuery && !searchStateRef.currentOcrQuery && !searchStateRef.currentSubtitleQuery) {
           currentAssetsRef.value = [];
+          pagination.total = 0;
+          pagination.serverSide = false;
           renderAssets(currentAssetsRef.value, { resetPage: true });
           return;
         }
@@ -82,9 +88,26 @@
         params.set('types', selectedTypes.join(','));
       }
 
+      const canUseServerPagination = !searchStateRef.currentSearchQuery
+        && !searchStateRef.currentOcrQuery
+        && !searchStateRef.currentSubtitleQuery;
+      pagination.serverSide = canUseServerPagination;
+      if (canUseServerPagination) {
+        const pageSize = [20, 50, 100].includes(Number(pagination.pageSize)) ? Number(pagination.pageSize) : 20;
+        pagination.pageSize = pageSize;
+        params.set('limit', String(pageSize));
+        params.set('offset', String(Math.max(0, (Number(pagination.page) - 1) * pageSize)));
+      }
+
       const result = await api(`/api/assets?${params.toString()}`);
       const payload = Array.isArray(result) ? { assets: result, searchMeta: {} } : (result || {});
       currentAssetsRef.value = Array.isArray(payload.assets) ? payload.assets : [];
+      if (canUseServerPagination && payload.pagination && typeof payload.pagination === 'object') {
+        pagination.total = Math.max(0, Number(payload.pagination.total) || 0);
+        pagination.page = Math.max(1, Math.floor((Number(payload.pagination.offset) || 0) / pagination.pageSize) + 1);
+      } else {
+        pagination.total = currentAssetsRef.value.length;
+      }
       const qMeta = payload.searchMeta?.q && typeof payload.searchMeta.q === 'object' ? payload.searchMeta.q : null;
       const ocrMeta = payload.searchMeta?.ocrQ && typeof payload.searchMeta.ocrQ === 'object' ? payload.searchMeta.ocrQ : null;
       searchStateRef.currentSearchHighlightQuery = String(qMeta?.highlightQuery || searchStateRef.currentSearchQuery).trim() || searchStateRef.currentSearchQuery;
@@ -103,7 +126,7 @@
       if (!selectedAssetIdsRef.value.size) {
         lastSelectedAssetIdRef.value = null;
       }
-      renderAssets(currentAssetsRef.value, { resetPage: true });
+      renderAssets(currentAssetsRef.value, { resetPage: !preservePage });
     }
 
     return { loadWorkflow, loadAssets };

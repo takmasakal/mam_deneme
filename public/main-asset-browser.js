@@ -38,6 +38,7 @@
       isDocument,
       PLAYER_FPS,
       loadAssets,
+      assetPaginationRef,
       setPanelVideoToolsButtonState
     } = deps || {};
     const assetHitPageSize = 10;
@@ -65,13 +66,16 @@
     }
 
 function thumbnailMarkup(asset) {
+  const isSelected = String(asset?.id || '') === String(selectedAssetIdRef?.get?.() || '');
+  const imageLoading = isSelected ? 'eager' : 'lazy';
+  const imagePriority = isSelected ? ' fetchpriority="high"' : '';
   const thumbSrc = escapeHtml(asset.thumbnailUrl || '');
   if (isImage(asset)) {
-    return `<img class="asset-thumb" src="${escapeHtml(asset.thumbnailUrl || asset.proxyUrl || asset.mediaUrl || '')}" alt="${escapeHtml(asset.title)}" />`;
+    return `<img class="asset-thumb" loading="${imageLoading}" decoding="async"${imagePriority} src="${escapeHtml(asset.thumbnailUrl || asset.proxyUrl || asset.mediaUrl || '')}" alt="${escapeHtml(asset.title)}" />`;
   }
   if (isVideo(asset)) {
     if (thumbSrc) {
-      return `<img class="asset-thumb" src="${thumbSrc}" alt="${escapeHtml(asset.title)}" />`;
+      return `<img class="asset-thumb" loading="${imageLoading}" decoding="async"${imagePriority} src="${thumbSrc}" alt="${escapeHtml(asset.title)}" />`;
     }
     return '<div class="asset-thumb asset-thumb-file">VIDEO</div>';
   }
@@ -82,9 +86,9 @@ function thumbnailMarkup(asset) {
     const fallbackSrc = thumbFallbackForAsset(asset);
     const fallbackEsc = escapeHtml(fallbackSrc);
     if (thumbSrc) {
-      return `<img class="asset-thumb" src="${thumbSrc}" alt="${escapeHtml(asset.title)}" onerror="this.onerror=null;this.src='${fallbackEsc}'" />`;
+      return `<img class="asset-thumb" loading="${imageLoading}" decoding="async"${imagePriority} src="${thumbSrc}" alt="${escapeHtml(asset.title)}" onerror="this.onerror=null;this.src='${fallbackEsc}'" />`;
     }
-    return `<img class="asset-thumb" src="${fallbackEsc}" alt="${escapeHtml(asset.title)}" />`;
+    return `<img class="asset-thumb" loading="${imageLoading}" decoding="async"${imagePriority} src="${fallbackEsc}" alt="${escapeHtml(asset.title)}" />`;
   }
   return '<div class="asset-thumb asset-thumb-file">FILE</div>';
 }
@@ -188,10 +192,17 @@ function attachAssetListPagerHandlers() {
       event.stopPropagation();
       const direction = String(event.currentTarget?.dataset?.assetPage || '').trim();
       const assets = currentAssetsRef.get();
-      const totalPages = Math.max(1, Math.ceil(assets.length / assetPageSize));
+      const pagination = assetPaginationRef || { page: assetPage, pageSize: assetPageSize, total: assets.length, serverSide: false };
+      const totalCount = pagination.serverSide ? pagination.total : assets.length;
+      const totalPages = Math.max(1, Math.ceil(totalCount / assetPageSize));
       if (direction === 'prev') assetPage = Math.max(1, assetPage - 1);
       if (direction === 'next') assetPage = Math.min(totalPages, assetPage + 1);
-      renderAssets(assets);
+      if (pagination.serverSide) {
+        pagination.page = assetPage;
+        loadAssets({ preservePage: true }).catch(() => {});
+      } else {
+        renderAssets(assets);
+      }
     });
   });
   assetGrid.querySelectorAll('.asset-list-page-size-select').forEach((select) => {
@@ -199,7 +210,14 @@ function attachAssetListPagerHandlers() {
       const nextSize = Number(event.currentTarget?.value) || 20;
       assetPageSize = assetPageSizes.includes(nextSize) ? nextSize : 20;
       assetPage = 1;
-      renderAssets(currentAssetsRef.get());
+      const pagination = assetPaginationRef;
+      if (pagination?.serverSide) {
+        pagination.page = 1;
+        pagination.pageSize = assetPageSize;
+        loadAssets({ preservePage: true }).catch(() => {});
+      } else {
+        renderAssets(currentAssetsRef.get());
+      }
     });
   });
 }
@@ -224,12 +242,18 @@ function renderAssets(assets, options = {}) {
     return;
   }
 
-  const totalAssets = assets.length;
+  const pagination = assetPaginationRef;
+  const serverSide = Boolean(pagination?.serverSide);
+  if (serverSide) {
+    assetPageSize = [20, 50, 100].includes(Number(pagination.pageSize)) ? Number(pagination.pageSize) : 20;
+    assetPage = Math.max(1, Number(pagination.page) || 1);
+  }
+  const totalAssets = serverSide ? Math.max(0, Number(pagination.total) || 0) : assets.length;
   const totalPages = Math.max(1, Math.ceil(totalAssets / assetPageSize));
   assetPage = Math.max(1, Math.min(assetPage, totalPages));
-  const pageStart = (assetPage - 1) * assetPageSize;
-  const pageEnd = Math.min(totalAssets, pageStart + assetPageSize);
-  const visibleAssets = assets.slice(pageStart, pageEnd);
+  const pageStart = serverSide ? (assetPage - 1) * assetPageSize : (assetPage - 1) * assetPageSize;
+  const pageEnd = serverSide ? pageStart + assets.length : Math.min(totalAssets, pageStart + assetPageSize);
+  const visibleAssets = serverSide ? assets : assets.slice(pageStart, pageEnd);
   const pagerHtml = renderAssetListPager(totalAssets, pageStart, pageEnd, totalPages);
   const searchHighlightClass = acceptedDidYouMeanHighlightClass(
     'q',
