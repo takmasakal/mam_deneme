@@ -430,6 +430,8 @@ let i18n = {
     add_version: 'Add Version',
     what_changed: 'What changed',
     create_version: 'Create Version',
+    download_version: 'Download Version',
+    preview_version: 'Preview',
     ph_inline_tags: 'tag1, tag2',
     ph_version_label: 'v2',
     versions: 'Versions',
@@ -535,6 +537,9 @@ let i18n = {
     subtitle_search_results: 'Subtitle Matches',
     subtitle_jump: 'Jump',
     ocr_hit: 'OCR',
+    ocr_badge: 'OCR',
+    subtitle_badge: 'SUB',
+    asset_artifacts: 'Available artifacts',
     video_ocr: 'Video OCR',
     video_ocr_interval: 'Interval (sec)',
     video_ocr_lang: 'OCR lang',
@@ -776,6 +781,8 @@ let i18n = {
     add_version: 'Versiyon Ekle',
     what_changed: 'Ne değişti',
     create_version: 'Versiyon Oluştur',
+    download_version: 'Versiyonu İndir',
+    preview_version: 'Önizle',
     ph_inline_tags: 'etiket1, etiket2',
     ph_version_label: 'v2',
     versions: 'Versiyonlar',
@@ -881,6 +888,9 @@ let i18n = {
     subtitle_search_results: 'Altyazı Eşleşmeleri',
     subtitle_jump: 'Git',
     ocr_hit: 'OCR',
+    ocr_badge: 'OCR',
+    subtitle_badge: 'ALTYZ',
+    asset_artifacts: 'Mevcut çıktılar',
     video_ocr: 'Video OCR',
     video_ocr_interval: 'Aralık (sn)',
     video_ocr_lang: 'OCR dil',
@@ -1216,6 +1226,7 @@ async function loadCurrentUser() {
   if (!currentUserBtn) return;
   try {
     const me = await api('/api/me');
+    window.mamSessionExpiry?.start(me.authSession || {});
     const username = String(me.username || '').trim();
     const displayName = String(me.displayName || '').trim();
     const email = String(me.email || '').trim();
@@ -1564,6 +1575,8 @@ async function api(path, options = {}) {
   }
 
   if (!response.ok) {
+    const isProfileFailure = String(path).split('?')[0] === '/api/me' && response.status >= 500;
+    window.mamSessionExpiry?.handle(response.status, textBody, parsedBody, { force: isProfileFailure });
     const fallback = textBody
       ? textBody.replace(/\s+/g, ' ').trim().slice(0, 220)
       : '';
@@ -1594,7 +1607,12 @@ function showAssetLoadError(error) {
 async function deleteApi(path) {
   const response = await fetch(path, { method: 'DELETE' });
   if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
+    const textBody = await response.text();
+    let body = {};
+    try {
+      body = textBody ? JSON.parse(textBody) : {};
+    } catch (_error) {}
+    window.mamSessionExpiry?.handle(response.status, textBody, body);
     throw new Error(body.error || 'Request failed');
   }
 }
@@ -2330,6 +2348,12 @@ async function openAsset(id, workflow, options = {}) {
   versionFormEl?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const payload = serializeForm(event.target);
+    const versionFile = event.target.elements.versionFile?.files?.[0];
+    if (versionFile) {
+      payload.fileName = versionFile.name;
+      payload.mimeType = versionFile.type || 'application/octet-stream';
+      payload.fileData = await readFileAsBase64(versionFile);
+    }
     await api(`/api/assets/${id}/versions`, { method: 'POST', body: JSON.stringify(payload) });
     await loadAssets();
     await openAsset(id, workflow);
@@ -2472,7 +2496,12 @@ async function openAsset(id, workflow, options = {}) {
         body: JSON.stringify({ versionId })
       });
       if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
+        const textBody = await res.text();
+        let payload = {};
+        try {
+          payload = textBody ? JSON.parse(textBody) : {};
+        } catch (_error) {}
+        window.mamSessionExpiry?.handle(res.status, textBody, payload);
         alert(payload.error || 'Failed to restore Office version');
         return;
       }
@@ -2501,6 +2530,17 @@ async function openAsset(id, workflow, options = {}) {
       document.body.appendChild(link);
       link.click();
       link.remove();
+    });
+  });
+
+  assetVersionsListEl?.querySelectorAll('.previewVersionBtn').forEach((btn) => {
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const versionId = String(event.currentTarget?.dataset?.versionId || '').trim();
+      if (!versionId) return;
+      const previewUrl = `/api/assets/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/preview`;
+      window.open(previewUrl, '_blank', 'noopener,noreferrer');
     });
   });
 

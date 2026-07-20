@@ -59,6 +59,7 @@
       const canDownloadThisAsset = asset?.canDownloadAsset !== false;
       const canChangeThisAsset = !asset?.inTrash;
       return {
+        assetIsImage: Boolean(isImage(asset)),
         assetIsPdf,
         assetIsOffice,
         canDownloadAsset: canDownloadThisAsset,
@@ -88,6 +89,26 @@
       return Boolean(currentUserCanDeleteAssets());
     }
 
+    function detailArtifactBadges(asset) {
+      const eligible = Boolean(isVideo?.(asset) || isImage?.(asset) || isAudio?.(asset));
+      if (!eligible) return '';
+      const dc = asset?.dcMetadata && typeof asset.dcMetadata === 'object' ? asset.dcMetadata : {};
+      const hasOcr = Boolean(
+        String(asset?.videoOcrUrl || asset?.photoOcrUrl || dc.videoOcrUrl || dc.photoOcrUrl || '').trim()
+        || (Array.isArray(asset?.videoOcrItems) && asset.videoOcrItems.length)
+        || (Array.isArray(asset?.photoOcrItems) && asset.photoOcrItems.length)
+      );
+      const hasSubtitle = Boolean(
+        String(asset?.subtitleUrl || dc.subtitleUrl || '').trim()
+        || (Array.isArray(asset?.subtitleItems) && asset.subtitleItems.length)
+      );
+      if (!hasOcr && !hasSubtitle) return '';
+      return `<div class="detail-artifact-badges" aria-label="${escapeHtml(t('asset_artifacts'))}">
+        ${hasOcr ? `<span class="detail-artifact-badge">${escapeHtml(t('ocr_badge'))}</span>` : ''}
+        ${hasSubtitle ? `<span class="detail-artifact-badge">${escapeHtml(t('subtitle_badge'))}</span>` : ''}
+      </div>`;
+    }
+
     function getVersionRowState(version, access) {
       const actionType = String(version?.actionType || 'manual').toLowerCase();
       const hasSnapshot = String(version?.snapshotMediaUrl || '').startsWith('/uploads/');
@@ -105,6 +126,7 @@
         actionType,
         canRestorePdf: Boolean(access.canManageVersions && access.assetIsPdf && hasSnapshot),
         canRestoreOffice: Boolean(access.canManageVersions && access.assetIsOffice && hasSnapshot),
+        canPreviewVersion: Boolean(access.assetIsImage && hasSnapshot),
         canDownloadVersion: Boolean(hasSnapshot && access.canDownloadAsset),
         canEditVersion: canEditOrDelete,
         canDeleteVersion: canEditOrDelete
@@ -121,10 +143,14 @@
       const downloadButton = rowState.canDownloadVersion
         ? `<button type="button" class="downloadVersionBtn" data-version-id="${escapeHtml(version.versionId)}">${escapeHtml(t('download_version'))}</button>`
         : '';
-      const actionBar = (interactive || downloadButton) ? `
+      const previewButton = rowState.canPreviewVersion
+        ? `<button type="button" class="previewVersionBtn" data-version-id="${escapeHtml(version.versionId)}">${escapeHtml(t('preview_version'))}</button>`
+        : '';
+      const actionBar = (interactive || downloadButton || previewButton) ? `
         <div class="timecode-bar" style="margin-top:8px;">
           ${access.assetIsPdf ? `<button type="button" class="restorePdfVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canRestorePdf ? '' : 'disabled'}>${escapeHtml(rowState.canRestorePdf ? t('restore_pdf_version') : t('restore_pdf_unavailable'))}</button>` : ''}
           ${access.assetIsOffice ? `<button type="button" class="restoreOfficeVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canRestoreOffice ? '' : 'disabled'}>${escapeHtml(rowState.canRestoreOffice ? t('restore_office_version') : t('restore_pdf_unavailable'))}</button>` : ''}
+          ${previewButton}
           ${downloadButton}
           ${interactive ? `<button type="button" class="editVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canEditVersion ? '' : 'disabled'}>${escapeHtml(t('edit_version_name'))}</button>` : ''}
           ${interactive && rowState.canDeleteVersion ? `<button type="button" class="deleteVersionBtn danger" data-version-id="${escapeHtml(version.versionId)}">${escapeHtml(t('delete_version'))}</button>` : ''}
@@ -186,6 +212,7 @@
 
       const metadataTopSection = `
         <h3>${highlightMatch(asset.title, currentSearchHighlightQuery(), searchHighlightClass)}</h3>
+        ${detailArtifactBadges(asset)}
         <p>${highlightMatch(asset.description || t('no_description'), currentSearchHighlightQuery(), searchHighlightClass)}</p>
         <div class="asset-meta">${t('owner')}: ${highlightMatch(asset.owner, currentSearchHighlightQuery(), searchHighlightClass)} | ${t('type')}: ${highlightMatch(asset.type, currentSearchHighlightQuery(), searchHighlightClass)}${durationMeta}</div>
         <div class="asset-meta">${t('status')}: <strong>${escapeHtml(workflowLabel(asset.status))}</strong></div>
@@ -254,6 +281,7 @@
           <h4>${t('add_version')}</h4>
           <input name="label" placeholder="${escapeHtml(t('ph_version_label'))}" />
           <input name="note" placeholder="${t('what_changed')}" />
+          <input name="versionFile" type="file" accept="image/*,.heic,.heif" />
           <button type="submit">${t('create_version')}</button>
         </form>
 
