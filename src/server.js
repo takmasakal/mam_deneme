@@ -350,7 +350,6 @@ function getActiveUsers() {
     if (!value || now - Number(value.lastSeenMs || 0) > ACTIVE_USER_TTL_MS) activeUserSessions.delete(key);
   });
   return Array.from(activeUserSessions.values())
-    .filter((item) => String(item?.username || item?.displayName || item?.email || '').trim())
     .sort((a, b) => String(b.lastSeenAt || '').localeCompare(String(a.lastSeenAt || '')))
     .map(({ lastSeenMs, ...item }) => item);
 }
@@ -6771,6 +6770,13 @@ app.use((req, res, next) => {
       lastSeenAt: new Date().toISOString(),
       lastSeenMs: Date.now()
     });
+  } else if (shouldTrackRequest) {
+    console.warn(JSON.stringify({
+      event: 'active-user-identity-missing',
+      method: req.method,
+      path: req.originalUrl || req.url,
+      ip: String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || req.ip || '').split(',')[0].trim()
+    }));
   }
 
   res.on('finish', () => {
