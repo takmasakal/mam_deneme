@@ -348,6 +348,7 @@ function getActiveUsers() {
     if (!value || now - Number(value.lastSeenMs || 0) > ACTIVE_USER_TTL_MS) activeUserSessions.delete(key);
   });
   return Array.from(activeUserSessions.values())
+    .filter((item) => String(item?.username || item?.displayName || item?.email || '').trim())
     .sort((a, b) => String(b.lastSeenAt || '').localeCompare(String(a.lastSeenAt || '')))
     .map(({ lastSeenMs, ...item }) => item);
 }
@@ -6726,8 +6727,12 @@ app.use(maybeRequireApiToken);
 
 app.use((req, res, next) => {
   const startedAt = Date.now();
-  const shouldTrackUser = shouldTrackActiveUserRequest(req);
-  const context = shouldTrackUser ? buildUserContextFromRequest(req) : null;
+  const shouldTrackRequest = shouldTrackActiveUserRequest(req);
+  const context = shouldTrackRequest ? buildUserContextFromRequest(req) : null;
+  const hasUserIdentity = Boolean(String(
+    context?.username || context?.displayName || context?.email || ''
+  ).trim());
+  const shouldTrackUser = shouldTrackRequest && hasUserIdentity;
   const actor = context
     ? String(context.displayName || context.username || context.email || '').trim() || 'unknown'
     : 'unknown';
