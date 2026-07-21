@@ -178,7 +178,10 @@ function renderAssetListPager(totalCount, visibleStart, visibleEnd, totalPages) 
       </label>
       <div class="asset-list-page-actions">
         <button type="button" class="asset-list-page-btn" data-asset-page="prev" ${assetPage <= 1 ? 'disabled' : ''} aria-label="${escapeHtml(t('previous_page'))}">&lt;</button>
-        <span class="asset-list-page-current">${escapeHtml(String(assetPage))} / ${escapeHtml(String(totalPages))}</span>
+        <label class="asset-list-page-current">
+          <input type="number" class="asset-list-page-input" min="1" max="${escapeHtml(String(totalPages))}" value="${escapeHtml(String(assetPage))}" aria-label="${escapeHtml(t('current_page'))}" />
+          <span>/ ${escapeHtml(String(totalPages))}</span>
+        </label>
         <button type="button" class="asset-list-page-btn" data-asset-page="next" ${assetPage >= totalPages ? 'disabled' : ''} aria-label="${escapeHtml(t('next_page'))}">&gt;</button>
       </div>
     </div>
@@ -199,6 +202,31 @@ function attachAssetListPagerHandlers() {
       if (direction === 'next') assetPage = Math.min(totalPages, assetPage + 1);
       if (pagination.serverSide) {
         pagination.page = assetPage;
+        loadAssets({ preservePage: true }).catch(() => {});
+      } else {
+        renderAssets(assets);
+      }
+    });
+  });
+  assetGrid.querySelectorAll('.asset-list-page-input').forEach((input) => {
+    const resizePageInput = () => {
+      input.style.width = `${Math.max(3.5, String(input.value || '').length + 1.5)}ch`;
+    };
+    resizePageInput();
+    input.addEventListener('input', resizePageInput);
+    input.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      const assets = currentAssetsRef.get();
+      const pagination = assetPaginationRef || { page: assetPage, pageSize: assetPageSize, total: assets.length, serverSide: false };
+      const totalCount = pagination.serverSide ? pagination.total : assets.length;
+      const totalPages = Math.max(1, Math.ceil(totalCount / assetPageSize));
+      const requestedPage = Math.max(1, Math.min(totalPages, Number(input.value) || 1));
+      assetPage = requestedPage;
+      input.value = String(requestedPage);
+      resizePageInput();
+      if (pagination.serverSide) {
+        pagination.page = requestedPage;
         loadAssets({ preservePage: true }).catch(() => {});
       } else {
         renderAssets(assets);

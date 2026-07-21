@@ -823,6 +823,25 @@ button:hover {
   white-space: nowrap;
 }
 
+.asset-list-page-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.asset-list-page-input {
+  width: 3.5ch;
+  height: 24px;
+  padding: 2px 4px;
+  border: 1px solid #56627f;
+  border-radius: 6px;
+  background: #252b3a;
+  color: #f3f6ff;
+  font-size: 12px;
+  text-align: center;
+  direction: rtl;
+}
+
 .asset-hit-pager {
   display: inline-flex;
   align-items: center;
