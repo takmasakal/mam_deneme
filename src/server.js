@@ -316,6 +316,7 @@ const MAX_RUNTIME_ERROR_LOGS = 300;
 const ACTIVE_USER_TTL_MS = Math.max(60, Number(process.env.ACTIVE_USER_TTL_SECONDS) || 900) * 1000;
 const ACTIVE_USER_TRACK_PATH_PREFIXES = ['/api/', '/admin.html'];
 const ACTIVE_USER_SKIP_PATH_PREFIXES = [
+  '/api/logout-url',
   '/api/assets/',
   '/uploads/',
   '/static/',
