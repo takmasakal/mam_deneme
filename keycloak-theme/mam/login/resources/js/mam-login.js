@@ -52,3 +52,22 @@
     bind();
   }
 }());
+
+(function showMamLoginVersion() {
+  function render() {
+    var version = String(window.MAM_LOGIN_VERSION || '').trim();
+    if (!version) return;
+    var page = document.querySelector('.login-pf-page');
+    if (!page || page.querySelector('.mam-login-version')) return;
+    var label = document.createElement('div');
+    label.className = 'mam-login-version';
+    label.textContent = version;
+    page.appendChild(label);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', render, { once: true });
+  } else {
+    render();
+  }
+})();
