@@ -103,7 +103,15 @@ app.get('/api/health', (_req, res) => {
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/uploads', secureUploadAssetAccess);
 app.use('/uploads', auditUploadDownloadRequest);
-app.use('/uploads', express.static(UPLOADS_DIR));
+app.use('/uploads', express.static(UPLOADS_DIR, {
+  setHeaders(res, filePath) {
+    const relativePath = path.relative(UPLOADS_DIR, filePath).split(path.sep).join('/').toLowerCase();
+    if (relativePath.startsWith('proxies/') || relativePath.startsWith('previews/') || relativePath.startsWith('thumbnails/')) {
+      // Derivative names are immutable; Express still supplies the ETag.
+      res.setHeader('Cache-Control', 'private, max-age=86400, must-revalidate');
+    }
+  }
+}));
 app.use((error, _req, res, next) => {
   if (error?.type === 'entity.too.large' || Number(error?.status || 0) === 413) {
     return res.status(413).json({
@@ -309,6 +317,7 @@ const MAX_RUNTIME_ERROR_LOGS = 300;
 const ACTIVE_USER_TTL_MS = Math.max(60, Number(process.env.ACTIVE_USER_TTL_SECONDS) || 900) * 1000;
 const ACTIVE_USER_TRACK_PATH_PREFIXES = ['/api/', '/admin.html'];
 const ACTIVE_USER_SKIP_PATH_PREFIXES = [
+  '/api/logout-url',
   '/api/assets/',
   '/uploads/',
   '/static/',
@@ -341,6 +350,7 @@ function getActiveUsers() {
     if (!value || now - Number(value.lastSeenMs || 0) > ACTIVE_USER_TTL_MS) activeUserSessions.delete(key);
   });
   return Array.from(activeUserSessions.values())
+    .filter((item) => String(item?.username || item?.displayName || item?.email || '').trim())
     .sort((a, b) => String(b.lastSeenAt || '').localeCompare(String(a.lastSeenAt || '')))
     .map(({ lastSeenMs, ...item }) => item);
 }
@@ -349,7 +359,6 @@ function shouldTrackActiveUserRequest(req) {
   const urlPath = String(req?.path || req?.url || '').split('?')[0];
   if (!ACTIVE_USER_TRACK_PATH_PREFIXES.some((prefix) => urlPath === prefix || urlPath.startsWith(prefix))) return false;
   if (ACTIVE_USER_SKIP_PATH_PREFIXES.some((prefix) => urlPath === prefix || urlPath.startsWith(prefix))) return false;
-    .filter((item) => String(item?.username || item?.displayName || item?.email || '').trim())
   return true;
 }
 
@@ -8099,6 +8108,10 @@ app.get('/api/me', async (req, res) => {
   res.set('Surrogate-Control', 'no-store');
   try {
     const effective = await resolveEffectivePermissions(req);
+    if (!String(effective.username || '').trim() && !String(effective.email || '').trim()) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const authSession = normalizeAuthSessionSettings((await getAdminSettings()).authSession);
     const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
     const canAccessTextAdmin = Boolean(
       effective.canAccessTextAdmin
@@ -8125,7 +8138,11 @@ app.get('/api/me', async (req, res) => {
 	      uploadAllowedAssetTypes: assetAccessService.getAllowedUploadAssetTypeGroups(accessContext),
       officeEditorProvider: OFFICE_EDITOR_PROVIDER,
       permissionKeys: effective.permissionKeys,
-      deniedPermissionKeys: effective.deniedPermissionKeys || []
+      deniedPermissionKeys: effective.deniedPermissionKeys || [],
+      authSession: {
+        clientIdleMinutes: authSession.clientIdleMinutes,
+        clientMaxHours: authSession.clientMaxHours
+      }
     });
   } catch (_error) {
     console.warn(JSON.stringify({
