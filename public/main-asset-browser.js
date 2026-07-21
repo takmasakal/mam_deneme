@@ -164,7 +164,13 @@ function renderAssetListPager(totalCount, visibleStart, visibleEnd, totalPages) 
       <div class="asset-list-page-actions">
         <button type="button" class="asset-list-page-btn" data-asset-page="prev" ${assetPage <= 1 ? 'disabled' : ''} aria-label="${escapeHtml(t('previous_page'))}">&lt;</button>
         <label class="asset-list-page-current">
-          <input type="number" class="asset-list-page-input" min="1" max="${escapeHtml(String(totalPages))}" value="${escapeHtml(String(assetPage))}" aria-label="${escapeHtml(t('current_page'))}" />
+          <span class="asset-list-page-control">
+            <span class="asset-list-page-stepper" aria-hidden="true">
+              <button type="button" class="asset-list-page-step" data-page-step="up" tabindex="-1">▲</button>
+              <button type="button" class="asset-list-page-step" data-page-step="down" tabindex="-1">▼</button>
+            </span>
+            <input type="number" class="asset-list-page-input" min="1" max="${escapeHtml(String(totalPages))}" value="${escapeHtml(String(assetPage))}" aria-label="${escapeHtml(t('current_page'))}" />
+          </span>
           <span>/ ${escapeHtml(String(totalPages))}</span>
         </label>
         <button type="button" class="asset-list-page-btn" data-asset-page="next" ${assetPage >= totalPages ? 'disabled' : ''} aria-label="${escapeHtml(t('next_page'))}">&gt;</button>
@@ -206,9 +212,17 @@ function attachAssetListPagerHandlers() {
       }
     });
   });
+  assetGrid.querySelectorAll('.asset-list-page-step').forEach((step) => {
+    step.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const direction = event.currentTarget?.dataset?.pageStep === 'up' ? 'next' : 'prev';
+      assetGrid.querySelector(`.asset-list-page-btn[data-asset-page="${direction}"]`)?.click();
+    });
+  });
   assetGrid.querySelectorAll('.asset-list-page-input').forEach((input) => {
     const resizePageInput = () => {
-      input.style.width = `${Math.max(3.5, String(input.value || '').length + 1.5)}ch`;
+      input.style.width = `${Math.max(6, String(input.value || '').length + 3)}ch`;
     };
     resizePageInput();
     input.addEventListener('input', resizePageInput);
