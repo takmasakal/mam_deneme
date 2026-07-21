@@ -842,45 +842,6 @@ button:hover {
   font-size: 12px;
   text-align: center;
   direction: ltr;
-  appearance: textfield;
-}
-
-.asset-list-page-input::-webkit-inner-spin-button,
-.asset-list-page-input::-webkit-outer-spin-button {
-  appearance: none;
-  margin: 0;
-}
-
-.asset-list-page-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-
-.asset-list-page-stepper {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.asset-list-page-step {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 11px;
-  padding: 0;
-  border: 1px solid #56627f;
-  border-radius: 3px;
-  background: #2f3546;
-  color: #f3f6ff;
-  font-size: 8px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.asset-list-page-step:hover {
-  background: #3a4359;
 }
 
 .asset-hit-pager {
