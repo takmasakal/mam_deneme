@@ -592,10 +592,61 @@ video::-webkit-media-text-track-display * {
   pointer-events: auto;
   position: relative;
   display: grid;
-  grid-template-columns: auto minmax(220px, 1fr) auto;
+  grid-template-columns: auto minmax(220px, 1fr) auto auto;
   gap: 10px;
   align-items: center;
   padding: 10px 16px 38px;
+}
+
+.fs-volume-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fs-mute-btn {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(135, 160, 199, 0.55);
+  border-radius: 8px;
+  background: rgba(17, 23, 34, 0.5);
+  color: #eaf3ff;
+}
+
+.fs-volume-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  width: 52px;
+  height: 164px;
+  border: 1px solid rgba(135, 160, 199, 0.55);
+  border-radius: 10px;
+  background: rgba(17, 23, 34, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+  z-index: 50;
+}
+
+.fs-volume-wrap:hover .fs-volume-popover,
+.fs-volume-wrap:focus-within .fs-volume-popover {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.fs-volume-range {
+  width: 148px;
+  height: 30px;
+  transform: rotate(-90deg);
+  accent-color: #6ca8ff;
 }
 
 .fs-tc-jump {
