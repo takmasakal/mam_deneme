@@ -4784,6 +4784,14 @@ async function createAssetRecord(input) {
 
 async function generateVideoProxy(inputPath, outputPath, options = {}) {
   const audioStreams = await getMediaAudioStreams(inputPath);
+  const technicalInfo = await probeMediaTechnicalInfo(inputPath);
+  const sourceWidth = Number(technicalInfo?.video?.width || 0);
+  const sourceHeight = Number(technicalInfo?.video?.height || 0);
+  // Keep portrait proxies at a 640px long edge so phone videos do not become
+  // larger than necessary while landscape proxy behavior remains unchanged.
+  const proxyScaleFilter = sourceHeight > sourceWidth
+    ? 'scale=640:640:force_original_aspect_ratio=decrease'
+    : 'scale=640:-2:force_original_aspect_ratio=decrease';
   const allowAudioFallback = Boolean(options.allowAudioFallback);
   const runProxy = async (includeAudio) => {
     await new Promise((resolve, reject) => {
@@ -4807,7 +4815,7 @@ async function generateVideoProxy(inputPath, outputPath, options = {}) {
         '-level',
         '4.0',
         '-vf',
-        'scale=640:-2:force_original_aspect_ratio=decrease'
+        proxyScaleFilter
       ];
 
       if (!includeAudio || audioStreams.length === 0) {
