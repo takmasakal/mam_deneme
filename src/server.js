@@ -4772,7 +4772,7 @@ async function generateVideoProxy(inputPath, outputPath, options = {}) {
   // Keep portrait proxies at a 640px long edge so phone videos do not become
   // larger than necessary while landscape proxy behavior remains unchanged.
   const proxyScaleFilter = sourceHeight > sourceWidth
-    ? 'scale=640:640:force_original_aspect_ratio=decrease'
+    ? 'scale=640:640:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2'
     : 'scale=640:-2:force_original_aspect_ratio=decrease';
   const allowAudioFallback = Boolean(options.allowAudioFallback);
   const runProxy = async (includeAudio) => {
@@ -4860,10 +4860,20 @@ async function generateVideoProxy(inputPath, outputPath, options = {}) {
     return { audioFallbackUsed: false };
   } catch (error) {
     const message = String(error?.message || '');
+    const audioStreamDecodeFailure = audioStreams.some((stream) => {
+      const streamIndex = Number(stream?.index);
+      if (!Number.isFinite(streamIndex)) return false;
+      return new RegExp(
+        `Error while (?:decoding stream|processing the decoded data for stream) #0:${streamIndex}\\b`,
+        'i'
+      ).test(message);
+    });
+    // FFmpeg also writes harmless encoder statistics such as "[aac @ ...] Qavg".
+    // Only classify AAC lines as decode failures when they contain an error signal.
+    const aacDecoderFailure = /\[aac @[^\]]+\]\s+(?!Qavg:).*?(?:error|invalid|corrupt|decode|buffer exhausted|not allocated|reserved bit|exceeds limit)/i.test(message);
     const audioDecodeFailure =
-      /Error while decoding stream #0:1/i.test(message) ||
-      /Error while processing the decoded data for stream #0:1/i.test(message) ||
-      /\[aac @/i.test(message) ||
+      audioStreamDecodeFailure ||
+      aacDecoderFailure ||
       /auto_aresample/i.test(message);
     if (!audioDecodeFailure) throw error;
     if (!allowAudioFallback) {
