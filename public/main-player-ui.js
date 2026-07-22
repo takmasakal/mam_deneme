@@ -252,9 +252,9 @@
       const durationEl = byId('customDurationTime');
       const seek = byId('customSeekRange');
       const muteBtn = byId('customMuteBtn');
-      const volumeWrap = byId('customVolumeWrap');
       const vol = byId('customVolumeRange');
       if (!bar || !playBtn || !currentEl || !durationEl || !seek || !muteBtn || !vol) return () => {};
+      let lastVolume = Number.isFinite(mediaEl.volume) && mediaEl.volume > 0 ? mediaEl.volume : 1;
       let isSeeking = false;
       const fps = PLAYER_FPS;
       let totalFrames = 1;
@@ -306,8 +306,10 @@
           ? mediaEl.__mamIsReversePlaying()
           : false;
         const paused = !reversePlaying && (mediaEl.paused || mediaEl.ended);
+        const muted = mediaEl.muted || mediaEl.volume <= 0;
         playBtn.textContent = paused ? '▶' : '⏸';
-        muteBtn.textContent = mediaEl.muted || mediaEl.volume <= 0 ? '🔇' : '🔊';
+        muteBtn.textContent = muted ? '🔇' : '🔊';
+        muteBtn.setAttribute('aria-pressed', muted ? 'true' : 'false');
       };
 
       const syncTimeline = () => {
@@ -362,24 +364,31 @@
       };
       const onMute = (event) => {
         if (event) event.preventDefault();
-        if (!volumeWrap) return;
-        volumeWrap.classList.toggle('open');
+        const muted = mediaEl.muted || mediaEl.volume <= 0;
+        if (muted) {
+          mediaEl.muted = false;
+          mediaEl.volume = lastVolume > 0 ? lastVolume : 1;
+        } else {
+          lastVolume = mediaEl.volume > 0 ? mediaEl.volume : lastVolume;
+          mediaEl.muted = true;
+        }
+        syncButtons();
       };
       const onVolume = () => {
-        mediaEl.volume = Math.max(0, Math.min(1, Number(vol.value || 1)));
-        if (mediaEl.volume > 0 && mediaEl.muted) mediaEl.muted = false;
+        const next = Math.max(0, Math.min(1, Number(vol.value || 1)));
+        mediaEl.volume = next;
+        if (next > 0) {
+          lastVolume = next;
+          mediaEl.muted = false;
+        } else {
+          mediaEl.muted = true;
+        }
         syncButtons();
       };
       const onVolumeSync = () => {
         vol.value = String(Number.isFinite(mediaEl.volume) ? mediaEl.volume : 1);
+        if (mediaEl.volume > 0) lastVolume = mediaEl.volume;
         syncButtons();
-      };
-
-      const onDocumentPointer = (event) => {
-        if (!volumeWrap || !volumeWrap.classList.contains('open')) return;
-        const target = event.target;
-        if (target instanceof Node && volumeWrap.contains(target)) return;
-        volumeWrap.classList.remove('open');
       };
 
       playBtn.addEventListener('click', onPlayPause);
@@ -389,7 +398,6 @@
       seek.addEventListener('change', onSeekEnd);
       muteBtn.addEventListener('click', onMute);
       vol.addEventListener('input', onVolume);
-      document.addEventListener('pointerdown', onDocumentPointer);
 
       mediaEl.addEventListener('timeupdate', syncTimeline);
       mediaEl.addEventListener('loadedmetadata', rebuildSeekScale);
@@ -414,7 +422,6 @@
         seek.removeEventListener('change', onSeekEnd);
         muteBtn.removeEventListener('click', onMute);
         vol.removeEventListener('input', onVolume);
-        document.removeEventListener('pointerdown', onDocumentPointer);
         mediaEl.removeEventListener('timeupdate', syncTimeline);
         mediaEl.removeEventListener('loadedmetadata', rebuildSeekScale);
         mediaEl.removeEventListener('loadedmetadata', syncTimeline);

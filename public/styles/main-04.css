@@ -373,6 +373,13 @@
   justify-content: center;
 }
 
+.custom-volume-wrap:hover .custom-volume-popover,
+.custom-volume-wrap:focus-within .custom-volume-popover {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
 .custom-volume-popover {
   position: absolute;
   right: -10px;

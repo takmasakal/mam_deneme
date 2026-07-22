@@ -146,6 +146,12 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
       <div class="fs-seek-wrap">
         <input type="range" class="fs-seek" min="0" max="1000" step="1" value="0" />
       </div>
+      <div class="fs-volume-wrap">
+        <button type="button" class="fs-mute-btn" title="Volume" aria-label="Volume" aria-pressed="false">🔊</button>
+        <div class="fs-volume-popover">
+          <input type="range" class="fs-volume-range" min="0" max="1" step="0.01" value="1" aria-label="Volume" />
+        </div>
+      </div>
       <span class="fs-time">00:00:00 / 00:00:00</span>
     </div>
     <div class="fs-tc-jump hidden">
@@ -173,6 +179,8 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
   const fsPlayBtn = overlay.querySelector('.fs-play-btn');
   const fsSeekWrap = overlay.querySelector('.fs-seek-wrap');
   const fsSeek = overlay.querySelector('.fs-seek');
+  const fsMuteBtn = overlay.querySelector('.fs-mute-btn');
+  const fsVolumeRange = overlay.querySelector('.fs-volume-range');
   const fsTime = overlay.querySelector('.fs-time');
   const fsTcJump = overlay.querySelector('.fs-tc-jump');
   const fsTcJumpInput = overlay.querySelector('.fs-tc-jump-input');
@@ -203,6 +211,7 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
   });
 
   let audioLevels = [];
+  let lastVolume = Number.isFinite(mediaEl.volume) && mediaEl.volume > 0 ? mediaEl.volume : 1;
   const prevTrackModes = [];
   const ensureSubtitleTrack = () => {
     const subtitleUrl = String(asset?.subtitleUrl || '').trim();
@@ -440,6 +449,37 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
       fsSeek.value = '0';
     }
     if (fsPlayBtn) fsPlayBtn.textContent = (mediaEl.paused || mediaEl.ended) ? '▶' : '⏸';
+    const muted = mediaEl.muted || mediaEl.volume <= 0;
+    if (fsMuteBtn) {
+      fsMuteBtn.textContent = muted ? '🔇' : '🔊';
+      fsMuteBtn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+    }
+    if (fsVolumeRange) fsVolumeRange.value = String(Number.isFinite(mediaEl.volume) ? mediaEl.volume : 1);
+  };
+
+  const onFullscreenMute = (event) => {
+    event?.preventDefault?.();
+    const muted = mediaEl.muted || mediaEl.volume <= 0;
+    if (muted) {
+      mediaEl.muted = false;
+      mediaEl.volume = lastVolume > 0 ? lastVolume : 1;
+    } else {
+      lastVolume = mediaEl.volume > 0 ? mediaEl.volume : lastVolume;
+      mediaEl.muted = true;
+    }
+    syncOverlay();
+  };
+
+  const onFullscreenVolume = () => {
+    const next = Math.max(0, Math.min(1, Number(fsVolumeRange?.value || 1)));
+    mediaEl.volume = next;
+    if (next > 0) {
+      lastVolume = next;
+      mediaEl.muted = false;
+    } else {
+      mediaEl.muted = true;
+    }
+    syncOverlay();
   };
 
   const applyOverlayVisibility = () => {
@@ -558,6 +598,8 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
   settingsBtn?.addEventListener('click', onSettingsButton);
   fsPlayBtn?.addEventListener('click', onPlayToggle);
   fsSeek?.addEventListener('input', onSeekInput);
+  fsMuteBtn?.addEventListener('click', onFullscreenMute);
+  fsVolumeRange?.addEventListener('input', onFullscreenVolume);
   fsTimecode?.addEventListener('click', onTimecodeJump);
   fsTcJumpGo?.addEventListener('click', onTimecodeJumpApply);
   fsTcJumpCancel?.addEventListener('click', onTcJumpCancel);
@@ -569,6 +611,7 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
   mediaEl.addEventListener('play', syncOverlay);
   mediaEl.addEventListener('pause', syncOverlay);
   mediaEl.addEventListener('loadedmetadata', syncOverlay);
+  mediaEl.addEventListener('volumechange', syncOverlay);
   mediaEl.addEventListener('mam:audio-levels', onAudioLevels);
   document.addEventListener('fullscreenchange', onFullscreenChange);
   document.addEventListener('webkitfullscreenchange', onFullscreenChange);
@@ -581,6 +624,8 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
     settingsBtn?.removeEventListener('click', onSettingsButton);
     fsPlayBtn?.removeEventListener('click', onPlayToggle);
     fsSeek?.removeEventListener('input', onSeekInput);
+    fsMuteBtn?.removeEventListener('click', onFullscreenMute);
+    fsVolumeRange?.removeEventListener('input', onFullscreenVolume);
     fsTimecode?.removeEventListener('click', onTimecodeJump);
     fsTcJumpGo?.removeEventListener('click', onTimecodeJumpApply);
     fsTcJumpCancel?.removeEventListener('click', onTcJumpCancel);
@@ -590,6 +635,7 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
     mediaEl.removeEventListener('play', syncOverlay);
     mediaEl.removeEventListener('pause', syncOverlay);
     mediaEl.removeEventListener('loadedmetadata', syncOverlay);
+    mediaEl.removeEventListener('volumechange', syncOverlay);
     mediaEl.removeEventListener('mam:audio-levels', onAudioLevels);
     document.removeEventListener('fullscreenchange', onFullscreenChange);
     document.removeEventListener('webkitfullscreenchange', onFullscreenChange);
