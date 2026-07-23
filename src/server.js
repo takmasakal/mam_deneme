@@ -5839,6 +5839,9 @@ function queueVideoOcrJob(row, options = {}) {
         startedAt: running.startedAt || running.createdAt,
         finishedAt: running.finishedAt
       });
+    } finally {
+      safeRmDir(running.frameDir);
+      running.frameDir = '';
     }
   }, 10);
   return job;
