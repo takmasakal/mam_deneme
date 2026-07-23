@@ -1,12 +1,13 @@
 {
   "name": "mam_deneme",
-  "version": "0.1.0",
+  "version": "0.9.1",
   "description": "yükleme, indirme, metadata, arama, versiyonlama, altyazı ve OCR destekli MAM denemesi",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "check": "sh scripts/check.sh"
+    "check": "sh scripts/check.sh",
+    "sync-login-version": "node scripts/sync-login-version.js"
   },
   "dependencies": {
     "@embedpdf/snippet": "^2.8.0",
