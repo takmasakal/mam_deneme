@@ -172,7 +172,7 @@
       await openAsset(assetId, workflow);
     }
 
-    function detailMarkup(asset, workflow) {
+    function detailMarkup(asset, workflow, options = {}) {
       const dc = asset.dcMetadata || {};
       const isImageAsset = Boolean(isImage?.(asset));
       const hasPlayableVideoProxy = isVideo(asset) && Boolean(String(asset.proxyUrl || '').trim());
@@ -184,7 +184,7 @@
           ${mediaViewer(asset, { showVideoToolsButton: false, includeSubtitleTools: false, includeSectionHide: true, includeClipSectionHide: false, includeAudioSectionHide: false, audioSideLayout: false, includeDetailPin: true })}
         `
         : `
-          ${mediaViewer(asset)}
+          ${mediaViewer(asset, { imagePreviewUrl: options.imagePreviewUrl })}
         `;
 
       const tagsMarkup = asset.tags.length
@@ -350,6 +350,8 @@
     }
 
     function multiSelectionDetailMarkup(selectedAssets) {
+      const allInTrash = selectedAssets.length > 0 && selectedAssets.every((asset) => Boolean(asset.inTrash));
+      const allActive = selectedAssets.length > 0 && selectedAssets.every((asset) => !asset.inTrash);
       return `
         <h3>${escapeHtml(t('multi_selected'))}</h3>
         <div class="asset-meta">${escapeHtml(t('selected_count'))}: <strong>${selectedAssets.length}</strong></div>
@@ -358,7 +360,7 @@
             ${selectedAssets.slice(0, 40).map((asset) => `<span class="chip multi-chip" style="${assetTagChipStyle(asset)}">${escapeHtml(asset.title)}</span>`).join('')}
           </div>
           <div class="timecode-bar">
-            ${selectedAssets.some((asset) => canDeleteAsset(asset)) ? `<button type="button" id="bulkDeleteBtn">${escapeHtml(t('bulk_delete_selected'))}</button>` : ''}
+            ${selectedAssets.some((asset) => canDeleteAsset(asset)) && (allInTrash || allActive) ? `<button type="button" id="bulkDeleteBtn">${escapeHtml(t(allInTrash ? 'bulk_delete_selected' : 'bulk_move_to_trash'))}</button>` : ''}
             <button type="button" id="bulkClearBtn">${escapeHtml(t('bulk_clear_selection'))}</button>
           </div>
         </div>
@@ -393,12 +395,14 @@
           .filter((asset) => selectedAssetIds().has(asset.id) && canDeleteAsset(asset))
           .map((asset) => asset.id);
         if (!ids.length) return;
-        const ok = confirm(tf('bulk_delete_confirm', { count: ids.length }));
+        const allInTrash = ids.every((id) => currentAssets().some((asset) => asset.id === id && asset.inTrash));
+        const ok = confirm(tf(allInTrash ? 'bulk_delete_confirm' : 'bulk_move_to_trash_confirm', { count: ids.length }));
         if (!ok) return;
 
         for (const id of ids) {
           try {
-            await deleteApi(`/api/assets/${id}`);
+            if (allInTrash) await deleteApi(`/api/assets/${id}`);
+            else await api(`/api/assets/${id}/trash`, { method: 'POST', body: '{}' });
           } catch (_error) {
           }
         }

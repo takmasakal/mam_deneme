@@ -51,6 +51,7 @@ const LOGIN_LANG_COOKIE = 'mam.login.lang';
 const LOCAL_VIDEO_TOOLS_ORDER = 'mam.video.tools.order';
 const LOCAL_ASSET_VIEW_MODE = 'mam.assets.view.mode';
 const LOCAL_DETAIL_VIDEO_PIN = 'mam.detail.video.pin';
+const selectedImageVersionIds = new Map();
 const SESSION_CURRENT_USER_LABEL = 'mam.current.user.label';
 const LOCAL_PERMISSION_REFRESH = 'mam.permissions.updated';
 const I18N_PATH = '/i18n.json';
@@ -500,8 +501,10 @@ let i18n = {
     multi_selected: 'Multiple assets selected',
     selected_count: 'Selected count',
     bulk_delete_selected: 'Delete Selected Permanently',
+    bulk_move_to_trash: 'Move Selected To Trash',
     bulk_clear_selection: 'Clear Selection',
     bulk_delete_confirm: 'Permanently delete {count} selected assets? This cannot be undone.',
+    bulk_move_to_trash_confirm: 'Move {count} selected assets to trash?',
     segment: 'DUR',
     in_label: 'IN',
     out_label: 'OUT',
@@ -867,8 +870,10 @@ let i18n = {
     multi_selected: 'Birden fazla varlık seçildi',
     selected_count: 'Seçili adet',
     bulk_delete_selected: 'Seçilileri Kalıcı Sil',
+    bulk_move_to_trash: 'Seçilileri Çöpe Taşı',
     bulk_clear_selection: 'Seçimi Temizle',
     bulk_delete_confirm: '{count} seçili varlık kalıcı silinsin mi? Bu işlem geri alınamaz.',
+    bulk_move_to_trash_confirm: '{count} seçili varlık çöpe taşınsın mı?',
     segment: 'DUR',
     in_label: 'IN',
     out_label: 'OUT',
@@ -2021,7 +2026,7 @@ detailModule = window.createMainDetailModule({
 function getVersionSectionAccess(asset) { return detailModule.getVersionSectionAccess(asset); }
 function renderVersionRow(asset, version, access, interactive) { return detailModule.renderVersionRow(asset, version, access, interactive); }
 async function refreshAssetDetail(assetId, workflow) { return detailModule.refreshAssetDetail(assetId, workflow); }
-function detailMarkup(asset, workflow) { return detailModule.detailMarkup(asset, workflow); }
+function detailMarkup(asset, workflow, options = {}) { return detailModule.detailMarkup(asset, workflow, options); }
 async function openMultiSelectionDetail() { return detailModule.openMultiSelectionDetail(); }
 
 const playerRuntimeModule = window.createMainPlayerRuntimeModule({
@@ -2388,7 +2393,11 @@ async function openAsset(id, workflow, options = {}) {
     return;
   }
 
-  assetDetail.innerHTML = detailMarkup(asset, workflow);
+  const selectedImageVersionId = isImage(asset) ? String(selectedImageVersionIds.get(String(id)) || '').trim() : '';
+  const selectedImagePreviewUrl = selectedImageVersionId
+    ? `/api/assets/${encodeURIComponent(id)}/versions/${encodeURIComponent(selectedImageVersionId)}/preview`
+    : '';
+  assetDetail.innerHTML = detailMarkup(asset, workflow, { imagePreviewUrl: selectedImagePreviewUrl });
   const hasPlayableVideoProxy = isVideo(asset) && Boolean(String(asset.proxyUrl || '').trim());
   assetDetail.classList.toggle('video-detail-mode', hasPlayableVideoProxy);
   panelDetail?.classList.toggle('panel-video-detail', hasPlayableVideoProxy);
@@ -2718,7 +2727,12 @@ async function openAsset(id, workflow, options = {}) {
       const versionId = String(event.currentTarget?.dataset?.versionId || '').trim();
       if (!versionId) return;
       const previewUrl = `/api/assets/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/preview`;
-      window.open(previewUrl, '_blank', 'noopener,noreferrer');
+      selectedImageVersionIds.set(String(id), versionId);
+      const image = assetDetail.querySelector('.image-asset-viewer');
+      if (image) {
+        image.src = previewUrl;
+        image.dataset.versionId = versionId;
+      }
     });
   });
 
