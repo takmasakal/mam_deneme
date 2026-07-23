@@ -2477,7 +2477,7 @@ async function openAsset(id, workflow, options = {}) {
   });
   document.getElementById('editForm').addEventListener('submit', async (event) => {
     event.preventDefault();
-    if (!currentUserCanEditMetadata) {
+    if (!currentUserCanEditMetadata && !(asset.canEditAssetMetadata ?? asset.canEditAsset)) {
       alert(t('metadata_edit_locked'));
       return;
     }
