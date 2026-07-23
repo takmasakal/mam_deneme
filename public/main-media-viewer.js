@@ -30,11 +30,12 @@ function mediaViewer(asset, options = {}) {
   const audioOverlayInViewer = options.audioOverlayInViewer === true;
   const includeDetailPin = options.includeDetailPin === true;
   const tcInControlBar = options.tcInControlBar === true;
+  const imagePreviewUrl = String(options.imagePreviewUrl || '').trim();
   if (!asset.mediaUrl) return `<div class="empty">${escapeHtml(t('no_media'))}</div>`;
 
   const playbackSource = isVideo(asset)
     ? (asset.proxyUrl || '')
-    : (isImage(asset) ? (asset.proxyUrl || asset.mediaUrl) : asset.mediaUrl);
+    : (isImage(asset) ? (imagePreviewUrl || asset.proxyUrl || asset.mediaUrl) : asset.mediaUrl);
   const playbackUrl = escapeHtml(playbackSource);
   const proxyStatus = escapeHtml(asset.proxyStatus || 'not_applicable');
   const audioChannelsAttr = Number(asset.audioChannels) > 0 ? ` data-audio-channels="${Number(asset.audioChannels)}"` : '';
