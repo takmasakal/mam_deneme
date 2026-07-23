@@ -1,6 +1,6 @@
 {
   "name": "mam_deneme",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "yükleme, indirme, metadata, arama, versiyonlama, altyazı ve OCR destekli MAM denemesi",
   "main": "src/server.js",
   "scripts": {
