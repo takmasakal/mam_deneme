@@ -26,7 +26,7 @@
 .advanced-search-help { margin: 0; color: var(--muted); font-size: 13px; }
 .advanced-search-help-btn { width: 22px !important; min-width: 22px !important; height: 22px; padding: 0 !important; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--muted); font-size: 13px; font-weight: 700; line-height: 20px; }
 .advanced-search-close { width: 32px !important; min-width: 32px !important; height: 32px !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; color: var(--muted) !important; display: inline-grid !important; place-items: center !important; font-size: 24px !important; line-height: 1 !important; }
-.advanced-search-date-row { display: flex; align-items: end; gap: 8px; flex-wrap: nowrap; margin: 16px 0; }
+.advanced-search-date-row { display: flex; align-items: end; gap: 8px; flex-wrap: nowrap; margin: 0; }
 .advanced-search-date-row label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 600; }
 .advanced-search-date-row input { width: 138px !important; min-width: 0; padding: 6px 8px; font-size: 12px; }
 .advanced-search-date-row select { width: 160px !important; min-width: 0; padding: 6px 8px; font-size: 12px; }
@@ -37,7 +37,7 @@
 .advanced-search-today-toggle { display: inline-flex !important; align-items: center; gap: 5px; padding-bottom: 8px; white-space: nowrap; }
 .advanced-search-today-toggle input { width: auto !important; }
 .advanced-search-fields, .advanced-search-dropzone { display: grid; gap: 8px; min-height: 64px; padding: 10px; border: 1px dashed var(--line); border-radius: 9px; }
-.advanced-search-fields { display: block; min-height: 0; margin-bottom: 12px; }
+.advanced-search-fields { display: block; min-height: 0; margin-bottom: 12px; padding-top: 6px; padding-bottom: 6px; }
 .advanced-search-available-fields { display: grid; gap: 8px; min-height: 0; margin-top: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 .advanced-search-available-fields:empty { display: none; }
 .advanced-search-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
