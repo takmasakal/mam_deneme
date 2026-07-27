@@ -168,6 +168,11 @@
   content: none;
 }
 
+.advanced-search-btn.hidden,
+.advanced-search-btn[hidden] {
+  display: none !important;
+}
+
 .advanced-search-modal {
   position: fixed;
   inset: 0;
