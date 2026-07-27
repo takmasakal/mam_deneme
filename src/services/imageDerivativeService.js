@@ -19,6 +19,17 @@ function createImageDerivativeService(deps) {
     );
   }
 
+  function isImageCandidate({ mimeType = '', fileName = '' } = {}) {
+    const mime = String(mimeType || '').trim().toLowerCase();
+    const ext = String(getFileExtension(fileName) || '').trim().toLowerCase();
+    return mime.startsWith('image/') || [
+      'jpg', 'jpeg', 'png', 'webp', 'gif', 'tif', 'tiff', 'bmp', 'heic', 'heif'
+    ].includes(ext);
+  }
+
+  const previewScaleFilter = 'scale=1280:1280:force_original_aspect_ratio=decrease';
+  const thumbnailScaleFilter = 'scale=480:480:force_original_aspect_ratio=decrease';
+
   async function generateHeicPreview(inputPath, outputPath) {
     const intermediatePath = `${outputPath}.heif-convert.jpg`;
     const heifResult = await runCommandCapture('heif-convert', [inputPath, intermediatePath]);
@@ -32,7 +43,7 @@ function createImageDerivativeService(deps) {
       '-frames:v',
       '1',
       '-vf',
-      'scale=min(1280\\,iw):-2',
+      previewScaleFilter,
       '-q:v',
       '5',
       outputPath
@@ -52,6 +63,24 @@ function createImageDerivativeService(deps) {
     }
   }
 
+  async function generateImagePreview(inputPath, outputPath) {
+    const result = await runCommandCapture('ffmpeg', [
+      '-y',
+      '-i',
+      inputPath,
+      '-frames:v',
+      '1',
+      '-vf',
+      previewScaleFilter,
+      '-q:v',
+      '5',
+      outputPath
+    ]);
+    if (!result.ok || !fs.existsSync(outputPath) || fs.statSync(outputPath).size <= 0) {
+      throw new Error(compactCommandOutput(result.stderr || result.stdout || 'Image preview generation failed'));
+    }
+  }
+
   async function generateImageThumbnail(inputPath, outputPath) {
     const result = await runCommandCapture('ffmpeg', [
       '-y',
@@ -60,7 +89,7 @@ function createImageDerivativeService(deps) {
       '-frames:v',
       '1',
       '-vf',
-      'scale=480:-1',
+      thumbnailScaleFilter,
       '-q:v',
       '4',
       outputPath
@@ -78,13 +107,13 @@ function createImageDerivativeService(deps) {
     inputPath,
     createdAt = new Date()
   } = {}) {
-    if (!isHeicCandidate({ mimeType, fileName })) {
-      return { proxyUrl: '', thumbnailUrl: '' };
-    }
-
     const previewStoredName = `${Date.now()}-${nanoid()}-image-preview.jpg`;
     const previewOut = buildArtifactPath('proxies', previewStoredName, createdAt);
-    await generateHeicPreview(inputPath, previewOut.absolutePath);
+    if (isHeicCandidate({ mimeType, fileName })) {
+      await generateHeicPreview(inputPath, previewOut.absolutePath);
+    } else {
+      await generateImagePreview(inputPath, previewOut.absolutePath);
+    }
 
     const thumbStoredName = `${Date.now()}-${nanoid()}-image-thumb.jpg`;
     const thumbOut = buildArtifactPath('thumbnails', thumbStoredName, createdAt);
@@ -105,7 +134,9 @@ function createImageDerivativeService(deps) {
 
   return {
     isHeicCandidate,
+    isImageCandidate,
     generateHeicPreview,
+    generateImagePreview,
     generateImageThumbnail,
     ensureImageDerivativesForUpload
   };

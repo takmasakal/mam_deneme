@@ -33,6 +33,11 @@ const PERMISSION_DEFINITIONS = [
     key: 'document.rights.admin',
     legacyField: 'documentRightsAdminAccess',
     labelKey: 'perm_document_rights_admin'
+  },
+  {
+    key: 'advanced.search',
+    legacyField: 'advancedSearchAccess',
+    labelKey: 'perm_advanced_search'
   }
 ];
 

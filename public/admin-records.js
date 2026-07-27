@@ -159,7 +159,8 @@
           { key: 'asset.delete', legacyField: 'assetDelete', labelKey: 'perm_asset_delete' },
           { key: 'pdf.advanced', legacyField: 'pdfAdvancedTools', labelKey: 'perm_pdf_advanced' },
           { key: 'text.admin', legacyField: 'textAdminAccess', labelKey: 'perm_text_admin' },
-          { key: 'document.rights.admin', legacyField: 'documentRightsAdminAccess', labelKey: 'perm_document_rights_admin' }
+          { key: 'document.rights.admin', legacyField: 'documentRightsAdminAccess', labelKey: 'perm_document_rights_admin' },
+          { key: 'advanced.search', legacyField: 'advancedSearchAccess', labelKey: 'perm_advanced_search' }
         ];
       if (!list.length) {
         userPermissionsRows.innerHTML = `<div class="empty">${escapeHtml(t(getUserPermissionSearchQuery().length >= 2 ? 'user_search_no_match' : 'user_search_required'))}</div>`;

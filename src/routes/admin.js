@@ -157,13 +157,6 @@ function registerAdminRoutes(app, deps) {
       err.statusCode = 404;
       throw err;
     }
-    if (!imageDerivativeService.isHeicCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
-      return {
-        row,
-        previewUrl: resolveStoredUrl(row.proxy_url, 'proxies') || resolveStoredUrl(row.media_url, ''),
-        thumbnailUrl: resolveStoredUrl(row.thumbnail_url, 'thumbnails')
-      };
-    }
     const derivatives = await imageDerivativeService.ensureImageDerivativesForUpload({
       mimeType: row.mime_type,
       fileName: row.file_name,
@@ -203,30 +196,7 @@ function registerAdminRoutes(app, deps) {
   async function regenerateImageThumbnailForRow(row = {}) {
     if (!imageDerivativeService) throw new Error('Image derivative service is unavailable');
     if (!isImageAssetRow(row)) throw new Error('Image thumbnail generation is supported only for image assets');
-    if (imageDerivativeService.isHeicCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
-      return ensureImagePreviewAndThumbnailForRow(row);
-    }
-    const inputPath = resolveAssetInputPath(row);
-    if (!inputPath || !fs.existsSync(inputPath)) {
-      const err = new Error('Source file not found');
-      err.statusCode = 404;
-      throw err;
-    }
-    const thumbStoredName = `${Date.now()}-${resolvedNanoid()}-image-thumb.jpg`;
-    const thumbOut = buildArtifactPath('thumbnails', thumbStoredName, row.created_at || new Date());
-    await imageDerivativeService.generateImageThumbnail(inputPath, thumbOut.absolutePath);
-    const previousThumbnailUrl = resolveStoredUrl(row.thumbnail_url, 'thumbnails');
-    const updated = await pool.query(
-      `UPDATE assets SET thumbnail_url = $2, updated_at = $3 WHERE id = $1 RETURNING *`,
-      [row.id, thumbOut.publicUrl, new Date().toISOString()]
-    );
-    const nextRow = updated.rows?.[0] || row;
-    await cleanupReplacedUploadUrls(row.id, previousThumbnailUrl, { ignoreSameAssetVersionRefs: true });
-    return {
-      row: nextRow,
-      previewUrl: resolveStoredUrl(nextRow.proxy_url, 'proxies') || resolveStoredUrl(nextRow.media_url, ''),
-      thumbnailUrl: resolveStoredUrl(nextRow.thumbnail_url, 'thumbnails')
-    };
+    return ensureImagePreviewAndThumbnailForRow(row);
   }
 app.use('/api/admin', requireScopedAdminAccess);
 
@@ -3070,7 +3040,8 @@ app.get('/api/admin/user-permissions', async (req, res) => {
             metadataEdit: entry.metadataEdit,
             assetDelete: entry.assetDelete,
             pdfAdvancedTools: entry.pdfAdvancedTools,
-            documentRightsAdminAccess: entry.documentRightsAdminAccess
+            documentRightsAdminAccess: entry.documentRightsAdminAccess,
+            advancedSearchAccess: entry.advancedSearchAccess
           };
         });
       const total = allGroups.length;
@@ -3150,7 +3121,9 @@ app.get('/api/admin/user-permissions', async (req, res) => {
           textAdminAccess: effective.textAdminAccess,
           metadataEdit: effective.metadataEdit,
           assetDelete: effective.assetDelete,
-          pdfAdvancedTools: effective.pdfAdvancedTools
+          pdfAdvancedTools: effective.pdfAdvancedTools,
+          documentRightsAdminAccess: effective.documentRightsAdminAccess,
+          advancedSearchAccess: effective.advancedSearchAccess
         };
       });
     const filteredUsers = q.length >= 2
@@ -3205,7 +3178,8 @@ app.patch('/api/admin/user-permissions/:username', async (req, res) => {
         metadataEdit: req.body?.metadataEdit,
         assetDelete: req.body?.assetDelete,
         pdfAdvancedTools: req.body?.pdfAdvancedTools,
-        documentRightsAdminAccess: req.body?.documentRightsAdminAccess
+        documentRightsAdminAccess: req.body?.documentRightsAdminAccess,
+        advancedSearchAccess: req.body?.advancedSearchAccess
       },
       []
     );
@@ -3267,7 +3241,8 @@ app.patch('/api/admin/group-permissions/:groupName', async (req, res) => {
         metadataEdit: req.body?.metadataEdit,
         assetDelete: req.body?.assetDelete,
         pdfAdvancedTools: req.body?.pdfAdvancedTools,
-        documentRightsAdminAccess: req.body?.documentRightsAdminAccess
+        documentRightsAdminAccess: req.body?.documentRightsAdminAccess,
+        advancedSearchAccess: req.body?.advancedSearchAccess
       },
       []
     );
@@ -3400,7 +3375,23 @@ app.get('/api/admin/system-health', async (req, res) => {
     const buildHealthMediaJobSummary = (row) => {
       if (!row) return null;
       const jobType = normalizeMediaJobType(row.job_type);
-      const mapped = jobType === 'subtitle' ? mapSubtitleJobFromDbRow(row) : mapVideoOcrJobFromDbRow(row);
+      const resultPayload = row.result_payload && typeof row.result_payload === 'object' ? row.result_payload : {};
+      const mapped = jobType === 'subtitle'
+        ? mapSubtitleJobFromDbRow(row)
+        : jobType === 'video_ocr'
+          ? mapVideoOcrJobFromDbRow(row)
+          : {
+            jobId: String(row.job_id || ''),
+            assetId: String(row.asset_id || ''),
+            status: normalizeMediaJobStatus(row.status),
+            updatedAt: row.updated_at,
+            finishedAt: row.finished_at,
+            warning: String(resultPayload.warning || ''),
+            error: String(row.error_text || ''),
+            model: String(resultPayload.model || 'gemma3:4b'),
+            chunkCount: Number(resultPayload.chunkCount || 0)
+          };
+      const isMetadata = jobType === 'metadata_enrichment';
       return {
         jobId: mapped.jobId,
         assetId: mapped.assetId,
@@ -3411,11 +3402,14 @@ app.get('/api/admin/system-health', async (req, res) => {
         finishedAt: mapped.finishedAt,
         warning: String(mapped.warning || ''),
         error: String(mapped.error || ''),
-        label: jobType === 'subtitle' ? String(mapped.subtitleLabel || '') : String(mapped.resultLabel || ''),
-        model: jobType === 'subtitle' ? String(mapped.model || '') : '',
+        label: isMetadata
+          ? 'auto-metadata'
+          : jobType === 'subtitle' ? String(mapped.subtitleLabel || '') : String(mapped.resultLabel || ''),
+        model: isMetadata || jobType === 'subtitle' ? String(mapped.model || '') : '',
         engine: jobType === 'video_ocr' ? String(mapped.ocrEngine || '') : '',
         lineCount: jobType === 'video_ocr' ? Number(mapped.lineCount || 0) : 0,
-        segmentCount: jobType === 'video_ocr' ? Number(mapped.segmentCount || 0) : 0
+        segmentCount: jobType === 'video_ocr' ? Number(mapped.segmentCount || 0) : 0,
+        chunkCount: isMetadata ? Number(mapped.chunkCount || 0) : 0
       };
     };
     const settings = await getAdminSettings().catch(() => ({ mediaJobRetentionDays: 30 }));
@@ -3430,7 +3424,7 @@ app.get('/api/admin/system-health', async (req, res) => {
       `
         SELECT job_type, status, COUNT(*)::int AS count
         FROM media_processing_jobs
-        WHERE job_type IN ('subtitle', 'video_ocr')
+        WHERE job_type IN ('subtitle', 'video_ocr', 'metadata_enrichment')
           AND updated_at >= NOW() - ($1::int * INTERVAL '1 day')
         GROUP BY job_type, status
       `,
@@ -3445,6 +3439,8 @@ app.get('/api/admin/system-health', async (req, res) => {
     const ocrRunning = (mediaCounts['video_ocr:running'] || 0) + (mediaCounts['video_ocr:queued'] || 0);
     const subtitleFailed = mediaCounts['subtitle:failed'] || 0;
     const ocrFailed = mediaCounts['video_ocr:failed'] || 0;
+    const metadataRunning = (mediaCounts['metadata_enrichment:running'] || 0) + (mediaCounts['metadata_enrichment:queued'] || 0);
+    const metadataFailed = mediaCounts['metadata_enrichment:failed'] || 0;
 
     const { totalBytes: uploadsBytes, totalFiles: uploadsFiles } = getDirSizeAndFiles(UPLOADS_DIR);
     const fsInfo = getFsFreeAndTotal(UPLOADS_DIR);
@@ -3482,7 +3478,7 @@ app.get('/api/admin/system-health', async (req, res) => {
         SELECT mpj.*, a.title AS asset_title
         FROM media_processing_jobs mpj
         LEFT JOIN assets a ON a.id = mpj.asset_id
-        WHERE mpj.job_type IN ('subtitle', 'video_ocr')
+        WHERE mpj.job_type IN ('subtitle', 'video_ocr', 'metadata_enrichment')
           AND mpj.updated_at >= NOW() - ($1::int * INTERVAL '1 day')
         ORDER BY mpj.updated_at DESC
         LIMIT 200
@@ -3491,10 +3487,13 @@ app.get('/api/admin/system-health', async (req, res) => {
     );
     const recentJobs = {
       subtitle: { active: null, latestCompleted: null, latestFailed: null },
-      ocr: { active: null, latestCompleted: null, latestFailed: null }
+      ocr: { active: null, latestCompleted: null, latestFailed: null },
+      metadata: { active: null, latestCompleted: null, latestFailed: null }
     };
     recentJobsResult.rows.forEach((row) => {
-      const typeKey = String(row.job_type || '') === 'video_ocr' ? 'ocr' : 'subtitle';
+      const typeKey = String(row.job_type || '') === 'video_ocr'
+        ? 'ocr'
+        : String(row.job_type || '') === 'metadata_enrichment' ? 'metadata' : 'subtitle';
       const status = normalizeMediaJobStatus(row.status);
       const summary = buildHealthMediaJobSummary(row);
       if (!summary) return;
@@ -3520,9 +3519,11 @@ app.get('/api/admin/system-health', async (req, res) => {
         proxyRunning,
         subtitleRunning,
         ocrRunning,
+        metadataRunning,
         proxyFailed,
         subtitleFailed,
-        ocrFailed
+        ocrFailed,
+        metadataFailed
       },
       services: {
         app: { ok: true, status: 200 },
@@ -3571,6 +3572,51 @@ app.post('/api/admin/search/reindex', async (_req, res) => {
     return res.json({ indexed });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to reindex search' });
+  }
+});
+
+app.post('/api/admin/image-derivatives/repair', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return undefined;
+    const requestedLimit = Number(req.body?.limit || req.query?.limit || 20);
+    const limit = Math.min(100, Math.max(1, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 20));
+    const result = await pool.query(
+      `
+        SELECT *
+        FROM assets
+        WHERE deleted_at IS NULL
+          AND (
+            LOWER(COALESCE(type, '')) IN ('photo', 'image', 'picture')
+            OR LOWER(COALESCE(mime_type, '')) LIKE 'image/%'
+            OR LOWER(COALESCE(file_name, '')) ~ '\\.(jpg|jpeg|png|gif|webp|tif|tiff|bmp|heic|heif)$'
+          )
+          AND (
+            COALESCE(proxy_url, '') = ''
+            OR COALESCE(thumbnail_url, '') = ''
+            OR LOWER(COALESCE(thumbnail_url, '')) NOT LIKE '%/thumbnails/%'
+          )
+        ORDER BY created_at ASC NULLS FIRST
+        LIMIT $1
+      `,
+      [limit]
+    );
+    const repaired = [];
+    const failed = [];
+    for (const row of result.rows) {
+      try {
+        const nextRow = await ensureImagePreviewAndThumbnailForRow(row);
+        const hasPreview = Boolean(resolveStoredUrl(nextRow.proxy_url, 'proxies'));
+        const hasThumbnail = Boolean(resolveStoredUrl(nextRow.thumbnail_url, 'thumbnails'));
+        if (hasPreview && hasThumbnail) repaired.push(row.id);
+        else failed.push({ id: row.id, fileName: row.file_name, error: 'Derivative output is missing' });
+      } catch (error) {
+        failed.push({ id: row.id, fileName: row.file_name, error: String(error?.message || error || '') });
+      }
+    }
+    return res.json({ ok: true, scanned: result.rows.length, repaired, failed });
+  } catch (error) {
+    return res.status(error?.statusCode || 500).json({ error: String(error?.message || 'Failed to repair image derivatives') });
   }
 });
 

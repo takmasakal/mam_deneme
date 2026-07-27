@@ -5,6 +5,7 @@
       mediaFileInput,
       mediaFileBtn,
       mediaFileName,
+      metadataGenerateToggle,
       uploadProgressWrap,
       uploadProgressBar,
       uploadProgressText,
@@ -192,6 +193,20 @@
       if (typeSelect && firstEnabledType) typeSelect.value = firstEnabledType.value;
     }
 
+    function syncMetadataToggle() {
+      const typeSelect = ingestForm?.querySelector?.('[name="type"]');
+      const checkbox = ingestForm?.querySelector?.('[name="generateMetadata"]');
+      const isDocument = String(typeSelect?.value || '').trim().toLowerCase() === 'document';
+      if (metadataGenerateToggle) {
+        metadataGenerateToggle.classList.toggle('hidden', !isDocument);
+        metadataGenerateToggle.setAttribute('aria-hidden', isDocument ? 'false' : 'true');
+      }
+      if (checkbox) {
+        checkbox.disabled = !isDocument;
+        if (!isDocument) checkbox.checked = false;
+      }
+    }
+
     function resetIngestFormAfterBackgroundStart() {
       ingestForm?.reset();
       resetIngestFormType();
@@ -200,6 +215,9 @@
 
     function initIngestHandlers() {
       protectUploadNavigation();
+      const typeSelect = ingestForm?.querySelector?.('[name="type"]');
+      typeSelect?.addEventListener('change', syncMetadataToggle);
+      syncMetadataToggle();
       if (mediaFileBtn && String(mediaFileBtn.tagName || '').toLowerCase() !== 'label') {
         mediaFileBtn.addEventListener('click', () => {
           mediaFileInput?.click();

@@ -35,6 +35,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
+        MAM_RUNTIME_IMAGE: ${MAM_RUNTIME_IMAGE:-mam_deneme-runtime:latest}
         INSTALL_LIBREOFFICE: ${INSTALL_LIBREOFFICE:-false}
         PRELOAD_ML_MODELS: ${PRELOAD_ML_MODELS:-true}
         PRELOAD_PADDLE_OCR: ${PRELOAD_PADDLE_OCR:-true}
@@ -78,6 +79,10 @@ services:
       MAM_BACKUP_DIR: ${MAM_BACKUP_DIR:-/mountvolume/backup/db-backups}
       RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:-/mountvolume/backup/restic-repo}
       RESTIC_PASSWORD: ${RESTIC_PASSWORD:-metmam-local-restic-change-me}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_METADATA_MODEL: ${OLLAMA_METADATA_MODEL:-gemma3:4b}
+      OLLAMA_METADATA_TIMEOUT_MS: ${OLLAMA_METADATA_TIMEOUT_MS:-600000}
+      OLLAMA_METADATA_KEEP_ALIVE: ${OLLAMA_METADATA_KEEP_ALIVE:-10m}
     ports:
       - "3001:3000"
     volumes:
@@ -152,7 +157,10 @@ services:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HTTP_ENABLED: "true"
-      KC_HOSTNAME_STRICT: "false"
+      # Keep the browser-facing issuer stable. Without this Keycloak can
+      # advertise 127.0.0.1 while oauth2-proxy validates against localhost.
+      KC_HOSTNAME: http://localhost:8081
+      KC_HOSTNAME_STRICT: "true"
     command:
       - start-dev
       - --http-port=8080

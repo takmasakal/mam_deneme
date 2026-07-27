@@ -33,6 +33,14 @@ body.login-pf,
   background: transparent !important;
 }
 
+.mam-login-version {
+  color: #7f8798 !important;
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif !important;
+  font-size: 12px !important;
+  line-height: 1.2 !important;
+  margin-top: 8px !important;
+}
+
 .card-pf,
 .login-pf-page .card-pf,
 #kc-form-wrapper,

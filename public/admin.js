@@ -490,6 +490,9 @@ let i18n = {
     health_recent_jobs_window: 'Last {days} days',
     health_subtitle_jobs: 'Subtitle Jobs',
     health_ocr_jobs: 'OCR Jobs',
+    health_metadata_jobs: 'Metadata Jobs',
+    health_metadata_running: 'Metadata running/queued',
+    health_metadata_failed: 'Metadata failed',
     health_job_running_now: 'Running now',
     health_job_latest_done: 'Latest completed',
     health_job_latest_failed: 'Latest failed',
@@ -503,6 +506,7 @@ let i18n = {
     health_job_progress: 'Progress',
     health_job_lines: 'Lines',
     health_job_segments: 'Segments',
+    health_job_chunks: 'Chunks',
     health_job_warning: 'Warning',
     health_job_error: 'Error',
     health_job_status_running: 'Running',
@@ -527,6 +531,7 @@ let i18n = {
     perm_pdf_advanced: 'PDF advanced tools',
     perm_text_admin: 'OCR / subtitle admin',
     perm_document_rights_admin: 'Document rights admin',
+    perm_advanced_search: 'Advanced search',
     user_permissions_saved: 'User permissions saved.',
     page_size: 'Page size',
     prev_page: 'Prev',
@@ -942,6 +947,9 @@ let i18n = {
     health_recent_jobs_window: 'Son {days} gün',
     health_subtitle_jobs: 'Altyazı İşleri',
     health_ocr_jobs: 'OCR İşleri',
+    health_metadata_jobs: 'Metadata İşleri',
+    health_metadata_running: 'Metadata çalışan/kuyruk',
+    health_metadata_failed: 'Metadata hatalı',
     health_job_running_now: 'Şu an çalışan',
     health_job_latest_done: 'Son tamamlanan',
     health_job_latest_failed: 'Son hatalı',
@@ -955,6 +963,7 @@ let i18n = {
     health_job_progress: 'İlerleme',
     health_job_lines: 'Satır',
     health_job_segments: 'Segment',
+    health_job_chunks: 'Parça',
     health_job_warning: 'Uyarı',
     health_job_error: 'Hata',
     health_job_status_running: 'Çalışıyor',
@@ -979,6 +988,7 @@ let i18n = {
     perm_pdf_advanced: 'PDF gelişmiş araçlar',
     perm_text_admin: 'OCR / altyazı yöneticisi',
     perm_document_rights_admin: 'Doküman yetkileri yöneticisi',
+    perm_advanced_search: 'Gelişmiş arama',
     user_permissions_saved: 'Kullanıcı yetkileri kaydedildi.',
     page_size: 'Sayfa boyutu',
     prev_page: 'Önceki',
@@ -1094,11 +1104,17 @@ async function api(path, options = {}) {
     headers: { 'Content-Type': 'application/json' },
     ...options
   });
+  const textBody = await response.text();
+  let body = {};
+  try {
+    body = textBody ? JSON.parse(textBody) : {};
+  } catch (_error) {}
   if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
+    const isProfileFailure = String(path).split('?')[0] === '/api/me' && response.status >= 500;
+    window.mamSessionExpiry?.handle(response.status, textBody, body, { force: isProfileFailure });
     throw new Error(formatApiError(body));
   }
-  return response.json();
+  return body;
 }
 
 async function loadI18nFile() {
@@ -1664,15 +1680,16 @@ function renderSystemJobSlot(titleKey, job, type) {
   const status = String(job.status || '').trim().toLowerCase();
   const badgeClass = status === 'completed' ? 'health-ok' : status === 'failed' ? 'health-bad' : 'health-warn';
   const typeIsSubtitle = type === 'subtitle';
+  const typeIsMetadata = type === 'metadata';
   const details = [
     [t('health_job_asset'), job.assetTitle || '-'],
-    [typeIsSubtitle ? t('health_job_label') : t('health_job_engine'), typeIsSubtitle ? (job.label || '-') : (job.engine || '-')],
-    [typeIsSubtitle ? t('health_job_model') : t('health_job_segments'), typeIsSubtitle ? (job.model || '-') : String(job.segmentCount || 0)],
+    [typeIsMetadata ? t('health_job_model') : typeIsSubtitle ? t('health_job_label') : t('health_job_engine'), typeIsMetadata ? (job.model || '-') : typeIsSubtitle ? (job.label || '-') : (job.engine || '-')],
+    [typeIsMetadata ? t('health_job_chunks') : typeIsSubtitle ? t('health_job_model') : t('health_job_segments'), typeIsMetadata ? String(job.chunkCount || 0) : typeIsSubtitle ? (job.model || '-') : String(job.segmentCount || 0)],
     [t('health_job_updated'), formatAdminDateTime(job.updatedAt)],
     [t('health_job_finished'), formatAdminDateTime(job.finishedAt)],
     [t('health_job_progress'), `${Math.max(0, Math.min(100, Number(job.progress) || 0))}%`]
   ];
-  if (!typeIsSubtitle) {
+  if (!typeIsSubtitle && !typeIsMetadata) {
     details.splice(3, 0, [t('health_job_lines'), String(job.lineCount || 0)]);
   }
   const warningText = String(job.warning || '').trim();
@@ -1723,7 +1740,7 @@ function renderSystemHealth(data) {
   ];
   const serviceList = serviceEntries.map(([, entry]) => entry);
   const upServices = serviceList.filter((entry) => Boolean(entry?.ok)).length;
-  const failedJobs = Number(jobs.proxyFailed || 0) + Number(jobs.subtitleFailed || 0) + Number(jobs.ocrFailed || 0);
+  const failedJobs = Number(jobs.proxyFailed || 0) + Number(jobs.subtitleFailed || 0) + Number(jobs.ocrFailed || 0) + Number(jobs.metadataFailed || 0);
   if (overviewSystemHealth) overviewSystemHealth.textContent = upServices === serviceList.length ? 'OK' : `${upServices}/${serviceList.length}`;
   if (overviewSystemHealthSub) overviewSystemHealthSub.textContent = `${upServices}/${serviceList.length} ${t('overview_uptime')}`;
   if (overviewOpenErrors) overviewOpenErrors.textContent = String(failedJobs);
@@ -1745,7 +1762,7 @@ function renderSystemHealth(data) {
   systemHealthRows.innerHTML = [
     `<div class="row"><strong>${escapeHtml(t('health_disk'))}</strong><span>${escapeHtml(t('health_uploads_size'))}: ${escapeHtml(humanBytes(disk.uploadsBytes))} | ${escapeHtml(t('health_uploads_files'))}: ${escapeHtml(String(disk.uploadsFiles || 0))} | ${escapeHtml(t('health_fs_free'))}: ${escapeHtml(humanBytes(disk.fsFreeBytes))} / ${escapeHtml(t('health_fs_total'))}: ${escapeHtml(humanBytes(disk.fsTotalBytes))}</span></div>`,
     `<div class="row health-services-row" data-health-section="services"><strong>${escapeHtml(t('health_services'))}</strong><div class="health-service-list">${serviceCards}</div></div>`,
-    `<div class="row"><strong>${escapeHtml(t('health_jobs'))}</strong><span>${escapeHtml(t('health_proxy_running'))}: ${escapeHtml(String(jobs.proxyRunning || 0))} | ${escapeHtml(t('health_subtitle_running'))}: ${escapeHtml(String(jobs.subtitleRunning || 0))} | ${escapeHtml(t('health_ocr_running'))}: ${escapeHtml(String(jobs.ocrRunning || 0))} | ${escapeHtml(t('health_proxy_failed'))}: ${escapeHtml(String(jobs.proxyFailed || 0))} | ${escapeHtml(t('health_subtitle_failed'))}: ${escapeHtml(String(jobs.subtitleFailed || 0))} | ${escapeHtml(t('health_ocr_failed'))}: ${escapeHtml(String(jobs.ocrFailed || 0))}</span></div>`,
+    `<div class="row"><strong>${escapeHtml(t('health_jobs'))}</strong><span>${escapeHtml(t('health_proxy_running'))}: ${escapeHtml(String(jobs.proxyRunning || 0))} | ${escapeHtml(t('health_subtitle_running'))}: ${escapeHtml(String(jobs.subtitleRunning || 0))} | ${escapeHtml(t('health_ocr_running'))}: ${escapeHtml(String(jobs.ocrRunning || 0))} | ${escapeHtml(t('health_metadata_running'))}: ${escapeHtml(String(jobs.metadataRunning || 0))} | ${escapeHtml(t('health_proxy_failed'))}: ${escapeHtml(String(jobs.proxyFailed || 0))} | ${escapeHtml(t('health_subtitle_failed'))}: ${escapeHtml(String(jobs.subtitleFailed || 0))} | ${escapeHtml(t('health_ocr_failed'))}: ${escapeHtml(String(jobs.ocrFailed || 0))} | ${escapeHtml(t('health_metadata_failed'))}: ${escapeHtml(String(jobs.metadataFailed || 0))}</span></div>`,
     `<div class="row"><strong>${escapeHtml(t('health_integrity'))}</strong><span>${escapeHtml(t('health_missing_proxy'))}: ${escapeHtml(String(integrity.missingProxy || 0))} | ${escapeHtml(t('health_missing_thumbnail'))}: ${escapeHtml(String(integrity.missingThumbnail || 0))} | ${escapeHtml(t('health_missing_subtitle'))}: ${escapeHtml(String(integrity.missingSubtitle || 0))} | ${escapeHtml(t('health_missing_ocr'))}: ${escapeHtml(String(integrity.missingOcr || 0))}</span></div>`
   ].join('');
   if (systemJobStatusEl) {
@@ -1758,6 +1775,7 @@ function renderSystemHealth(data) {
       <div class="system-job-grid">
         ${renderSystemJobGroup('health_subtitle_jobs', recent.subtitle || {}, 'subtitle')}
         ${renderSystemJobGroup('health_ocr_jobs', recent.ocr || {}, 'ocr')}
+        ${renderSystemJobGroup('health_metadata_jobs', recent.metadata || {}, 'metadata')}
       </div>
     `;
   }
@@ -3469,7 +3487,12 @@ async function exportAuditEvents() {
   try {
     const response = await fetch(`/api/admin/audit-events/export?${params.toString()}`);
     if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
+      const textBody = await response.text();
+      let body = {};
+      try {
+        body = textBody ? JSON.parse(textBody) : {};
+      } catch (_error) {}
+      window.mamSessionExpiry?.handle(response.status, textBody, body);
       throw new Error(body.error || t('audit_export_failed'));
     }
     const blob = await response.blob();
@@ -3632,11 +3655,14 @@ async function exportPermissionBackup(kind, nameInput, fallbackName) {
     cache: 'no-store'
   });
   if (!response.ok) {
+    const textBody = await response.text();
     let message = t('permission_backup_export_failed');
+    let body = {};
     try {
-      const body = await response.json();
+      body = textBody ? JSON.parse(textBody) : {};
       if (body?.error) message = body.error;
     } catch {}
+    window.mamSessionExpiry?.handle(response.status, textBody, body);
     throw new Error(message);
   }
   const blob = await response.blob();
@@ -4803,6 +4829,7 @@ document.addEventListener('keydown', onLanguageShortcut, true);
 (async () => {
   try {
     const me = await api('/api/me');
+    window.mamSessionExpiry?.start(me.authSession || {});
     const access = applyAdminAccessMode(me);
     if (!access.canAccessAdmin && !access.canAccessTextAdmin && !access.canAccessAssetRightsAdmin && !access.canAccessDocumentRightsAdmin) {
       window.location.href = '/';

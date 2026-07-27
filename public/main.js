@@ -30,6 +30,7 @@ const subtitleQueryInput = searchForm.querySelector('[name="subtitleQ"]');
 const subtitleSuggestList = document.getElementById('subtitleSuggestList');
 const languageSelect = document.getElementById('languageSelect');
 const currentUserBtn = document.getElementById('currentUserBtn');
+const advancedSearchBtn = document.getElementById('advancedSearchBtn');
 const userMenu = document.getElementById('userMenu');
 const adminMenuLink = document.getElementById('adminMenuLink');
 const logoutBtn = document.getElementById('logoutBtn');
@@ -92,6 +93,7 @@ let currentUserCanEditMetadata = false;
 let currentUserCanEditOffice = false;
 let currentUserCanDeleteAssets = false;
 let currentUserCanUsePdfAdvancedTools = false;
+let currentUserCanAccessAdvancedSearch = false;
 let currentOfficeEditorProvider = 'none';
 let currentUsername = '';
 let currentUserIdentityCandidates = new Set();
@@ -332,6 +334,8 @@ let i18n = {
     upload_background_started: 'Upload continues in background',
     upload_navigation_warning: 'An upload is in progress. Wait for it to finish before opening the admin page.',
     asset_uploaded: 'Asset uploaded',
+    asset_uploaded_at: 'Uploaded',
+    asset_updated_at: 'Last modified',
     upload_finished: 'Upload finished',
     upload_failed: 'Upload failed',
     btn_apply_filters: 'Apply Filters',
@@ -686,6 +690,8 @@ let i18n = {
     upload_background_started: 'yükleme arka planda devam ediyor',
     upload_navigation_warning: 'Yükleme devam ediyor. Yönetim sayfasını açmadan önce yüklemenin bitmesini bekleyin.',
     asset_uploaded: 'Varlık yüklendi',
+    asset_uploaded_at: 'Yüklendi',
+    asset_updated_at: 'Son değişiklik',
     upload_finished: 'yükleme bitti',
     upload_failed: 'yükleme başarısız',
     btn_apply_filters: 'Filtreleri Uygula',
@@ -1195,6 +1201,10 @@ async function loadUiSettings() {
 function applyStaticI18n() {
   document.title = t('app_title');
   document.documentElement.lang = currentLang === 'tr' ? 'tr' : 'en';
+  document.querySelectorAll('.advanced-search-date-row [data-date-input]').forEach((input) => {
+    input.lang = currentLang === 'tr' ? 'tr-TR' : 'en-US';
+    input.setAttribute('lang', input.lang);
+  });
   document.body.classList.toggle('lang-tr', currentLang === 'tr');
   document.body.classList.toggle('lang-en', currentLang !== 'tr');
   document.querySelectorAll('[data-i18n]').forEach((el) => {
@@ -1249,15 +1259,19 @@ async function loadCurrentUser() {
     const canEditOffice = toStrictBool(me.canEditOffice, false);
     const canDeleteAssets = toStrictBool(me.canDeleteAssets, toStrictBool(me.isAdmin, false));
     const canUsePdfAdvancedTools = toStrictBool(me.canUsePdfAdvancedTools, toStrictBool(me.isAdmin, false));
+    const canAccessAdvancedSearch = toStrictBool(me.canAccessAdvancedSearch, false);
     currentUserCanAccessAdmin = canAccessAdmin;
     currentUserCanEditMetadata = canEditMetadata;
     currentUserCanEditOffice = canEditOffice;
     currentUserCanDeleteAssets = canDeleteAssets;
     currentUserCanUsePdfAdvancedTools = canUsePdfAdvancedTools;
+    currentUserCanAccessAdvancedSearch = canAccessAdvancedSearch;
+    advancedSearchBtn?.classList.toggle('hidden', !canAccessAdvancedSearch);
     currentOfficeEditorProvider = ['onlyoffice', 'libreoffice'].includes(String(me.officeEditorProvider || '').trim().toLowerCase())
       ? String(me.officeEditorProvider || '').trim().toLowerCase()
       : 'none';
     currentUsername = username.toLowerCase();
+    advancedSearchModule?.setUserIdentity?.(username || email || displayName);
     setCurrentUserIdentityCandidates([
       username,
       displayName,
@@ -1285,6 +1299,8 @@ async function loadCurrentUser() {
     currentUserCanEditOffice = false;
     currentUserCanDeleteAssets = false;
     currentUserCanUsePdfAdvancedTools = false;
+    currentUserCanAccessAdvancedSearch = false;
+    advancedSearchBtn?.classList.add('hidden');
     currentOfficeEditorProvider = 'none';
     currentUserBtn.dataset.value = '';
     currentUserBtn.textContent = t('unknown_user');
@@ -2121,6 +2137,19 @@ async function loadAssets(options = {}) {
   return result;
 }
 
+const advancedSearchModule = typeof window.createMainAdvancedSearchModule === 'function'
+  ? window.createMainAdvancedSearchModule({
+    searchForm,
+    t,
+    loadAssets,
+    updateClearSearchButtonState,
+    canUseAdvancedSearch: () => currentUserCanAccessAdvancedSearch,
+    initialUserIdentity: ''
+  })
+  : null;
+window.mainAdvancedSearch = advancedSearchModule;
+advancedSearchModule?.init?.();
+
 function clearDetailHeaderTimecode() {
   return detailModule.clearDetailHeaderTimecode();
 }
@@ -2859,6 +2888,7 @@ searchSuggestModule?.init?.();
 
 searchForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  advancedSearchModule?.deactivateForDirectSearch?.();
   hideSearchSuggestions();
   hideOcrSuggestions();
   hideSubtitleSuggestions();
@@ -2870,7 +2900,19 @@ searchForm.addEventListener('submit', async (event) => {
   }
 });
 
+// Once the user edits a normal first-column filter, leave advanced-search
+// mode so the next request reflects the visible form values.
+searchForm.querySelectorAll('input:not([name="advancedSearch"]), select').forEach((field) => {
+  const leaveAdvancedMode = () => {
+    advancedSearchModule?.deactivateForDirectSearch?.();
+    updateClearSearchButtonState();
+  };
+  field.addEventListener('input', leaveAdvancedMode);
+  field.addEventListener('change', leaveAdvancedMode);
+});
+
 clearSearchBtn?.addEventListener('click', async () => {
+  advancedSearchModule?.deactivateForDirectSearch?.();
   setSearchResultCounterVisible(false);
   try {
     await clearSearchFields();
@@ -2907,6 +2949,7 @@ languageSelect?.addEventListener('change', async (event) => {
   hideOcrSuggestions();
   hideSubtitleSuggestions();
   applyStaticI18n();
+  advancedSearchModule?.refreshLanguage?.();
   await loadWorkflow();
   await loadAssets();
   if (selectedAssetIds.size > 1) {

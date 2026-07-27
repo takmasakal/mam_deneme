@@ -885,6 +885,25 @@ function listUploadArtifactFilesRecursive(folderName, extension) {
     });
 }
 
+const OCR_TEXT_FILE_INDEX_TTL_MS = 5000;
+let ocrTextFileIndexCache = { expiresAt: 0, paths: [] };
+
+function getOcrTextFileIndex() {
+  const now = Date.now();
+  if (now < ocrTextFileIndexCache.expiresAt) {
+    return ocrTextFileIndexCache.paths;
+  }
+  const paths = Array.from(new Set([
+    ...listOcrFilesRecursive(OCR_DIR),
+    ...listUploadArtifactFilesRecursive('ocr', '.txt')
+  ]));
+  ocrTextFileIndexCache = {
+    expiresAt: now + OCR_TEXT_FILE_INDEX_TTL_MS,
+    paths
+  };
+  return paths;
+}
+
 function getCandidateOcrFilePathsForRow(row) {
   const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
   const directUrl = pickLatestVideoOcrUrlFromDc(dc);
@@ -896,10 +915,7 @@ function getCandidateOcrFilePathsForRow(row) {
   const titleSlug = sanitizeFileName(String(row?.title || '').trim().toLowerCase());
   const fileSlug = sanitizeFileName(path.basename(String(row?.file_name || ''), path.extname(String(row?.file_name || ''))).toLowerCase());
   const createdDay = getDatePart(row?.created_at);
-  const allTxt = Array.from(new Set([
-    ...listOcrFilesRecursive(OCR_DIR),
-    ...listUploadArtifactFilesRecursive('ocr', '.txt')
-  ]));
+  const allTxt = getOcrTextFileIndex();
   const ranked = allTxt
     .map((p) => {
       const base = path.basename(p).toLowerCase();
@@ -4790,7 +4806,7 @@ async function generateVideoProxy(inputPath, outputPath, options = {}) {
   // Keep portrait proxies at a 640px long edge so phone videos do not become
   // larger than necessary while landscape proxy behavior remains unchanged.
   const proxyScaleFilter = sourceHeight > sourceWidth
-    ? 'scale=640:640:force_original_aspect_ratio=decrease'
+    ? 'scale=640:640:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2'
     : 'scale=640:-2:force_original_aspect_ratio=decrease';
   const allowAudioFallback = Boolean(options.allowAudioFallback);
   const runProxy = async (includeAudio) => {
@@ -4878,10 +4894,20 @@ async function generateVideoProxy(inputPath, outputPath, options = {}) {
     return { audioFallbackUsed: false };
   } catch (error) {
     const message = String(error?.message || '');
+    const audioStreamDecodeFailure = audioStreams.some((stream) => {
+      const streamIndex = Number(stream?.index);
+      if (!Number.isFinite(streamIndex)) return false;
+      return new RegExp(
+        `Error while (?:decoding stream|processing the decoded data for stream) #0:${streamIndex}\\b`,
+        'i'
+      ).test(message);
+    });
+    // FFmpeg also writes harmless encoder statistics such as "[aac @ ...] Qavg".
+    // Only classify AAC lines as decode failures when they contain an error signal.
+    const aacDecoderFailure = /\[aac @[^\]]+\]\s+(?!Qavg:).*?(?:error|invalid|corrupt|decode|buffer exhausted|not allocated|reserved bit|exceeds limit)/i.test(message);
     const audioDecodeFailure =
-      /Error while decoding stream #0:1/i.test(message) ||
-      /Error while processing the decoded data for stream #0:1/i.test(message) ||
-      /\[aac @/i.test(message) ||
+      audioStreamDecodeFailure ||
+      aacDecoderFailure ||
       /auto_aresample/i.test(message);
     if (!audioDecodeFailure) throw error;
     if (!allowAudioFallback) {
@@ -8089,6 +8115,7 @@ async function resolveEffectivePermissions(req) {
   const canAccessAdmin = Boolean(effective.adminPageAccess);
   const canAccessTextAdmin = Boolean(effective.textAdminAccess || canAccessAdmin);
   const canEditOffice = Boolean(effective.officeEdit || canAccessAdmin);
+  const canAccessAdvancedSearch = Boolean(effective.advancedSearchAccess);
   const effectiveUser = {
     ...user,
     isSuperAdmin,
@@ -8099,6 +8126,7 @@ async function resolveEffectivePermissions(req) {
     canEditOffice,
     canDeleteAssets: Boolean(effective.assetDelete),
     canUsePdfAdvancedTools: Boolean(effective.pdfAdvancedTools),
+    canAccessAdvancedSearch,
     permissions: effective,
     permissionKeys: effective.permissionKeys,
     deniedPermissionKeys: userOverride?.deniedPermissionKeys || []
@@ -8151,6 +8179,7 @@ app.get('/api/me', async (req, res) => {
       canEditOffice: effective.canEditOffice,
       canDeleteAssets: effective.canDeleteAssets,
 	      canUsePdfAdvancedTools: effective.canUsePdfAdvancedTools,
+	      canAccessAdvancedSearch: Boolean(effective.canAccessAdvancedSearch),
 	      allowedAssetTypes: assetAccessService.getAllowedAssetTypeGroups(accessContext),
 	      uploadAllowedAssetTypes: assetAccessService.getAllowedUploadAssetTypeGroups(accessContext),
       officeEditorProvider: OFFICE_EDITOR_PROVIDER,
@@ -8947,6 +8976,7 @@ registerAssetRoutes(app, {
   searchAssetIdsElastic,
   searchAssetsByFuzzyQuery,
   searchOcrMatchesForAssetRows,
+  searchSubtitleMatchesForAssetRow,
   searchSubtitleMatchesForAssetRows,
   ensurePdfThumbnailForRow,
   ensureDocumentThumbnailForRow,

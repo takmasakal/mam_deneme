@@ -1,6 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const { parseMultipartUpload } = require('../services/multipartUploadParser');
+const { createAdvancedSearchService } = require('../services/advancedSearchService');
+
+const advancedSearchService = createAdvancedSearchService();
 
 function registerAssetRoutes(app, deps) {
   const {
@@ -33,6 +36,7 @@ function registerAssetRoutes(app, deps) {
     searchAssetIdsElastic,
     searchAssetsByFuzzyQuery,
     searchOcrMatchesForAssetRows,
+    searchSubtitleMatchesForAssetRow,
     searchSubtitleMatchesForAssetRows,
     ensurePdfThumbnailForRow,
     ensureDocumentThumbnailForRow,
@@ -309,8 +313,9 @@ function registerAssetRoutes(app, deps) {
       const tag = (req.query.tag || '').toString().trim();
       const type = (req.query.type || '').toString().trim();
       const owner = (req.query.owner || '').toString().trim();
-      const uploadDateFrom = req.query.uploadDateFrom;
-      const uploadDateTo = req.query.uploadDateTo;
+      const requestUploadDateFrom = req.query.uploadDateFrom;
+      const requestUploadDateTo = req.query.uploadDateTo;
+      const requestDateField = String(req.query.dateField || '').trim().toLowerCase();
       const sortBy = (req.query.sortBy || '').toString().trim();
       const types = String(req.query.types || '')
         .split(',')
@@ -318,9 +323,35 @@ function registerAssetRoutes(app, deps) {
         .filter(Boolean);
       const status = (req.query.status || '').toString().trim();
       const trash = (req.query.trash || 'active').toString().trim().toLowerCase();
+      let advancedDefinition = null;
+      try {
+        advancedDefinition = advancedSearchService.parseDefinition(req.query.advanced);
+      } catch (_error) {
+        return res.status(400).json({ error: 'Invalid advanced search definition' });
+      }
+      const advancedActive = Boolean(advancedDefinition && (
+        advancedDefinition.and.length
+        || advancedDefinition.or.length
+        || String(advancedDefinition.values.uploadDateFrom || '').trim()
+        || String(advancedDefinition.values.uploadDateTo || '').trim()
+      ));
+      const uploadDateFrom = advancedActive
+        ? String(requestUploadDateFrom || advancedDefinition.values.uploadDateFrom || '')
+        : requestUploadDateFrom;
+      const uploadDateTo = advancedActive
+        ? String(requestUploadDateTo || advancedDefinition.values.uploadDateTo || '')
+        : requestUploadDateTo;
+      const dateField = (advancedActive
+        ? String(requestDateField || advancedDefinition.values.dateField || '')
+        : requestDateField) === 'updated' ? 'updated' : 'created';
       const ensurePreview = String(req.query.ensurePreview || '').trim() === '1';
       const dateRange = normalizeUploadDateRange(uploadDateFrom, uploadDateTo);
-      const normalizedSortBy = normalizeSortBy(sortBy);
+      const requestedSortBy = advancedActive ? (sortBy || advancedDefinition.values.sortBy) : sortBy;
+      const normalizedSortBy = normalizeSortBy(
+        dateField === 'updated'
+          ? String(requestedSortBy || '').replace(/^created_/, 'updated_')
+          : requestedSortBy
+      );
       const baseWhere = [];
       const baseValues = [];
       let rankedIds = null;
@@ -330,13 +361,16 @@ function registerAssetRoutes(app, deps) {
         subtitleQ: { didYouMean: '', fuzzyUsed: false, highlightQuery: subtitleQ }
       };
       const accessContext = await resolveAssetAccessContext(req);
+      if (advancedActive && !accessContext?.canAccessAdvancedSearch) {
+        return res.status(403).json({ error: 'Advanced search permission is required' });
+      }
   
       if (trash === 'trash') {
         baseWhere.push('deleted_at IS NOT NULL');
       } else if (trash !== 'all') {
         baseWhere.push('deleted_at IS NULL');
       }
-      if (tag) {
+      if (tag && !advancedActive) {
         baseValues.push(tag);
         const tagParam = `$${baseValues.length}`;
         baseWhere.push(`EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE ${sqlTagFold('t')} = ${sqlTagFold(tagParam)})`);
@@ -345,17 +379,17 @@ function registerAssetRoutes(app, deps) {
         baseValues.push(`%${owner.toLowerCase()}%`);
         baseWhere.push(`LOWER(owner) LIKE $${baseValues.length}`);
       }
-      if (type) {
+      if (type && !advancedActive) {
         baseValues.push(type.toLowerCase());
         baseWhere.push(`LOWER(type) = $${baseValues.length}`);
       }
       if (dateRange.from) {
         baseValues.push(dateRange.from);
-        baseWhere.push(`created_at >= $${baseValues.length}`);
+        baseWhere.push(`${dateField}_at >= $${baseValues.length}`);
       }
       if (dateRange.to) {
         baseValues.push(dateRange.to);
-        baseWhere.push(`created_at <= $${baseValues.length}`);
+        baseWhere.push(`${dateField}_at <= $${baseValues.length}`);
       }
       if (types.length) {
         baseValues.push(types);
@@ -529,10 +563,102 @@ function registerAssetRoutes(app, deps) {
         return Number(result.rows?.[0]?.total || 0);
       };
   
+      const assetCardMatchPageSize = 10;
+      const assetCardMatchFetchLimit = assetCardMatchPageSize + 1;
       let rows = [];
       let totalOverride = null;
-      const canUseSqlPagination = pageLimit > 0 && !q && !ocrQ && !subtitleQ;
-      if (q) {
+      const canUseSqlPagination = pageLimit > 0 && !q && !ocrQ && !subtitleQ && !advancedActive;
+      if (advancedActive) {
+        const valuesByField = {
+          q: String(advancedDefinition.values.q ?? q).trim(),
+          ocrQ: String(advancedDefinition.values.ocrQ ?? ocrQ).trim(),
+          subtitleQ: String(advancedDefinition.values.subtitleQ ?? subtitleQ).trim(),
+          tag: String(advancedDefinition.values.tag ?? tag).trim(),
+          type: String(advancedDefinition.values.type ?? type).trim()
+        };
+        rows = await fetchAssetRows();
+        const advancedResult = await advancedSearchService.search({
+          definition: advancedDefinition,
+          valuesByField,
+          rows,
+          matchField: async (field, value, candidates) => {
+            if (field === 'q') {
+              const parsedQuery = parseTextSearchQuery(value, normalizeForSearch);
+              const textWhere = buildAssetTextWhere(parsedQuery);
+              return fetchAssetRows(textWhere.clauses, textWhere.params);
+            }
+            if (field === 'tag') {
+              const folded = normalizeForSearch(value);
+              return candidates.filter((row) => (Array.isArray(row.tags) ? row.tags : [])
+                .some((item) => normalizeForSearch(item) === folded));
+            }
+            if (field === 'type') {
+              const folded = value.toLowerCase();
+              return candidates.filter((row) => {
+                const rowType = String(row.type || '').toLowerCase();
+                const canonical = rowType === 'image' ? 'photo' : (rowType === 'file' ? 'other' : rowType);
+                return canonical === folded;
+              });
+            }
+            if (field === 'ocrQ') {
+              const ocrSearch = await searchOcrMatchesForAssetRows(candidates, value, Math.max(candidates.length, 1));
+              const ids = new Set(ocrSearch.byAssetId.keys());
+              return candidates.filter((row) => ids.has(String(row.id || '').trim()));
+            }
+            if (field === 'subtitleQ') {
+              const subtitleSearch = await searchSubtitleMatchesForAssetRows(candidates, value, Math.max(candidates.length, 1));
+              const ids = new Set(subtitleSearch.byAssetId.keys());
+              return candidates.filter((row) => ids.has(String(row.id || '').trim()));
+            }
+            return [];
+          },
+          annotate: async (filteredRows, { valuesByField: activeValues }) => {
+            const annotateAdvancedHits = async (query, hitType) => {
+              if (!query || !filteredRows.length) return;
+              const search = hitType === 'ocr'
+                ? await searchOcrMatchesForAssetRows(filteredRows, query, assetCardMatchPageSize + 1)
+                : await searchSubtitleMatchesForAssetRows(filteredRows, query, assetCardMatchPageSize + 1);
+              for (const row of filteredRows) {
+                let hits = search.byAssetId.get(String(row.id || '').trim()) || [];
+                if (!hits.length && hitType === 'ocr') {
+                  const fallback = await findOcrMatchForAssetRow(row, query);
+                  if (fallback) hits = [fallback];
+                } else if (!hits.length && hitType === 'subtitle') {
+                  const fallback = await searchSubtitleMatchesForAssetRow(row, query, assetCardMatchPageSize + 1);
+                  hits = Array.isArray(fallback?.matches) ? fallback.matches : [];
+                }
+                if (!hits.length) continue;
+                const hitQuery = String(search.highlightQuery || query).trim() || query;
+                const visibleHits = hits.slice(0, assetCardMatchPageSize);
+                const mapped = visibleHits.map((item) => ({
+                  query: String(item.query || hitQuery).trim() || hitQuery,
+                  text: String(item.line || item.text || ''),
+                  startSec: Number(item.startSec || 0),
+                  endSec: Number(item.endSec || 0),
+                  startTc: formatTimecode(Number(item.startSec || 0))
+                }));
+                const prefix = hitType === 'ocr' ? '_ocr' : '_subtitle';
+                row[`${prefix}_search_hit`] = mapped[0];
+                row[`${prefix}_search_hits`] = mapped;
+                row[`${prefix}_search_page`] = {
+                  query: hitQuery,
+                  offset: 0,
+                  limit: assetCardMatchPageSize,
+                  count: mapped.length,
+                  hasPrev: false,
+                  hasNext: hits.length > assetCardMatchPageSize,
+                  nextOffset: assetCardMatchPageSize,
+                  prevOffset: 0
+                };
+              }
+            };
+            await annotateAdvancedHits(activeValues.ocrQ, 'ocr');
+            await annotateAdvancedHits(activeValues.subtitleQ, 'subtitle');
+          }
+        });
+        rows = advancedResult.rows;
+        totalOverride = advancedResult.total;
+      } else if (q) {
         const textWhere = buildAssetTextWhere(parsedAssetQuery);
         rankedIds = await searchAssetIdsElastic(q);
         if (rankedIds === null) {
@@ -566,10 +692,7 @@ function registerAssetRoutes(app, deps) {
         }
       }
   
-      const assetCardMatchPageSize = 10;
-      const assetCardMatchFetchLimit = assetCardMatchPageSize + 1;
-
-      if (ocrQ) {
+      if (ocrQ && !advancedActive) {
         const parsedOcrQuery = parseTextSearchQuery(ocrQ, normalizeSubtitleSearchText);
         const ocrSearch = parsedOcrQuery.raw
           ? await searchOcrMatchesForAssetRows(rows, ocrQ, assetCardMatchFetchLimit)
@@ -617,7 +740,7 @@ function registerAssetRoutes(app, deps) {
         rows = parsedOcrQuery.raw ? filtered : [];
       }
       // subtitleQ geldiyse sadece aktif altyazi cue index'i uzerinden filtre uygula.
-      if (subtitleQ) {
+      if (subtitleQ && !advancedActive) {
         const parsedSubtitleQuery = parseSubtitleTextSearchQuery(subtitleQ);
         if (!parsedSubtitleQuery.raw) {
           rows = [];
@@ -809,9 +932,23 @@ function registerAssetRoutes(app, deps) {
         values
       );
   
+      const batchSearch = await searchOcrMatchesForAssetRows(result.rows, q, 1);
       const out = [];
       for (const row of result.rows) {
-        const hit = await findOcrMatchForAssetRow(row, q);
+        const assetId = String(row.id || '').trim();
+        const managedHits = batchSearch.byAssetId.get(assetId) || [];
+        let hit = managedHits[0] || null;
+        if (!hit) {
+          const dc = row.dc_metadata && typeof row.dc_metadata === 'object'
+            ? row.dc_metadata
+            : {};
+          const hasManagedOcr = Boolean(
+            String(dc.videoOcrUrl || dc.photoOcrUrl || '').trim()
+            || (Array.isArray(dc.videoOcrItems) && dc.videoOcrItems.length)
+            || (Array.isArray(dc.photoOcrItems) && dc.photoOcrItems.length)
+          );
+          if (!hasManagedOcr) hit = await findOcrMatchForAssetRow(row, q);
+        }
         if (!hit) continue;
         out.push({
           id: row.id,
@@ -991,7 +1128,7 @@ function registerAssetRoutes(app, deps) {
       }
     };
     res.on('finish', cleanupMultipartUpload);
-    const generateMetadata = generateMetadataRaw === true
+    const requestedMetadataGeneration = generateMetadataRaw === true
       || String(generateMetadataRaw || '').trim().toLowerCase() === 'true';
     const allowSilentProxyFallback = Boolean(req.body?.allowSilentProxyFallback);
     const skipProxyGeneration = Boolean(req.body?.skipProxyGeneration);
@@ -1009,6 +1146,11 @@ function registerAssetRoutes(app, deps) {
     if (!typeValidation.ok) {
       return res.status(400).json(typeValidation);
     }
+    const generateMetadata = requestedMetadataGeneration && isDocumentCandidate({
+      mimeType,
+      fileName: safeName,
+      declaredType: metadata.type
+    });
     let buffer = null;
     let fileHash = '';
   

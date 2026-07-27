@@ -19,6 +19,7 @@
       searchStateRef,
       assetPaginationRef
     } = deps || {};
+    let loadRequestSeq = 0;
 
     function getSelectedAssetTypesForRequest() {
       const enabledFilters = assetTypeFilters.filter((el) => !el.disabled);
@@ -45,11 +46,14 @@
     }
 
     async function loadAssets(options = {}) {
+      const requestSeq = ++loadRequestSeq;
       const pagination = assetPaginationRef || { page: 1, pageSize: 20, total: 0, serverSide: false };
       const preservePage = Boolean(options?.preservePage);
       if (!preservePage) pagination.page = 1;
       const filters = serializeForm(searchForm);
       const params = new URLSearchParams();
+      const advancedSearch = String(filters.advancedSearch || '').trim();
+      const hasAdvancedSearch = Boolean(advancedSearch);
       const { selectedTypes, isNarrowed: isTypeFilterNarrowed } = getSelectedAssetTypesForRequest();
       const trashScopeRaw = String(filters.trash || 'active').trim().toLowerCase();
       const trashScope = ['active', 'trash', 'all'].includes(trashScopeRaw) ? trashScopeRaw : 'active';
@@ -64,7 +68,7 @@
       searchStateRef.currentOcrFuzzyUsed = false;
 
       if (selectedTypes.length === 0) {
-        if (!searchStateRef.currentSearchQuery && !searchStateRef.currentOcrQuery && !searchStateRef.currentSubtitleQuery) {
+        if (!searchStateRef.currentSearchQuery && !searchStateRef.currentOcrQuery && !searchStateRef.currentSubtitleQuery && !hasAdvancedSearch) {
           currentAssetsRef.value = [];
           pagination.total = 0;
           pagination.serverSide = false;
@@ -78,19 +82,28 @@
       } else if (ocrQueryInput) {
         ocrQueryInput.value = '';
       }
-      if (searchStateRef.currentSearchQuery) params.set('q', searchStateRef.currentSearchQuery);
-      if (searchStateRef.currentOcrQuery) params.set('ocrQ', searchStateRef.currentOcrQuery);
-      if (searchStateRef.currentSubtitleQuery) params.set('subtitleQ', searchStateRef.currentSubtitleQuery);
-      if (String(filters.tag || '').trim()) params.set('tag', String(filters.tag).trim());
+      if (!hasAdvancedSearch && searchStateRef.currentSearchQuery) params.set('q', searchStateRef.currentSearchQuery);
+      if (!hasAdvancedSearch && searchStateRef.currentOcrQuery) params.set('ocrQ', searchStateRef.currentOcrQuery);
+      if (!hasAdvancedSearch && searchStateRef.currentSubtitleQuery) params.set('subtitleQ', searchStateRef.currentSubtitleQuery);
+      if (!hasAdvancedSearch && String(filters.tag || '').trim()) params.set('tag', String(filters.tag).trim());
+      if (String(filters.uploadDateFrom || '').trim()) params.set('uploadDateFrom', String(filters.uploadDateFrom).trim());
+      if (String(filters.uploadDateTo || '').trim()) params.set('uploadDateTo', String(filters.uploadDateTo).trim());
+      if (String(filters.dateField || '').trim()) params.set('dateField', String(filters.dateField).trim());
+      if (String(filters.sortBy || '').trim()) params.set('sortBy', String(filters.sortBy).trim());
       if (String(filters.status || '').trim()) params.set('status', String(filters.status).trim());
+      if (advancedSearch) params.set('advanced', advancedSearch);
       params.set('trash', trashScope);
-      if (isTypeFilterNarrowed) {
+      if (isTypeFilterNarrowed && !hasAdvancedSearch) {
         params.set('types', selectedTypes.join(','));
       }
+      // Asset results must reflect the current filter state immediately; avoid
+      // reusing a browser/proxy-cached response after applying a new search.
+      params.set('_ts', String(Date.now()));
 
       const canUseServerPagination = !searchStateRef.currentSearchQuery
         && !searchStateRef.currentOcrQuery
-        && !searchStateRef.currentSubtitleQuery;
+        && !searchStateRef.currentSubtitleQuery
+        && !advancedSearch;
       pagination.serverSide = canUseServerPagination;
       if (canUseServerPagination) {
         const pageSize = [20, 50, 100].includes(Number(pagination.pageSize)) ? Number(pagination.pageSize) : 20;
@@ -100,6 +113,8 @@
       }
 
       const result = await api(`/api/assets?${params.toString()}`);
+      // A slow earlier request must not overwrite a newer search result.
+      if (requestSeq !== loadRequestSeq) return;
       const payload = Array.isArray(result) ? { assets: result, searchMeta: {} } : (result || {});
       currentAssetsRef.value = Array.isArray(payload.assets) ? payload.assets : [];
       if (canUseServerPagination && payload.pagination && typeof payload.pagination === 'object') {

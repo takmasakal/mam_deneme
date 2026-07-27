@@ -2,6 +2,15 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+const OLLAMA_BASE_URL = String(process.env.OLLAMA_BASE_URL || 'http://host.docker.internal:11434').replace(/\/+$/, '');
+const OLLAMA_METADATA_MODEL = String(process.env.OLLAMA_METADATA_MODEL || 'gemma3:4b').trim() || 'gemma3:4b';
+const OLLAMA_METADATA_TIMEOUT_MS = Math.max(30_000, Number(process.env.OLLAMA_METADATA_TIMEOUT_MS) || 10 * 60 * 1000);
+// Keep chunks below the model context limit while avoiding one model call per
+// short page. The previous 12k size made long PDFs needlessly serial.
+const DOCUMENT_CHUNK_SIZE = 24_000;
+const DOCUMENT_CHUNK_OVERLAP = 800;
+const OLLAMA_METADATA_KEEP_ALIVE = String(process.env.OLLAMA_METADATA_KEEP_ALIVE || '10m').trim() || '10m';
+
 const STOP_WORDS = new Set([
   'acaba', 'ama', 'ancak', 'artık', 'asla', 'aslında', 'az', 'bana', 'bazen', 'bazı',
   'belki', 'ben', 'bende', 'beni', 'benim', 'beri', 'beş', 'bile', 'bir', 'biraz',
@@ -197,6 +206,164 @@ function summarizeText(text, maxSentences = 3, maxLength = 1400) {
     .trim();
 }
 
+function parseModelJson(content) {
+  const raw = String(content || '')
+    .replace(/^\s*```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/i, '')
+    .trim();
+  if (!raw) throw new Error('Ollama returned an empty response');
+
+  const candidates = [raw];
+  const start = raw.indexOf('{');
+  if (start >= 0 && start !== 0) candidates.push(raw.slice(start));
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch (_error) {
+      // Try the next candidate after removing surrounding model prose.
+    }
+  }
+
+  // Find the first balanced JSON object without relying on a greedy regex.
+  // Greedy extraction can include a second object or trailing model text.
+  const objectStart = raw.indexOf('{');
+  if (objectStart >= 0) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let index = objectStart; index < raw.length; index += 1) {
+      const char = raw[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') {
+        inString = true;
+        continue;
+      }
+      if (char === '{') depth += 1;
+      else if (char === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          const balanced = raw.slice(objectStart, index + 1);
+          try {
+            return JSON.parse(balanced);
+          } catch (_error) {
+            break;
+          }
+        }
+      }
+    }
+  }
+  throw new Error('Ollama response did not contain valid JSON');
+}
+
+function splitDocumentText(text, chunkSize = DOCUMENT_CHUNK_SIZE, overlap = DOCUMENT_CHUNK_OVERLAP) {
+  const normalized = normalizeText(text);
+  if (!normalized) return [];
+  const chunks = [];
+  let start = 0;
+  while (start < normalized.length) {
+    let end = Math.min(normalized.length, start + chunkSize);
+    if (end < normalized.length) {
+      const paragraphBreak = normalized.lastIndexOf('\n\n', end);
+      const sentenceBreak = normalized.lastIndexOf('. ', end);
+      if (paragraphBreak > start + Math.floor(chunkSize * 0.6)) end = paragraphBreak + 2;
+      else if (sentenceBreak > start + Math.floor(chunkSize * 0.6)) end = sentenceBreak + 2;
+    }
+    chunks.push(normalized.slice(start, end));
+    if (end >= normalized.length) break;
+    start = Math.max(start + 1, end - overlap);
+  }
+  return chunks;
+}
+
+async function callOllamaJson(messages, options = {}) {
+  const format = options.schema || 'json';
+  let lastParseError = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), OLLAMA_METADATA_TIMEOUT_MS);
+    try {
+      const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: OLLAMA_METADATA_MODEL,
+          messages: attempt === 0
+            ? messages
+            : [
+              ...messages,
+              {
+                role: 'user',
+                content: 'Önceki yanıt geçersiz JSON oldu. Yalnızca şemaya uyan, kısa ve eksiksiz JSON döndür; açıklama, markdown veya kod bloğu ekleme.'
+              }
+            ],
+          format,
+          stream: false,
+          keep_alive: OLLAMA_METADATA_KEEP_ALIVE,
+          options: {
+            num_ctx: 8192,
+            num_predict: Math.min(Number(options.numPredict) || 900, attempt ? 500 : 900),
+            temperature: 0,
+            repeat_penalty: 1.15
+          }
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(String(payload?.error || `Ollama HTTP ${response.status}`).slice(0, 700));
+      }
+      try {
+        return parseModelJson(payload?.message?.content);
+      } catch (error) {
+        const doneReason = String(payload?.done_reason || 'unknown');
+        const responseLength = String(payload?.message?.content || '').length;
+        lastParseError = new Error(`${error.message} (responseLength=${responseLength}, doneReason=${doneReason})`);
+        if (attempt === 0) continue;
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastParseError || new Error('Ollama response did not contain valid JSON');
+}
+
+const DOCUMENT_SUMMARY_SYSTEM_PROMPT = `
+Sen profesyonel bir arşiv asistanısın. Verilen belge parçasını yalnızca Türkçe ve nesnel biçimde özetle.
+Metinde olmayan bilgi, isim veya sonuç uydurma. Özel isimleri değiştirme. Özeti en fazla 500 karakterde tut.
+Yanıtı yalnızca tek satırdaki şu JSON biçiminde ver; başka alan, açıklama veya markdown ekleme:
+{"ozet":"Türkçe özet"}
+`;
+
+const DOCUMENT_METADATA_SYSTEM_PROMPT = `
+Sen profesyonel bir arşiv asistanısın. Belgeyi Türkçe ve nesnel biçimde analiz et.
+Özet, teknik/akademik belgelerde ana fikri ve kapsamı; edebi belgelerde olayın başlangıç çerçevesini spoiler vermeden açıklasın.
+Metinde olmayan bilgi uydurma. Özeti en fazla 1200 karakterde tut. En fazla 6 kısa Türkçe etiket üret; etiketler tek kelime veya en fazla 3 kelimelik ifade olsun.
+Yanıtı yalnızca şu JSON biçiminde ver:
+{"ozet":"Türkçe özet","etiketler":["etiket1","etiket2"]}
+`;
+
+const DOCUMENT_SUMMARY_JSON_SCHEMA = {
+  type: 'object',
+  properties: { ozet: { type: 'string', maxLength: 500 } },
+  required: ['ozet'],
+  additionalProperties: false
+};
+
+const DOCUMENT_METADATA_JSON_SCHEMA = {
+  type: 'object',
+  properties: {
+    ozet: { type: 'string', maxLength: 1200 },
+    etiketler: { type: 'array', items: { type: 'string' }, maxItems: 6 }
+  },
+  required: ['ozet', 'etiketler'],
+  additionalProperties: false
+};
+
 function subtitleTextFromVtt(content) {
   return normalizeText(
     String(content || '')
@@ -300,11 +467,51 @@ function createMetadataEnrichmentService(deps) {
   async function enrichDocument(row, sourcePath) {
     const preview = await extractPreviewContentFromFile(row, sourcePath);
     const text = normalizeText(preview?.text || '');
-    const summary = summarizeText(text.slice(0, 15000));
+    if (!text) throw new Error('No extractable text found in document');
+    const chunks = splitDocumentText(text);
+    const chunkSummaries = [];
+    const warnings = [];
+    for (const chunk of chunks) {
+      let summary = '';
+      try {
+        const result = await callOllamaJson([
+          { role: 'system', content: DOCUMENT_SUMMARY_SYSTEM_PROMPT },
+          { role: 'user', content: `Belge parçası:\n\n${chunk}` }
+        ], { numPredict: 384, schema: DOCUMENT_SUMMARY_JSON_SCHEMA });
+        summary = normalizeText(result?.ozet || '');
+      } catch (error) {
+        warnings.push(`Gemma parça özeti kullanılamadı: ${String(error?.message || 'geçersiz JSON').slice(0, 260)}`);
+        summary = summarizeText(chunk, 3, 900);
+      }
+      if (summary) chunkSummaries.push(summary);
+    }
+    const synthesisInput = chunkSummaries.join('\n\n');
+    let final = null;
+    try {
+      final = await callOllamaJson([
+        { role: 'system', content: DOCUMENT_METADATA_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: `Belge başlığı: ${String(row.title || row.file_name || '').trim()}\n\nBelge parça özetleri:\n${synthesisInput}`
+        }
+      ], { numPredict: 700, schema: DOCUMENT_METADATA_JSON_SCHEMA });
+    } catch (error) {
+      warnings.push(`Gemma metadata özeti kullanılamadı: ${String(error?.message || 'geçersiz JSON').slice(0, 260)}`);
+      final = {
+        ozet: summarizeText(text, 3, 1200),
+        etiketler: extractKeywords(text, 6, { title: row.title })
+      };
+    }
+    const keywords = mergeUniqueStrings(
+      Array.isArray(final?.etiketler) ? final.etiketler : []
+    ).slice(0, 6);
     return {
-      summary,
-      keywords: extractKeywords(`${row.title || ''}. ${summary}`, 8, { title: row.title }),
-      extractedTextLength: text.length
+      summary: normalizeText(final?.ozet || ''),
+      keywords,
+      extractedTextLength: text.length,
+      model: OLLAMA_METADATA_MODEL,
+      chunkCount: chunks.length,
+      warning: warnings.join(' | ')
     };
   }
 
@@ -542,6 +749,7 @@ function createMetadataEnrichmentService(deps) {
     const assetId = String(asset?.id || asset || '').trim();
     if (!assetId) return null;
     const family = assetFamily(asset);
+    if (family !== 'document') return null;
     const now = new Date().toISOString();
     const job = {
       jobId: nanoid(),

@@ -464,7 +464,17 @@ function registerTextProcessingRoutes(app, deps) {
         });
       }
   
-      const persistedLatest = await getLatestMediaProcessingJobForAsset(assetId, 'video_ocr');
+      // Job persistence was added after the older dc_metadata OCR fields. If the
+      // table/migration is unavailable, keep the endpoint usable from metadata.
+      let persistedLatest = null;
+      try {
+        persistedLatest = await getLatestMediaProcessingJobForAsset(assetId, 'video_ocr');
+      } catch (error) {
+        console.error('video-ocr-latest-persistence-error', {
+          assetId,
+          message: String(error?.message || error).slice(0, 500)
+        });
+      }
       if (persistedLatest) {
         const mapped = mapVideoOcrJobFromDbRow(persistedLatest);
         return res.json({
@@ -499,7 +509,13 @@ function registerTextProcessingRoutes(app, deps) {
         finishedAt: String(last.createdAt || ''),
         saved: true
       });
-    } catch (_error) {
+    } catch (error) {
+      console.error('video-ocr-latest-error', {
+        assetId: String(req.params.id || '').trim(),
+        requestId: String(req.id || req.headers?.['x-request-id'] || '').trim(),
+        message: String(error?.message || error).slice(0, 700),
+        stack: String(error?.stack || '').split('\n').slice(0, 4).join('\n')
+      });
       return res.status(500).json({ error: 'Failed to load latest OCR job' });
     }
   });

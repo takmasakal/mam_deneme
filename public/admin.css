@@ -2252,6 +2252,17 @@ body {
   box-shadow: 10px 0 14px rgba(14, 22, 36, 0.42);
 }
 
+.asset-rights-table-head > :last-child,
+.asset-rights-row > :last-child {
+  position: sticky;
+  right: 0;
+  z-index: 4;
+  min-height: 100%;
+  padding-left: 10px;
+  background: inherit;
+  box-shadow: -10px 0 14px rgba(14, 22, 36, 0.42);
+}
+
 .asset-rights-table-head {
   position: sticky;
   top: 0;
@@ -2270,6 +2281,10 @@ body {
   z-index: 21;
   margin-left: -2px;
   padding-left: 0;
+}
+
+.asset-rights-table-head > :last-child {
+  z-index: 21;
 }
 
 .asset-rights-mode-switch {
@@ -2513,6 +2528,18 @@ body {
 
   .asset-rights-table-head {
     display: none;
+  }
+
+  .asset-rights-row > :first-child,
+  .asset-rights-row > :last-child {
+    position: static;
+    right: auto;
+    z-index: auto;
+    min-height: 0;
+    padding-left: 0;
+    padding-right: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
   .asset-rights-row {
