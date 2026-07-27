@@ -68,6 +68,8 @@ function hasActiveSearchFields() {
     return Boolean(String(field?.value || '').trim());
   });
   if (hasText) return true;
+  if (String(searchForm?.querySelector('[name="advancedSearch"]')?.value || '').trim()) return true;
+  if (['uploadDateFrom', 'uploadDateTo'].some((name) => String(searchForm?.querySelector(`[name="${name}"]`)?.value || '').trim())) return true;
   const trashSelect = searchForm?.querySelector('[name="trash"]');
   if (String(trashSelect?.value || 'active').trim().toLowerCase() !== 'active') return true;
   return assetTypeFilters.some((input) => !input.checked);
@@ -88,6 +90,9 @@ async function clearSearchFields() {
   assetTypeFilters.forEach((input) => {
     input.checked = true;
   });
+  const advancedSearchInput = searchForm?.querySelector('[name="advancedSearch"]');
+  if (advancedSearchInput) advancedSearchInput.value = '';
+  window.mainAdvancedSearch?.clear?.();
   hideSearchSuggestions();
   hideOcrSuggestions();
   hideSubtitleSuggestions();
