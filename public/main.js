@@ -1371,6 +1371,7 @@ async function loadCurrentUser(options = {}) {
     currentUserCanUsePdfAdvancedTools = canUsePdfAdvancedTools;
     currentUserCanAccessAdvancedSearch = canAccessAdvancedSearch;
     advancedSearchBtn?.classList.toggle('hidden', !canAccessAdvancedSearch);
+    advancedSearchBtn?.toggleAttribute('hidden', !canAccessAdvancedSearch);
     currentOfficeEditorProvider = ['onlyoffice', 'libreoffice'].includes(String(me.officeEditorProvider || '').trim().toLowerCase())
       ? String(me.officeEditorProvider || '').trim().toLowerCase()
       : 'none';
@@ -1402,6 +1403,7 @@ async function loadCurrentUser(options = {}) {
     currentUserCanUsePdfAdvancedTools = false;
     currentUserCanAccessAdvancedSearch = false;
     advancedSearchBtn?.classList.add('hidden');
+    advancedSearchBtn?.setAttribute('hidden', '');
     currentOfficeEditorProvider = 'none';
     currentUserGroups = [];
     currentUserRoles = [];

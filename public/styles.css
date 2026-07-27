@@ -5,13 +5,17 @@
 @import url('/styles/main-05.css?v=20260425-refactor-1');
 @import url('/styles/main-06.css?v=20260425-refactor-1');
 
+.search-title-row { display: flex !important; align-items: center; gap: 8px; }
+.search-title-row .search-clear-btn { margin-left: auto; }
 .advanced-search-btn {
-  width: 42px; height: 42px; padding: 0; margin-left: 8px;
-  border: 1px solid #c18b25; border-radius: 10px; background: #e9aa35;
-  color: #fff; display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer;
+  width: 30px !important; min-width: 30px !important; height: 30px !important;
+  margin-left: 0; padding: 0 !important; border: 1px solid #4f5668 !important;
+  border-radius: 8px !important; background: #313748 !important; color: #dce7fb !important;
+  display: inline-grid !important; place-items: center; cursor: pointer;
+  font-size: 27px !important; line-height: .8 !important;
 }
-.advanced-search-btn::before { content: '\2699'; font-size: 28px; line-height: 1; }
+.advanced-search-btn:hover, .advanced-search-btn:focus-visible { background: #3a4154 !important; border-color: #4f5668 !important; color: #dce7fb !important; }
+.advanced-search-btn::before { content: none; }
 .advanced-search-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(4, 8, 15, .72); }
 .advanced-search-modal.hidden { display: none; }
 .advanced-search-dialog { width: min(1100px, 96vw); max-height: 94vh; overflow: auto; padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel, #292c36); color: var(--text); }
@@ -21,9 +25,10 @@
 .advanced-search-help { color: var(--muted); }
 .advanced-search-help-btn, .advanced-search-close { width: 34px !important; height: 34px !important; min-width: 34px !important; padding: 0 !important; border-radius: 50% !important; display: inline-flex !important; align-items: center; justify-content: center; }
 .advanced-search-close { font-size: 24px !important; }
-.advanced-search-date-row { display: grid; grid-template-columns: minmax(130px, 180px) repeat(2, minmax(160px, 1fr)); gap: 12px; align-items: end; margin: 16px 0; }
-.advanced-search-date-row label { display: grid; gap: 6px; color: var(--muted); font-weight: 600; }
-.advanced-search-date-row input, .advanced-search-date-row select { width: 100%; min-width: 0; }
+.advanced-search-date-row { display: flex; align-items: end; gap: 8px; flex-wrap: nowrap; margin: 16px 0; }
+.advanced-search-date-row label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.advanced-search-date-row input { width: 138px !important; min-width: 0; padding: 6px 8px; font-size: 12px; }
+.advanced-search-date-row select { width: 160px !important; min-width: 0; padding: 6px 8px; font-size: 12px; }
 .advanced-search-date-order { display: flex; gap: 10px; align-items: center; margin: 0; padding: 0; border: 0; }
 .advanced-search-date-order label { display: inline-flex; align-items: center; gap: 4px; }
 .advanced-search-today-toggle { display: inline-flex !important; align-items: center; gap: 6px; }
@@ -65,7 +70,7 @@
 .date-picker-day:hover, .date-picker-day.is-selected { background: var(--accent, #16845f); color: #fff; }
 .date-picker-empty { min-height: 26px; }
 .date-picker-today { width: 100% !important; margin-top: 8px; border: 1px solid var(--line); background: transparent; color: var(--text); }
-@media (max-width: 620px) { .advanced-search-groups { grid-template-columns: 1fr; } .advanced-search-date-row { grid-template-columns: 1fr; } .advanced-search-controls { display: flex; flex-wrap: wrap; } .advanced-search-saved-row, .advanced-search-actions { display: flex; width: 100%; flex-wrap: wrap; } .advanced-search-saved-row select { flex-basis: 100%; } }
+@media (max-width: 620px) { .advanced-search-groups { grid-template-columns: 1fr; } .advanced-search-date-row { flex-wrap: wrap; } .advanced-search-controls { display: flex; flex-wrap: wrap; } .advanced-search-saved-row, .advanced-search-actions { display: flex; width: 100%; flex-wrap: wrap; } .advanced-search-saved-row select { flex-basis: 100%; } }
 
 .image-viewer-resizable {
   position: relative;
