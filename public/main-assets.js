@@ -17,6 +17,7 @@
       lastSelectedAssetIdRef,
       searchStateRef
     } = deps || {};
+    let loadRequestSeq = 0;
 
     function getSelectedAssetTypesForRequest() {
       const enabledFilters = assetTypeFilters.filter((el) => !el.disabled);
@@ -35,11 +36,14 @@
     }
 
     async function loadAssets(options = {}) {
+      const requestSeq = ++loadRequestSeq;
       const paging = typeof getAssetPagingRequest === 'function'
         ? getAssetPagingRequest(options)
         : { limit: 20, offset: 0 };
       const filters = serializeForm(searchForm);
       const params = new URLSearchParams();
+      const advancedSearch = String(filters.advancedSearch || '').trim();
+      const hasAdvancedSearch = Boolean(advancedSearch);
       const { selectedTypes, isNarrowed: isTypeFilterNarrowed } = getSelectedAssetTypesForRequest();
       const trashScopeRaw = String(filters.trash || 'active').trim().toLowerCase();
       const trashScope = ['active', 'trash', 'all'].includes(trashScopeRaw) ? trashScopeRaw : 'active';
@@ -57,7 +61,7 @@
       searchStateRef.currentSubtitleFuzzyUsed = false;
 
       if (selectedTypes.length === 0) {
-        if (!searchStateRef.currentSearchQuery && !searchStateRef.currentOcrQuery && !searchStateRef.currentSubtitleQuery) {
+        if (!searchStateRef.currentSearchQuery && !searchStateRef.currentOcrQuery && !searchStateRef.currentSubtitleQuery && !hasAdvancedSearch) {
           currentAssetsRef.value = [];
           const emptyPayload = { assets: [], searchMeta: {}, pagination: { total: 0, ...paging } };
           renderAssets(currentAssetsRef.value, { pagination: emptyPayload.pagination });
@@ -70,18 +74,31 @@
       } else if (ocrQueryInput) {
         ocrQueryInput.value = '';
       }
-      params.set('limit', String(paging.limit));
-      params.set('offset', String(paging.offset));
-      if (searchStateRef.currentSearchQuery) params.set('q', searchStateRef.currentSearchQuery);
-      if (searchStateRef.currentOcrQuery) params.set('ocrQ', searchStateRef.currentOcrQuery);
-      if (searchStateRef.currentSubtitleQuery) params.set('subtitleQ', searchStateRef.currentSubtitleQuery);
-      if (String(filters.tag || '').trim()) params.set('tag', String(filters.tag).trim());
+      if (!hasAdvancedSearch && searchStateRef.currentSearchQuery) params.set('q', searchStateRef.currentSearchQuery);
+      if (!hasAdvancedSearch && searchStateRef.currentOcrQuery) params.set('ocrQ', searchStateRef.currentOcrQuery);
+      if (!hasAdvancedSearch && searchStateRef.currentSubtitleQuery) params.set('subtitleQ', searchStateRef.currentSubtitleQuery);
+      if (!hasAdvancedSearch && String(filters.tag || '').trim()) params.set('tag', String(filters.tag).trim());
+      if (String(filters.uploadDateFrom || '').trim()) params.set('uploadDateFrom', String(filters.uploadDateFrom).trim());
+      if (String(filters.uploadDateTo || '').trim()) params.set('uploadDateTo', String(filters.uploadDateTo).trim());
+      if (String(filters.dateField || '').trim()) params.set('dateField', String(filters.dateField).trim());
+      if (String(filters.sortBy || '').trim()) params.set('sortBy', String(filters.sortBy).trim());
+      if (advancedSearch) params.set('advanced', advancedSearch);
+      params.set('_ts', String(Date.now()));
       params.set('trash', trashScope);
-      if (isTypeFilterNarrowed) {
+      if (isTypeFilterNarrowed && !hasAdvancedSearch) {
         params.set('types', selectedTypes.join(','));
       }
 
+      const canUseServerPagination = !searchStateRef.currentSearchQuery
+        && !searchStateRef.currentOcrQuery
+        && !searchStateRef.currentSubtitleQuery
+        && !advancedSearch;
+      if (canUseServerPagination) {
+        params.set('limit', String(paging.limit));
+        params.set('offset', String(paging.offset));
+      }
       const result = await api(`/api/assets?${params.toString()}`);
+      if (requestSeq !== loadRequestSeq) return null;
       const payload = Array.isArray(result) ? { assets: result, searchMeta: {} } : (result || {});
       const pagination = payload.pagination && typeof payload.pagination === 'object'
         ? payload.pagination

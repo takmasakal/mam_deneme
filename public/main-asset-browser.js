@@ -345,7 +345,8 @@ function renderAssets(assets, options = {}) {
             ${clipHits ? `<div class="asset-meta dc-hit-row">${clipHits}</div>` : ''}
             ${subtitleHit}
             ${ocrHit}
-            <div class="asset-meta">${escapeHtml(formatDate(asset.updatedAt))}</div>
+            <div class="asset-meta">${escapeHtml(t('asset_uploaded_at'))}: ${escapeHtml(formatDate(asset.createdAt))}</div>
+            <div class="asset-meta">${escapeHtml(t('asset_updated_at'))}: ${escapeHtml(formatDate(asset.updatedAt))}</div>
             <div class="chips">
               ${(asset.tags || []).slice(0, 4).map((tag) => `<button type="button" class="chip chip-tag-filter" data-chip-tag="${escapeHtml(tag)}" style="${tagColorStyle(tag)}">${highlightMatch(tag, currentSearchHighlightQuery, searchHighlightClass)}</button>`).join('')}
             </div>

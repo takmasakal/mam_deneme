@@ -22,6 +22,7 @@ const searchQueryInput = searchForm.querySelector('[name="q"]');
 const searchSuggestList = document.getElementById('searchSuggestList');
 const clearSearchBtn = document.getElementById('clearSearchBtn');
 const searchResultCounter = document.getElementById('searchResultCounter');
+const advancedSearchBtn = document.getElementById('advancedSearchBtn');
 // OCR ve Altyazi aramalari 1. kolonda birbirinden bagimsiz iki ayri kutu olarak calisir.
 const ocrQueryInput = searchForm.querySelector('[name="ocrQ"]');
 const ocrSuggestList = document.getElementById('ocrSuggestList');
@@ -92,6 +93,7 @@ let currentUserCanEditMetadata = false;
 let currentUserCanEditOffice = false;
 let currentUserCanDeleteAssets = false;
 let currentUserCanUsePdfAdvancedTools = false;
+let currentUserCanAccessAdvancedSearch = false;
 let currentOfficeEditorProvider = 'none';
 let currentUsername = '';
 let currentUserIdentityCandidates = new Set();
@@ -1356,6 +1358,7 @@ async function loadCurrentUser(options = {}) {
     const canEditOffice = toStrictBool(me.canEditOffice, false);
     const canDeleteAssets = toStrictBool(me.canDeleteAssets, toStrictBool(me.isAdmin, false));
     const canUsePdfAdvancedTools = toStrictBool(me.canUsePdfAdvancedTools, toStrictBool(me.isAdmin, false));
+    const canAccessAdvancedSearch = toStrictBool(me.canAccessAdvancedSearch, false);
     currentUserGroups = Array.isArray(me.groups) ? me.groups : [];
     currentUserRoles = Array.isArray(me.roles) ? me.roles : [];
     currentUserAllowedAssetTypes = accessScopeModule.normalizeAllowedAssetTypes(me.allowedAssetTypes || []);
@@ -1366,10 +1369,13 @@ async function loadCurrentUser(options = {}) {
     currentUserCanEditOffice = canEditOffice;
     currentUserCanDeleteAssets = canDeleteAssets;
     currentUserCanUsePdfAdvancedTools = canUsePdfAdvancedTools;
+    currentUserCanAccessAdvancedSearch = canAccessAdvancedSearch;
+    advancedSearchBtn?.classList.toggle('hidden', !canAccessAdvancedSearch);
     currentOfficeEditorProvider = ['onlyoffice', 'libreoffice'].includes(String(me.officeEditorProvider || '').trim().toLowerCase())
       ? String(me.officeEditorProvider || '').trim().toLowerCase()
       : 'none';
     currentUsername = username.toLowerCase();
+    advancedSearchModule?.setUserIdentity(username || email || displayName);
     setCurrentUserIdentityCandidates([
       username,
       displayName,
@@ -1394,6 +1400,8 @@ async function loadCurrentUser(options = {}) {
     currentUserCanEditOffice = false;
     currentUserCanDeleteAssets = false;
     currentUserCanUsePdfAdvancedTools = false;
+    currentUserCanAccessAdvancedSearch = false;
+    advancedSearchBtn?.classList.add('hidden');
     currentOfficeEditorProvider = 'none';
     currentUserGroups = [];
     currentUserRoles = [];
@@ -2248,6 +2256,19 @@ async function loadAssets(options = {}) {
   return result;
 }
 
+const advancedSearchModule = typeof window.createMainAdvancedSearchModule === 'function'
+  ? window.createMainAdvancedSearchModule({
+    searchForm,
+    t,
+    loadAssets,
+    updateClearSearchButtonState,
+    canUseAdvancedSearch: () => currentUserCanAccessAdvancedSearch,
+    initialUserIdentity: ''
+  })
+  : null;
+window.mainAdvancedSearch = advancedSearchModule;
+advancedSearchModule?.init?.();
+
 function clearDetailHeaderTimecode() {
   return detailModule.clearDetailHeaderTimecode();
 }
@@ -3043,6 +3064,7 @@ languageSelect?.addEventListener('change', async (event) => {
   hideOcrSuggestions();
   hideSubtitleSuggestions();
   applyStaticI18n();
+  advancedSearchModule?.refreshLanguage?.();
   try {
     await loadWorkflow();
     await loadAssets();

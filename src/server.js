@@ -8070,6 +8070,7 @@ async function resolveEffectivePermissions(req) {
     canEditOffice,
     canDeleteAssets: Boolean(effective.assetDelete),
     canUsePdfAdvancedTools: Boolean(effective.pdfAdvancedTools),
+    canAccessAdvancedSearch: Boolean(effective.advancedSearchAccess),
     permissions: effective,
     permissionKeys: effective.permissionKeys,
     deniedPermissionKeys: userOverride?.deniedPermissionKeys || []
@@ -8118,6 +8119,7 @@ app.get('/api/me', async (req, res) => {
       canEditOffice: effective.canEditOffice,
       canDeleteAssets: effective.canDeleteAssets,
 	      canUsePdfAdvancedTools: effective.canUsePdfAdvancedTools,
+	      canAccessAdvancedSearch: Boolean(effective.canAccessAdvancedSearch),
 	      allowedAssetTypes: assetAccessService.getAllowedAssetTypeGroups(accessContext),
 	      uploadAllowedAssetTypes: assetAccessService.getAllowedUploadAssetTypeGroups(accessContext),
 	      officeEditorProvider: OFFICE_EDITOR_PROVIDER,
@@ -8909,6 +8911,7 @@ registerAssetRoutes(app, {
   searchAssetIdsElastic,
   searchAssetsByFuzzyQuery,
   searchOcrMatchesForAssetRows,
+  searchSubtitleMatchesForAssetRow,
   searchSubtitleMatchesForAssetRows,
   ensurePdfThumbnailForRow,
   ensureDocumentThumbnailForRow,

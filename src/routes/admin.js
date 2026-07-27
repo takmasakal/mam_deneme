@@ -3022,6 +3022,7 @@ app.get('/api/admin/user-permissions', async (req, res) => {
             metadataEdit: entry.metadataEdit,
             assetDelete: entry.assetDelete,
             pdfAdvancedTools: entry.pdfAdvancedTools,
+            advancedSearchAccess: entry.advancedSearchAccess,
             documentRightsAdminAccess: entry.documentRightsAdminAccess
           };
         });
@@ -3103,6 +3104,7 @@ app.get('/api/admin/user-permissions', async (req, res) => {
           metadataEdit: effective.metadataEdit,
           assetDelete: effective.assetDelete,
           pdfAdvancedTools: effective.pdfAdvancedTools,
+          advancedSearchAccess: effective.advancedSearchAccess,
           documentRightsAdminAccess: effective.documentRightsAdminAccess
         };
       });
@@ -3158,6 +3160,7 @@ app.patch('/api/admin/user-permissions/:username', async (req, res) => {
         metadataEdit: req.body?.metadataEdit,
         assetDelete: req.body?.assetDelete,
         pdfAdvancedTools: req.body?.pdfAdvancedTools,
+        advancedSearchAccess: req.body?.advancedSearchAccess,
         documentRightsAdminAccess: req.body?.documentRightsAdminAccess
       },
       []
@@ -3220,6 +3223,7 @@ app.patch('/api/admin/group-permissions/:groupName', async (req, res) => {
         metadataEdit: req.body?.metadataEdit,
         assetDelete: req.body?.assetDelete,
         pdfAdvancedTools: req.body?.pdfAdvancedTools,
+        advancedSearchAccess: req.body?.advancedSearchAccess,
         documentRightsAdminAccess: req.body?.documentRightsAdminAccess
       },
       []
