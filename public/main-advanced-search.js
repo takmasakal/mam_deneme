@@ -126,8 +126,16 @@
         datePicker.element.addEventListener('click', (event) => {
           const nav = event.target.closest('[data-date-nav]');
           if (nav) {
-            datePicker.month.setMonth(datePicker.month.getMonth() + (nav.dataset.dateNav === 'next' ? 1 : -1));
+            event.preventDefault();
+            event.stopPropagation();
+            const delta = nav.dataset.dateNav === 'next' ? 1 : -1;
+            datePicker.month = new Date(
+              datePicker.month.getFullYear(),
+              datePicker.month.getMonth() + delta,
+              1
+            );
             renderDatePicker();
+            datePicker.element.classList.add('is-open');
             return;
           }
           const day = event.target.closest('[data-date-value]');
