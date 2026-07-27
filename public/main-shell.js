@@ -68,8 +68,9 @@ function applyVideoToolsPageLayoutMode() {
     const field = searchForm?.querySelector(`[name="${name}"]`);
     return Boolean(String(field?.value || '').trim());
   });
-    if (hasText) return true;
-    if (String(searchForm?.querySelector('[name="advancedSearch"]')?.value || '').trim()) return true;
+  if (hasText) return true;
+  if (String(searchForm?.querySelector('[name="advancedSearch"]')?.value || '').trim()) return true;
+  if (['uploadDateFrom', 'uploadDateTo'].some((name) => String(searchForm?.querySelector(`[name="${name}"]`)?.value || '').trim())) return true;
   if (String(statusSelect?.value || '').trim()) return true;
   const trashSelect = searchForm?.querySelector('[name="trash"]');
   if (String(trashSelect?.value || 'active').trim().toLowerCase() !== 'active') return true;
@@ -92,8 +93,9 @@ function updateClearSearchButtonState() {
     assetTypeFilters.forEach((input) => {
       input.checked = true;
     });
-    searchForm?.querySelector('[name="advancedSearch"]')?.setAttribute('value', '');
-    window.mainAdvancedSearch?.clear?.();
+  const advancedSearchInput = searchForm?.querySelector('[name="advancedSearch"]');
+  if (advancedSearchInput) advancedSearchInput.value = '';
+  window.mainAdvancedSearch?.clear?.();
   hideSearchSuggestions();
   hideOcrSuggestions();
   hideSubtitleSuggestions();

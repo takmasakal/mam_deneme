@@ -195,9 +195,13 @@
 
     function syncHiddenInput() {
       const input = searchForm?.querySelector('[name="advancedSearch"]');
-      if (!input) return;
+      if (!input) {
+        updateClearSearchButtonState();
+        return;
+      }
       if (!enabled) {
         input.value = '';
+        updateClearSearchButtonState();
         return;
       }
       const current = normalizedState();
@@ -220,6 +224,7 @@
           ])
         })
         : '';
+      updateClearSearchButtonState();
     }
 
     function makeField(field) {
