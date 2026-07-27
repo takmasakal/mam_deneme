@@ -69,7 +69,7 @@
 .date-picker-head, .date-picker-weekdays, .date-picker-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .date-picker-head { grid-template-columns: 30px 1fr 30px; align-items: center; text-align: center; margin-bottom: 8px; }
 .date-picker-head button, .date-picker-day, .date-picker-today { min-height: 26px; padding: 3px; }
-.date-picker-head button { border: 0; background: transparent; color: var(--text); }
+.date-picker-head button { position: relative; z-index: 1; border: 0; background: transparent; color: var(--text); pointer-events: auto; cursor: pointer; }
 .date-picker-weekdays { color: var(--muted); font-size: 10px; text-align: center; }
 .date-picker-day { border: 1px solid transparent; background: transparent; color: var(--text); }
 .date-picker-day:hover, .date-picker-day.is-selected { background: var(--accent, #16845f); color: #fff; }
