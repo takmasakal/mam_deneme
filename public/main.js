@@ -2261,6 +2261,7 @@ async function loadAssets(options = {}) {
 const advancedSearchModule = typeof window.createMainAdvancedSearchModule === 'function'
   ? window.createMainAdvancedSearchModule({
     searchForm,
+    assetTypeFilters,
     t,
     loadAssets,
     updateClearSearchButtonState,

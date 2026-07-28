@@ -14,6 +14,7 @@
       searchForm,
       t = (key) => key,
       loadAssets,
+      assetTypeFilters = [],
       updateClearSearchButtonState = () => {},
       canUseAdvancedSearch = () => true,
       initialUserIdentity = ''
@@ -27,6 +28,7 @@
     const dateFieldSelect = modal?.querySelector('select[name="dateField"]');
     const state = { and: [...FIELD_ORDER], or: [] };
     const datePicker = { element: null, inputName: '', month: new Date() };
+    let advancedTypeValue = '';
     let storageKey = getStorageKey(initialUserIdentity);
     let enabled = false;
 
@@ -52,9 +54,45 @@
       return String(searchForm?.querySelector(`[name="${field}"]`)?.value || '').trim();
     }
 
+    function advancedFieldValue(field) {
+      return field === 'type' ? String(advancedTypeValue || '').trim() : fieldValue(field);
+    }
+
     function setFieldValue(field, value) {
       const input = searchForm?.querySelector(`[name="${field}"]`);
       if (input) input.value = String(value || '');
+    }
+
+    function setAdvancedFieldValue(field, value) {
+      if (field === 'type') {
+        advancedTypeValue = String(value || '').trim();
+        return;
+      }
+      setFieldValue(field, value);
+    }
+
+    function selectedAssetTypes() {
+      return assetTypeFilters
+        .filter((input) => input.checked)
+        .map((input) => String(input.value || '').trim().toLowerCase())
+        .filter(Boolean);
+    }
+
+    function syncAssetTypeFilters(types) {
+      const selected = new Set((Array.isArray(types) ? types : String(types || '').split(','))
+        .map((type) => String(type || '').trim().toLowerCase()).filter(Boolean));
+      assetTypeFilters.forEach((input) => {
+        input.checked = selected.has(String(input.value || '').trim().toLowerCase());
+      });
+    }
+
+    function typeValueFromFilters() {
+      const selected = selectedAssetTypes();
+      return selected.length === assetTypeFilters.length ? '' : (selected.join(',') || '__none__');
+    }
+
+    function isTypeInAndGroup() {
+      return state.and.includes('type');
     }
 
     function setDateFieldValue(field, value) {
@@ -189,7 +227,7 @@
     }
 
     function normalizedState() {
-      const active = (list) => list.filter((field) => fieldValue(field));
+      const active = (list) => list.filter((field) => advancedFieldValue(field));
       return { and: active(state.and), or: active(state.or) };
     }
 
@@ -216,7 +254,7 @@
         ? JSON.stringify({
           ...current,
           values: Object.fromEntries([
-            ...FIELD_ORDER.map((field) => [field, fieldValue(field)]),
+            ...FIELD_ORDER.map((field) => [field, advancedFieldValue(field)]),
             ['uploadDateFrom', uploadDateFrom],
             ['uploadDateTo', uploadDateTo],
             ['dateField', selectedDateField],
@@ -232,13 +270,40 @@
       item.className = 'advanced-search-field';
       item.draggable = true;
       item.dataset.advancedField = field;
-      item.innerHTML = `<strong>${t(`advanced_field_${field}`) || FIELD_LABELS[field]}</strong><input type="text" value="" aria-label="${FIELD_LABELS[field]}" />`;
-      const input = item.querySelector('input');
-      input.value = fieldValue(field);
-      input.addEventListener('input', () => {
-        setFieldValue(field, input.value);
-        syncHiddenInput();
-      });
+      if (field === 'type') {
+        item.innerHTML = `<strong>${t('advanced_field_type') || FIELD_LABELS[field]}</strong><div class="advanced-search-type-options"></div>`;
+        const options = item.querySelector('.advanced-search-type-options');
+        const currentValues = (advancedFieldValue('type') || typeValueFromFilters())
+          .split(',').map((type) => type.trim()).filter(Boolean);
+        const current = new Set(isTypeInAndGroup() ? currentValues.slice(0, 1) : currentValues);
+        if (isTypeInAndGroup() && currentValues.length > 1) advancedTypeValue = currentValues[0];
+        assetTypeFilters.forEach((source) => {
+          const type = String(source.value || '').trim().toLowerCase();
+          const label = document.createElement('label');
+          label.innerHTML = `<input type="checkbox" value="${type}" ${current.has(type) ? 'checked' : ''} /> <span>${t(`type_${type}`) || type}</span>`;
+          const checkbox = label.querySelector('input');
+          checkbox.addEventListener('change', () => {
+            if (isTypeInAndGroup() && checkbox.checked) {
+              options.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+                if (input !== checkbox) input.checked = false;
+              });
+            }
+            const types = Array.from(options.querySelectorAll('input:checked')).map((input) => input.value);
+            advancedTypeValue = types.length === assetTypeFilters.length ? '' : (types.join(',') || '__none__');
+            syncAssetTypeFilters(types);
+            syncHiddenInput();
+          });
+          options.appendChild(label);
+        });
+      } else {
+        item.innerHTML = `<strong>${t(`advanced_field_${field}`) || FIELD_LABELS[field]}</strong><input type="text" value="" aria-label="${FIELD_LABELS[field]}" />`;
+        const input = item.querySelector('input');
+        input.value = advancedFieldValue(field);
+        input.addEventListener('input', () => {
+          setAdvancedFieldValue(field, input.value);
+          syncHiddenInput();
+        });
+      }
       item.addEventListener('dragstart', (event) => {
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData('text/plain', field);
@@ -304,6 +369,9 @@
     function open() {
       if (!canUseAdvancedSearch()) return;
       enabled = true;
+      let savedType = '';
+      try { savedType = JSON.parse(fieldValue('advancedSearch') || '{}')?.values?.type || ''; } catch (_error) { /* ignore invalid old state */ }
+      advancedTypeValue = String(savedType || typeValueFromFilters()).trim();
       setDateFieldValue('uploadDateFrom', fieldValue('uploadDateFrom'));
       setDateFieldValue('uploadDateTo', fieldValue('uploadDateTo'));
       setDateField(fieldValue('dateField') || (String(sortValue()).startsWith('updated_') ? 'updated' : 'created'));
@@ -329,7 +397,8 @@
 
     function clear() {
       enabled = false;
-      FIELD_ORDER.forEach((field) => setFieldValue(field, ''));
+      FIELD_ORDER.forEach((field) => setAdvancedFieldValue(field, ''));
+      syncAssetTypeFilters(assetTypeFilters.map((input) => input.value));
       setDateFieldValue('uploadDateFrom', '');
       setDateFieldValue('uploadDateTo', '');
       setDateField('created');
@@ -357,7 +426,7 @@
         name: trimmed,
         state: normalizedState(),
         values: Object.fromEntries([
-          ...FIELD_ORDER.map((field) => [field, fieldValue(field)]),
+          ...FIELD_ORDER.map((field) => [field, advancedFieldValue(field)]),
           ['uploadDateFrom', dateFieldValue('uploadDateFrom')],
           ['uploadDateTo', dateFieldValue('uploadDateTo')],
           ['dateField', dateField()],
@@ -378,7 +447,8 @@
       const nextState = item.state && typeof item.state === 'object' ? item.state : { and: FIELD_ORDER, or: [] };
       state.and = FIELD_ORDER.filter((field) => Array.isArray(nextState.and) && nextState.and.includes(field));
       state.or = FIELD_ORDER.filter((field) => Array.isArray(nextState.or) && nextState.or.includes(field) && !state.and.includes(field));
-      FIELD_ORDER.forEach((field) => setFieldValue(field, item.values?.[field] || ''));
+      FIELD_ORDER.forEach((field) => setAdvancedFieldValue(field, item.values?.[field] || ''));
+      if (item.values?.type) syncAssetTypeFilters(String(item.values.type).split(','));
       setDateFieldValue('uploadDateFrom', item.values?.uploadDateFrom || '');
       setDateFieldValue('uploadDateTo', item.values?.uploadDateTo || '');
       setDateField(item.values?.dateField || (String(item.values?.sortBy || '').startsWith('updated_') ? 'updated' : 'created'));
@@ -430,6 +500,13 @@
       modal?.addEventListener('click', (event) => { if (event.target === modal) close(); });
       FIELD_ORDER.forEach((field) => {
         searchForm?.querySelector(`[name="${field}"]`)?.addEventListener('input', syncHiddenInput);
+      });
+      assetTypeFilters.forEach((input) => {
+        input.addEventListener('change', () => {
+          if (!enabled) return;
+          advancedTypeValue = typeValueFromFilters();
+          syncHiddenInput();
+        });
       });
       modal?.querySelectorAll('[data-date-input]').forEach((input) => {
         input.addEventListener('focus', () => openDatePicker(input.dataset.dateInput, input));
