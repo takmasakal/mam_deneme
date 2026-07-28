@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { parseMultipartUpload } = require('../services/multipartUploadParser');
 const { createAdvancedSearchService } = require('../services/advancedSearchService');
+const { createAssetListQueryService } = require('../services/assetListQueryService');
 
 const advancedSearchService = createAdvancedSearchService();
 
@@ -81,6 +82,14 @@ function registerAssetRoutes(app, deps) {
     recordAuditEvent,
     nanoid
   } = deps;
+
+  const assetListQueryService = createAssetListQueryService({
+    advancedSearchService,
+    parseTextSearchQuery,
+    normalizeForSearch,
+    normalizeUploadDateRange,
+    normalizeSortBy
+  });
 
   async function resolveAssetAccessContext(req) {
     return assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
@@ -304,53 +313,32 @@ function registerAssetRoutes(app, deps) {
 
   app.get('/api/assets', async (req, res) => {
     try {
-      const q = (req.query.q || '').toString().trim();
-      const hasLimit = Object.prototype.hasOwnProperty.call(req.query, 'limit');
-      const pageLimit = hasLimit ? Math.max(1, Math.min(100, Number(req.query.limit) || 10)) : 0;
-      const pageOffset = hasLimit ? Math.max(0, Number(req.query.offset) || 0) : 0;
-      const parsedAssetQuery = parseTextSearchQuery(q, normalizeForSearch);
-      const ocrQ = (req.query.ocrQ || '').toString().trim();
-      const subtitleQ = (req.query.subtitleQ || '').toString().trim();
-      const tag = (req.query.tag || '').toString().trim();
-      const type = (req.query.type || '').toString().trim();
-      const owner = (req.query.owner || '').toString().trim();
-      const uploadDateFrom = req.query.uploadDateFrom;
-      const uploadDateTo = req.query.uploadDateTo;
-      const requestDateField = String(req.query.dateField || '').trim().toLowerCase();
-      const sortBy = (req.query.sortBy || '').toString().trim();
-      const types = String(req.query.types || '')
-        .split(',')
-        .map((item) => item.trim().toLowerCase())
-        .filter(Boolean);
-      const status = (req.query.status || '').toString().trim();
-      const trash = (req.query.trash || 'active').toString().trim().toLowerCase();
-      let advancedDefinition = null;
+      let queryOptions;
       try {
-        advancedDefinition = advancedSearchService.parseDefinition(req.query.advanced);
-      } catch (_error) {
-        return res.status(400).json({ error: 'Invalid advanced search definition' });
+        queryOptions = assetListQueryService.parseRequest(req);
+      } catch (error) {
+        return res.status(Number(error.statusCode || 500)).json({ error: error.message || 'Failed to parse asset query' });
       }
-      const advancedActive = Boolean(advancedDefinition && (
-        advancedDefinition.and.length
-        || advancedDefinition.or.length
-        || String(advancedDefinition.values.uploadDateFrom || '').trim()
-        || String(advancedDefinition.values.uploadDateTo || '').trim()
-      ));
-      const effectiveUploadDateFrom = advancedActive
-        ? String(uploadDateFrom || advancedDefinition.values.uploadDateFrom || '')
-        : uploadDateFrom;
-      const effectiveUploadDateTo = advancedActive
-        ? String(uploadDateTo || advancedDefinition.values.uploadDateTo || '')
-        : uploadDateTo;
-      const dateField = (advancedActive
-        ? String(requestDateField || advancedDefinition.values.dateField || '')
-        : requestDateField) === 'updated' ? 'updated' : 'created';
-      const ensurePreview = String(req.query.ensurePreview || '').trim() === '1';
-      const dateRange = normalizeUploadDateRange(effectiveUploadDateFrom, effectiveUploadDateTo);
-      const requestedSortBy = advancedActive ? (sortBy || advancedDefinition.values.sortBy) : sortBy;
-      const normalizedSortBy = normalizeSortBy(
-        dateField === 'updated' ? String(requestedSortBy || '').replace(/^created_/, 'updated_') : requestedSortBy
-      );
+      const {
+        q,
+        pageLimit,
+        pageOffset,
+        parsedAssetQuery,
+        ocrQ,
+        subtitleQ,
+        tag,
+        type,
+        owner,
+        types,
+        status,
+        trash,
+        ensurePreview,
+        advancedDefinition,
+        advancedActive,
+        dateRange,
+        dateField,
+        normalizedSortBy
+      } = queryOptions;
       const baseWhere = [];
       const baseValues = [];
       let rankedIds = null;

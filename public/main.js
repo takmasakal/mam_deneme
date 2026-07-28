@@ -1186,8 +1186,18 @@ function secondsToTimecode(timeSeconds, fps) { return commonModule.secondsToTime
 function parseTimecodeInput(value, fps) { return commonModule.parseTimecodeInput(value, fps); }
 function subtitleTrackMarkup(asset) { return commonModule.subtitleTrackMarkup(asset); }
 
+const workflowStore = window.createMainWorkflowStore(
+  async () => []
+);
+const detailRequestCoordinator = window.createMainDetailRequestCoordinator();
+
+function getWorkflow(options = {}) {
+  return workflowStore.get(options);
+}
+
 searchSuggestModule = window.createMainSearchSuggestModule({
   api,
+  getWorkflow,
   t,
   escapeHtml,
   highlightMatch,
@@ -1953,6 +1963,7 @@ function toggleMultiSelection(assetId) {
 }
 
 function resetSelectedAssetDetailPanel() {
+  detailRequestCoordinator.invalidate();
   return assetBrowserModule.resetSelectedAssetDetailPanel();
 }
 
@@ -2051,7 +2062,10 @@ function getVersionSectionAccess(asset) { return detailModule.getVersionSectionA
 function renderVersionRow(asset, version, access, interactive) { return detailModule.renderVersionRow(asset, version, access, interactive); }
 async function refreshAssetDetail(assetId, workflow) { return detailModule.refreshAssetDetail(assetId, workflow); }
 function detailMarkup(asset, workflow, options = {}) { return detailModule.detailMarkup(asset, workflow, options); }
-async function openMultiSelectionDetail() { return detailModule.openMultiSelectionDetail(); }
+async function openMultiSelectionDetail() {
+  detailRequestCoordinator.invalidate();
+  return detailModule.openMultiSelectionDetail();
+}
 
 const playerRuntimeModule = window.createMainPlayerRuntimeModule({
   t,
@@ -2262,7 +2276,7 @@ const assetsModule = window.createMainAssetsModule({
 });
 
 async function loadWorkflow() {
-  return assetsModule.loadWorkflow();
+  return getWorkflow();
 }
 
 async function loadAssets(options = {}) {
@@ -2285,6 +2299,43 @@ const advancedSearchModule = typeof window.createMainAdvancedSearchModule === 'f
   : null;
 window.mainAdvancedSearch = advancedSearchModule;
 advancedSearchModule?.init?.();
+
+const detailVersionActionsModule = window.createMainDetailVersionActions({
+  api,
+  t,
+  cleanVersionNoteText,
+  openVersionDeleteDialog,
+  openVersionEditDialog,
+  loadAssets,
+  refreshAssetDetail,
+  currentLang: () => currentLang,
+  canUsePdfAdvancedTools: () => currentUserCanUsePdfAdvancedTools,
+  selectedImageVersionIds,
+  assetDetail
+});
+
+const detailAssetActionsModule = window.createMainDetailAssetActions({
+  api,
+  t,
+  serializeForm,
+  extractDcMetadataFromPayload,
+  readFileAsBase64,
+  refreshAssetDetail,
+  canEditMetadata: () => currentUserCanEditMetadata,
+  canEditOffice: () => currentUserCanEditOffice,
+  canUsePdfAdvancedTools: () => currentUserCanUsePdfAdvancedTools,
+  canDeleteAsset: currentUserCanDeleteAssetInUi,
+  onPermanentDeleteSuccess: async (assetId) => {
+    const wasSelected = selectedAssetId === assetId;
+    selectedAssetIds.delete(assetId);
+    await loadAssets();
+    if (wasSelected) {
+      selectedAssetId = null;
+      resetSelectedAssetDetailPanel();
+    }
+  },
+  assetDetail
+});
 
 function clearDetailHeaderTimecode() {
   return detailModule.clearDetailHeaderTimecode();
@@ -2383,6 +2434,7 @@ function openPhotoOcrDialog(asset) {
 }
 
 async function openAsset(id, workflow, options = {}) {
+  const detailRequest = detailRequestCoordinator.begin(id);
   if (isVideoToolsPageMode) {
     panelVisibility.panelIngest = false;
     panelVisibility.panelAssets = false;
@@ -2390,7 +2442,15 @@ async function openAsset(id, workflow, options = {}) {
   }
   setPanelVisible('panelDetail', true);
 
-  const asset = await api(`/api/assets/${id}`);
+  let asset;
+  try {
+    asset = await api(`/api/assets/${id}`, { signal: detailRequest.signal });
+  } catch (error) {
+    if (detailRequest.isCancelled() || detailRequestCoordinator.isAbortError(error)) return null;
+    throw error;
+  }
+  if (!detailRequest.isCurrent()) return null;
+  detailRequestCoordinator.complete(detailRequest);
 
   selectedAssetId = id;
   selectedAssetIds.add(id);
@@ -2503,351 +2563,9 @@ async function openAsset(id, workflow, options = {}) {
   const imageOcrSettingsBtn = document.getElementById('imageOcrSettingsBtn');
   imageOcrSettingsBtn?.addEventListener('click', () => openPhotoOcrDialog(asset));
   loadAssetTechnicalInfo(asset).catch(() => {});
-  const ensureProxyBtn = document.getElementById('ensureProxyBtn');
-  ensureProxyBtn?.addEventListener('click', async () => {
-    try {
-      await api(`/api/assets/${id}/ensure-proxy`, { method: 'POST', body: '{}' });
-      await loadAssets();
-      await openAsset(id, workflow);
-    } catch (error) {
-      alert(String(error.message || t('proxy_failed')));
-    }
-  });
-  document.getElementById('editForm').addEventListener('submit', async (event) => {
-    event.preventDefault();
-    if (!currentUserCanEditMetadata && !(asset.canEditAssetMetadata ?? asset.canEditAsset)) {
-      alert(t('metadata_edit_locked'));
-      return;
-    }
-    const formEl = event.target;
-    const saveBtn = formEl.querySelector('button[type="submit"]');
-    if (saveBtn) saveBtn.disabled = true;
-    try {
-      const payload = serializeForm(formEl);
-      payload.dcMetadata = extractDcMetadataFromPayload(payload);
-      await api(`/api/assets/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
-      await loadAssets();
-      await openAsset(id, workflow);
-    } catch (error) {
-      alert(String(error?.message || t('metadata_save_failed')));
-    } finally {
-      if (saveBtn) saveBtn.disabled = false;
-    }
-  });
+  detailAssetActionsModule.bind(assetDetail, { asset, workflow });
 
-  const assetVisibilityForm = document.getElementById('assetVisibilityForm');
-  assetVisibilityForm?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const formEl = event.target;
-    const saveBtn = formEl.querySelector('button[type="submit"]');
-    const parseList = (value) => String(value || '')
-      .split(/[,\n]+/)
-      .map((item) => item.trim())
-      .filter(Boolean);
-    if (saveBtn) saveBtn.disabled = true;
-    try {
-      const payload = serializeForm(formEl);
-      [
-        'allowedGroups',
-        'allowedUsers',
-        'deniedGroups',
-        'deniedUsers',
-        'editAllowedGroups',
-        'editAllowedUsers',
-        'editDeniedGroups',
-        'editDeniedUsers'
-      ].forEach((key) => {
-        payload[key] = parseList(payload[key]);
-      });
-      await api(`/api/assets/${id}/visibility`, { method: 'PATCH', body: JSON.stringify(payload) });
-      await loadAssets();
-      await openAsset(id, workflow);
-    } catch (error) {
-      alert(String(error?.message || t('visibility_save_failed')));
-    } finally {
-      if (saveBtn) saveBtn.disabled = false;
-    }
-  });
-
-  const versionFormEl = document.getElementById('versionForm');
-  versionFormEl?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const payload = serializeForm(event.target);
-    const versionFile = event.target.elements.versionFile?.files?.[0];
-    if (versionFile) {
-      payload.fileName = versionFile.name;
-      payload.mimeType = versionFile.type || 'application/octet-stream';
-      payload.fileData = await readFileAsBase64(versionFile);
-    }
-    await api(`/api/assets/${id}/versions`, { method: 'POST', body: JSON.stringify(payload) });
-    await loadAssets();
-    await openAsset(id, workflow);
-  });
-
-  const restorePdfOriginalBtn = document.getElementById('restorePdfOriginalBtn');
-  restorePdfOriginalBtn?.addEventListener('click', async () => {
-    if (!currentUserCanUsePdfAdvancedTools && !(asset.canEditAssetPdf ?? asset.canEditAsset)) return;
-    const ok = confirm(t('restore_pdf_original_confirm'));
-    if (!ok) return;
-    await api(`/api/assets/${id}/pdf-restore-original`, { method: 'POST', body: '{}' });
-    await refreshAssetDetail(id, workflow);
-  });
-
-  const downloadPdfOriginalBtn = document.getElementById('downloadPdfOriginalBtn');
-  downloadPdfOriginalBtn?.addEventListener('click', () => {
-    if (asset.canDownloadAsset === false || (!currentUserCanUsePdfAdvancedTools && !(asset.canEditAssetPdf ?? asset.canEditAsset))) return;
-    const link = document.createElement('a');
-    link.href = `/api/assets/${encodeURIComponent(id)}/pdf-original/download`;
-    link.setAttribute('download', '');
-    link.rel = 'noreferrer';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-  });
-
-  const restoreOfficeOriginalBtn = document.getElementById('restoreOfficeOriginalBtn');
-  restoreOfficeOriginalBtn?.addEventListener('click', async () => {
-    if (!currentUserCanEditOffice && !(asset.canEditAssetOffice ?? asset.canEditAsset)) return;
-    const ok = confirm(t('restore_office_original_confirm'));
-    if (!ok) return;
-    await api(`/api/assets/${id}/office-restore-original`, { method: 'POST', body: '{}' });
-    await refreshAssetDetail(id, workflow);
-  });
-
-  const downloadOfficeOriginalBtn = document.getElementById('downloadOfficeOriginalBtn');
-  downloadOfficeOriginalBtn?.addEventListener('click', () => {
-    if (asset.canDownloadAsset === false || (!currentUserCanEditOffice && !(asset.canEditAssetOffice ?? asset.canEditAsset))) return;
-    const link = document.createElement('a');
-    link.href = `/api/assets/${encodeURIComponent(id)}/office-original/download`;
-    link.setAttribute('download', '');
-    link.rel = 'noreferrer';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-  });
-
-  const assetVersionsListEl = document.getElementById('assetVersionsList');
-  const handleRestoreVersion = async (restoreBtn) => {
-      if (!currentUserCanUsePdfAdvancedTools && !(asset.canEditAssetPdf ?? asset.canEditAsset)) return;
-      const versionId = String(restoreBtn.dataset.versionId || '').trim();
-      if (!versionId) return;
-      const ok = confirm(t('restore_pdf_confirm'));
-      if (!ok) return;
-      await api(`/api/assets/${id}/pdf-restore`, {
-        method: 'POST',
-        body: JSON.stringify({ versionId })
-      });
-      await refreshAssetDetail(id, workflow);
-  };
-
-  const handleDeleteVersion = async (deleteBtnEl) => {
-      if (deleteBtnEl.disabled) return;
-      const versionId = String(deleteBtnEl.dataset.versionId || '').trim();
-      if (!versionId) return;
-      const ok = await openVersionDeleteDialog();
-      if (!ok) return;
-      const rowEl = deleteBtnEl.closest('.version');
-      const prevLabel = String(deleteBtnEl.textContent || '').trim() || t('delete_version');
-      deleteBtnEl.disabled = true;
-      deleteBtnEl.textContent = currentLang === 'tr' ? 'Siliniyor...' : 'Deleting...';
-      rowEl?.classList.add('is-busy');
-      try {
-        await api(`/api/assets/${id}/versions/${encodeURIComponent(versionId)}`, { method: 'DELETE' });
-        rowEl?.remove();
-        if (Array.isArray(asset.versions)) {
-          asset.versions = asset.versions.filter((v) => String(v.versionId || '') !== versionId);
-        }
-        loadAssets().catch(() => {});
-      } catch (error) {
-        deleteBtnEl.disabled = false;
-        deleteBtnEl.textContent = prevLabel;
-        rowEl?.classList.remove('is-busy');
-        alert(String(error?.message || 'Failed to delete version'));
-      }
-  };
-
-  const handleEditVersion = async (editBtnEl) => {
-      if (editBtnEl.disabled) return;
-      const versionId = String(editBtnEl.dataset.versionId || '').trim();
-      if (!versionId) return;
-      const current = (asset.versions || []).find((v) => String(v.versionId || '') === versionId);
-      const currentLabel = String(current?.label || '').trim();
-      const currentNote = cleanVersionNoteText(String(current?.note || ''));
-      const next = await openVersionEditDialog({ label: currentLabel, note: currentNote });
-      if (!next?.label) return;
-      editBtnEl.disabled = true;
-      try {
-        const updated = await api(`/api/assets/${id}/versions/${encodeURIComponent(versionId)}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ label: next.label, note: next.note || '' })
-        });
-        const updatedVersion = updated?.version || null;
-        const rowEl = editBtnEl.closest('.version');
-        if (updatedVersion && rowEl) {
-          const titleEl = rowEl.querySelector('strong');
-          if (titleEl) titleEl.textContent = String(updatedVersion.label || '');
-          const noteText = cleanVersionNoteText(String(updatedVersion.note || ''));
-          if (titleEl && titleEl.nextSibling) {
-            titleEl.nextSibling.nodeValue = ` - ${noteText}`;
-          }
-          if (Array.isArray(asset.versions)) {
-            const idx = asset.versions.findIndex((v) => String(v.versionId || '') === versionId);
-            if (idx >= 0) asset.versions[idx] = { ...asset.versions[idx], ...updatedVersion };
-          }
-        }
-        editBtnEl.disabled = false;
-        loadAssets().catch(() => {});
-      } catch (error) {
-        editBtnEl.disabled = false;
-        alert(String(error?.message || 'Failed to update version'));
-      }
-  };
-
-  assetVersionsListEl?.querySelectorAll('.restorePdfVersionBtn').forEach((btn) => {
-    btn.addEventListener('click', async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      await handleRestoreVersion(event.currentTarget);
-    });
-  });
-  assetVersionsListEl?.querySelectorAll('.restoreOfficeVersionBtn').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const versionId = String(btn.getAttribute('data-version-id') || '').trim();
-      if (!versionId || !confirm(t('restore_office_confirm'))) return;
-      const res = await fetch(`/api/assets/${encodeURIComponent(asset.id)}/office-restore`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ versionId })
-      });
-      if (!res.ok) {
-        const textBody = await res.text();
-        let payload = {};
-        try {
-          payload = textBody ? JSON.parse(textBody) : {};
-        } catch (_error) {}
-        window.mamSessionExpiry?.handle(res.status, textBody, payload);
-        alert(payload.error || 'Failed to restore Office version');
-        return;
-      }
-      await refreshAssetDetail(asset.id, workflow);
-    });
-  });
-
-  assetVersionsListEl?.querySelectorAll('.deleteVersionBtn').forEach((btn) => {
-    btn.addEventListener('click', async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      await handleDeleteVersion(event.currentTarget);
-    });
-  });
-
-  assetVersionsListEl?.querySelectorAll('.downloadVersionBtn').forEach((btn) => {
-    btn.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const versionId = String(event.currentTarget?.dataset?.versionId || '').trim();
-      if (!versionId || asset.canDownloadAsset === false) return;
-      const link = document.createElement('a');
-      link.href = `/api/assets/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/download`;
-      link.setAttribute('download', '');
-      link.rel = 'noreferrer';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    });
-  });
-
-  assetVersionsListEl?.querySelectorAll('.previewVersionBtn').forEach((btn) => {
-    btn.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const versionId = String(event.currentTarget?.dataset?.versionId || '').trim();
-      if (!versionId) return;
-      const previewUrl = `/api/assets/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/preview`;
-      selectedImageVersionIds.set(String(id), versionId);
-      const image = assetDetail.querySelector('.image-asset-viewer');
-      if (image) {
-        image.src = previewUrl;
-        image.dataset.versionId = versionId;
-      }
-    });
-  });
-
-  assetVersionsListEl?.querySelectorAll('.editVersionBtn').forEach((btn) => {
-    btn.addEventListener('click', async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      await handleEditVersion(event.currentTarget);
-    });
-  });
-
-  assetVersionsListEl?.addEventListener('click', async (event) => {
-    const targetNode = event.target;
-    const target = targetNode instanceof Element ? targetNode : targetNode?.parentElement;
-    if (!(target instanceof Element)) return;
-
-    const row = target.closest('.version-restorable[data-restore-version-id]');
-    if (!row) return;
-    const ignore = target.closest('button, a, input, textarea, select, label');
-    if (ignore) return;
-    if (!currentUserCanUsePdfAdvancedTools && !(asset.canEditAssetPdf ?? asset.canEditAsset)) return;
-    const versionId = String(row.dataset.restoreVersionId || '').trim();
-    if (!versionId) return;
-    const ok = confirm(t('restore_pdf_confirm'));
-    if (!ok) return;
-    await api(`/api/assets/${id}/pdf-restore`, {
-      method: 'POST',
-      body: JSON.stringify({ versionId })
-    });
-    await refreshAssetDetail(id, workflow);
-  }, true);
-
-  const downloadBtn = document.getElementById('downloadAssetBtn');
-  const downloadProxyBtn = document.getElementById('downloadProxyBtn');
-  const moveToTrashBtn = document.getElementById('moveToTrashBtn');
-  const restoreAssetBtn = document.getElementById('restoreAssetBtn');
-  const deleteAssetBtn = document.getElementById('deleteAssetBtn');
-
-  downloadBtn?.addEventListener('click', () => {
-    if (asset.canDownloadAsset === false) return;
-    // Varlık indir her zaman asıl kaynağı indirir; proxy bunun yerine geçmez.
-    openDownloadInNewTab(asset.mediaUrl);
-  });
-
-  downloadProxyBtn?.addEventListener('click', () => {
-    if (asset.canDownloadAsset === false) return;
-    // Proxy indirme yalnızca admin için ek bir kolaylık olarak sunuluyor.
-    openDownloadInNewTab(asset.proxyUrl);
-  });
-
-  moveToTrashBtn?.addEventListener('click', async () => {
-    if (asset?.canDeleteAsset === false) return;
-    const ok = confirm(t('move_to_trash_confirm'));
-    if (!ok) return;
-    await api(`/api/assets/${encodeURIComponent(asset.id)}/trash`, { method: 'POST', body: '{}' });
-    await refreshAssetDetail(asset.id, workflow);
-  });
-
-  restoreAssetBtn?.addEventListener('click', async () => {
-    if (asset?.canDeleteAsset === false) return;
-    await api(`/api/assets/${encodeURIComponent(asset.id)}/restore`, { method: 'POST', body: '{}' });
-    await refreshAssetDetail(asset.id, workflow);
-  });
-
-  deleteAssetBtn?.addEventListener('click', async () => {
-    if (asset?.canDeleteAsset === false) return;
-    const ok = confirm(t('trash_confirm'));
-    if (!ok) return;
-    const wasSelected = selectedAssetId === asset.id;
-    await api(`/api/assets/${encodeURIComponent(asset.id)}`, { method: 'DELETE' });
-    selectedAssetIds.delete(asset.id);
-    await loadAssets();
-    if (wasSelected) {
-      selectedAssetId = null;
-      resetSelectedAssetDetailPanel();
-    }
-  });
+  detailVersionActionsModule.bind(assetDetail, { asset, workflow });
 
 }
 
@@ -3122,6 +2840,7 @@ const onLanguageShortcut = (event) => {
 document.addEventListener('keydown', onLanguageShortcut);
 
 closeDetailBtn?.addEventListener('click', () => {
+  detailRequestCoordinator.invalidate();
   setPanelVisible('panelDetail', false);
   setPanelVideoToolsButtonState(false);
 });
@@ -3204,10 +2923,7 @@ function startCurrentUserPermissionRefresh() {
   }, USER_PERMISSION_REFRESH_INTERVAL_MS);
 }
 
-(async () => {
-  try {
-    await loadI18nFile();
-    await loadUiSettings();
+function prepareInitialShell() {
     applyVideoToolsPageLayoutMode();
     currentLang = currentLang === 'tr' ? 'tr' : 'en';
     if (languageSelect) languageSelect.value = currentLang;
@@ -3231,11 +2947,15 @@ function startCurrentUserPermissionRefresh() {
     applyPanelLayout();
     initPanelSplitters();
     updateClearSearchButtonState();
+}
+
+async function loadCurrentUserAndStartRefresh() {
     await loadCurrentUser();
     startCurrentUserPermissionRefresh();
-    const workflow = await loadWorkflow();
+}
+
+async function openInitialView(workflow) {
     applyAssetViewModeUI();
-    await loadAssets();
     if (isVideoToolsPageMode) {
       const targetId = requestedVideoToolsAssetId
         || String(currentAssets.find((item) => isVideo(item))?.id || '').trim();
@@ -3256,6 +2976,21 @@ function startCurrentUserPermissionRefresh() {
       clean.searchParams.delete('restorePanels');
       window.history.replaceState({}, '', clean.toString());
     }
+}
+
+const bootstrapModule = window.createMainBootstrapModule({
+  loadI18nFile,
+  loadUiSettings,
+  prepareShell: prepareInitialShell,
+  loadCurrentUser: loadCurrentUserAndStartRefresh,
+  loadWorkflow,
+  loadAssets,
+  openInitialView
+});
+
+(async () => {
+  try {
+    await bootstrapModule.run();
   } catch (error) {
     alert(error.message);
   }

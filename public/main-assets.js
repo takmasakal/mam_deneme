@@ -134,4 +134,7 @@
   }
 
   global.createMainAssetsModule = createMainAssetsModule;
-})(window);
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { createMainAssetsModule };
+  }
+})(typeof window !== 'undefined' ? window : globalThis);

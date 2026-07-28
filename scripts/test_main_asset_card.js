@@ -1,0 +1,77 @@
+const assert = require('assert');
+const { createMainAssetCardRenderer } = require('../public/main-asset-card');
+
+function createRenderer(counters) {
+  const escapeHtml = (value) => String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+  const counted = (name, result = '') => (...args) => {
+    counters[name] = (counters[name] || 0) + 1;
+    return typeof result === 'function' ? result(...args) : result;
+  };
+  return createMainAssetCardRenderer({
+    escapeHtml,
+    t: (key) => key,
+    highlightMatch: counted('highlight', (value) => `<mark>${escapeHtml(value)}</mark>`),
+    metadataHighlightSnippet: counted('metadata', 'metadata-hit'),
+    dcHighlightSnippet: counted('dc', 'dc-hit'),
+    tagHighlightSnippet: counted('tag', 'tag-hit'),
+    clipHighlightSnippet: counted('clip', 'clip-hit'),
+    effectiveSearchHighlightClass: () => 'search-hit',
+    foldSearchText: (value) => String(value || '').toLowerCase(),
+    workflowLabel: (value) => value,
+    formatDuration: (value) => `${value}s`,
+    formatDate: (value) => value,
+    tagColorStyle: () => '',
+    isVideo: (asset) => asset.type === 'Video',
+    isAudio: (asset) => asset.type === 'Audio',
+    thumbnailMarkup: () => '<img class="asset-thumb">',
+    assetTypeIcon: () => 'TYPE',
+    renderAssetHitList: counted('hit-list', ''),
+    renderAssetHitPager: counted('hit-pager', ''),
+    acceptedDidYouMeanHighlightClass: (_type, _query, fallback) => fallback,
+    currentUserCanDeleteAssetInUi: () => false,
+    currentUserCanDeleteAssetsRef: { get: () => false },
+    selectedAssetIdsRef: { get: () => new Set() }
+  });
+}
+
+const asset = {
+  id: 'asset-1',
+  title: 'Sample',
+  type: 'Document',
+  owner: 'owner',
+  status: 'Ingested',
+  createdAt: 'created',
+  updatedAt: 'updated',
+  tags: ['tag']
+};
+
+{
+  const counters = {};
+  const html = createRenderer(counters).render(asset, {});
+  assert.match(html, /Sample/);
+  assert.strictEqual(counters.highlight || 0, 0);
+  assert.strictEqual(counters.metadata || 0, 0);
+  assert.strictEqual(counters.dc || 0, 0);
+  assert.strictEqual(counters.tag || 0, 0);
+  assert.strictEqual(counters.clip || 0, 0);
+  assert.strictEqual(counters['hit-list'] || 0, 0);
+  assert.strictEqual(counters['hit-pager'] || 0, 0);
+}
+
+{
+  const counters = {};
+  const html = createRenderer(counters).render(asset, {
+    currentSearchQuery: 'sample'
+  });
+  assert.match(html, /<mark>Sample<\/mark>/);
+  assert.ok(counters.highlight >= 4);
+  assert.strictEqual(counters.metadata, 1);
+  assert.strictEqual(counters.dc, 1);
+  assert.strictEqual(counters.tag, 1);
+  assert.strictEqual(counters.clip, 1);
+}
+
+console.log('mainAssetCard tests passed');

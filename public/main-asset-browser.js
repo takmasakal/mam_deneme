@@ -45,6 +45,25 @@
     let assetPageSize = 20;
     let assetPage = 1;
     let assetTotal = 0;
+    const acceptedDidYouMean = { q: '', ocr: '', subtitle: '' };
+
+    function rememberAcceptedDidYouMean(type, suggestion) {
+      const safeType = ['q', 'ocr', 'subtitle'].includes(type) ? type : '';
+      if (!safeType) return;
+      acceptedDidYouMean[safeType] = String(suggestion || '').trim();
+    }
+
+    function acceptedDidYouMeanHighlightClass(type, query, defaultClass) {
+      const safeType = ['q', 'ocr', 'subtitle'].includes(type) ? type : '';
+      if (!safeType) return defaultClass;
+      const accepted = String(acceptedDidYouMean[safeType] || '').trim();
+      const current = String(query || '').trim();
+      if (!accepted || !current || foldSearchText(accepted) !== foldSearchText(current)) {
+        acceptedDidYouMean[safeType] = '';
+        return defaultClass;
+      }
+      return 'search-hit-exact';
+    }
 
 function thumbnailMarkup(asset) {
   const thumbSrc = escapeHtml(asset.thumbnailUrl || '');
@@ -96,7 +115,7 @@ function buildAssetSearchNoticeHtml() {
       notices.push(`
         <div class="subtitle-item-empty">
           ${escapeHtml(t('subtitle_did_you_mean'))}:
-          <button type="button" class="subtitle-item-use-btn" data-search-did-you-mean="${escapeHtml(type)}">${escapeHtml(safeSuggestion)}</button>
+          <button type="button" class="subtitle-item-use-btn" data-search-did-you-mean="${escapeHtml(type)}">${highlightMatch(safeSuggestion, safeSuggestion, 'search-hit-fuzzy')}</button>
         </div>
       `);
       return;
@@ -104,9 +123,14 @@ function buildAssetSearchNoticeHtml() {
     notices.push(`<div class="subtitle-item-empty"><span class="search-hit-fuzzy">${escapeHtml(safeQuery)}</span></div>`);
   };
 
-  pushNotice('q', currentSearchDidYouMean, currentSearchQuery, currentSearchFuzzyUsed);
-  pushNotice('ocr', currentOcrDidYouMean, currentOcrQuery, currentOcrFuzzyUsed);
-  pushNotice('subtitle', searchStateRef?.currentSubtitleDidYouMean, searchStateRef?.currentSubtitleQuery, searchStateRef?.currentSubtitleFuzzyUsed);
+  pushNotice('q', searchStateRef.currentSearchDidYouMean, searchStateRef.currentSearchQuery, searchStateRef.currentSearchFuzzyUsed);
+  pushNotice('ocr', searchStateRef.currentOcrDidYouMean, searchStateRef.currentOcrQuery, searchStateRef.currentOcrFuzzyUsed);
+  pushNotice(
+    'subtitle',
+    searchStateRef.currentSubtitleDidYouMean,
+    searchStateRef.currentSubtitleQuery,
+    searchStateRef.currentSubtitleFuzzyUsed
+  );
   return notices.join('');
 }
 
@@ -149,6 +173,31 @@ function renderAssetHitPager({ asset, type, requestQuery }) {
   `;
 }
 
+const assetCardRenderer = global.createMainAssetCardRenderer({
+  escapeHtml,
+  t,
+  highlightMatch,
+  metadataHighlightSnippet,
+  dcHighlightSnippet,
+  tagHighlightSnippet,
+  clipHighlightSnippet,
+  effectiveSearchHighlightClass,
+  foldSearchText,
+  formatDuration,
+  formatDate,
+  tagColorStyle,
+  isVideo,
+  isAudio,
+  thumbnailMarkup,
+  assetTypeIcon,
+  renderAssetHitList,
+  renderAssetHitPager,
+  acceptedDidYouMeanHighlightClass,
+  currentUserCanDeleteAssetInUi,
+  currentUserCanDeleteAssetsRef,
+  selectedAssetIdsRef
+});
+
 function renderAssetListPager(totalCount, visibleStart, visibleEnd, totalPages) {
   if (totalCount <= 0) return '';
   const pageOptions = assetPageSizes
@@ -164,7 +213,7 @@ function renderAssetListPager(totalCount, visibleStart, visibleEnd, totalPages) 
       <div class="asset-list-page-actions">
         <button type="button" class="asset-list-page-btn" data-asset-page="prev" ${assetPage <= 1 ? 'disabled' : ''} aria-label="${escapeHtml(t('previous_page'))}">&lt;</button>
         <label class="asset-list-page-current">
-          <input type="text" inputmode="numeric" pattern="[0-9]*" class="asset-list-page-input" value="${escapeHtml(String(assetPage))}" aria-label="${escapeHtml(t('current_page'))}" />
+          <input type="text" inputmode="numeric" pattern="[0-9]*" class="asset-list-page-input" value="${escapeHtml(String(assetPage))}" style="width: ${Math.max(6, String(assetPage).length + 3)}ch" aria-label="${escapeHtml(t('current_page'))}" />
           <span>/ ${escapeHtml(String(totalPages))}</span>
         </label>
         <button type="button" class="asset-list-page-btn" data-asset-page="next" ${assetPage >= totalPages ? 'disabled' : ''} aria-label="${escapeHtml(t('next_page'))}">&gt;</button>
@@ -184,66 +233,121 @@ function getAssetPagingRequest(options = {}) {
   };
 }
 
-function attachAssetListPagerHandlers() {
-  assetGrid.querySelectorAll('.asset-list-page-btn').forEach((btn) => {
-    btn.addEventListener('click', async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const target = event.currentTarget;
-      const direction = String(target?.dataset?.assetPage || '').trim();
-      const totalPages = Math.max(1, Math.ceil(assetTotal / assetPageSize));
-      const nextPage = direction === 'prev'
-        ? Math.max(1, assetPage - 1)
-        : Math.min(totalPages, assetPage + 1);
-      if (nextPage === assetPage) return;
-      target.disabled = true;
-      try {
-        await loadAssets({ resetPage: false, page: nextPage });
-      } catch (_error) {
-        renderAssets(currentAssetsRef.get());
-      } finally {
-        target.disabled = false;
-      }
-    });
-  });
-  assetGrid.querySelectorAll('.asset-list-page-input').forEach((input) => {
-    const resizePageInput = () => {
-      input.style.width = `${Math.max(6, String(input.value || '').length + 3)}ch`;
-    };
-    resizePageInput();
-    input.addEventListener('input', resizePageInput);
-    input.addEventListener('keydown', async (event) => {
-      if (event.key !== 'Enter') return;
-      event.preventDefault();
-      const totalPages = Math.max(1, Math.ceil(assetTotal / assetPageSize));
-      const requestedPage = Math.max(1, Math.min(totalPages, Number(input.value) || 1));
-      input.value = String(requestedPage);
-      resizePageInput();
-      if (requestedPage === assetPage) return;
-      input.disabled = true;
-      try {
-        await loadAssets({ resetPage: false, page: requestedPage });
-      } catch (_error) {
-        renderAssets(currentAssetsRef.get());
-      } finally {
-        input.disabled = false;
-      }
-    });
-  });
-  assetGrid.querySelectorAll('.asset-list-page-size-select').forEach((select) => {
-    select.addEventListener('change', async (event) => {
-      const nextSize = Number(event.currentTarget?.value) || 20;
-      event.currentTarget.disabled = true;
-      try {
-        await loadAssets({ resetPage: true, pageSize: nextSize });
-      } catch (_error) {
-        renderAssets(currentAssetsRef.get());
-      } finally {
-        event.currentTarget.disabled = false;
-      }
-    });
-  });
+async function handleAssetPageDirection(button) {
+  const direction = String(button?.dataset?.assetPage || '').trim();
+  const totalPages = Math.max(1, Math.ceil(assetTotal / assetPageSize));
+  const nextPage = direction === 'prev'
+    ? Math.max(1, assetPage - 1)
+    : Math.min(totalPages, assetPage + 1);
+  if (nextPage === assetPage) return;
+  button.disabled = true;
+  try {
+    await loadAssets({ resetPage: false, page: nextPage });
+  } catch (_error) {
+    renderAssets(currentAssetsRef.get());
+  } finally {
+    button.disabled = false;
+  }
 }
+
+async function handleAssetPageInput(input) {
+  const totalPages = Math.max(1, Math.ceil(assetTotal / assetPageSize));
+  const requestedPage = Math.max(1, Math.min(totalPages, Number(input?.value) || 1));
+  input.value = String(requestedPage);
+  assetGridEvents.resizePageInput(input);
+  if (requestedPage === assetPage) return;
+  input.disabled = true;
+  try {
+    await loadAssets({ resetPage: false, page: requestedPage });
+  } catch (_error) {
+    renderAssets(currentAssetsRef.get());
+  } finally {
+    input.disabled = false;
+  }
+}
+
+async function handleAssetPageSize(select) {
+  const nextSize = Number(select?.value) || 20;
+  select.disabled = true;
+  try {
+    await loadAssets({ resetPage: true, pageSize: nextSize });
+  } catch (_error) {
+    renderAssets(currentAssetsRef.get());
+  } finally {
+    select.disabled = false;
+  }
+}
+
+async function handleSearchDidYouMean(button) {
+  const type = String(button?.dataset?.searchDidYouMean || '').trim();
+  const suggestion = String(button?.textContent || '').trim();
+  if (!suggestion) return;
+  rememberAcceptedDidYouMean(type, suggestion);
+  if (type === 'ocr' && ocrQueryInput) ocrQueryInput.value = suggestion;
+  else if (type === 'subtitle' && subtitleQueryInput) subtitleQueryInput.value = suggestion;
+  else if (type === 'q' && searchQueryInput) searchQueryInput.value = suggestion;
+  await loadAssets();
+}
+
+async function handleAssetHitPage(button) {
+  const assetId = String(button?.dataset?.id || '').trim();
+  const type = String(button?.dataset?.hitType || '').trim();
+  const query = String(button?.dataset?.hitQuery || '').trim();
+  const offset = Math.max(0, Number(button?.dataset?.hitOffset) || 0);
+  if (!assetId || !query || (type !== 'ocr' && type !== 'subtitle')) return;
+  button.disabled = true;
+  try {
+    const endpoint = type === 'ocr'
+      ? `/api/assets/${encodeURIComponent(assetId)}/video-ocr/search`
+      : `/api/assets/${encodeURIComponent(assetId)}/subtitles/search`;
+    const params = new URLSearchParams({
+      q: query,
+      offset: String(offset),
+      limit: String(assetHitPageSize)
+    });
+    const result = await api(`${endpoint}?${params.toString()}`);
+    const matches = Array.isArray(result.matches) ? result.matches : [];
+    const page = result.page && typeof result.page === 'object'
+      ? result.page
+      : { offset, limit: assetHitPageSize, count: matches.length, hasPrev: offset > 0, hasNext: false, prevOffset: Math.max(0, offset - assetHitPageSize), nextOffset: offset + assetHitPageSize };
+    const assets = currentAssetsRef.get();
+    const asset = assets.find((item) => String(item.id || '') === assetId);
+    if (!asset) return;
+    const highlightQuery = String(result.highlightQuery || page.query || query).trim() || query;
+    if (type === 'ocr') {
+      asset.ocrSearchHits = matches.map((item) => ({
+        query: String(item.query || highlightQuery).trim() || highlightQuery,
+        text: String(item.line || item.text || ''),
+        startSec: Number(item.startSec || 0),
+        endSec: Number(item.endSec || 0),
+        startTc: String(item.startTc || secondsToTimecode(Number(item.startSec || 0), PLAYER_FPS))
+      }));
+      asset.ocrSearchPage = { ...page, query: highlightQuery };
+    } else {
+      asset.subtitleSearchHits = matches.map((item) => ({
+        query: String(item.query || highlightQuery).trim() || highlightQuery,
+        text: String(item.text || ''),
+        startSec: Number(item.startSec || 0),
+        endSec: Number(item.endSec || 0),
+        startTc: String(item.startTc || secondsToTimecode(Number(item.startSec || 0), PLAYER_FPS))
+      }));
+      asset.subtitleSearchPage = { ...page, query: highlightQuery };
+    }
+    renderAssets(assets);
+  } catch (_error) {
+    renderAssets(currentAssetsRef.get());
+  }
+}
+
+const assetGridEvents = global.createMainAssetGridEvents({
+  assetGrid,
+  onPageDirection: handleAssetPageDirection,
+  onPageInput: handleAssetPageInput,
+  onPageSize: handleAssetPageSize,
+  onDidYouMean: handleSearchDidYouMean,
+  onHitPage: handleAssetHitPage
+});
+assetGridEvents.attach();
 
 function renderAssets(assets, options = {}) {
   applyAssetViewModeUI();
@@ -259,16 +363,6 @@ function renderAssets(assets, options = {}) {
   }
   if (!assets.length) {
     assetGrid.innerHTML = `${searchNoticeHtml}<div class="empty">${escapeHtml(t('no_assets'))}</div>`;
-    assetGrid.querySelectorAll('[data-search-did-you-mean]').forEach((btn) => {
-      btn.addEventListener('click', async (event) => {
-        const type = String(event.currentTarget?.dataset?.searchDidYouMean || '').trim();
-        const suggestion = String(event.currentTarget?.textContent || '').trim();
-        if (!suggestion) return;
-        if (type === 'ocr' && ocrQueryInput) ocrQueryInput.value = suggestion;
-        else if (type === 'q' && searchQueryInput) searchQueryInput.value = suggestion;
-        await loadAssets();
-      });
-    });
     return;
   }
 
@@ -279,157 +373,31 @@ function renderAssets(assets, options = {}) {
   const pageEnd = Math.min(totalAssets, pageStart + assets.length);
   const visibleAssets = assets;
   const pagerHtml = renderAssetListPager(totalAssets, pageStart, pageEnd, totalPages);
-  const searchHighlightClass = effectiveSearchHighlightClass(currentSearchQuery, currentSearchHighlightQuery, currentSearchFuzzyUsed);
+  const searchState = {
+    currentSearchDidYouMean: searchStateRef.currentSearchDidYouMean,
+    currentSearchQuery: searchStateRef.currentSearchQuery,
+    currentSearchFuzzyUsed: searchStateRef.currentSearchFuzzyUsed,
+    currentSearchHighlightQuery: searchStateRef.currentSearchHighlightQuery,
+    currentOcrDidYouMean: searchStateRef.currentOcrDidYouMean,
+    currentOcrQuery: searchStateRef.currentOcrQuery,
+    currentOcrFuzzyUsed: searchStateRef.currentOcrFuzzyUsed,
+    currentOcrHighlightQuery: searchStateRef.currentOcrHighlightQuery,
+    currentSubtitleDidYouMean: searchStateRef.currentSubtitleDidYouMean,
+    currentSubtitleFuzzyUsed: searchStateRef.currentSubtitleFuzzyUsed,
+    currentSubtitleQuery: searchStateRef.currentSubtitleQuery
+  };
+  const searchHighlightClass = acceptedDidYouMeanHighlightClass(
+    'q',
+    searchState.currentSearchQuery,
+    effectiveSearchHighlightClass(
+      searchState.currentSearchQuery,
+      searchState.currentSearchHighlightQuery,
+      searchState.currentSearchFuzzyUsed
+    )
+  );
   assetGrid.innerHTML = `${searchNoticeHtml}${pagerHtml}${visibleAssets
-    .map((asset) => {
-      const selected = selectedAssetIdsRef.get().has(asset.id) ? 'selected' : '';
-      const trashClass = asset.inTrash ? 'in-trash' : '';
-      const styleClass = 'card-art-glass';
-      const metadataHits = metadataHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass);
-      const dcHits = dcHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass);
-      const tagHits = tagHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass);
-      const clipHits = clipHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass);
-      const ocrHitQuery = String(asset?.ocrSearchHit?.query || currentOcrHighlightQuery || currentOcrQuery || '').trim();
-      const ocrHitsRaw = Array.isArray(asset?.ocrSearchHits) && asset.ocrSearchHits.length
-        ? asset.ocrSearchHits
-        : (asset?.ocrSearchHit ? [asset.ocrSearchHit] : []);
-      const ocrHitClass = effectiveSearchHighlightClass(currentOcrQuery, ocrHitQuery, currentOcrFuzzyUsed);
-      const ocrHit = renderAssetHitList({
-        asset,
-        type: 'ocr',
-        hits: ocrHitsRaw,
-        query: ocrHitQuery,
-        hitClass: ocrHitClass,
-        label: t('ocr_hit')
-      });
-      const ocrPager = renderAssetHitPager({
-        asset,
-        type: 'ocr',
-        requestQuery: currentOcrQuery
-      });
-      const subtitleHitQuery = String(asset?.subtitleSearchHit?.query || currentSubtitleQuery || '').trim();
-      const subtitleHitClass = foldSearchText(subtitleHitQuery) !== foldSearchText(currentSubtitleQuery || '')
-        ? 'search-hit-fuzzy'
-        : 'search-hit';
-      const subtitleHitsRaw = Array.isArray(asset?.subtitleSearchHits) && asset.subtitleSearchHits.length
-        ? asset.subtitleSearchHits
-        : (asset?.subtitleSearchHit ? [asset.subtitleSearchHit] : []);
-      const subtitleHit = renderAssetHitList({
-        asset,
-        type: 'subtitle',
-        hits: subtitleHitsRaw,
-        query: subtitleHitQuery,
-        hitClass: subtitleHitClass,
-        label: t('subtitles')
-      });
-      const subtitlePager = renderAssetHitPager({
-        asset,
-        type: 'subtitle',
-        requestQuery: currentSubtitleQuery
-      });
-      const hitPager = `${subtitlePager}${ocrPager}`;
-      const mediaDuration = (isVideo(asset) || isAudio(asset)) ? escapeHtml(formatDuration(asset.durationSeconds)) : '';
-      const mediaInfoRow = (mediaDuration || hitPager)
-        ? `<div class="asset-meta asset-status-row"><span>${mediaDuration}</span>${hitPager}</div>`
-        : '';
-      return `
-        <article class="asset-card ${selected} ${trashClass} ${styleClass}" data-id="${asset.id}">
-          ${thumbnailMarkup(asset)}
-          <div class="asset-card-body">
-            <h3><span class="type-icon" aria-hidden="true">${assetTypeIcon(asset)}</span> ${highlightMatch(asset.title, currentSearchHighlightQuery, searchHighlightClass)}</h3>
-            <div class="asset-meta">${highlightMatch(asset.type, currentSearchHighlightQuery, searchHighlightClass)} | ${highlightMatch(asset.owner, currentSearchHighlightQuery, searchHighlightClass)}</div>
-            ${mediaInfoRow}
-            ${metadataHits ? `<div class="asset-meta dc-hit-row">${metadataHits}</div>` : ''}
-            ${tagHits ? `<div class="asset-meta dc-hit-row">${tagHits}</div>` : ''}
-            ${dcHits ? `<div class="asset-meta dc-hit-row">${dcHits}</div>` : ''}
-            ${clipHits ? `<div class="asset-meta dc-hit-row">${clipHits}</div>` : ''}
-            ${subtitleHit}
-            ${ocrHit}
-            <div class="asset-meta">${escapeHtml(t('asset_uploaded_at'))}: ${escapeHtml(formatDate(asset.createdAt))}</div>
-            <div class="asset-meta">${escapeHtml(t('asset_updated_at'))}: ${escapeHtml(formatDate(asset.updatedAt))}</div>
-            <div class="chips">
-              ${(asset.tags || []).slice(0, 4).map((tag) => `<button type="button" class="chip chip-tag-filter" data-chip-tag="${escapeHtml(tag)}" style="${tagColorStyle(tag)}">${highlightMatch(tag, currentSearchHighlightQuery, searchHighlightClass)}</button>`).join('')}
-            </div>
-            ${asset.inTrash ? `
-              <div class="card-actions">
-                <button type="button" data-card-action="restore" data-id="${asset.id}">${t('restore')}</button>
-                ${(typeof currentUserCanDeleteAssetInUi === 'function'
-                  ? currentUserCanDeleteAssetInUi(asset)
-                  : (currentUserCanDeleteAssetsRef?.get?.() && asset.canDeleteAsset !== false))
-                  ? `<button type="button" class="danger" data-card-action="delete" data-id="${asset.id}">${t('delete_permanent')}</button>`
-                  : ''}
-              </div>
-            ` : ''}
-          </div>
-        </article>
-      `;
-    })
+    .map((asset) => assetCardRenderer.render(asset, searchState, searchHighlightClass))
     .join('')}${pagerHtml}`;
-  attachAssetListPagerHandlers();
-  assetGrid.querySelectorAll('[data-search-did-you-mean]').forEach((btn) => {
-    btn.addEventListener('click', async (event) => {
-      const type = String(event.currentTarget?.dataset?.searchDidYouMean || '').trim();
-      const suggestion = String(event.currentTarget?.textContent || '').trim();
-      if (!suggestion) return;
-      if (type === 'ocr' && ocrQueryInput) ocrQueryInput.value = suggestion;
-      else if (type === 'subtitle' && subtitleQueryInput) subtitleQueryInput.value = suggestion;
-      else if (type === 'q' && searchQueryInput) searchQueryInput.value = suggestion;
-      await loadAssets();
-    });
-  });
-  assetGrid.querySelectorAll('.asset-hit-page-btn').forEach((btn) => {
-    btn.addEventListener('click', async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const assetId = String(event.currentTarget?.dataset?.id || '').trim();
-      const type = String(event.currentTarget?.dataset?.hitType || '').trim();
-      const query = String(event.currentTarget?.dataset?.hitQuery || '').trim();
-      const offset = Math.max(0, Number(event.currentTarget?.dataset?.hitOffset) || 0);
-      if (!assetId || !query || (type !== 'ocr' && type !== 'subtitle')) return;
-      event.currentTarget.disabled = true;
-      try {
-        const endpoint = type === 'ocr'
-          ? `/api/assets/${encodeURIComponent(assetId)}/video-ocr/search`
-          : `/api/assets/${encodeURIComponent(assetId)}/subtitles/search`;
-        const params = new URLSearchParams({
-          q: query,
-          offset: String(offset),
-          limit: String(assetHitPageSize)
-        });
-        const result = await api(`${endpoint}?${params.toString()}`);
-        const matches = Array.isArray(result.matches) ? result.matches : [];
-        const page = result.page && typeof result.page === 'object'
-          ? result.page
-          : { offset, limit: assetHitPageSize, count: matches.length, hasPrev: offset > 0, hasNext: false, prevOffset: Math.max(0, offset - assetHitPageSize), nextOffset: offset + assetHitPageSize };
-        const assets = currentAssetsRef.get();
-        const asset = assets.find((item) => String(item.id || '') === assetId);
-        if (!asset) return;
-        const highlightQuery = String(result.highlightQuery || page.query || query).trim() || query;
-        if (type === 'ocr') {
-          asset.ocrSearchHits = matches.map((item) => ({
-            query: String(item.query || highlightQuery).trim() || highlightQuery,
-            text: String(item.line || item.text || ''),
-            startSec: Number(item.startSec || 0),
-            endSec: Number(item.endSec || 0),
-            startTc: String(item.startTc || secondsToTimecode(Number(item.startSec || 0), PLAYER_FPS))
-          }));
-          asset.ocrSearchPage = { ...page, query: highlightQuery };
-        } else {
-          asset.subtitleSearchHits = matches.map((item) => ({
-            query: String(item.query || highlightQuery).trim() || highlightQuery,
-            text: String(item.text || ''),
-            startSec: Number(item.startSec || 0),
-            endSec: Number(item.endSec || 0),
-            startTc: String(item.startTc || secondsToTimecode(Number(item.startSec || 0), PLAYER_FPS))
-          }));
-          asset.subtitleSearchPage = { ...page, query: highlightQuery };
-        }
-        renderAssets(assets);
-      } catch (_error) {
-        renderAssets(currentAssetsRef.get());
-      }
-    });
-  });
 }
 
 function setSingleSelection(assetId) {
