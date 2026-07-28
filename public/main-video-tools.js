@@ -503,7 +503,7 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     }
     searchResultsEl.innerHTML = `${suggestionHtml}${matches.map((item) => `
       <div class="subtitle-item-row">
-        <span class="subtitle-item-label">[${escapeHtml(String(item.startTc || '').slice(0, 12))}] ${highlightMatch(item.text || '', highlightQuery, highlightClass)}</span>
+        <span class="subtitle-item-label"><span class="subtitle-item-tc">[${escapeHtml(String(item.startTc || '').slice(0, 12))}]</span> ${highlightMatch(item.text || '', highlightQuery, highlightClass)}</span>
         <button type="button" class="subtitle-item-use-btn" data-jump-sec="${escapeHtml(String(item.startSec || 0))}">${t('subtitle_jump')}</button>
       </div>
     `).join('')}`;
@@ -515,6 +515,7 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     searchResultsEl.querySelectorAll('.subtitle-item-use-btn').forEach((btn) => {
       if (btn.hasAttribute('data-subtitle-did-you-mean')) return;
       btn.addEventListener('click', (event) => {
+        event.currentTarget.closest('.subtitle-item-row')?.classList.add('is-active');
         const sec = Number(event.currentTarget?.dataset?.jumpSec || 0);
         const video = mediaEl || root.querySelector('#assetVideo') || document.querySelector('#assetVideo');
         if (!video || !Number.isFinite(sec)) return;
