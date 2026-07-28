@@ -948,30 +948,32 @@ body {
   margin-top: -4px;
 }
 
-.content-editor-tc-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-height: 28px;
-  margin-top: 6px;
+.content-editor-source {
+  display: none;
 }
 
-.content-editor-tc {
-  width: auto;
-  min-height: 28px;
-  padding: 4px 8px;
-  border: 1px solid #a87922;
-  border-radius: 6px;
-  background: #e2a63b;
-  color: #172033;
-  font: 700 12px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+.content-editor-rich-area {
+  min-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #f7f9ff;
+  color: #121826;
+  border: 1px solid #aab8d6;
+  border-radius: 8px;
+  padding: 10px;
+  font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  outline: none;
+}
+
+.content-editor-inline-tc {
+  color: #e2a63b;
+  font-weight: 700;
   cursor: pointer;
 }
 
-.content-editor-tc.active {
-  border-color: #168b63;
-  background: #35d39b;
-  color: #10231d;
+.content-editor-inline-tc.active {
+  color: #168b63;
 }
 
 .content-modal-audio-tc strong {

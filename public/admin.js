@@ -1283,10 +1283,10 @@ function openTextEditorModal({
           <button type="button" id="contentEditorFindNextBtn">${escapeHtml(t('find_next'))}</button>
           <button type="button" id="contentEditorReplaceAllBtn">${escapeHtml(t('replace_all'))}</button>
         </div>
-        <div id="contentEditorTcList" class="content-editor-tc-list" aria-label="Timecodes"></div>
         <div id="contentEditorSaveMsg" class="content-modal-save-msg"></div>
         <div class="content-modal-layout">
-          <textarea id="contentEditorArea"></textarea>
+          <textarea id="contentEditorArea" class="content-editor-source" aria-hidden="true" tabindex="-1"></textarea>
+          <div id="contentEditorRichArea" class="content-editor-rich-area" contenteditable="true" role="textbox" aria-multiline="true"></div>
           <aside class="content-modal-side">
             <h5>${escapeHtml(t('learned_corrections_title'))}</h5>
             <div class="content-modal-side-grid">
@@ -1323,42 +1323,35 @@ function openTextEditorModal({
     const audioDuration = backdrop.querySelector('#contentEditorAudioDuration');
     const videoEl = backdrop.querySelector('#contentEditorVideo');
     const videoTc = backdrop.querySelector('#contentEditorVideoTc');
-    const tcList = backdrop.querySelector('#contentEditorTcList');
+    const richArea = backdrop.querySelector('#contentEditorRichArea');
     if (area) {
       area.value = contentTimecodeMode === 'frames'
         ? convertContentTimecodesToFrames(content)
         : String(content || '');
     }
-    const renderEditorTimecodes = () => {
-      if (!tcList) return;
-      const values = Array.from(new Set(String(area?.value || '').match(/\b\d{2}:\d{2}:\d{2}(?:[.,:]\d{2,3})?\b/g) || []));
-      tcList.innerHTML = values.length
-        ? values.map((value) => `<button type="button" class="content-editor-tc" data-editor-tc="${escapeHtml(value)}">${escapeHtml(value)}</button>`).join('')
-        : '';
+    const renderRichEditor = (value) => {
+      if (!richArea) return;
+      const escaped = escapeHtml(String(value || ''));
+      richArea.innerHTML = escaped.replace(/\b\d{2}:\d{2}:\d{2}(?:[.,:]\d{2,3})?\b/g, (token) => `<span class="content-editor-inline-tc" data-editor-tc="${escapeHtml(token)}">${escapeHtml(token)}</span>`);
     };
-    renderEditorTimecodes();
-    area?.addEventListener('input', renderEditorTimecodes);
-    tcList?.addEventListener('click', (event) => {
+    renderRichEditor(area?.value || '');
+    richArea?.addEventListener('input', () => {
+      if (area) area.value = richArea.textContent || '';
+    });
+    richArea?.addEventListener('click', (event) => {
       const button = event.target.closest('[data-editor-tc]');
       if (!button) return;
       const token = String(button.dataset.editorTc || '').trim();
       const sec = parseEditorTcToSec(token);
       if (!Number.isFinite(sec)) return;
-      tcList.querySelectorAll('.content-editor-tc').forEach((item) => item.classList.toggle('active', item === button));
+      richArea.querySelectorAll('.content-editor-inline-tc').forEach((item) => item.classList.toggle('active', item === button));
       const mediaEl = audioEl || videoEl;
       if (mediaEl) {
         mediaEl.currentTime = Math.max(0, sec);
         if (mediaEl === audioEl) audioTc && (audioTc.textContent = formatEditorTc(sec));
         if (mediaEl === videoEl) videoTc && (videoTc.textContent = formatEditorTc(sec));
       }
-      if (area) {
-        const index = String(area.value || '').indexOf(token);
-        if (index >= 0) {
-          area.focus();
-          area.setSelectionRange(index, index + token.length);
-          scrollSelectionIntoView(index);
-        }
-      }
+      button.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     });
     let lastFindPos = 0;
     let lastFindQuery = '';
@@ -1419,6 +1412,7 @@ function openTextEditorModal({
         cursor = idx + foldedQuery.length;
       }
       area.value = out;
+      renderRichEditor(out);
     };
 
     const applyReplacementToArea = (wrong, correct) => {
@@ -1429,6 +1423,7 @@ function openTextEditorModal({
       const escaped = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const rx = new RegExp(escaped, 'giu');
       area.value = String(area.value || '').replace(rx, c);
+      renderRichEditor(area.value);
     };
 
     const renderLcRows = (entries) => {
@@ -1462,7 +1457,13 @@ function openTextEditorModal({
     };
 
     backdrop.querySelector('#contentEditorLcUseSelection')?.addEventListener('click', () => {
-      if (!area || !lcWrongInput) return;
+      if (!lcWrongInput) return;
+      if (richArea) {
+        const selected = String(window.getSelection()?.toString() || '').trim();
+        if (selected) lcWrongInput.value = selected;
+        return;
+      }
+      if (!area) return;
       const start = Number(area.selectionStart || 0);
       const end = Number(area.selectionEnd || 0);
       if (end <= start) return;
