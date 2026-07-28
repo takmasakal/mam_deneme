@@ -515,7 +515,6 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     searchResultsEl.querySelectorAll('.subtitle-item-use-btn').forEach((btn) => {
       if (btn.hasAttribute('data-subtitle-did-you-mean')) return;
       btn.addEventListener('click', (event) => {
-        event.currentTarget.closest('.subtitle-item-row')?.classList.add('is-active');
         const sec = Number(event.currentTarget?.dataset?.jumpSec || 0);
         const video = mediaEl || root.querySelector('#assetVideo') || document.querySelector('#assetVideo');
         if (!video || !Number.isFinite(sec)) return;

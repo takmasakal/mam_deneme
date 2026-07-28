@@ -929,17 +929,6 @@ button:hover {
   font-weight: 700;
 }
 
-.ocr-hit-jump.is-active,
-.subtitle-item-row.is-active {
-  border-color: #49d39a;
-  box-shadow: inset 0 0 0 1px #49d39a55;
-}
-
-.ocr-hit-jump.is-active .dc-hit-tc,
-.subtitle-item-row.is-active .subtitle-item-tc {
-  color: #49d39a;
-}
-
 .dc-hit {
   display: inline-flex;
   gap: 4px;

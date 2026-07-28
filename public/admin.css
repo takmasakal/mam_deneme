@@ -955,6 +955,32 @@ body {
   margin-top: -4px;
 }
 
+.content-editor-tc-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+  margin-top: 6px;
+}
+
+.content-editor-tc {
+  width: auto;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid #a87922;
+  border-radius: 6px;
+  background: #e2a63b;
+  color: #172033;
+  font: 700 12px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  cursor: pointer;
+}
+
+.content-editor-tc.active {
+  border-color: #168b63;
+  background: #35d39b;
+  color: #10231d;
+}
+
 .content-modal-audio-tc strong {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   color: #f3f7ff;
