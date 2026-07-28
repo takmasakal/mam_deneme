@@ -297,6 +297,18 @@ function registerTextProcessingRoutes(app, deps) {
       if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
         return res.status(400).json({ error: 'OCR extraction is supported only for video assets' });
       }
+      const rawOcrStartSec = req.body?.ocrStartSec;
+      const rawOcrEndSec = req.body?.ocrEndSec;
+      const ocrStartSec = rawOcrStartSec !== null && rawOcrStartSec !== undefined && String(rawOcrStartSec).trim() !== '' && Number.isFinite(Number(rawOcrStartSec))
+        ? Math.max(0, Number(rawOcrStartSec))
+        : null;
+      const ocrEndSec = rawOcrEndSec !== null && rawOcrEndSec !== undefined && String(rawOcrEndSec).trim() !== '' && Number.isFinite(Number(rawOcrEndSec))
+        ? Math.max(0, Number(rawOcrEndSec))
+        : null;
+      if ((ocrStartSec === null) !== (ocrEndSec === null)
+        || (ocrStartSec !== null && ocrEndSec !== null && ocrEndSec <= ocrStartSec)) {
+        return res.status(400).json({ error: "OCR range is invalid. 'ocrEndSec' must be greater than 'ocrStartSec'." });
+      }
   
       const job = queueVideoOcrJob(row, {
         intervalSec: req.body?.intervalSec,
@@ -316,6 +328,8 @@ function registerTextProcessingRoutes(app, deps) {
         ignorePhrases: req.body?.ignorePhrases,
         minDisplaySec: req.body?.minDisplaySec,
         mergeGapSec: req.body?.mergeGapSec,
+        ocrStartSec,
+        ocrEndSec,
         enableSceneSampling: req.body?.enableSceneSampling,
         sceneThreshold: req.body?.sceneThreshold,
         maxSceneFrames: req.body?.maxSceneFrames,
@@ -342,6 +356,8 @@ function registerTextProcessingRoutes(app, deps) {
         ignorePhrases: job.ignorePhrases,
         minDisplaySec: job.minDisplaySec,
         mergeGapSec: job.mergeGapSec,
+        ocrStartSec: job.ocrStartSec,
+        ocrEndSec: job.ocrEndSec,
         enableSceneSampling: job.enableSceneSampling,
         sceneThreshold: job.sceneThreshold,
         maxSceneFrames: job.maxSceneFrames,

@@ -869,6 +869,11 @@ function initVideoOcrTools(asset, root = document) {
   const statusEl = byId('videoOcrStatus');
   const busyEl = byId('videoOcrBusy');
   const intervalInput = byId('videoOcrIntervalInput');
+  const rangeModeSelect = byId('videoOcrRangeModeSelect');
+  const rangeInWrap = byId('videoOcrRangeInWrap');
+  const rangeInInput = byId('videoOcrRangeInInput');
+  const rangeOutWrap = byId('videoOcrRangeOutWrap');
+  const rangeOutInput = byId('videoOcrRangeOutInput');
   const langInput = byId('videoOcrLangInput');
   const presetSelect = byId('videoOcrPresetSelect');
   const labelInput = byId('videoOcrLabelInput');
@@ -890,6 +895,11 @@ function initVideoOcrTools(asset, root = document) {
   if (!statusEl
     || !busyEl
     || !intervalInput
+    || !rangeModeSelect
+    || !rangeInWrap
+    || !rangeInInput
+    || !rangeOutWrap
+    || !rangeOutInput
     || !langInput
     || !presetSelect
     || !labelInput
@@ -915,6 +925,9 @@ function initVideoOcrTools(asset, root = document) {
     busyEl.classList.toggle('hidden', !busy);
     extractBtn.disabled = busy;
     intervalInput.disabled = busy;
+    rangeModeSelect.disabled = busy;
+    rangeInInput.disabled = busy || String(rangeModeSelect.value || 'full') !== 'manual';
+    rangeOutInput.disabled = busy || String(rangeModeSelect.value || 'full') !== 'manual';
     langInput.disabled = busy;
     presetSelect.disabled = busy;
     labelInput.disabled = busy;
@@ -1062,6 +1075,41 @@ function initVideoOcrTools(asset, root = document) {
     minDisplayInput.value = '8';
     mergeGapInput.value = '4';
   };
+  const isManualRange = () => String(rangeModeSelect.value || 'full').trim() === 'manual';
+  const parseTimecodeSeconds = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    if (/^\d+(?:\.\d+)?$/.test(raw)) return Number(raw);
+    const parts = raw.split(':').map((part) => Number(part));
+    if (parts.some((part) => !Number.isFinite(part)) || (parts.length !== 3 && parts.length !== 4)) return null;
+    if (parts.length === 4) {
+      const [hours, minutes, seconds, frames] = parts;
+      if (minutes >= 60 || seconds >= 60 || frames < 0) return null;
+      return (hours * 3600) + (minutes * 60) + seconds + (frames / 25);
+    }
+    const [hours, minutes, seconds] = parts;
+    if (minutes >= 60 || seconds >= 60) return null;
+    return (hours * 3600) + (minutes * 60) + seconds;
+  };
+  const updateRangeUi = () => {
+    const visible = isManualRange();
+    rangeInWrap.classList.toggle('hidden', !visible);
+    rangeOutWrap.classList.toggle('hidden', !visible);
+    rangeInInput.disabled = !visible;
+    rangeOutInput.disabled = !visible;
+  };
+  const parseRangeSeconds = () => {
+    if (!isManualRange()) return { startSec: null, endSec: null };
+    const startSec = parseTimecodeSeconds(rangeInInput.value);
+    const endSec = parseTimecodeSeconds(rangeOutInput.value);
+    if (!Number.isFinite(startSec) || startSec < 0) {
+      throw new Error(t('video_ocr_range_invalid'));
+    }
+    if (!Number.isFinite(endSec) || endSec <= startSec) {
+      throw new Error(t('video_ocr_range_order'));
+    }
+    return { startSec, endSec };
+  };
   const applyJobStatus = (job, options = {}) => {
     const status = String(job?.status || '').trim();
     if (status === 'failed') {
@@ -1151,6 +1199,7 @@ function initVideoOcrTools(asset, root = document) {
     setBusy(true);
     setStatus(t('video_ocr_running'));
     try {
+      const { startSec, endSec } = parseRangeSeconds();
       const queued = await api(`/api/assets/${asset.id}/video-ocr/extract`, {
         method: 'POST',
         body: JSON.stringify({
@@ -1169,7 +1218,9 @@ function initVideoOcrTools(asset, root = document) {
           ignoreStaticOverlays: Boolean(staticFilterCheck.checked),
           ignorePhrases: String(ignorePhrasesInput.value || '').trim(),
           minDisplaySec: Number(minDisplayInput.value || 8),
-          mergeGapSec: Number(mergeGapInput.value || 4)
+          mergeGapSec: Number(mergeGapInput.value || 4),
+          ocrStartSec: startSec,
+          ocrEndSec: endSec
         })
       });
       watchJob(queued.jobId);
@@ -1179,18 +1230,22 @@ function initVideoOcrTools(asset, root = document) {
       setBusy(false);
     }
   };
+  const onRangeModeChange = () => updateRangeUi();
 
   extractBtn.addEventListener('click', onExtract);
+  rangeModeSelect.addEventListener('change', onRangeModeChange);
   presetSelect.addEventListener('change', applyPresetDefaults);
   setStatus('');
   setDownload('');
   renderOcrItems();
   applyPresetDefaults();
+  updateRangeUi();
   restoreLatest();
 
   return () => {
     disposed = true;
     extractBtn.removeEventListener('click', onExtract);
+    rangeModeSelect.removeEventListener('change', onRangeModeChange);
     presetSelect.removeEventListener('change', applyPresetDefaults);
   };
 }

@@ -2004,7 +2004,10 @@ async function detectSceneChangeTimes(inputPath, options = {}) {
     '-'
   ]);
   const rawLog = `${String(run.stderr || '')}\n${String(run.stdout || '')}`;
-  const parsed = parseSceneTimesFromFfmpegLog(rawLog);
+  const rangeStartSec = Number.isFinite(Number(options.rangeStartSec)) ? Math.max(0, Number(options.rangeStartSec)) : null;
+  const rangeEndSec = Number.isFinite(Number(options.rangeEndSec)) ? Math.max(0, Number(options.rangeEndSec)) : null;
+  const parsed = parseSceneTimesFromFfmpegLog(rawLog)
+    .filter((sec) => rangeStartSec === null || rangeEndSec === null || (sec >= rangeStartSec && sec < rangeEndSec));
   if (!parsed.length) return [];
   const selected = [];
   for (const sec of parsed) {
@@ -3073,6 +3076,8 @@ function buildVideoOcrDbRequestPayload(job) {
     ignorePhrases: String(job.ignorePhrases || ''),
     minDisplaySec: Number(job.minDisplaySec || 0),
     mergeGapSec: Number(job.mergeGapSec || 0),
+    ocrStartSec: normalizeOptionalOcrSecond(job.ocrStartSec),
+    ocrEndSec: normalizeOptionalOcrSecond(job.ocrEndSec),
     enableSceneSampling: Boolean(job.enableSceneSampling),
     sceneThreshold: Number(job.sceneThreshold || 0),
     maxSceneFrames: Number(job.maxSceneFrames || 0),
@@ -3138,6 +3143,8 @@ function mapVideoOcrJobFromDbRow(row) {
     keptSceneFrames: Number(result.keptSceneFrames || 0),
     minDisplaySec: Number(request.minDisplaySec || 0),
     mergeGapSec: Number(request.mergeGapSec || 0),
+    ocrStartSec: normalizeOptionalOcrSecond(request.ocrStartSec),
+    ocrEndSec: normalizeOptionalOcrSecond(request.ocrEndSec),
     enableSceneSampling: Boolean(request.enableSceneSampling),
     sceneThreshold: Number(request.sceneThreshold || 0),
     maxSceneFrames: Number(request.maxSceneFrames || 0),
@@ -5161,6 +5168,13 @@ async function prepareAudioInputForTranscription(inputPath, options = {}) {
 
 async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
   const intervalSec = Math.max(1, Math.min(30, Number(options.intervalSec) || 4));
+  const rangeStartSec = Number.isFinite(Number(options.ocrStartSec))
+    ? Math.max(0, Number(options.ocrStartSec))
+    : null;
+  const rangeEndSec = Number.isFinite(Number(options.ocrEndSec))
+    ? Math.max(0, Number(options.ocrEndSec))
+    : null;
+  const hasRange = rangeStartSec !== null && rangeEndSec !== null && rangeEndSec > rangeStartSec;
   const ocrLang = String(options.ocrLang || 'eng+tur').trim() || 'eng+tur';
   const ocrEngine = normalizeOcrEngine(options.ocrEngine);
   const ocrPreset = normalizeOcrPreset(options.ocrPreset);
@@ -5196,7 +5210,7 @@ async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
   const workDir = String(options.workDir || '').trim() || createOcrFrameWorkDir();
   fs.mkdirSync(workDir, { recursive: true });
   cleanupOcrFrameCache();
-  const cacheRestore = restoreOcrFramesFromCache({
+  const cacheRestore = hasRange ? { restored: false } : restoreOcrFramesFromCache({
     assetId,
     intervalSec,
     workDir,
@@ -5207,18 +5221,22 @@ async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
   let usedFrameCache = Boolean(cacheRestore.restored);
   if (!cacheRestore.restored) {
     const framePattern = path.join(workDir, 'frame-%06d.jpg');
-    const ffmpeg = await runCommandCapture('ffmpeg', [
+    const ffmpegArgs = [
       '-hide_banner',
       '-loglevel',
       'error',
-      '-i',
-      inputPath,
+    ];
+    if (hasRange) ffmpegArgs.push('-ss', rangeStartSec.toFixed(3));
+    ffmpegArgs.push('-i', inputPath);
+    if (hasRange) ffmpegArgs.push('-t', (rangeEndSec - rangeStartSec).toFixed(3));
+    ffmpegArgs.push(
       '-vf',
       buildOcrFrameFilter(intervalSec, preprocessProfile),
       '-q:v',
       '3',
       framePattern
-    ]);
+    );
+    const ffmpeg = await runCommandCapture('ffmpeg', ffmpegArgs);
     if (!ffmpeg.ok) throw new Error(String(ffmpeg.stderr || 'Could not sample video frames'));
 
     const sampledSceneTimes = enableSceneSampling
@@ -5226,7 +5244,9 @@ async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
         intervalSec,
         sceneThreshold,
         maxSceneFrames,
-        sceneMinGapSec
+        sceneMinGapSec,
+        rangeStartSec,
+        rangeEndSec
       })
       : [];
     sceneFrames = enableSceneSampling
@@ -5272,7 +5292,11 @@ async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
     tickerMap: prep.tickerMap
   });
 
-  const frameEntriesRaw = Array.isArray(result.frameEntries) ? result.frameEntries : [];
+  const frameEntriesRaw = (Array.isArray(result.frameEntries) ? result.frameEntries : [])
+    .map((item) => {
+      if (!hasRange || isSceneFrameName(item?.frame)) return item;
+      return { ...item, sec: Number(item.sec || 0) + rangeStartSec };
+    });
   const correctedEntries = turkishAiCorrect
     ? applyTurkishCorrectionToEntries(frameEntriesRaw, { useZemberekLexicon })
     : frameEntriesRaw;
@@ -5644,9 +5668,21 @@ function wordsToSimpleLine(words = []) {
     .filter(Boolean);
 }
 
+function normalizeOptionalOcrSecond(value) {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : null;
+}
+
 function queueVideoOcrJob(row, options = {}) {
   const jobId = nanoid();
   const intervalSec = Math.max(1, Math.min(30, Number(options.intervalSec) || 4));
+  const requestedOcrStartSec = normalizeOptionalOcrSecond(options.ocrStartSec);
+  const requestedOcrEndSec = normalizeOptionalOcrSecond(options.ocrEndSec);
+  if ((requestedOcrStartSec === null) !== (requestedOcrEndSec === null)
+    || (requestedOcrStartSec !== null && requestedOcrEndSec !== null && requestedOcrEndSec <= requestedOcrStartSec)) {
+    throw new Error("OCR range is invalid. 'ocrEndSec' must be greater than 'ocrStartSec'.");
+  }
   const ocrLang = String(options.ocrLang || 'eng+tur').trim() || 'eng+tur';
   const existingDc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
   const nextVersion = sanitizeVideoOcrItems(existingDc.videoOcrItems).length + 1;
@@ -5713,6 +5749,8 @@ function queueVideoOcrJob(row, options = {}) {
     skippedBlur: 0,
     minDisplaySec,
     mergeGapSec,
+    ocrStartSec: requestedOcrStartSec,
+    ocrEndSec: requestedOcrEndSec,
     enableSceneSampling,
     sceneThreshold,
     maxSceneFrames,
@@ -5794,6 +5832,8 @@ function queueVideoOcrJob(row, options = {}) {
         ignorePhrases,
         minDisplaySec,
         mergeGapSec,
+        ocrStartSec: running.ocrStartSec,
+        ocrEndSec: running.ocrEndSec,
         enableSceneSampling,
         sceneThreshold,
         maxSceneFrames,
