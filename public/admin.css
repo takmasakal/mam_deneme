@@ -872,6 +872,7 @@ body {
 
 .content-modal {
   width: min(1120px, 97vw);
+  height: min(92vh, 980px);
   max-height: min(92vh, 980px);
   overflow: hidden;
   background: #1f2432;
@@ -879,7 +880,7 @@ body {
   border-radius: 12px;
   padding: 12px;
   display: grid;
-  grid-template-rows: auto;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
   gap: 10px;
 }
 
@@ -960,7 +961,8 @@ body {
 }
 
 .content-editor-rich-area {
-  height: min(42vh, 520px);
+  height: 100%;
+  max-height: none;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
@@ -1165,6 +1167,8 @@ body {
   flex-wrap: wrap;
   padding-top: 4px;
   background: transparent;
+  position: relative;
+  z-index: 2;
 }
 
 .content-modal-actions button {
