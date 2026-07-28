@@ -8,7 +8,8 @@
       PLAYER_FPS,
       selectedAssetIdRef,
       subtitleStyleRef,
-      currentSubtitleQueryRef
+      currentSubtitleQueryRef,
+      technicalInfoStore
     } = deps || {};
     const nativeCuePositionBoundTracks = new WeakSet();
     const nativeSubtitleObjectUrls = new WeakMap();
@@ -415,7 +416,9 @@
       if (!bodyEl) return;
       bodyEl.textContent = t('tech_loading');
       try {
-        const payload = await api(`/api/assets/${asset.id}/technical`);
+        const payload = technicalInfoStore
+          ? await technicalInfoStore.get(asset)
+          : await api(`/api/assets/${asset.id}/technical`);
         if (selectedAssetIdRef?.get?.() !== asset.id) return;
         bodyEl.innerHTML = renderTechnicalInfoSection(payload);
         initTechnicalTabs(bodyEl);
