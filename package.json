@@ -7,6 +7,15 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "check": "sh scripts/check.sh",
+    "test:asset-query": "node scripts/test_asset_list_query_service.js",
+    "test:main-asset-card": "node scripts/test_main_asset_card.js",
+    "test:main-asset-grid-events": "node scripts/test_main_asset_grid_events.js",
+    "test:main-assets-search-meta": "node scripts/test_main_assets_search_meta.js",
+    "test:main-bootstrap": "node scripts/test_main_bootstrap.js",
+    "test:main-workflow-store": "node scripts/test_main_workflow_store.js",
+    "test:main-detail-version-actions": "node scripts/test_main_detail_version_actions.js",
+    "test:main-detail-asset-actions": "node scripts/test_main_detail_asset_actions.js",
+    "test:main-detail-request-coordinator": "node scripts/test_main_detail_request_coordinator.js",
     "sync-login-version": "node scripts/sync-login-version.js"
   },
   "dependencies": {

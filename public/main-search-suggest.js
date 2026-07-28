@@ -2,6 +2,7 @@
   function createMainSearchSuggestModule(deps) {
     const {
       api,
+      getWorkflow,
       t,
       escapeHtml,
       highlightMatch,
@@ -184,7 +185,7 @@
       const startAtSeconds = Math.max(0, Number(item.startSec || 0));
       if (id) {
         setSingleSelection(id);
-        const workflow = await api('/api/workflow');
+        const workflow = await getWorkflow();
         await openAsset(id, workflow, { startAtSeconds });
         return;
       }
@@ -278,7 +279,7 @@
       const startAtSeconds = Math.max(0, Number(item.startSec || 0));
       if (id) {
         setSingleSelection(id);
-        const workflow = await api('/api/workflow');
+        const workflow = await getWorkflow();
         await openAsset(id, workflow, { startAtSeconds });
         return;
       }

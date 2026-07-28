@@ -2,6 +2,7 @@
   function createMainAssetsModule(deps) {
     const {
       api,
+      getWorkflow,
       escapeHtml,
       t,
       statusSelect,
@@ -34,7 +35,7 @@
     }
 
     async function loadWorkflow() {
-      const workflow = await api('/api/workflow');
+      const workflow = await getWorkflow();
       statusSelect.innerHTML = `<option value="">${escapeHtml(t('any_status'))}</option>`;
       workflow.forEach((status) => {
         const option = document.createElement('option');
@@ -66,6 +67,8 @@
       searchStateRef.currentOcrHighlightQuery = searchStateRef.currentOcrQuery;
       searchStateRef.currentOcrDidYouMean = '';
       searchStateRef.currentOcrFuzzyUsed = false;
+      searchStateRef.currentSubtitleDidYouMean = '';
+      searchStateRef.currentSubtitleFuzzyUsed = false;
 
       if (selectedTypes.length === 0) {
         if (!searchStateRef.currentSearchQuery && !searchStateRef.currentOcrQuery && !searchStateRef.currentSubtitleQuery && !hasAdvancedSearch) {
@@ -125,12 +128,17 @@
       }
       const qMeta = payload.searchMeta?.q && typeof payload.searchMeta.q === 'object' ? payload.searchMeta.q : null;
       const ocrMeta = payload.searchMeta?.ocrQ && typeof payload.searchMeta.ocrQ === 'object' ? payload.searchMeta.ocrQ : null;
+      const subtitleMeta = payload.searchMeta?.subtitleQ && typeof payload.searchMeta.subtitleQ === 'object'
+        ? payload.searchMeta.subtitleQ
+        : null;
       searchStateRef.currentSearchHighlightQuery = String(qMeta?.highlightQuery || searchStateRef.currentSearchQuery).trim() || searchStateRef.currentSearchQuery;
       searchStateRef.currentSearchDidYouMean = String(qMeta?.didYouMean || '').trim();
       searchStateRef.currentSearchFuzzyUsed = Boolean(qMeta?.fuzzyUsed);
       searchStateRef.currentOcrHighlightQuery = String(ocrMeta?.highlightQuery || searchStateRef.currentOcrQuery).trim() || searchStateRef.currentOcrQuery;
       searchStateRef.currentOcrDidYouMean = String(ocrMeta?.didYouMean || '').trim();
       searchStateRef.currentOcrFuzzyUsed = Boolean(ocrMeta?.fuzzyUsed);
+      searchStateRef.currentSubtitleDidYouMean = String(subtitleMeta?.didYouMean || '').trim();
+      searchStateRef.currentSubtitleFuzzyUsed = Boolean(subtitleMeta?.fuzzyUsed);
       const visibleIds = new Set(currentAssetsRef.value.map((asset) => asset.id));
       [...selectedAssetIdsRef.value].forEach((id) => {
         if (!visibleIds.has(id)) selectedAssetIdsRef.value.delete(id);
@@ -148,4 +156,7 @@
   }
 
   global.createMainAssetsModule = createMainAssetsModule;
-})(window);
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { createMainAssetsModule };
+  }
+})(typeof window !== 'undefined' ? window : globalThis);
