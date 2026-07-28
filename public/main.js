@@ -2876,7 +2876,6 @@ assetGrid.addEventListener('click', async (event) => {
   if (ocrJumpBtn) {
     event.preventDefault();
     event.stopPropagation();
-    ocrJumpBtn.classList.add('is-active');
     const id = String(ocrJumpBtn.dataset.id || '').trim();
     const startAtSeconds = Math.max(0, Number(ocrJumpBtn.dataset.startSec || 0));
     if (!id) return;
