@@ -593,11 +593,11 @@ function registerAssetRoutes(app, deps) {
                 .some((item) => normalizeForSearch(item) === folded));
             }
             if (field === 'type') {
-              const folded = value.toLowerCase();
+              const foldedTypes = new Set(value.toLowerCase().split(',').map((item) => item.trim()).filter(Boolean));
               return candidates.filter((row) => {
                 const rowType = String(row.type || '').toLowerCase();
                 const canonical = rowType === 'image' ? 'photo' : (rowType === 'file' ? 'other' : rowType);
-                return canonical === folded;
+                return foldedTypes.has(canonical);
               });
             }
             if (field === 'ocrQ') {
