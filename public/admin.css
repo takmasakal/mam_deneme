@@ -873,7 +873,7 @@ body {
 .content-modal {
   width: min(1120px, 97vw);
   max-height: min(92vh, 980px);
-  overflow: auto;
+  overflow: hidden;
   background: #1f2432;
   border: 1px solid #4a5b7f;
   border-radius: 12px;
@@ -960,8 +960,10 @@ body {
 }
 
 .content-editor-rich-area {
-  min-height: 320px;
-  overflow: auto;
+  height: min(42vh, 520px);
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   white-space: pre-wrap;
   word-break: break-word;
   background: #f7f9ff;
@@ -1030,6 +1032,7 @@ body {
   grid-template-columns: minmax(460px, 1fr) 280px;
   gap: 8px;
   min-height: 0;
+  overflow: hidden;
   align-items: stretch;
 }
 
