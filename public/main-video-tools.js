@@ -1095,10 +1095,10 @@ function initVideoOcrTools(asset, root = document) {
     const startSec = parseTimecodeSeconds(rangeInInput.value);
     const endSec = parseTimecodeSeconds(rangeOutInput.value);
     if (!Number.isFinite(startSec) || startSec < 0) {
-      throw new Error(`${t('video_ocr_range_in')} gecersiz. Ornek: 00:00:10:00`);
+      throw new Error(t('video_ocr_range_invalid'));
     }
     if (!Number.isFinite(endSec) || endSec <= startSec) {
-      throw new Error(`${t('video_ocr_range_out')} > ${t('video_ocr_range_in')} olmali.`);
+      throw new Error(t('video_ocr_range_order'));
     }
     return { startSec, endSec };
   };

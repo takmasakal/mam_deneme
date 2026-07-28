@@ -298,11 +298,13 @@ function registerTextProcessingRoutes(app, deps) {
       if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
         return res.status(400).json({ error: 'OCR extraction is supported only for video assets' });
       }
-      const ocrStartSec = Number.isFinite(Number(req.body?.ocrStartSec))
-        ? Math.max(0, Number(req.body.ocrStartSec))
+      const rawOcrStartSec = req.body?.ocrStartSec;
+      const rawOcrEndSec = req.body?.ocrEndSec;
+      const ocrStartSec = rawOcrStartSec !== null && rawOcrStartSec !== undefined && String(rawOcrStartSec).trim() !== '' && Number.isFinite(Number(rawOcrStartSec))
+        ? Math.max(0, Number(rawOcrStartSec))
         : null;
-      const ocrEndSec = Number.isFinite(Number(req.body?.ocrEndSec))
-        ? Math.max(0, Number(req.body.ocrEndSec))
+      const ocrEndSec = rawOcrEndSec !== null && rawOcrEndSec !== undefined && String(rawOcrEndSec).trim() !== '' && Number.isFinite(Number(rawOcrEndSec))
+        ? Math.max(0, Number(rawOcrEndSec))
         : null;
       if ((ocrStartSec === null) !== (ocrEndSec === null)
         || (ocrStartSec !== null && ocrEndSec !== null && ocrEndSec <= ocrStartSec)) {

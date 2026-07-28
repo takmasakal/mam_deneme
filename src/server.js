@@ -3059,8 +3059,8 @@ function buildVideoOcrDbRequestPayload(job) {
     ignorePhrases: String(job.ignorePhrases || ''),
     minDisplaySec: Number(job.minDisplaySec || 0),
     mergeGapSec: Number(job.mergeGapSec || 0),
-    ocrStartSec: Number.isFinite(Number(job.ocrStartSec)) ? Number(job.ocrStartSec) : null,
-    ocrEndSec: Number.isFinite(Number(job.ocrEndSec)) ? Number(job.ocrEndSec) : null,
+    ocrStartSec: normalizeOptionalOcrSecond(job.ocrStartSec),
+    ocrEndSec: normalizeOptionalOcrSecond(job.ocrEndSec),
     enableSceneSampling: Boolean(job.enableSceneSampling),
     sceneThreshold: Number(job.sceneThreshold || 0),
     maxSceneFrames: Number(job.maxSceneFrames || 0),
@@ -3126,8 +3126,8 @@ function mapVideoOcrJobFromDbRow(row) {
     keptSceneFrames: Number(result.keptSceneFrames || 0),
     minDisplaySec: Number(request.minDisplaySec || 0),
     mergeGapSec: Number(request.mergeGapSec || 0),
-    ocrStartSec: Number.isFinite(Number(request.ocrStartSec)) ? Number(request.ocrStartSec) : null,
-    ocrEndSec: Number.isFinite(Number(request.ocrEndSec)) ? Number(request.ocrEndSec) : null,
+    ocrStartSec: normalizeOptionalOcrSecond(request.ocrStartSec),
+    ocrEndSec: normalizeOptionalOcrSecond(request.ocrEndSec),
     enableSceneSampling: Boolean(request.enableSceneSampling),
     sceneThreshold: Number(request.sceneThreshold || 0),
     maxSceneFrames: Number(request.maxSceneFrames || 0),
@@ -5633,15 +5633,17 @@ function wordsToSimpleLine(words = []) {
     .filter(Boolean);
 }
 
+function normalizeOptionalOcrSecond(value) {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : null;
+}
+
 function queueVideoOcrJob(row, options = {}) {
   const jobId = nanoid();
   const intervalSec = Math.max(1, Math.min(30, Number(options.intervalSec) || 4));
-  const requestedOcrStartSec = Number.isFinite(Number(options.ocrStartSec))
-    ? Math.max(0, Number(options.ocrStartSec))
-    : null;
-  const requestedOcrEndSec = Number.isFinite(Number(options.ocrEndSec))
-    ? Math.max(0, Number(options.ocrEndSec))
-    : null;
+  const requestedOcrStartSec = normalizeOptionalOcrSecond(options.ocrStartSec);
+  const requestedOcrEndSec = normalizeOptionalOcrSecond(options.ocrEndSec);
   if ((requestedOcrStartSec === null) !== (requestedOcrEndSec === null)
     || (requestedOcrStartSec !== null && requestedOcrEndSec !== null && requestedOcrEndSec <= requestedOcrStartSec)) {
     throw new Error("OCR range is invalid. 'ocrEndSec' must be greater than 'ocrStartSec'.");
