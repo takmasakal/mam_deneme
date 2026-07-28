@@ -370,6 +370,100 @@ select.subtitle-lang-input {
   min-width: min(280px, 100%);
 }
 
+/* Keep OCR options compact enough for the stage-to-stage arrows to remain visible. */
+.tool-options-menu-ocr .ocr-flow-diagram {
+  --ocr-stage-width: clamp(232px, 25vw, 280px);
+  --ocr-stage-min: 220px;
+  --ocr-gap: 64px;
+  grid-template-columns: repeat(3, minmax(var(--ocr-stage-min), var(--ocr-stage-width)));
+  justify-content: center;
+  align-items: stretch;
+  gap: var(--ocr-gap);
+  padding: 8px 12px;
+}
+
+.tool-options-menu-ocr .ocr-flow-stage {
+  width: 100%;
+  max-width: var(--ocr-stage-width);
+  border-radius: 10px;
+}
+
+.tool-options-menu-ocr .ocr-flow-stage h5 {
+  padding: 6px 10px;
+}
+
+.tool-options-menu-ocr .ocr-flow-stage-body {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px;
+}
+
+.tool-options-menu-ocr .tool-option-group {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 5px;
+  border-radius: 8px;
+}
+
+.tool-options-menu-ocr .tool-field {
+  min-width: 0;
+  width: 100%;
+}
+
+.tool-options-menu-ocr .tool-field .subtitle-lang-input,
+.tool-options-menu-ocr .tool-field .subtitle-name-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 5px 8px;
+}
+
+.tool-options-menu-ocr .ocr-flow-stage:not(:last-child)::after {
+  left: 100%;
+  width: calc(var(--ocr-gap) - 8px);
+}
+
+.tool-options-menu-ocr .ocr-flow-stage:not(:last-child)::before {
+  left: calc(100% + var(--ocr-gap) - 8px);
+  right: auto;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+@media (max-width: 1440px) {
+  .tool-options-menu-ocr .ocr-flow-diagram {
+    --ocr-stage-width: clamp(216px, 28vw, 250px);
+    --ocr-gap: 40px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .tool-options-menu-ocr .ocr-flow-diagram {
+    --ocr-stage-min: 0;
+    --ocr-gap: 20px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tool-options-menu-ocr .ocr-flow-stage {
+    max-width: none;
+  }
+
+  .tool-options-menu-ocr .ocr-flow-stage::before,
+  .tool-options-menu-ocr .ocr-flow-stage::after {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .tool-options-menu-ocr .ocr-flow-diagram {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}
+
 .subtitle-items {
   display: grid;
   gap: 6px;

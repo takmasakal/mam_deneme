@@ -234,6 +234,9 @@ function mediaViewer(asset, options = {}) {
                     <h5>${t('ocr_stage_process')}</h5>
                     <div class="ocr-flow-stage-body">
                       <label class="tool-field" for="videoOcrIntervalInput"><span>${t('video_ocr_interval')}</span><input id="videoOcrIntervalInput" class="subtitle-lang-input" type="number" min="1" max="30" step="1" value="4" /></label>
+                      <label class="tool-field" for="videoOcrRangeModeSelect"><span>${t('video_ocr_range_mode')}</span><select id="videoOcrRangeModeSelect" class="subtitle-lang-input"><option value="full" selected>${t('video_ocr_range_full')}</option><option value="manual">${t('video_ocr_range_manual')}</option></select></label>
+                      <label id="videoOcrRangeInWrap" class="tool-field hidden" for="videoOcrRangeInInput"><span>${t('video_ocr_range_in')}</span><input id="videoOcrRangeInInput" class="subtitle-name-input" type="text" maxlength="16" placeholder="00:00:00:00" value="" /></label>
+                      <label id="videoOcrRangeOutWrap" class="tool-field hidden" for="videoOcrRangeOutInput"><span>${t('video_ocr_range_out')}</span><input id="videoOcrRangeOutInput" class="subtitle-name-input" type="text" maxlength="16" placeholder="00:00:10:00" value="" /></label>
                       <label class="tool-field" for="videoOcrLangInput"><span>${t('video_ocr_lang')}</span><input id="videoOcrLangInput" class="subtitle-name-input" type="text" maxlength="32" value="eng+tur" /></label>
                       <label class="tool-field" for="videoOcrEngineSelect"><span>${t('video_ocr_engine')}</span><select id="videoOcrEngineSelect" class="subtitle-lang-input"><option value="paddle">${t('video_ocr_engine_paddle')}</option></select></label>
                       <div class="tool-option-group">
