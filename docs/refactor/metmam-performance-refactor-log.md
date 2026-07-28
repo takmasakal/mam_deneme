@@ -53,6 +53,102 @@ This step is structural and is not expected to improve response time by itself. 
 
 Kaisha transfer status: not transferred.
 
+## Step 9 - Asset technical-info request store
+
+Status: implemented; automated and runtime browser checks passed.
+
+Scope:
+
+- Added `public/main-technical-info-store.js`.
+- Cached technical information by asset ID, revision timestamp, original media
+  URL, proxy URL, and proxy status.
+- Deduplicated concurrent requests for the same asset revision.
+- Limited the cache to the 50 most recently used entries.
+- Added explicit force-refresh, per-asset invalidation, and full-clear APIs.
+- Prevented invalidated in-flight requests from repopulating the cache after
+  they complete.
+- Kept failed technical probes out of the cache so a later detail open retries
+  the request.
+- Integrated the store with `main-common.js` without changing the technical
+  information endpoint or rendered UI.
+- Added `scripts/test_main_technical_info_store.js`.
+
+Checks:
+
+- `npm run test:main-technical-info-store`
+- `npm run test:main-workflow-store`
+- `npm run test:main-detail-request-coordinator`
+- `npm run check`
+- `git diff --check`
+- Docker application image build and app-only recreation
+
+Runtime verification:
+
+- Signed in with the local `mka` test account.
+- Opened `Çift yarık deneyi`, then `Nasreddin Hoca`, then returned to
+  `Çift yarık deneyi`.
+- Both videos rendered their technical information.
+- OAuth2 proxy logs contained one technical-info request for each distinct
+  video and no second request when returning to the first video.
+
+Performance note:
+
+Repeated detail opens and transitions between the regular detail view and
+video-tools view no longer rerun the backend media probes for an unchanged
+asset. A changed revision, media URL, proxy URL, or proxy status generates a
+new cache key and is fetched again.
+
+Kaisha transfer status: not transferred.
+
+## Step 10 - Admin system-health module
+
+Status: implemented; automated and runtime browser checks passed.
+
+Scope:
+
+- Added `public/admin-system-health.js`.
+- Moved workflow totals, FFmpeg health, service health, integrity metrics, job
+  summaries, and recent media-job rendering out of `public/admin.js`.
+- Centralized the four system-overview requests in the new module.
+- Deduplicated concurrent health refreshes.
+- Retained the latest successful payload so a language change can redraw the
+  panel without repeating four API requests.
+- Preserved forced refreshes after proxy operations, completed background
+  jobs, and explicit system-health navigation.
+- Added `scripts/test_admin_system_health.js`.
+- Reduced `public/admin.js` from 4,898 to 4,761 lines.
+
+Checks:
+
+- `npm run test:admin-system-health`
+- `npm run test:main-technical-info-store`
+- `npm run check`
+- `node --check public/admin-system-health.js`
+- `node --check public/admin.js`
+- `git diff --check`
+- Docker application image build and app-only recreation
+- `GET http://127.0.0.1:3001/api/health`
+
+Runtime verification:
+
+- Signed in with the local `mka` test account.
+- Confirmed active/total asset, service-health, failed-job, and active-user
+  overview values.
+- Opened System Health and verified FFmpeg/FFprobe, disk, five services,
+  integrity counters, and recent subtitle/OCR/metadata jobs.
+- Changed the UI from Turkish to English and verified cached health data was
+  redrawn with translated labels.
+- Opened Diagnostics and verified active-user and error-log sections still
+  loaded.
+
+Performance note:
+
+Language changes no longer repeat workflow tracking, FFmpeg health, full
+system health, and runtime diagnostics requests. Concurrent callers share one
+request batch.
+
+Kaisha transfer status: not transferred.
+
 ## Step 8 - Detail request coordination
 
 Status: implemented; automated and runtime UI checks passed.

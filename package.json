@@ -16,6 +16,8 @@
     "test:main-detail-version-actions": "node scripts/test_main_detail_version_actions.js",
     "test:main-detail-asset-actions": "node scripts/test_main_detail_asset_actions.js",
     "test:main-detail-request-coordinator": "node scripts/test_main_detail_request_coordinator.js",
+    "test:main-technical-info-store": "node scripts/test_main_technical_info_store.js",
+    "test:admin-system-health": "node scripts/test_admin_system_health.js",
     "sync-login-version": "node scripts/sync-login-version.js"
   },
   "dependencies": {

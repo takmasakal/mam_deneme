@@ -1065,6 +1065,11 @@ function tf(key, vars = {}) {
   return text;
 }
 
+const technicalInfoStore = window.createMainTechnicalInfoStore(
+  (asset) => api(`/api/assets/${encodeURIComponent(asset.id)}/technical`),
+  { maxEntries: 50 }
+);
+
 commonModule = window.createMainCommonModule({
   t,
   api: (...args) => api(...args),
@@ -1081,7 +1086,8 @@ commonModule = window.createMainCommonModule({
   },
   currentSubtitleQueryRef: {
     get: () => currentSubtitleQuery
-  }
+  },
+  technicalInfoStore
 });
 
 function escapeHtml(value) { return commonModule.escapeHtml(value); }
