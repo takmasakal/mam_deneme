@@ -285,6 +285,7 @@ const KEYCLOAK_ADMIN_REALM = process.env.KEYCLOAK_ADMIN_REALM || 'master';
 const KEYCLOAK_ADMIN_USERNAME = process.env.KEYCLOAK_ADMIN_USERNAME || process.env.KEYCLOAK_ADMIN || '';
 const KEYCLOAK_ADMIN_PASSWORD = readEnvOrFile('KEYCLOAK_ADMIN_PASSWORD');
 const KEYCLOAK_ADMIN_CLIENT_ID = process.env.KEYCLOAK_ADMIN_CLIENT_ID || 'admin-cli';
+const API_TOKEN_USERNAME = String(process.env.MAM_API_TOKEN_USERNAME || '').trim();
 const OAUTH2_PROXY_CLIENT_ID = process.env.OAUTH2_PROXY_CLIENT_ID || 'mam-web';
 const USE_OAUTH2_PROXY = String(process.env.USE_OAUTH2_PROXY || 'false').trim().toLowerCase() === 'true';
 const DIRECT_APP_PORT = String(process.env.DIRECT_APP_PORT || process.env.MAM_DIRECT_APP_PORT || '3001').trim();
@@ -6774,6 +6775,9 @@ async function maybeRequireApiToken(req, res, next) {
     if (expectedBuf.length !== givenBuf.length || !crypto.timingSafeEqual(expectedBuf, givenBuf)) {
       return res.status(401).json({ error: 'Invalid API token' });
     }
+    if (API_TOKEN_USERNAME) {
+      req.__mamApiTokenUsername = API_TOKEN_USERNAME;
+    }
     return next();
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to validate API token' });
@@ -7492,6 +7496,24 @@ function hasDocumentRightsAdminAccess(effective = {}, accessContext = {}) {
 }
 
 function buildUserContextFromRequest(req) {
+  const apiTokenUsername = String(req?.__mamApiTokenUsername || '').trim();
+  if (apiTokenUsername) {
+    const resolved = resolvePermissionKeysFromPrincipals({
+      username: apiTokenUsername,
+      groups: [],
+      roles: []
+    });
+    return {
+      username: apiTokenUsername,
+      displayName: apiTokenUsername,
+      email: '',
+      groups: [],
+      roles: [],
+      baseIsAdmin: resolved.permissionKeys.includes('admin.access'),
+      basePermissionKeys: resolved.permissionKeys,
+      baseIsSuperAdmin: resolved.isSuperAdmin
+    };
+  }
   const usernameRaw =
     getHeaderString(req, 'x-forwarded-user') ||
     getHeaderString(req, 'x-auth-request-user');
