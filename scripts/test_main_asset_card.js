@@ -52,6 +52,7 @@ const asset = {
   const counters = {};
   const html = createRenderer(counters).render(asset, {});
   assert.match(html, /Sample/);
+  assert.doesNotMatch(html, /Ingested/);
   assert.strictEqual(counters.highlight || 0, 0);
   assert.strictEqual(counters.metadata || 0, 0);
   assert.strictEqual(counters.dc || 0, 0);

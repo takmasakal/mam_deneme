@@ -22,7 +22,19 @@ async function run() {
       return {};
     },
     t: (key) => key,
-    serializeForm: () => ({ title: 'Updated title', dcTitle: 'DC title' }),
+    serializeForm: (form) => form?.id === 'assetVisibilityForm'
+      ? {
+          visibility: 'owner_groups',
+          allowedGroups: 'team-a, team-b',
+          allowedUsers: 'user-a',
+          deniedGroups: '',
+          deniedUsers: '',
+          editAllowedGroups: '',
+          editAllowedUsers: '',
+          editDeniedGroups: '',
+          editDeniedUsers: ''
+        }
+      : ({ title: 'Updated title', dcTitle: 'DC title' }),
     extractDcMetadataFromPayload: () => ({ dc_title: 'DC title' }),
     readFileAsBase64: async () => 'data:application/octet-stream;base64,AA==',
     refreshAssetDetail: async () => { refreshCount += 1; },
@@ -70,6 +82,20 @@ async function run() {
   assert.strictEqual(apiCalls[1].options.method, 'POST');
   assert.strictEqual(refreshCount, 2);
 
+  const visibilityForm = {
+    id: 'assetVisibilityForm',
+    querySelector: () => submitButton
+  };
+  await root.listeners.submit({
+    target: visibilityForm,
+    preventDefault() {}
+  });
+  assert.strictEqual(apiCalls[2].url, '/api/assets/asset-1/visibility');
+  assert.strictEqual(apiCalls[2].options.method, 'PATCH');
+  assert.deepStrictEqual(JSON.parse(apiCalls[2].options.body).allowedGroups, ['team-a', 'team-b']);
+  assert.deepStrictEqual(JSON.parse(apiCalls[2].options.body).allowedUsers, ['user-a']);
+  assert.strictEqual(refreshCount, 3);
+
   const ensureProxyButton = {
     id: 'ensureProxyBtn',
     closest: () => ensureProxyButton
@@ -78,8 +104,8 @@ async function run() {
     target: ensureProxyButton,
     preventDefault() {}
   });
-  assert.strictEqual(apiCalls[2].url, '/api/assets/asset-1/ensure-proxy');
-  assert.strictEqual(refreshCount, 3);
+  assert.strictEqual(apiCalls[3].url, '/api/assets/asset-1/ensure-proxy');
+  assert.strictEqual(refreshCount, 4);
 
   console.log('main detail asset actions tests passed');
 }

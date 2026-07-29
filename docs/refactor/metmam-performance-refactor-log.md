@@ -2,6 +2,24 @@
 
 This log records refactor steps that are tested in MetMAM before they are considered for Kaisha/Belgelik.
 
+## Kaisha transfer notes
+
+All ten refactor boundaries were transferred to Kaisha on 29 July 2026 and
+their automated checks passed. Product-specific behavior was preserved:
+
+- Kaisha keeps its existing server-side asset pagination and empty workflow
+  list; the shared workflow store does not add a new `/api/workflow` request.
+- Kaisha asset cards keep their existing status-row content and do not gain
+  MetMAM-only workflow labels.
+- Kaisha's third-column asset visibility form is handled by the extracted
+  detail-action module.
+- The system-health module keeps Kaisha's subtitle/OCR scope and does not add
+  MetMAM-only automatic-metadata job cards.
+
+Kaisha runtime browser verification remains pending on the deployed Belgelik
+environment; the recorded runtime checks below describe the original MetMAM
+verification.
+
 ## Rules
 
 - Preserve observable behavior unless a separate functional change is approved.
@@ -51,7 +69,7 @@ Performance note:
 
 This step is structural and is not expected to improve response time by itself. It creates a stable boundary for subsequent query profiling and optimization.
 
-Kaisha transfer status: not transferred.
+Kaisha transfer status: transferred and automated checks passed.
 
 ## Step 9 - Asset technical-info request store
 
@@ -98,7 +116,7 @@ video-tools view no longer rerun the backend media probes for an unchanged
 asset. A changed revision, media URL, proxy URL, or proxy status generates a
 new cache key and is fetched again.
 
-Kaisha transfer status: not transferred.
+Kaisha transfer status: transferred and automated checks passed.
 
 ## Step 10 - Admin system-health module
 
@@ -147,7 +165,7 @@ Language changes no longer repeat workflow tracking, FFmpeg health, full
 system health, and runtime diagnostics requests. Concurrent callers share one
 request batch.
 
-Kaisha transfer status: not transferred.
+Kaisha transfer status: transferred and automated checks passed.
 
 ## Step 8 - Detail request coordination
 
@@ -193,7 +211,7 @@ Rapid card selection no longer keeps obsolete detail requests alive. This
 reduces unnecessary response processing and prevents stale details from
 appearing after the user has selected another asset.
 
-Kaisha transfer status: not transferred.
+Kaisha transfer status: transferred and automated checks passed.
 
 ## Step 7 - Detail asset action delegation
 
@@ -241,7 +259,7 @@ Performance note:
 Core detail action listener count is now constant. Opening an asset no longer
 attaches separate listeners for each form and action button.
 
-Kaisha transfer status: not transferred.
+Kaisha transfer status: transferred and automated checks passed.
 
 ## Step 6 - Detail version action delegation
 
@@ -288,7 +306,7 @@ Performance note:
 Version action listener count is now constant for each opened detail panel.
 It no longer grows with the number of versions shown for the asset.
 
-Kaisha transfer status: not transferred.
+Kaisha transfer status: transferred and automated checks passed.
 
 ## Step 5 - Workflow request store
 
@@ -340,7 +358,7 @@ The page now requests `/api/workflow` once during a normal session instead of
 requesting it again whenever a card, OCR hit, subtitle hit, language refresh,
 or PDF-save refresh opens the detail panel.
 
-Kaisha transfer status: not transferred.
+Kaisha transfer status: transferred and automated checks passed.
 
 Kaisha transfer checks:
 
@@ -407,7 +425,7 @@ The expected gain is modest because the measured backend requests are already
 fast. The main value is a smaller startup coordinator and a testable boundary
 for later rendering work.
 
-Kaisha transfer status: not transferred.
+Kaisha transfer status: transferred and automated checks passed.
 
 ## Step 3 - Asset card renderer and no-search fast path
 
@@ -458,7 +476,7 @@ highlight parsing for every visible card. This reduces client work in the
 default asset list. A comparative render-time benchmark has not yet been
 recorded, so no numerical speedup is claimed.
 
-Kaisha transfer status: not transferred.
+Kaisha transfer status: transferred and automated checks passed.
 
 ## Step 4 - Asset-grid event delegation
 
@@ -519,4 +537,4 @@ listeners for every pager and hit control after each render. Listener count is
 constant at four for this module, regardless of page size or search-result
 count. A comparative browser render benchmark has not yet been recorded.
 
-Kaisha transfer status: not transferred.
+Kaisha transfer status: transferred and automated checks passed.
