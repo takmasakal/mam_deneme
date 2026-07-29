@@ -2757,6 +2757,7 @@ searchSuggestModule?.init?.();
 
 searchForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  advancedSearchModule?.deactivateForDirectSearch?.();
   hideSearchSuggestions();
   hideOcrSuggestions();
   hideSubtitleSuggestions();
@@ -2768,7 +2769,19 @@ searchForm.addEventListener('submit', async (event) => {
   }
 });
 
+// Once the user edits a normal first-column filter, leave advanced-search
+// mode so the next request reflects the visible form values.
+searchForm.querySelectorAll('input:not([name="advancedSearch"]), select').forEach((field) => {
+  const leaveAdvancedMode = () => {
+    advancedSearchModule?.deactivateForDirectSearch?.();
+    updateClearSearchButtonState();
+  };
+  field.addEventListener('input', leaveAdvancedMode);
+  field.addEventListener('change', leaveAdvancedMode);
+});
+
 clearSearchBtn?.addEventListener('click', async () => {
+  advancedSearchModule?.deactivateForDirectSearch?.();
   setSearchResultCounterVisible(false);
   try {
     await clearSearchFields();
