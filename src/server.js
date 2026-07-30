@@ -6098,11 +6098,36 @@ async function saveAdminSettings(settings) {
 
 let backupInProgress = false;
 let lastBackupRunDate = '';
+const BACKUP_TIME_ZONE = String(process.env.BACKUP_TIME_ZONE || process.env.TZ || 'Europe/Istanbul').trim() || 'Europe/Istanbul';
 
-function backupDateStamp(value = new Date()) {
+function backupDateParts(value = new Date()) {
   const date = value instanceof Date ? value : new Date(value);
   const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
-  return safeDate.toISOString().replace(/[:.]/g, '-');
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: BACKUP_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(safeDate);
+  const getPart = (type) => String(parts.find((part) => part.type === type)?.value || '');
+  return {
+    year: getPart('year'),
+    month: getPart('month'),
+    day: getPart('day'),
+    hour: Number(getPart('hour')),
+    minute: getPart('minute'),
+    second: getPart('second'),
+    millisecond: String(safeDate.getMilliseconds()).padStart(3, '0')
+  };
+}
+
+function backupDateStamp(value = new Date()) {
+  const parts = backupDateParts(value);
+  return `${parts.year}-${parts.month}-${parts.day}T${String(parts.hour).padStart(2, '0')}-${parts.minute}-${parts.second}-${parts.millisecond}`;
 }
 
 function getDbConnectionConfig(prefix = 'MAM') {
@@ -6325,10 +6350,10 @@ function scheduleSystemBackups() {
     const settings = await getAdminSettings().catch(() => DEFAULT_ADMIN_SETTINGS);
     const backup = normalizeBackupSettings(settings.backup);
     if (!backup.enabled) return;
-    const now = new Date();
-    const today = now.toISOString().slice(0, 10);
+    const now = backupDateParts();
+    const today = `${now.year}-${now.month}-${now.day}`;
     if (lastBackupRunDate === today) return;
-    if (now.getHours() !== backup.dailyHour) return;
+    if (now.hour !== backup.dailyHour) return;
     lastBackupRunDate = today;
     try {
       const result = await runSystemBackup(backup, 'scheduler');
