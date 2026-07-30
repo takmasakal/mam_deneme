@@ -19,6 +19,7 @@ function makeButton(className, versionId) {
 async function run() {
   let listener = null;
   let listenerCount = 0;
+  let removedListenerCount = 0;
   const root = {
     addEventListener(type, callback, capture) {
       assert.strictEqual(type, 'click');
@@ -26,7 +27,12 @@ async function run() {
       listener = callback;
       listenerCount += 1;
     },
-    removeEventListener() {}
+    removeEventListener(type, callback, capture) {
+      assert.strictEqual(type, 'click');
+      assert.strictEqual(capture, true);
+      if (listener === callback) listener = null;
+      removedListenerCount += 1;
+    }
   };
   const image = { src: '', dataset: {} };
   const selected = new Map();
@@ -62,6 +68,14 @@ async function run() {
     workflow: ['draft']
   });
   assert.strictEqual(listenerCount, 1, 'one delegated listener is attached per version list');
+
+  module.bind(root, {
+    asset: { id: 'asset-1', versions: [], canDownloadAsset: true },
+    workflow: ['draft']
+  });
+  assert.strictEqual(listenerCount, 2, 'rebinding attaches the current version listener');
+  assert.strictEqual(removedListenerCount, 1, 'rebinding removes the previous version listener');
+  assert.strictEqual(typeof listener, 'function', 'the replacement version listener remains active');
 
   const preview = makeButton('previewVersionBtn', 'version-1');
   await listener({

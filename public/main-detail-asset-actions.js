@@ -16,6 +16,7 @@
       confirmAction = global.confirm?.bind(global),
       alertError = global.alert?.bind(global)
     } = deps;
+    const activeBindings = new WeakMap();
 
     function triggerDownload(url) {
       const sourceUrl = String(url || '').trim();
@@ -213,15 +214,19 @@
 
     function bind(root, context = {}) {
       if (!root) return () => {};
+      activeBindings.get(root)?.();
       const { asset, workflow } = context;
       const onSubmit = (event) => handleSubmit(event, asset, workflow);
       const onClick = (event) => handleClick(event, asset, workflow);
       root.addEventListener('submit', onSubmit);
       root.addEventListener('click', onClick);
-      return () => {
+      const cleanup = () => {
         root.removeEventListener('submit', onSubmit);
         root.removeEventListener('click', onClick);
+        if (activeBindings.get(root) === cleanup) activeBindings.delete(root);
       };
+      activeBindings.set(root, cleanup);
+      return cleanup;
     }
 
     return { bind };

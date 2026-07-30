@@ -3,12 +3,17 @@ const { createMainDetailAssetActions } = require('../public/main-detail-asset-ac
 
 function makeRoot() {
   const listeners = {};
+  const removed = [];
   return {
     listeners,
+    removed,
     addEventListener(type, callback) {
       listeners[type] = callback;
     },
-    removeEventListener() {}
+    removeEventListener(type, callback) {
+      if (listeners[type] === callback) delete listeners[type];
+      removed.push(type);
+    }
   };
 }
 
@@ -57,6 +62,13 @@ async function run() {
   });
 
   assert.deepStrictEqual(Object.keys(root.listeners).sort(), ['click', 'submit']);
+
+  module.bind(root, {
+    asset: { id: 'asset-1', mediaUrl: '/uploads/original.mov', proxyUrl: '/uploads/proxy.mp4' },
+    workflow: ['draft']
+  });
+  assert.deepStrictEqual(root.removed.sort(), ['click', 'submit'], 'rebinding removes previous detail listeners');
+  assert.deepStrictEqual(Object.keys(root.listeners).sort(), ['click', 'submit'], 'replacement detail listeners remain active');
 
   const submitButton = { disabled: false };
   const editForm = {

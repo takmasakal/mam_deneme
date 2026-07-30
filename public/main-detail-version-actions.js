@@ -18,6 +18,7 @@
       alertError = global.alert?.bind(global),
       handleSessionResponse = (status, text, payload) => global.mamSessionExpiry?.handle(status, text, payload)
     } = deps;
+    const activeBindings = new WeakMap();
 
     function getVersionId(element) {
       return String(element?.dataset?.versionId || element?.getAttribute?.('data-version-id') || '').trim();
@@ -138,6 +139,7 @@
 
     function bind(root, context = {}) {
       if (!root) return () => {};
+      activeBindings.get(root)?.();
       const { asset, workflow } = context;
 
       const onClick = async (event) => {
@@ -174,7 +176,12 @@
       };
 
       root.addEventListener('click', onClick, true);
-      return () => root.removeEventListener('click', onClick, true);
+      const cleanup = () => {
+        root.removeEventListener('click', onClick, true);
+        if (activeBindings.get(root) === cleanup) activeBindings.delete(root);
+      };
+      activeBindings.set(root, cleanup);
+      return cleanup;
     }
 
     return { bind };
