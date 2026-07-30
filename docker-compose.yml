@@ -52,6 +52,7 @@ services:
       ELASTIC_URL: http://elasticsearch:9200
       ELASTIC_INDEX: mam_assets
       PORT: 3000
+      TZ: ${TZ:-Europe/Istanbul}
       MAM_OFFLINE_MODE: ${MAM_OFFLINE_MODE:-true}
       MAM_MODEL_CACHE_DIR: /opt/mam-models
       HF_HOME: /opt/mam-models/huggingface
