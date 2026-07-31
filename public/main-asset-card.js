@@ -119,11 +119,11 @@
 
       const hitPager = `${subtitlePager}${ocrPager}`;
       const mediaDuration = (isVideo(asset) || isAudio(asset)) && Number(asset.durationSeconds) > 0
-        ? escapeHtml(formatDuration(asset.durationSeconds))
+        ? `${escapeHtml(t('duration'))}: ${escapeHtml(formatDuration(asset.durationSeconds))}`
         : '';
       const fileSizeBytes = Number(asset.fileSizeBytes);
       const fileSizeMb = Number.isFinite(fileSizeBytes) && fileSizeBytes > 0
-        ? escapeHtml(`${(fileSizeBytes / (1024 * 1024)).toFixed(2)} MB`)
+        ? `${escapeHtml(t('file_size'))}: ${escapeHtml(`${(fileSizeBytes / (1024 * 1024)).toFixed(2)} MB`)}`
         : '';
       const mediaMetrics = [mediaDuration, fileSizeMb].filter(Boolean).join(' | ');
       const mediaInfoRow = (mediaMetrics || hitPager)
