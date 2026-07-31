@@ -127,6 +127,27 @@ function registerAssetRoutes(app, deps) {
     return '';
   }
 
+  function matchesNumberRange(value, range = {}, { requirePositive = false } = {}) {
+    if (value === null || value === undefined || String(value).trim() === '') return false;
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 0) return false;
+    if (requirePositive && number <= 0) return false;
+    if (range.min !== null && range.min !== undefined && number < Number(range.min)) return false;
+    if (range.max !== null && range.max !== undefined && number > Number(range.max)) return false;
+    return true;
+  }
+
+  async function resolveAssetFileSize(row = {}) {
+    const filePath = resolveAssetSourcePath(row);
+    if (!filePath) return null;
+    try {
+      const stat = await fs.promises.stat(filePath);
+      return stat.isFile() ? stat.size : null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
   function resolveDerivativeUrl(value, subdir) {
     const url = resolveStoredUrl(value, subdir);
     const normalizedSubdir = String(subdir || '').trim().replace(/^\/+|\/+$/g, '').toLowerCase();
@@ -335,6 +356,8 @@ function registerAssetRoutes(app, deps) {
         advancedDefinition,
         advancedActive,
         dateRange,
+        durationRange,
+        fileSizeRange,
         dateField,
         normalizedSortBy
       } = queryOptions;
@@ -345,6 +368,12 @@ function registerAssetRoutes(app, deps) {
         q: { didYouMean: '', fuzzyUsed: false, highlightQuery: q },
         ocrQ: { didYouMean: '', fuzzyUsed: false, highlightQuery: ocrQ },
         subtitleQ: { didYouMean: '', fuzzyUsed: false, highlightQuery: subtitleQ }
+      };
+      const assetFileSizeCache = new Map();
+      const getAssetFileSize = async (row) => {
+        const key = String(row?.id || row?.media_url || '');
+        if (!assetFileSizeCache.has(key)) assetFileSizeCache.set(key, resolveAssetFileSize(row));
+        return assetFileSizeCache.get(key);
       };
       const accessContext = await resolveAssetAccessContext(req);
       if (advancedActive && !accessContext?.canAccessAdvancedSearch) {
@@ -553,7 +582,8 @@ function registerAssetRoutes(app, deps) {
       const assetCardMatchFetchLimit = assetCardMatchPageSize + 1;
       let rows = [];
       let totalOverride = null;
-      const canUseSqlPagination = pageLimit > 0 && !q && !ocrQ && !subtitleQ && !advancedActive;
+      const isFileSizeSort = normalizedSortBy === 'size_asc' || normalizedSortBy === 'size_desc';
+      const canUseSqlPagination = pageLimit > 0 && !q && !ocrQ && !subtitleQ && !advancedActive && !isFileSizeSort;
       if (advancedActive) {
         const valuesByField = {
           q: String(advancedDefinition.values.q ?? q).trim(),
@@ -563,6 +593,17 @@ function registerAssetRoutes(app, deps) {
           type: String(advancedDefinition.values.type ?? type).trim()
         };
         rows = await fetchAssetRows();
+        if (durationRange.active) {
+          rows = rows.filter((row) => matchesNumberRange(row.duration_seconds, durationRange, { requirePositive: true }));
+        }
+        if (fileSizeRange.active) {
+          const rowsWithFileSize = await Promise.all(
+            rows.map(async (row) => ({ row, fileSize: await getAssetFileSize(row) }))
+          );
+          rows = rowsWithFileSize
+            .filter(({ fileSize }) => fileSize !== null && matchesNumberRange(fileSize, fileSizeRange))
+            .map(({ row }) => row);
+        }
         const advancedResult = await advancedSearchService.search({
           definition: advancedDefinition,
           valuesByField,
@@ -774,6 +815,21 @@ function registerAssetRoutes(app, deps) {
           }
           rows = filtered;
         }
+      }
+
+      if (isFileSizeSort && rows.length) {
+        const rowsWithFileSize = await Promise.all(
+          rows.map(async (row) => ({ row, fileSize: await getAssetFileSize(row) }))
+        );
+        const direction = normalizedSortBy === 'size_asc' ? 1 : -1;
+        rowsWithFileSize.sort((left, right) => {
+          const leftMissing = left.fileSize === null || left.fileSize === undefined;
+          const rightMissing = right.fileSize === null || right.fileSize === undefined;
+          if (leftMissing !== rightMissing) return leftMissing ? 1 : -1;
+          if (!leftMissing && left.fileSize !== right.fileSize) return (left.fileSize - right.fileSize) * direction;
+          return String(right.row.updated_at || '').localeCompare(String(left.row.updated_at || ''));
+        });
+        rows = rowsWithFileSize.map(({ row }) => row);
       }
   
       const total = totalOverride == null ? rows.length : totalOverride;

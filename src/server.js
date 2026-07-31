@@ -8350,7 +8350,11 @@ function normalizeSortBy(value) {
     created_at_asc: 'created_asc',
     created_asc: 'created_asc',
     title: 'title_asc',
-    title_asc: 'title_asc'
+    title_asc: 'title_asc',
+    duration_asc: 'duration_asc',
+    duration_desc: 'duration_desc',
+    size_asc: 'size_asc',
+    size_desc: 'size_desc'
   };
   return aliases[raw] || 'default';
 }
@@ -8395,6 +8399,13 @@ function buildAssetOrderClause({ hasRelevance, sortBy, rankedParamAlias }) {
       return 'created_at DESC';
     case 'title_asc':
       return 'LOWER(title) ASC, created_at DESC';
+    case 'duration_asc':
+      return 'NULLIF(duration_seconds, 0) ASC NULLS LAST, updated_at DESC';
+    case 'duration_desc':
+      return 'NULLIF(duration_seconds, 0) DESC NULLS LAST, updated_at DESC';
+    case 'size_asc':
+    case 'size_desc':
+      return 'updated_at DESC';
     default:
       return 'updated_at DESC';
   }

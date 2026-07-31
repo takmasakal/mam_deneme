@@ -5,6 +5,18 @@ function createAssetListQueryService({
   normalizeUploadDateRange,
   normalizeSortBy
 }) {
+  function normalizeNumberRange(minValue, maxValue, multiplier = 1) {
+    const parse = (value) => {
+      if (String(value ?? '').trim() === '') return null;
+      const number = Number(value);
+      return Number.isFinite(number) && number >= 0 ? number * multiplier : null;
+    };
+    let min = parse(minValue);
+    let max = parse(maxValue);
+    if (min !== null && max !== null && min > max) [min, max] = [max, min];
+    return { min, max, active: min !== null || max !== null };
+  }
+
   function parseRequest(req) {
     const query = req?.query || {};
     const q = String(query.q || '').trim();
@@ -37,6 +49,11 @@ function createAssetListQueryService({
       || advancedDefinition.or.length
       || String(advancedDefinition.values.uploadDateFrom || '').trim()
       || String(advancedDefinition.values.uploadDateTo || '').trim()
+      || String(advancedDefinition.values.durationMinSec || '').trim()
+      || String(advancedDefinition.values.durationMaxSec || '').trim()
+      || String(advancedDefinition.values.sizeMinMb || '').trim()
+      || String(advancedDefinition.values.sizeMaxMb || '').trim()
+      || String(advancedDefinition.values.sortBy || '').trim()
     ));
     const uploadDateFrom = advancedActive
       ? String(query.uploadDateFrom || advancedDefinition.values.uploadDateFrom || '')
@@ -55,6 +72,15 @@ function createAssetListQueryService({
         ? String(requestedSortBy || '').replace(/^created_/, 'updated_')
         : requestedSortBy
     );
+    const durationRange = normalizeNumberRange(
+      advancedDefinition?.values?.durationMinSec,
+      advancedDefinition?.values?.durationMaxSec
+    );
+    const fileSizeRange = normalizeNumberRange(
+      advancedDefinition?.values?.sizeMinMb,
+      advancedDefinition?.values?.sizeMaxMb,
+      1024 * 1024
+    );
     return {
       q,
       pageLimit,
@@ -72,6 +98,8 @@ function createAssetListQueryService({
       advancedDefinition,
       advancedActive,
       dateRange: normalizeUploadDateRange(uploadDateFrom, uploadDateTo),
+      durationRange,
+      fileSizeRange,
       dateField,
       normalizedSortBy
     };
