@@ -854,8 +854,17 @@ function registerAssetRoutes(app, deps) {
         const withPdfThumb = await ensurePdfThumbnailForRow(nextRow);
         hydratedRows.push(await ensureDocumentThumbnailForRow(withPdfThumb));
       }
+      const includeFileSize = fileSizeRange.active || isFileSizeSort;
+      const responseAssets = await Promise.all(hydratedRows.map(async (row) => {
+        const asset = mapAssetRowForUser(row, accessContext);
+        if (includeFileSize) {
+          const fileSize = await getAssetFileSize(row);
+          if (Number.isFinite(fileSize) && fileSize > 0) asset.fileSizeBytes = fileSize;
+        }
+        return asset;
+      }));
       res.json({
-        assets: hydratedRows.map((row) => mapAssetRowForUser(row, accessContext)),
+        assets: responseAssets,
         searchMeta,
         pagination: {
           total,

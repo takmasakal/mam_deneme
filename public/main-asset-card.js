@@ -118,11 +118,16 @@
       }
 
       const hitPager = `${subtitlePager}${ocrPager}`;
-      const mediaDuration = (isVideo(asset) || isAudio(asset))
+      const mediaDuration = (isVideo(asset) || isAudio(asset)) && Number(asset.durationSeconds) > 0
         ? escapeHtml(formatDuration(asset.durationSeconds))
         : '';
-      const mediaInfoRow = (mediaDuration || hitPager)
-        ? `<div class="asset-meta asset-status-row"><span>${mediaDuration}</span>${hitPager}</div>`
+      const fileSizeBytes = Number(asset.fileSizeBytes);
+      const fileSizeMb = Number.isFinite(fileSizeBytes) && fileSizeBytes > 0
+        ? escapeHtml(`${(fileSizeBytes / (1024 * 1024)).toFixed(2)} MB`)
+        : '';
+      const mediaMetrics = [mediaDuration, fileSizeMb].filter(Boolean).join(' | ');
+      const mediaInfoRow = (mediaMetrics || hitPager)
+        ? `<div class="asset-meta asset-status-row"><span>${mediaMetrics}</span>${hitPager}</div>`
         : '';
       return `
         <article class="asset-card ${selected} ${trashClass} card-art-glass" data-id="${escapeHtml(asset.id)}">
