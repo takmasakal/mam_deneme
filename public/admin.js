@@ -1376,6 +1376,48 @@ function openTextEditorModal({
       const lineHeight = parseFloat(window.getComputedStyle(area).lineHeight) || 20;
       area.scrollTop = Math.max(0, (line - 2) * lineHeight);
     };
+    const selectRichEditorRange = (startIndex, endIndex) => {
+      if (!richArea || !document.createTreeWalker || !document.createRange) return false;
+      const selection = window.getSelection?.();
+      if (!selection) return false;
+      const showText = window.NodeFilter?.SHOW_TEXT || 4;
+      const walker = document.createTreeWalker(richArea, showText);
+      const start = Math.max(0, Number(startIndex) || 0);
+      const end = Math.max(start, Number(endIndex) || start);
+      let offset = 0;
+      let startNode = null;
+      let startOffset = 0;
+      let endNode = null;
+      let endOffset = 0;
+      let node = walker.nextNode();
+      while (node) {
+        const length = String(node.nodeValue || '').length;
+        const nextOffset = offset + length;
+        if (!startNode && start <= nextOffset) {
+          startNode = node;
+          startOffset = Math.min(length, Math.max(0, start - offset));
+        }
+        if (end <= nextOffset) {
+          endNode = node;
+          endOffset = Math.min(length, Math.max(0, end - offset));
+          break;
+        }
+        offset = nextOffset;
+        node = walker.nextNode();
+      }
+      if (!startNode || !endNode) return false;
+      const range = document.createRange();
+      range.setStart(startNode, startOffset);
+      range.setEnd(endNode, endOffset);
+      richArea.focus({ preventScroll: true });
+      selection.removeAllRanges();
+      selection.addRange(range);
+      const before = String(area?.value || richArea.textContent || '').slice(0, start);
+      const line = before.split('\n').length - 1;
+      const lineHeight = parseFloat(window.getComputedStyle(richArea).lineHeight) || 20;
+      richArea.scrollTop = Math.max(0, (line - 2) * lineHeight);
+      return true;
+    };
 
     const findNext = () => {
       const q = String(findInput?.value || '').trim();
@@ -1392,9 +1434,11 @@ function openTextEditorModal({
       let idx = foldedText.indexOf(foldedQuery, from);
       if (idx < 0) idx = foldedText.indexOf(foldedQuery, 0);
       if (idx < 0) return;
-      area.focus();
-      area.setSelectionRange(idx, idx + foldedQuery.length);
-      scrollSelectionIntoView(idx);
+      if (!selectRichEditorRange(idx, idx + foldedQuery.length)) {
+        area.focus();
+        area.setSelectionRange(idx, idx + foldedQuery.length);
+        scrollSelectionIntoView(idx);
+      }
       lastFindPos = idx + foldedQuery.length;
     };
 
