@@ -45,7 +45,11 @@ function run() {
       uploadDateFrom: '2026-06-01',
       uploadDateTo: '2026-06-30',
       dateField: 'updated',
-      sortBy: 'created_asc'
+      sortBy: 'created_asc',
+      durationMinSec: '120',
+      durationMaxSec: '60',
+      sizeMinMb: '1.5',
+      sizeMaxMb: '10'
     }
   })).parseRequest({ query: { advanced: 'encoded' } });
   assert.strictEqual(advanced.advancedActive, true);
@@ -55,6 +59,37 @@ function run() {
     to: '2026-06-30'
   });
   assert.strictEqual(advanced.normalizedSortBy, 'updated_asc');
+  assert.deepStrictEqual(advanced.durationRange, { min: 60, max: 120, active: true });
+  assert.deepStrictEqual(advanced.fileSizeRange, {
+    min: 1.5 * 1024 * 1024,
+    max: 10 * 1024 * 1024,
+    active: true
+  });
+
+  const rangeOnly = createService(() => ({
+    and: [],
+    or: [],
+    values: { durationMinSec: '30' }
+  })).parseRequest({ query: { advanced: 'encoded' } });
+  assert.strictEqual(rangeOnly.advancedActive, true);
+  assert.deepStrictEqual(rangeOnly.durationRange, { min: 30, max: null, active: true });
+
+  const durationSortOnly = createService(() => ({
+    and: [],
+    or: [],
+    values: { sortBy: 'duration_desc' }
+  })).parseRequest({ query: { advanced: 'encoded' } });
+  assert.strictEqual(durationSortOnly.advancedActive, true);
+  assert.strictEqual(durationSortOnly.normalizedSortBy, 'duration_desc');
+
+  const sizeSortWithUpdatedDateField = createService(() => ({
+    and: [],
+    or: [],
+    values: { dateField: 'updated', sortBy: 'size_asc' }
+  })).parseRequest({ query: { advanced: 'encoded' } });
+  assert.strictEqual(sizeSortWithUpdatedDateField.advancedActive, true);
+  assert.strictEqual(sizeSortWithUpdatedDateField.dateField, 'updated');
+  assert.strictEqual(sizeSortWithUpdatedDateField.normalizedSortBy, 'size_asc');
 
   const invalidService = createService(() => {
     throw new Error('invalid');

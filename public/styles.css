@@ -27,6 +27,35 @@
 .advanced-search-help-btn { width: 22px !important; min-width: 22px !important; height: 22px; padding: 0 !important; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--muted); font-size: 13px; font-weight: 700; line-height: 20px; }
 .advanced-search-close { width: 32px !important; min-width: 32px !important; height: 32px !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; color: var(--muted) !important; display: inline-grid !important; place-items: center !important; font-size: 24px !important; line-height: 1 !important; }
 .advanced-search-date-row { display: flex; align-items: end; gap: 8px; flex-wrap: nowrap; margin: 0; }
+.advanced-search-constraint-sections { display: grid; gap: 6px; }
+.advanced-search-constraint { border: 1px solid var(--line); border-radius: 8px; background: rgba(12, 17, 27, .34); overflow: hidden; }
+.advanced-search-constraint summary { display: flex; align-items: center; min-height: 34px; padding: 6px 10px; color: var(--text); font-size: 13px; font-weight: 700; cursor: pointer; list-style: none; user-select: none; }
+.advanced-search-constraint summary::-webkit-details-marker { display: none; }
+.advanced-search-constraint summary::after { content: '›'; margin-left: auto; color: var(--muted); font-size: 18px; transform: rotate(90deg); transition: transform 120ms ease; }
+.advanced-search-constraint[open] summary::after { transform: rotate(-90deg); }
+.advanced-search-constraint[open] summary { border-bottom: 1px solid var(--line); }
+.advanced-search-constraint .advanced-search-date-row,
+.advanced-search-constraint .advanced-search-range-row { padding: 10px; }
+.advanced-search-type-row { display: flex; align-items: center; gap: 24px; min-height: 36px; padding: 4px 10px; }
+.advanced-search-type-row > strong { flex: 0 0 auto; color: var(--text); font-size: 13px; }
+.advanced-search-type-row .advanced-search-type-options-horizontal { flex: 0 1 auto; padding: 0; }
+.advanced-search-range-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.advanced-search-range-row label { display: grid; gap: 4px; min-width: 0; color: var(--muted); font-size: 11px; }
+.advanced-search-range-row input { width: 100%; min-width: 0; padding: 6px 8px; font-size: 12px; }
+.advanced-search-duration-group { min-width: 0; margin: 0; padding: 0; border: 0; }
+.advanced-search-duration-group legend { margin-bottom: 4px; color: var(--muted); font-size: 11px; }
+.advanced-search-duration-inputs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.advanced-search-duration-inputs label { gap: 2px; font-size: 10px; }
+.advanced-search-size-input { display: grid; grid-template-columns: minmax(0, 1fr) 68px; gap: 4px; }
+.advanced-search-size-input select { width: 68px; min-width: 0; padding: 6px; font-size: 12px; }
+.advanced-search-range-row input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+.advanced-search-range-row input[type="number"]::-webkit-inner-spin-button,
+.advanced-search-range-row input[type="number"]::-webkit-outer-spin-button { margin: 0; appearance: none; -webkit-appearance: none; }
+.advanced-search-range-order-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0 10px 10px; }
+.advanced-search-range-order { display: flex; align-items: center; gap: 14px; min-width: 0; margin: 0; padding: 5px 8px 6px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 11px; }
+.advanced-search-range-order legend { padding: 0 3px; }
+.advanced-search-range-order label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.advanced-search-range-order input[type="radio"] { width: auto !important; padding: 0; }
 .advanced-search-date-row label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 600; }
 .advanced-search-date-row input { width: 138px !important; min-width: 0; padding: 6px 8px; font-size: 12px; }
 .advanced-search-date-row select { width: 160px !important; min-width: 0; padding: 6px 8px; font-size: 12px; }
@@ -53,6 +82,7 @@
 .advanced-search-type-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; }
 .advanced-search-type-options label { display: inline-flex; align-items: center; gap: 5px; min-width: 0; color: var(--text); font-size: 12px; white-space: nowrap; }
 .advanced-search-type-options input { width: auto !important; min-width: 0; }
+.advanced-search-type-options-horizontal { display: flex; align-items: center; gap: 8px; }
 .advanced-search-controls { display: grid; grid-template-columns: minmax(0,1fr) 76px 76px 76px; column-gap: 8px; row-gap: 4px; margin-top: 14px; }
 .advanced-search-controls button { height: 34px !important; }
 .advanced-search-saved-row, .advanced-search-actions { display: contents; }
@@ -78,7 +108,17 @@
 .date-picker-day:hover, .date-picker-day.is-selected { background: var(--accent, #16845f); color: #fff; }
 .date-picker-empty { min-height: 26px; }
 .date-picker-today { width: 100% !important; margin-top: 8px; border: 1px solid var(--line); background: transparent; color: var(--text); }
-@media (max-width: 620px) { .advanced-search-groups { grid-template-columns: 1fr; } .advanced-search-date-row { flex-wrap: wrap; } .advanced-search-controls { display: flex; flex-wrap: wrap; } .advanced-search-saved-row, .advanced-search-actions { display: flex; width: 100%; flex-wrap: wrap; } .advanced-search-saved-row select { flex-basis: 100%; } }
+@media (max-width: 620px) {
+  .advanced-search-groups { grid-template-columns: 1fr; }
+  .advanced-search-type-row { align-items: flex-start; flex-direction: column; gap: 6px; }
+  .advanced-search-date-row { flex-wrap: wrap; }
+  .advanced-search-range-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .advanced-search-range-order-row { grid-template-columns: 1fr; }
+  .advanced-search-type-options-horizontal { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .advanced-search-controls { display: flex; flex-wrap: wrap; }
+  .advanced-search-saved-row, .advanced-search-actions { display: flex; width: 100%; flex-wrap: wrap; }
+  .advanced-search-saved-row select { flex-basis: 100%; }
+}
 
 .image-viewer-resizable {
   position: relative;

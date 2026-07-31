@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Belgelik</title>
-    <link rel="stylesheet" href="/styles.css?v=20260727-belgelik-advanced-1" />
+    <link rel="stylesheet" href="/styles.css?v=20260731-advanced-constraints-6" />
   </head>
   <body>
     <main class="layout">
@@ -83,33 +83,89 @@
               <button type="button" id="advancedSearchCloseBtn" class="advanced-search-close" aria-label="Close">×</button>
             </div>
             <div class="advanced-search-fields" id="advancedSearchFields">
-              <div class="advanced-search-date-row">
-                <label>
-                  <span data-i18n="advanced_date_field">Date field</span>
-                  <select name="dateField">
-                    <option value="created" data-i18n="advanced_date_field_created">Upload date</option>
-                    <option value="updated" data-i18n="advanced_date_field_updated">Last modified date</option>
-                  </select>
-                </label>
-                <label>
-                  <span data-i18n="advanced_upload_from">Upload date from</span>
-                  <input type="hidden" name="uploadDateFrom" value="" />
-                  <input type="text" data-date-input="uploadDateFrom" data-i18n-placeholder="ph_upload_date_from" placeholder="YYYY-MM-DD" autocomplete="off" inputmode="numeric" />
-                </label>
-                <label>
-                  <span data-i18n="advanced_upload_to">Upload date to</span>
-                  <input type="hidden" name="uploadDateTo" value="" />
-                  <input type="text" data-date-input="uploadDateTo" data-i18n-placeholder="ph_upload_date_to" placeholder="YYYY-MM-DD" autocomplete="off" inputmode="numeric" />
-                </label>
-                <label class="advanced-search-today-toggle">
-                  <input type="checkbox" id="advancedSearchToday" />
-                  <span data-i18n="advanced_today">End date is today</span>
-                </label>
-                <fieldset class="advanced-search-date-order">
-                  <legend data-i18n="advanced_date_order">Date order</legend>
-                  <label><input type="radio" name="advancedDateOrder" value="created_asc" /><span data-i18n="advanced_date_asc">Ascending</span></label>
-                  <label><input type="radio" name="advancedDateOrder" value="created_desc" checked /><span data-i18n="advanced_date_desc">Descending</span></label>
-                </fieldset>
+              <div class="advanced-search-constraint-sections">
+                <div class="advanced-search-constraint advanced-search-type-row" id="advancedSearchTypeSection">
+                  <strong data-i18n="advanced_type_filter">Asset type</strong>
+                  <div id="advancedSearchTypeOptions" class="advanced-search-type-options advanced-search-type-options-horizontal"></div>
+                </div>
+                <details class="advanced-search-constraint" id="advancedSearchDateSection">
+                  <summary data-i18n="advanced_date_filter">Date</summary>
+                  <div class="advanced-search-date-row">
+                    <label>
+                      <span data-i18n="advanced_date_field">Date field</span>
+                      <select name="dateField">
+                        <option value="created" data-i18n="advanced_date_field_created">Upload date</option>
+                        <option value="updated" data-i18n="advanced_date_field_updated">Last modified date</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span data-i18n="advanced_upload_from">Upload date from</span>
+                      <input type="hidden" name="uploadDateFrom" value="" />
+                      <input type="text" data-date-input="uploadDateFrom" data-i18n-placeholder="ph_upload_date_from" placeholder="YYYY-MM-DD" autocomplete="off" inputmode="numeric" />
+                    </label>
+                    <label>
+                      <span data-i18n="advanced_upload_to">Upload date to</span>
+                      <input type="hidden" name="uploadDateTo" value="" />
+                      <input type="text" data-date-input="uploadDateTo" data-i18n-placeholder="ph_upload_date_to" placeholder="YYYY-MM-DD" autocomplete="off" inputmode="numeric" />
+                    </label>
+                    <label class="advanced-search-today-toggle">
+                      <input type="checkbox" id="advancedSearchToday" />
+                      <span data-i18n="advanced_today">End date is today</span>
+                    </label>
+                    <fieldset class="advanced-search-date-order">
+                      <legend data-i18n="advanced_date_order">Date order</legend>
+                      <label><input type="radio" name="advancedSortOrder" value="created_asc" data-sort-field="date" data-sort-direction="asc" /><span data-i18n="advanced_date_asc">Ascending</span></label>
+                      <label><input type="radio" name="advancedSortOrder" value="created_desc" data-sort-field="date" data-sort-direction="desc" /><span data-i18n="advanced_date_desc">Descending</span></label>
+                    </fieldset>
+                  </div>
+                </details>
+                <details class="advanced-search-constraint" id="advancedSearchRangeSection">
+                  <summary data-i18n="advanced_range_filter">Duration and size</summary>
+                  <div class="advanced-search-range-row">
+                    <fieldset class="advanced-search-duration-group">
+                      <legend data-i18n="advanced_duration_min">Minimum duration</legend>
+                      <div class="advanced-search-duration-inputs">
+                        <label><span data-i18n="advanced_duration_hours">Hours</span><input type="number" data-duration-bound="min" data-duration-unit="hours" min="0" step="1" inputmode="numeric" /></label>
+                        <label><span data-i18n="advanced_duration_minutes">Minutes</span><input type="number" data-duration-bound="min" data-duration-unit="minutes" min="0" max="59" step="1" inputmode="numeric" /></label>
+                        <label><span data-i18n="advanced_duration_seconds">Seconds</span><input type="number" data-duration-bound="min" data-duration-unit="seconds" min="0" max="59" step="1" inputmode="numeric" /></label>
+                      </div>
+                    </fieldset>
+                    <fieldset class="advanced-search-duration-group">
+                      <legend data-i18n="advanced_duration_max">Maximum duration</legend>
+                      <div class="advanced-search-duration-inputs">
+                        <label><span data-i18n="advanced_duration_hours">Hours</span><input type="number" data-duration-bound="max" data-duration-unit="hours" min="0" step="1" inputmode="numeric" /></label>
+                        <label><span data-i18n="advanced_duration_minutes">Minutes</span><input type="number" data-duration-bound="max" data-duration-unit="minutes" min="0" max="59" step="1" inputmode="numeric" /></label>
+                        <label><span data-i18n="advanced_duration_seconds">Seconds</span><input type="number" data-duration-bound="max" data-duration-unit="seconds" min="0" max="59" step="1" inputmode="numeric" /></label>
+                      </div>
+                    </fieldset>
+                    <label>
+                      <span data-i18n="advanced_size_min">Minimum size</span>
+                      <div class="advanced-search-size-input">
+                        <input type="number" data-size-bound="min" data-size-value min="0" step="0.1" inputmode="decimal" />
+                        <select data-size-bound="min" data-size-unit aria-label="Minimum size unit"><option value="kb">KB</option><option value="mb" selected>MB</option><option value="gb">GB</option></select>
+                      </div>
+                    </label>
+                    <label>
+                      <span data-i18n="advanced_size_max">Maximum size</span>
+                      <div class="advanced-search-size-input">
+                        <input type="number" data-size-bound="max" data-size-value min="0" step="0.1" inputmode="decimal" />
+                        <select data-size-bound="max" data-size-unit aria-label="Maximum size unit"><option value="kb">KB</option><option value="mb" selected>MB</option><option value="gb">GB</option></select>
+                      </div>
+                    </label>
+                  </div>
+                  <div class="advanced-search-range-order-row">
+                    <fieldset class="advanced-search-range-order">
+                      <legend data-i18n="advanced_duration_order">Duration order</legend>
+                      <label><input type="radio" name="advancedSortOrder" value="duration_asc" data-sort-field="duration" /><span data-i18n="advanced_date_asc">Ascending</span></label>
+                      <label><input type="radio" name="advancedSortOrder" value="duration_desc" data-sort-field="duration" /><span data-i18n="advanced_date_desc">Descending</span></label>
+                    </fieldset>
+                    <fieldset class="advanced-search-range-order">
+                      <legend data-i18n="advanced_size_order">Size order</legend>
+                      <label><input type="radio" name="advancedSortOrder" value="size_asc" data-sort-field="size" /><span data-i18n="advanced_date_asc">Ascending</span></label>
+                      <label><input type="radio" name="advancedSortOrder" value="size_desc" data-sort-field="size" /><span data-i18n="advanced_date_desc">Descending</span></label>
+                    </fieldset>
+                  </div>
+                </details>
               </div>
               <div class="advanced-search-available-fields" id="advancedSearchAvailableFields"></div>
             </div>
@@ -212,7 +268,7 @@
     <script src="/main-shell.js?v=20260722-volume-controls-1"></script>
     <script src="/main-dialogs.js?v=20260424-main-refactor-9"></script>
     <script src="/main-access-scope.js?v=20260519-rights-no-hardcoded-1"></script>
-    <script src="/main-advanced-search.js?v=20260727-belgelik-advanced-1"></script>
+    <script src="/main-advanced-search.js?v=20260731-advanced-constraints-4"></script>
     <script src="/main-detail.js?v=20260714-image-version-preview-1"></script>
     <script src="/main-detail-version-actions.js?v=20260729-version-actions-1"></script>
     <script src="/main-detail-asset-actions.js?v=20260729-asset-actions-1"></script>

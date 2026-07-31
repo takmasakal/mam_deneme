@@ -3,10 +3,11 @@
     q: 'Query',
     ocrQ: 'OCR search',
     subtitleQ: 'Subtitle search',
-    tag: 'Tag search',
-    type: 'Type'
+    tag: 'Tag search'
   };
   const FIELD_ORDER = Object.keys(FIELD_LABELS);
+  const RANGE_FIELDS = ['durationMinSec', 'durationMaxSec', 'sizeMinMb', 'sizeMaxMb'];
+  const SIZE_UNIT_FIELDS = ['sizeMinUnit', 'sizeMaxUnit'];
   const STORAGE_KEY_PREFIX = 'mam.advanced.searches:';
 
   function createMainAdvancedSearchModule(deps = {}) {
@@ -22,13 +23,15 @@
     const modal = document.getElementById('advancedSearchModal');
     const fieldsEl = document.getElementById('advancedSearchFields');
     const availableFieldsEl = document.getElementById('advancedSearchAvailableFields');
+    const typeOptionsEl = document.getElementById('advancedSearchTypeOptions');
     const todayCheck = document.getElementById('advancedSearchToday');
     const savedSelect = document.getElementById('advancedSearchSaved');
-    const dateOrderInputs = modal?.querySelectorAll('input[name="advancedDateOrder"]');
+    const sortOrderInputs = modal?.querySelectorAll('input[name="advancedSortOrder"]');
     const dateFieldSelect = modal?.querySelector('select[name="dateField"]');
     const state = { and: [...FIELD_ORDER], or: [] };
     const datePicker = { element: null, inputName: '', month: new Date() };
     let advancedTypeValue = '';
+    let lastSelectedSortValue = '';
     let storageKey = getStorageKey(initialUserIdentity);
     let enabled = false;
 
@@ -88,11 +91,74 @@
 
     function typeValueFromFilters() {
       const selected = selectedAssetTypes();
-      return selected.length === assetTypeFilters.length ? '' : (selected.join(',') || '__none__');
+      return selected.length === assetTypeFilters.length ? '' : selected.join(',');
     }
 
-    function isTypeInAndGroup() {
-      return state.and.includes('type');
+    function rangeFieldValue(field) {
+      const durationBound = field === 'durationMinSec' ? 'min' : (field === 'durationMaxSec' ? 'max' : '');
+      if (durationBound) {
+        const parts = ['hours', 'minutes', 'seconds'].map((unit) =>
+          String(modal?.querySelector(`[data-duration-bound="${durationBound}"][data-duration-unit="${unit}"]`)?.value || '').trim()
+        );
+        if (!parts.some(Boolean)) return '';
+        const [hours, minutes, seconds] = parts.map((value) => Math.max(0, Number(value) || 0));
+        return String((Math.floor(hours) * 3600) + (Math.min(59, Math.floor(minutes)) * 60) + Math.min(59, Math.floor(seconds)));
+      }
+      const sizeBound = field === 'sizeMinMb' ? 'min' : (field === 'sizeMaxMb' ? 'max' : '');
+      if (sizeBound) {
+        const raw = String(modal?.querySelector(`[data-size-bound="${sizeBound}"][data-size-value]`)?.value || '').trim();
+        if (!raw) return '';
+        const unit = sizeUnitValue(sizeBound);
+        const multiplier = unit === 'kb' ? (1 / 1024) : (unit === 'gb' ? 1024 : 1);
+        return String(Math.max(0, Number(raw) || 0) * multiplier);
+      }
+      return String(modal?.querySelector(`[name="${field}"]`)?.value || '').trim();
+    }
+
+    function sizeUnitValue(bound) {
+      const value = String(modal?.querySelector(`[data-size-bound="${bound}"][data-size-unit]`)?.value || 'mb').toLowerCase();
+      return ['kb', 'mb', 'gb'].includes(value) ? value : 'mb';
+    }
+
+    function setSizeUnitValue(bound, value) {
+      const select = modal?.querySelector(`[data-size-bound="${bound}"][data-size-unit]`);
+      if (select) select.value = ['kb', 'mb', 'gb'].includes(String(value || '').toLowerCase()) ? String(value).toLowerCase() : 'mb';
+    }
+
+    function setRangeFieldValue(field, value) {
+      const durationBound = field === 'durationMinSec' ? 'min' : (field === 'durationMaxSec' ? 'max' : '');
+      if (durationBound) {
+        const raw = String(value ?? '').trim();
+        const total = raw === '' ? null : Math.max(0, Math.floor(Number(raw) || 0));
+        const values = total === null
+          ? { hours: '', minutes: '', seconds: '' }
+          : {
+            hours: String(Math.floor(total / 3600)),
+            minutes: String(Math.floor((total % 3600) / 60)),
+            seconds: String(total % 60)
+          };
+        Object.entries(values).forEach(([unit, part]) => {
+          const input = modal?.querySelector(`[data-duration-bound="${durationBound}"][data-duration-unit="${unit}"]`);
+          if (input) input.value = part;
+        });
+        return;
+      }
+      const sizeBound = field === 'sizeMinMb' ? 'min' : (field === 'sizeMaxMb' ? 'max' : '');
+      if (sizeBound) {
+        const input = modal?.querySelector(`[data-size-bound="${sizeBound}"][data-size-value]`);
+        if (!input) return;
+        const raw = String(value ?? '').trim();
+        if (!raw) {
+          input.value = '';
+          return;
+        }
+        const unit = sizeUnitValue(sizeBound);
+        const divisor = unit === 'kb' ? (1 / 1024) : (unit === 'gb' ? 1024 : 1);
+        input.value = String((Number(raw) || 0) / divisor);
+        return;
+      }
+      const input = modal?.querySelector(`[name="${field}"]`);
+      if (input) input.value = String(value || '');
     }
 
     function setDateFieldValue(field, value) {
@@ -211,19 +277,39 @@
       const normalized = value === 'updated' ? 'updated' : 'created';
       setFieldValue('dateField', normalized);
       if (dateFieldSelect) dateFieldSelect.value = normalized;
-      const direction = String(sortValue() || '').endsWith('_asc') ? 'asc' : 'desc';
-      setSortValue(`${normalized}_${direction}`);
+      sortOrderInputs?.forEach((radio) => {
+        if (radio.dataset.sortField === 'date') {
+          radio.value = `${normalized}_${radio.dataset.sortDirection || 'desc'}`;
+        }
+      });
+      if (sortScope(sortValue()) === 'date') {
+        const direction = String(sortValue()).endsWith('_asc') ? 'asc' : 'desc';
+        setSortValue(`${normalized}_${direction}`);
+      }
     }
 
     function sortValue() {
       return String(searchForm?.querySelector('[name="sortBy"]')?.value || '').trim();
     }
 
-    function setSortValue(value) {
-      const normalized = ['created_asc', 'created_desc', 'updated_asc', 'updated_desc'].includes(String(value || '')) ? String(value) : 'created_desc';
+    function sortScope(value) {
+      const prefix = String(value || '').split('_')[0];
+      return ['created', 'updated'].includes(prefix) ? 'date' : (['duration', 'size'].includes(prefix) ? prefix : '');
+    }
+
+    function setSortValue(value, { warnOnReplacement = false } = {}) {
+      const allowed = ['created_asc', 'created_desc', 'updated_asc', 'updated_desc', 'duration_asc', 'duration_desc', 'size_asc', 'size_desc'];
+      const normalized = allowed.includes(String(value || '')) ? String(value) : '';
+      if (warnOnReplacement
+        && lastSelectedSortValue
+        && normalized
+        && sortScope(lastSelectedSortValue) !== sortScope(normalized)) {
+        global.alert(t('advanced_sort_single_warning'));
+      }
       const input = searchForm?.querySelector('[name="sortBy"]');
       if (input) input.value = normalized;
-      dateOrderInputs?.forEach((radio) => { radio.checked = radio.value === normalized; });
+      sortOrderInputs?.forEach((radio) => { radio.checked = radio.value === normalized; });
+      lastSelectedSortValue = normalized;
     }
 
     function normalizedState() {
@@ -250,15 +336,24 @@
       setFieldValue('uploadDateTo', uploadDateTo);
       setFieldValue('dateField', selectedDateField);
       const hasDateRange = Boolean(uploadDateFrom || uploadDateTo);
-      input.value = current.and.length || current.or.length || hasDateRange
+      const hasTypeFilter = Boolean(advancedFieldValue('type'));
+      const rangeValues = Object.fromEntries(RANGE_FIELDS.map((field) => [field, rangeFieldValue(field)]));
+      const hasRangeFilter = RANGE_FIELDS.some((field) => rangeValues[field]);
+      const hasSort = Boolean(sortValue());
+      input.value = current.and.length || current.or.length || hasTypeFilter || hasDateRange || hasRangeFilter || hasSort
         ? JSON.stringify({
-          ...current,
+          and: hasTypeFilter ? [...current.and, 'type'] : current.and,
+          or: current.or,
           values: Object.fromEntries([
             ...FIELD_ORDER.map((field) => [field, advancedFieldValue(field)]),
+            ['type', advancedFieldValue('type')],
             ['uploadDateFrom', uploadDateFrom],
             ['uploadDateTo', uploadDateTo],
             ['dateField', selectedDateField],
-            ['sortBy', sortValue()]
+            ['sortBy', sortValue()],
+            ...Object.entries(rangeValues),
+            ['sizeMinUnit', sizeUnitValue('min')],
+            ['sizeMaxUnit', sizeUnitValue('max')]
           ])
         })
         : '';
@@ -270,40 +365,13 @@
       item.className = 'advanced-search-field';
       item.draggable = true;
       item.dataset.advancedField = field;
-      if (field === 'type') {
-        item.innerHTML = `<strong>${t('advanced_field_type') || FIELD_LABELS[field]}</strong><div class="advanced-search-type-options"></div>`;
-        const options = item.querySelector('.advanced-search-type-options');
-        const currentValues = (advancedFieldValue('type') || typeValueFromFilters())
-          .split(',').map((type) => type.trim()).filter(Boolean);
-        const current = new Set(isTypeInAndGroup() ? currentValues.slice(0, 1) : currentValues);
-        if (isTypeInAndGroup() && currentValues.length > 1) advancedTypeValue = currentValues[0];
-        assetTypeFilters.forEach((source) => {
-          const type = String(source.value || '').trim().toLowerCase();
-          const label = document.createElement('label');
-          label.innerHTML = `<input type="checkbox" value="${type}" ${current.has(type) ? 'checked' : ''} /> <span>${t(`type_${type}`) || type}</span>`;
-          const checkbox = label.querySelector('input');
-          checkbox.addEventListener('change', () => {
-            if (isTypeInAndGroup() && checkbox.checked) {
-              options.querySelectorAll('input[type="checkbox"]').forEach((input) => {
-                if (input !== checkbox) input.checked = false;
-              });
-            }
-            const types = Array.from(options.querySelectorAll('input:checked')).map((input) => input.value);
-            advancedTypeValue = types.length === assetTypeFilters.length ? '' : (types.join(',') || '__none__');
-            syncAssetTypeFilters(types);
-            syncHiddenInput();
-          });
-          options.appendChild(label);
-        });
-      } else {
-        item.innerHTML = `<strong>${t(`advanced_field_${field}`) || FIELD_LABELS[field]}</strong><input type="text" value="" aria-label="${FIELD_LABELS[field]}" />`;
-        const input = item.querySelector('input');
-        input.value = advancedFieldValue(field);
-        input.addEventListener('input', () => {
-          setAdvancedFieldValue(field, input.value);
-          syncHiddenInput();
-        });
-      }
+      item.innerHTML = `<strong>${t(`advanced_field_${field}`) || FIELD_LABELS[field]}</strong><input type="text" value="" aria-label="${FIELD_LABELS[field]}" />`;
+      const input = item.querySelector('input');
+      input.value = advancedFieldValue(field);
+      input.addEventListener('input', () => {
+        setAdvancedFieldValue(field, input.value);
+        syncHiddenInput();
+      });
       item.addEventListener('dragstart', (event) => {
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData('text/plain', field);
@@ -311,6 +379,24 @@
       });
       item.addEventListener('dragend', () => item.classList.remove('dragging'));
       return item;
+    }
+
+    function renderTypeOptions() {
+      if (!typeOptionsEl) return;
+      const selected = new Set(String(advancedFieldValue('type') || '').split(',').map((type) => type.trim()).filter(Boolean));
+      typeOptionsEl.innerHTML = '';
+      assetTypeFilters.forEach((source) => {
+        const type = String(source.value || '').trim().toLowerCase();
+        const label = document.createElement('label');
+        label.innerHTML = `<input type="checkbox" value="${type}" ${selected.has(type) ? 'checked' : ''} /> <span>${t(`type_${type}`) || type}</span>`;
+        label.querySelector('input')?.addEventListener('change', () => {
+          const types = Array.from(typeOptionsEl.querySelectorAll('input:checked')).map((item) => item.value);
+          advancedTypeValue = types.join(',');
+          syncAssetTypeFilters(types.length ? types : assetTypeFilters.map((item) => item.value));
+          syncHiddenInput();
+        });
+        typeOptionsEl.appendChild(label);
+      });
     }
 
     function moveField(field, group) {
@@ -322,6 +408,7 @@
 
     function render() {
       if (!fieldsEl || !availableFieldsEl || !modal) return;
+      renderTypeOptions();
       availableFieldsEl.innerHTML = '';
       const assigned = new Set([...state.and, ...state.or]);
       FIELD_ORDER.filter((field) => !assigned.has(field)).forEach((field) => availableFieldsEl.appendChild(makeField(field)));
@@ -369,13 +456,22 @@
     function open() {
       if (!canUseAdvancedSearch()) return;
       enabled = true;
-      let savedType = '';
-      try { savedType = JSON.parse(fieldValue('advancedSearch') || '{}')?.values?.type || ''; } catch (_error) { /* ignore invalid old state */ }
+      let savedValues = {};
+      try { savedValues = JSON.parse(fieldValue('advancedSearch') || '{}')?.values || {}; } catch (_error) { /* ignore invalid old state */ }
+      const savedType = savedValues.type || '';
       advancedTypeValue = String(savedType || typeValueFromFilters()).trim();
       setDateFieldValue('uploadDateFrom', fieldValue('uploadDateFrom'));
       setDateFieldValue('uploadDateTo', fieldValue('uploadDateTo'));
-      setDateField(fieldValue('dateField') || (String(sortValue()).startsWith('updated_') ? 'updated' : 'created'));
-      setSortValue(sortValue());
+      const activeSort = String(savedValues.sortBy || sortValue() || '');
+      setDateField(fieldValue('dateField') || (activeSort.startsWith('updated_') ? 'updated' : 'created'));
+      setSortValue(activeSort);
+      setSizeUnitValue('min', savedValues.sizeMinUnit || 'mb');
+      setSizeUnitValue('max', savedValues.sizeMaxUnit || 'mb');
+      RANGE_FIELDS.forEach((field) => setRangeFieldValue(field, savedValues[field] || ''));
+      const dateSection = document.getElementById('advancedSearchDateSection');
+      const rangeSection = document.getElementById('advancedSearchRangeSection');
+      if (dateSection) dateSection.open = Boolean(dateFieldValue('uploadDateFrom') || dateFieldValue('uploadDateTo'));
+      if (rangeSection) rangeSection.open = RANGE_FIELDS.some((field) => rangeFieldValue(field));
       if (todayCheck) todayCheck.checked = false;
       render();
       refreshSavedOptions();
@@ -398,11 +494,15 @@
     function clear() {
       enabled = false;
       FIELD_ORDER.forEach((field) => setAdvancedFieldValue(field, ''));
+      setAdvancedFieldValue('type', '');
       syncAssetTypeFilters(assetTypeFilters.map((input) => input.value));
+      RANGE_FIELDS.forEach((field) => setRangeFieldValue(field, ''));
+      setSizeUnitValue('min', 'mb');
+      setSizeUnitValue('max', 'mb');
       setDateFieldValue('uploadDateFrom', '');
       setDateFieldValue('uploadDateTo', '');
       setDateField('created');
-      setSortValue('created_desc');
+      setSortValue('');
       if (todayCheck) todayCheck.checked = false;
       state.and = [...FIELD_ORDER];
       state.or = [];
@@ -427,10 +527,13 @@
         state: normalizedState(),
         values: Object.fromEntries([
           ...FIELD_ORDER.map((field) => [field, advancedFieldValue(field)]),
+          ['type', advancedFieldValue('type')],
           ['uploadDateFrom', dateFieldValue('uploadDateFrom')],
           ['uploadDateTo', dateFieldValue('uploadDateTo')],
           ['dateField', dateField()],
-          ['sortBy', sortValue()]
+          ['sortBy', sortValue()],
+          ...RANGE_FIELDS.map((field) => [field, rangeFieldValue(field)]),
+          ...SIZE_UNIT_FIELDS.map((field) => [field, sizeUnitValue(field === 'sizeMinUnit' ? 'min' : 'max')])
         ])
       });
       writeSaved(items);
@@ -448,11 +551,21 @@
       state.and = FIELD_ORDER.filter((field) => Array.isArray(nextState.and) && nextState.and.includes(field));
       state.or = FIELD_ORDER.filter((field) => Array.isArray(nextState.or) && nextState.or.includes(field) && !state.and.includes(field));
       FIELD_ORDER.forEach((field) => setAdvancedFieldValue(field, item.values?.[field] || ''));
-      if (item.values?.type) syncAssetTypeFilters(String(item.values.type).split(','));
+      setAdvancedFieldValue('type', item.values?.type || '');
+      syncAssetTypeFilters(item.values?.type
+        ? String(item.values.type).split(',')
+        : assetTypeFilters.map((input) => input.value));
+      setSizeUnitValue('min', item.values?.sizeMinUnit || 'mb');
+      setSizeUnitValue('max', item.values?.sizeMaxUnit || 'mb');
+      RANGE_FIELDS.forEach((field) => setRangeFieldValue(field, item.values?.[field] || ''));
+      const dateSection = document.getElementById('advancedSearchDateSection');
+      const rangeSection = document.getElementById('advancedSearchRangeSection');
+      if (dateSection) dateSection.open = Boolean(item.values?.uploadDateFrom || item.values?.uploadDateTo);
+      if (rangeSection) rangeSection.open = RANGE_FIELDS.some((field) => item.values?.[field]);
       setDateFieldValue('uploadDateFrom', item.values?.uploadDateFrom || '');
       setDateFieldValue('uploadDateTo', item.values?.uploadDateTo || '');
       setDateField(item.values?.dateField || (String(item.values?.sortBy || '').startsWith('updated_') ? 'updated' : 'created'));
-      setSortValue(item.values?.sortBy || 'created_desc');
+      setSortValue(item.values?.sortBy || '');
       const assigned = new Set([...state.and, ...state.or]);
       FIELD_ORDER.filter((field) => !assigned.has(field)).forEach((field) => state.and.push(field));
       render();
@@ -505,8 +618,21 @@
         input.addEventListener('change', () => {
           if (!enabled) return;
           advancedTypeValue = typeValueFromFilters();
+          renderTypeOptions();
           syncHiddenInput();
         });
+      });
+      modal?.querySelectorAll('[data-duration-bound][data-duration-unit]').forEach((input) => {
+        input.addEventListener('input', () => {
+          const maximum = input.dataset.durationUnit === 'hours' ? null : 59;
+          if (maximum !== null && Number(input.value) > maximum) input.value = String(maximum);
+          if (Number(input.value) < 0) input.value = '0';
+          syncHiddenInput();
+        });
+      });
+      modal?.querySelectorAll('[data-size-bound][data-size-value], [data-size-bound][data-size-unit]').forEach((input) => {
+        input.addEventListener('input', syncHiddenInput);
+        input.addEventListener('change', syncHiddenInput);
       });
       modal?.querySelectorAll('[data-date-input]').forEach((input) => {
         input.addEventListener('focus', () => openDatePicker(input.dataset.dateInput, input));
@@ -529,9 +655,9 @@
         setDateField(dateFieldSelect.value);
         syncHiddenInput();
       });
-      dateOrderInputs?.forEach((radio) => {
+      sortOrderInputs?.forEach((radio) => {
         radio.addEventListener('change', () => {
-          if (radio.checked) setSortValue(radio.value);
+          if (radio.checked) setSortValue(radio.value, { warnOnReplacement: true });
           syncHiddenInput();
         });
       });
