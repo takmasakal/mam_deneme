@@ -75,4 +75,15 @@ const asset = {
   assert.strictEqual(counters.clip, 1);
 }
 
+{
+  const counters = {};
+  const html = createRenderer(counters).render({
+    ...asset,
+    type: 'Video',
+    durationSeconds: 90,
+    fileSizeBytes: 5 * 1024 * 1024
+  }, {});
+  assert.match(html, /duration: 90s \| file_size: 5\.00 MB/);
+}
+
 console.log('mainAssetCard tests passed');
