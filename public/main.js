@@ -1918,6 +1918,7 @@ detailModule = window.createMainDetailModule({
   renderPdfChangeKindLabel,
   cleanVersionNoteText,
   formatDate,
+  formatDuration,
   currentUserCanUsePdfAdvancedTools: () => currentUserCanUsePdfAdvancedTools,
   currentUserCanEditOffice: () => currentUserCanEditOffice,
   currentUserCanAccessAdmin: () => currentUserCanAccessAdmin,

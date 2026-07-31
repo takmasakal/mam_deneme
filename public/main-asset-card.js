@@ -10,7 +10,6 @@
       clipHighlightSnippet,
       effectiveSearchHighlightClass,
       foldSearchText,
-      workflowLabel,
       formatDuration,
       formatDate,
       tagColorStyle,
@@ -119,13 +118,24 @@
       }
 
       const hitPager = `${subtitlePager}${ocrPager}`;
+      const mediaDuration = (isVideo(asset) || isAudio(asset)) && Number(asset.durationSeconds) > 0
+        ? escapeHtml(formatDuration(asset.durationSeconds))
+        : '';
+      const fileSizeBytes = Number(asset.fileSizeBytes);
+      const fileSizeMb = Number.isFinite(fileSizeBytes) && fileSizeBytes > 0
+        ? escapeHtml(`${(fileSizeBytes / (1024 * 1024)).toFixed(2)} MB`)
+        : '';
+      const mediaMetrics = [mediaDuration, fileSizeMb].filter(Boolean).join(' | ');
+      const mediaInfoRow = (mediaMetrics || hitPager)
+        ? `<div class="asset-meta asset-status-row"><span>${mediaMetrics}</span>${hitPager}</div>`
+        : '';
       return `
         <article class="asset-card ${selected} ${trashClass} card-art-glass" data-id="${escapeHtml(asset.id)}">
           ${thumbnailMarkup(asset)}
           <div class="asset-card-body">
             <h3><span class="type-icon" aria-hidden="true">${assetTypeIcon(asset)}</span> ${renderText(asset.title)}</h3>
             <div class="asset-meta">${renderText(asset.type)} | ${renderText(asset.owner)}</div>
-            <div class="asset-meta asset-status-row"><span>${escapeHtml(workflowLabel(asset.status))}${(isVideo(asset) || isAudio(asset)) ? ` | ${escapeHtml(formatDuration(asset.durationSeconds))}` : ''}</span>${hitPager}</div>
+            ${mediaInfoRow}
             ${metadataHits ? `<div class="asset-meta dc-hit-row">${metadataHits}</div>` : ''}
             ${tagHits ? `<div class="asset-meta dc-hit-row">${tagHits}</div>` : ''}
             ${dcHits ? `<div class="asset-meta dc-hit-row">${dcHits}</div>` : ''}
