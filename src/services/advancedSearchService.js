@@ -47,6 +47,17 @@ function createAdvancedSearchService() {
     const active = Boolean(activeFields.and.length || activeFields.or.length);
     if (!active) return { rows, total: rows.length, active: false, ...activeFields };
 
+    // Asset types always narrow the text/OCR/subtitle/tag result. Multiple
+    // selected types are already represented by one comma-separated value and
+    // are OR'ed by the type matcher itself.
+    const constraintFields = ['type'].filter(
+      (field) => activeFields.and.includes(field) || activeFields.or.includes(field)
+    );
+    const booleanFields = {
+      and: activeFields.and.filter((field) => !constraintFields.includes(field)),
+      or: activeFields.or.filter((field) => !constraintFields.includes(field))
+    };
+
     const matchSets = new Map();
     for (const field of Array.from(new Set([...activeFields.and, ...activeFields.or]))) {
       const value = String(valuesByField?.[field] || '').trim();
@@ -54,19 +65,26 @@ function createAdvancedSearchService() {
       matchSets.set(field, new Set((matchedRows || []).map(assetId).filter(Boolean)));
     }
 
-    const matchesAll = (row) => activeFields.and.every(
+    const matchesAll = (row) => booleanFields.and.every(
       (field) => matchSets.get(field)?.has(assetId(row))
     );
-    const matchesAny = (row) => activeFields.or.some(
+    const matchesAny = (row) => booleanFields.or.some(
       (field) => matchSets.get(field)?.has(assetId(row))
     );
-    const andRows = activeFields.and.length ? rows.filter(matchesAll) : [];
-    const orRows = activeFields.or.length ? rows.filter(matchesAny) : [];
-    const allowedIds = new Set((activeFields.and.length ? andRows : orRows).map(assetId));
-    if (activeFields.and.length && activeFields.or.length) {
+    const andRows = booleanFields.and.length ? rows.filter(matchesAll) : [];
+    const orRows = booleanFields.or.length ? rows.filter(matchesAny) : [];
+    const hasBooleanFields = Boolean(booleanFields.and.length || booleanFields.or.length);
+    const allowedIds = new Set((booleanFields.and.length ? andRows : orRows).map(assetId));
+    if (booleanFields.and.length && booleanFields.or.length) {
       orRows.forEach((row) => allowedIds.add(assetId(row)));
     }
-    const filteredRows = rows.filter((row) => allowedIds.has(assetId(row)));
+    let filteredRows = hasBooleanFields
+      ? rows.filter((row) => allowedIds.has(assetId(row)))
+      : [...rows];
+    for (const field of constraintFields) {
+      const matches = matchSets.get(field);
+      filteredRows = filteredRows.filter((row) => matches?.has(assetId(row)));
+    }
     if (typeof annotate === 'function') {
       await annotate(filteredRows, { valuesByField, activeFields });
     }
