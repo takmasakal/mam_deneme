@@ -101,9 +101,15 @@
       if (requestSeq !== loadRequestSeq) return null;
       const payload = Array.isArray(result) ? { assets: result, searchMeta: {} } : (result || {});
       const pagination = payload.pagination && typeof payload.pagination === 'object'
-        ? payload.pagination
+        ? { ...payload.pagination }
         : { total: Array.isArray(payload.assets) ? payload.assets.length : 0, ...paging };
       currentAssetsRef.value = Array.isArray(payload.assets) ? payload.assets : [];
+      pagination.serverSide = canUseServerPagination;
+      if (!canUseServerPagination) {
+        pagination.total = currentAssetsRef.value.length;
+        pagination.limit = paging.limit;
+        pagination.offset = 0;
+      }
       const qMeta = payload.searchMeta?.q && typeof payload.searchMeta.q === 'object' ? payload.searchMeta.q : null;
       const ocrMeta = payload.searchMeta?.ocrQ && typeof payload.searchMeta.ocrQ === 'object' ? payload.searchMeta.ocrQ : null;
       const subtitleMeta = payload.searchMeta?.subtitleQ && typeof payload.searchMeta.subtitleQ === 'object' ? payload.searchMeta.subtitleQ : null;

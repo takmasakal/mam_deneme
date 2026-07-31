@@ -1471,6 +1471,7 @@ function registerAssetRoutes(app, deps) {
       );
   
       const asset = mapAssetRowForUser(row, loaded.accessContext);
+      asset.fileSizeBytes = await resolveAssetFileSize(row);
       const audioCandidate = isVideoCandidate({
         mimeType: row.mime_type,
         fileName: row.file_name,

@@ -204,7 +204,19 @@
       const metadataFieldsetOpen = canEditMetadata ? '<fieldset class="metadata-fieldset">' : '<fieldset class="metadata-fieldset" disabled>';
       const durationSeconds = Number(asset.durationSeconds) || 0;
       const hasDuration = (isVideo(asset) || (typeof isAudio === 'function' && isAudio(asset))) && durationSeconds > 0;
-      const durationMeta = hasDuration ? ` | ${t('duration')}: ${escapeHtml(durationSeconds)}s` : '';
+      const formattedDuration = (() => {
+        const safeSeconds = Math.max(0, Math.floor(durationSeconds));
+        const hours = String(Math.floor(safeSeconds / 3600)).padStart(2, '0');
+        const minutes = String(Math.floor((safeSeconds % 3600) / 60)).padStart(2, '0');
+        const seconds = String(safeSeconds % 60).padStart(2, '0');
+        return `${hours}:${minutes}:${seconds}`;
+      })();
+      const durationMeta = hasDuration ? ` | ${t('duration')}: ${escapeHtml(formattedDuration)}` : '';
+      const fileSizeBytes = Number(asset.fileSizeBytes);
+      const hasFileSize = Number.isFinite(fileSizeBytes) && fileSizeBytes > 0;
+      const fileSizeMeta = hasFileSize
+        ? ` | ${t('tech_file_size')}: ${escapeHtml(`${(fileSizeBytes / (1024 * 1024)).toFixed(2)} MB`)}`
+        : '';
       const durationField = hasDuration
         ? `<label>${t('duration')}<input name="durationSeconds" type="number" min="0" value="${escapeHtml(durationSeconds)}" />${buildInlineFieldMatch(`${durationSeconds}s`, currentSearchHighlightQuery(), searchHighlightClass)}</label>`
         : '';
@@ -238,7 +250,7 @@
         <h3>${highlightMatch(asset.title, currentSearchHighlightQuery(), searchHighlightClass)}</h3>
         ${detailArtifactBadges(asset)}
         <p>${highlightMatch(asset.description || t('no_description'), currentSearchHighlightQuery(), searchHighlightClass)}</p>
-        <div class="asset-meta">${t('owner')}: ${highlightMatch(asset.owner, currentSearchHighlightQuery(), searchHighlightClass)} | ${t('type')}: ${highlightMatch(asset.type, currentSearchHighlightQuery(), searchHighlightClass)}${durationMeta}</div>
+        <div class="asset-meta">${t('owner')}: ${highlightMatch(asset.owner, currentSearchHighlightQuery(), searchHighlightClass)} | ${t('type')}: ${highlightMatch(asset.type, currentSearchHighlightQuery(), searchHighlightClass)}${durationMeta}${fileSizeMeta}</div>
         <div class="asset-meta">${t('trash')}: ${trashStatus}</div>
         ${dcHighlightSnippet(asset, currentSearchHighlightQuery(), searchHighlightClass) ? `<div class="asset-meta dc-hit-row">${dcHighlightSnippet(asset, currentSearchHighlightQuery(), searchHighlightClass)}</div>` : ''}
         ${tagsMarkup}

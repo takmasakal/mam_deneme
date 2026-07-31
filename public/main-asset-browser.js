@@ -45,6 +45,7 @@
     let assetPageSize = 20;
     let assetPage = 1;
     let assetTotal = 0;
+    let assetServerSidePagination = true;
     const acceptedDidYouMean = { q: '', ocr: '', subtitle: '' };
 
     function rememberAcceptedDidYouMean(type, suggestion) {
@@ -240,6 +241,11 @@ async function handleAssetPageDirection(button) {
     ? Math.max(1, assetPage - 1)
     : Math.min(totalPages, assetPage + 1);
   if (nextPage === assetPage) return;
+  assetPage = nextPage;
+  if (!assetServerSidePagination) {
+    renderAssets(currentAssetsRef.get());
+    return;
+  }
   button.disabled = true;
   try {
     await loadAssets({ resetPage: false, page: nextPage });
@@ -256,6 +262,11 @@ async function handleAssetPageInput(input) {
   input.value = String(requestedPage);
   assetGridEvents.resizePageInput(input);
   if (requestedPage === assetPage) return;
+  assetPage = requestedPage;
+  if (!assetServerSidePagination) {
+    renderAssets(currentAssetsRef.get());
+    return;
+  }
   input.disabled = true;
   try {
     await loadAssets({ resetPage: false, page: requestedPage });
@@ -268,6 +279,12 @@ async function handleAssetPageInput(input) {
 
 async function handleAssetPageSize(select) {
   const nextSize = Number(select?.value) || 20;
+  assetPageSize = assetPageSizes.includes(nextSize) ? nextSize : 20;
+  assetPage = 1;
+  if (!assetServerSidePagination) {
+    renderAssets(currentAssetsRef.get());
+    return;
+  }
   select.disabled = true;
   try {
     await loadAssets({ resetPage: true, pageSize: nextSize });
@@ -356,6 +373,7 @@ function renderAssets(assets, options = {}) {
     ? options.pagination
     : null;
   if (pagination) {
+    assetServerSidePagination = pagination.serverSide !== false;
     const nextLimit = Number(pagination.limit);
     if (assetPageSizes.includes(nextLimit)) assetPageSize = nextLimit;
     assetTotal = Math.max(0, Number(pagination.total) || 0);
@@ -366,12 +384,14 @@ function renderAssets(assets, options = {}) {
     return;
   }
 
-  const totalAssets = Math.max(assetTotal, assets.length);
+  const totalAssets = assetServerSidePagination ? Math.max(assetTotal, assets.length) : assets.length;
   const totalPages = Math.max(1, Math.ceil(totalAssets / assetPageSize));
   assetPage = Math.max(1, Math.min(assetPage, totalPages));
   const pageStart = (assetPage - 1) * assetPageSize;
-  const pageEnd = Math.min(totalAssets, pageStart + assets.length);
-  const visibleAssets = assets;
+  const visibleAssets = assetServerSidePagination
+    ? assets
+    : assets.slice(pageStart, Math.min(assets.length, pageStart + assetPageSize));
+  const pageEnd = Math.min(totalAssets, pageStart + visibleAssets.length);
   const pagerHtml = renderAssetListPager(totalAssets, pageStart, pageEnd, totalPages);
   const searchState = {
     currentSearchDidYouMean: searchStateRef.currentSearchDidYouMean,
