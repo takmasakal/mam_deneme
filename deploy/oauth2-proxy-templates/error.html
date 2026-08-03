@@ -1,0 +1,95 @@
+{{define "error.html"}}
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>{{.StatusCode}} {{.Title}}</title>
+  <link rel="stylesheet" href="{{.ProxyPrefix}}/static/css/bulma.min.css">
+  <link rel="stylesheet" href="{{.ProxyPrefix}}/static/css/all.min.css">
+  <style>
+    body { min-height: 100vh; }
+    .error-box { margin: 1.25rem auto; max-width: 600px; }
+    .status-code { font-size: 12rem; font-weight: 600; }
+    #more-info.card { border: 1px solid #f0f0f0; }
+    footer a { text-decoration: underline; }
+  </style>
+</head>
+<body class="has-background-light">
+  <section class="section">
+    <div class="box block error-box has-text-centered">
+      <div class="status-code">{{.StatusCode}}</div>
+      <div class="block"><h1 class="subtitle is-1">{{.Title}}</h1></div>
+
+      {{if or .Message .RequestID}}
+      <div id="more-info" class="block card is-fullwidth is-shadowless">
+        <header class="card-header is-shadowless">
+          <p class="card-header-title">Ayrıntılar</p>
+          <button type="button" class="card-header-icon card-toggle" aria-label="Ayrıntıları göster">
+            <i class="fa fa-angle-down"></i>
+          </button>
+        </header>
+        <div class="card-content has-text-left is-hidden">
+          {{if .Message}}<div id="oauth-error-message" class="content">{{.Message}}</div>{{end}}
+          {{if .RequestID}}<div class="content">İstek kimliği: {{.RequestID}}</div>{{end}}
+        </div>
+      </div>
+      {{end}}
+
+      {{if .Redirect}}
+      <input id="oauth-redirect-target" type="hidden" value="{{.Redirect}}">
+      <hr>
+      <div class="columns">
+        <div class="column">
+          <form method="GET" action="{{.Redirect}}">
+            <button type="submit" class="button is-danger is-fullwidth">Geri dön</button>
+          </form>
+        </div>
+        <div class="column">
+          <form method="GET" action="{{.ProxyPrefix}}/start">
+            <input type="hidden" name="rd" value="{{.Redirect}}">
+            <button type="submit" class="button is-primary is-fullwidth">Yeniden giriş yap</button>
+          </form>
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </section>
+
+  <footer class="footer has-text-grey has-background-light is-size-7">
+    <div class="content has-text-centered">
+      {{if eq .Footer "-"}}{{else if eq .Footer ""}}
+      <p>OAuth2 Proxy ile korunmaktadır.</p>
+      {{else}}<p>{{.Footer}}</p>{{end}}
+    </div>
+  </footer>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      Array.prototype.forEach.call(document.getElementsByClassName('card-toggle'), function (toggle) {
+        toggle.addEventListener('click', function () {
+          var content = document.querySelector('#more-info .card-content');
+          if (content) content.classList.toggle('is-hidden');
+        });
+      });
+
+      var message = document.getElementById('oauth-error-message');
+      var text = String(message && message.textContent || '').toLowerCase();
+      if (text.indexOf('valid csrf token') < 0 && text.indexOf('csrf') < 0) return;
+
+      var retryKey = 'mam_oauth_csrf_retry_at';
+      var now = Date.now();
+      var previous = Number(sessionStorage.getItem(retryKey) || 0);
+      if (Number.isFinite(previous) && now - previous < 60000) return;
+      sessionStorage.setItem(retryKey, String(now));
+
+      var rdInput = document.getElementById('oauth-redirect-target');
+      var rd = String(rdInput && rdInput.value || '/');
+      window.setTimeout(function () {
+        window.location.replace('{{.ProxyPrefix}}/start?rd=' + encodeURIComponent(rd));
+      }, 350);
+    });
+  </script>
+</body>
+</html>
+{{end}}

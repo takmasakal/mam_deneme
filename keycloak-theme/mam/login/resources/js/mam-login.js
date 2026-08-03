@@ -2,6 +2,7 @@
   'use strict';
 
   var COOKIE_NAME = 'mam.login.lang';
+  var pageLoadedAt = Date.now();
 
   function normalize(value) {
     var lang = String(value || '').toLowerCase().split('-')[0];
@@ -44,6 +45,38 @@
         persist(value);
       });
     });
+
+    installFreshLoginGuard();
+  }
+
+  function restartFreshLogin() {
+    var target = String(window.MAM_LOGIN_START_URL || '').trim();
+    if (!target) return false;
+    window.location.replace(target);
+    return true;
+  }
+
+  function hasExpiredLoginMessage() {
+    var text = String(document.body && document.body.innerText || '').toLocaleLowerCase('tr-TR');
+    return text.indexOf('giriş yapmak çok uzun sürdü') >= 0
+      || text.indexOf('giriş süreci baştan başlayacak') >= 0
+      || /login.{0,40}(timed out|timeout|too long)/i.test(text);
+  }
+
+  function installFreshLoginGuard() {
+    if (hasExpiredLoginMessage()) {
+      restartFreshLogin();
+      return;
+    }
+    var form = document.getElementById('kc-form-login')
+      || document.querySelector('form[action*="/login-actions/"]');
+    if (!form) return;
+    form.addEventListener('submit', function (event) {
+      var staleMs = Math.max(60 * 1000, Number(window.MAM_LOGIN_STALE_MS) || 0);
+      if (Date.now() - pageLoadedAt < staleMs) return;
+      event.preventDefault();
+      restartFreshLogin();
+    }, true);
   }
 
   if (document.readyState === 'loading') {

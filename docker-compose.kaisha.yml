@@ -34,7 +34,10 @@ services:
       OAUTH2_PROXY_COOKIE_SAMESITE: lax
       OAUTH2_PROXY_COOKIE_CSRF_EXPIRE: ${OAUTH2_PROXY_COOKIE_CSRF_EXPIRE:-1h}
       OAUTH2_PROXY_COOKIE_CSRF_PER_REQUEST: ${OAUTH2_PROXY_COOKIE_CSRF_PER_REQUEST:-true}
+      OAUTH2_PROXY_CUSTOM_TEMPLATES_DIR: /opt/mam/oauth2-proxy-templates
       OAUTH2_PROXY_WHITELIST_DOMAINS: ${OAUTH2_PROXY_WHITELIST_DOMAINS:-.company.local}
+    volumes:
+      - ./deploy/oauth2-proxy-templates:/opt/mam/oauth2-proxy-templates:ro
 
   keycloak:
     container_name: kaisha-keycloak
