@@ -183,6 +183,7 @@ def main() -> int:
     os.makedirs(out_dir, exist_ok=True)
 
     offline, model_cache = configure_offline_env()
+    print("MAM_PROGRESS=10 model_loading", file=sys.stderr, flush=True)
     try:
         model = WhisperModel(
             args.model,
@@ -205,7 +206,8 @@ def main() -> int:
     if lang in ("", "auto", "und"):
         lang = None
 
-    segments, _info = model.transcribe(
+    print("MAM_PROGRESS=20 transcribing", file=sys.stderr, flush=True)
+    segments, info = model.transcribe(
         in_path,
         language=lang,
         beam_size=5,
@@ -213,7 +215,18 @@ def main() -> int:
         word_timestamps=True
     )
 
-    cue_count = write_vtt(out_path, segments)
+    duration = max(0.0, float(getattr(info, "duration", 0.0) or 0.0))
+    collected = []
+    last_progress = 20
+    for segment in segments:
+        collected.append(segment)
+        end_sec = max(0.0, float(getattr(segment, "end", 0.0) or 0.0))
+        progress = min(88, 20 + int((end_sec / duration) * 68)) if duration > 0 else last_progress
+        if progress >= last_progress + 2:
+            last_progress = progress
+            print(f"MAM_PROGRESS={progress} transcribing", file=sys.stderr, flush=True)
+    print("MAM_PROGRESS=92 writing_subtitles", file=sys.stderr, flush=True)
+    cue_count = write_vtt(out_path, collected)
     print(f"ok cues={cue_count} output={out_path}")
     return 0
 

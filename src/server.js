@@ -55,7 +55,12 @@ const {
 const {
   proxyJobs,
   subtitleJobs,
-  videoOcrJobs
+  videoOcrJobs,
+  trackMediaJobProcess,
+  cancelMediaJobRuntime,
+  clearMediaJobRuntime,
+  isMediaJobCancelled,
+  hasActiveMediaJobRuntime
 } = require('./services/mediaJobs');
 
 const app = express();
@@ -2002,7 +2007,7 @@ async function detectSceneChangeTimes(inputPath, options = {}) {
     '-f',
     'null',
     '-'
-  ]);
+  ], { jobId: options.jobId, onProgress: options.onProgress });
   const rawLog = `${String(run.stderr || '')}\n${String(run.stdout || '')}`;
   const rangeStartSec = Number.isFinite(Number(options.rangeStartSec)) ? Math.max(0, Number(options.rangeStartSec)) : null;
   const rangeEndSec = Number.isFinite(Number(options.rangeEndSec)) ? Math.max(0, Number(options.rangeEndSec)) : null;
@@ -2020,7 +2025,7 @@ async function detectSceneChangeTimes(inputPath, options = {}) {
   return selected;
 }
 
-async function extractSceneFrames(inputPath, workDir, sceneTimes = [], preprocessProfile = 'light') {
+async function extractSceneFrames(inputPath, workDir, sceneTimes = [], preprocessProfile = 'light', runtimeOptions = {}) {
   const times = Array.isArray(sceneTimes) ? sceneTimes : [];
   if (!times.length) return [];
   const created = [];
@@ -2043,7 +2048,10 @@ async function extractSceneFrames(inputPath, workDir, sceneTimes = [], preproces
     ];
     if (visualEnhance) args.push('-vf', visualEnhance);
     args.push('-q:v', '3', scenePath);
-    const run = await runCommandCapture('ffmpeg', args);
+    const run = await runCommandCapture('ffmpeg', args, {
+      jobId: runtimeOptions.jobId,
+      onProgress: runtimeOptions.onProgress
+    });
     if (run.ok && fs.existsSync(scenePath)) created.push(sceneName);
   }
   return created;
@@ -2934,15 +2942,16 @@ function normalizeMediaJobType(value) {
 
 function normalizeMediaJobStatus(value) {
   const raw = String(value || '').trim().toLowerCase();
-  if (raw === 'queued' || raw === 'running' || raw === 'completed' || raw === 'failed') return raw;
+  if (raw === 'queued' || raw === 'running' || raw === 'completed' || raw === 'failed' || raw === 'cancelled') return raw;
   return 'queued';
 }
 
 function buildMediaJobProgress(status) {
   const safe = normalizeMediaJobStatus(status);
   if (safe === 'completed') return 100;
-  if (safe === 'running') return 40;
+  if (safe === 'running') return 10;
   if (safe === 'failed') return 0;
+  if (safe === 'cancelled') return 0;
   return 5;
 }
 
@@ -2960,7 +2969,10 @@ async function upsertMediaProcessingJob(record) {
   const requestPayload = safeJsonPayload(record?.requestPayload);
   const resultPayload = safeJsonPayload(record?.resultPayload);
   const errorText = String(record?.errorText || '').slice(0, 4000);
-  const progress = Math.max(0, Math.min(100, Number(record?.progress) || buildMediaJobProgress(status)));
+  const requestedProgress = Number(record?.progress);
+  const progress = Math.max(0, Math.min(100, Number.isFinite(requestedProgress)
+    ? requestedProgress
+    : buildMediaJobProgress(status)));
   const createdAt = record?.createdAt ? new Date(record.createdAt).toISOString() : new Date().toISOString();
   const updatedAt = record?.updatedAt ? new Date(record.updatedAt).toISOString() : new Date().toISOString();
   const startedAt = record?.startedAt ? new Date(record.startedAt).toISOString() : null;
@@ -2980,10 +2992,19 @@ async function upsertMediaProcessingJob(record) {
         request_payload = EXCLUDED.request_payload,
         result_payload = EXCLUDED.result_payload,
         error_text = EXCLUDED.error_text,
-        progress = EXCLUDED.progress,
+        progress = CASE
+          WHEN media_processing_jobs.status IN ('queued', 'running')
+            AND EXCLUDED.status IN ('queued', 'running')
+            THEN GREATEST(media_processing_jobs.progress, EXCLUDED.progress)
+          ELSE EXCLUDED.progress
+        END,
         updated_at = EXCLUDED.updated_at,
         started_at = COALESCE(EXCLUDED.started_at, media_processing_jobs.started_at),
         finished_at = EXCLUDED.finished_at
+      WHERE NOT (
+        media_processing_jobs.status IN ('completed', 'failed', 'cancelled')
+        AND EXCLUDED.status IN ('queued', 'running')
+      )
     `,
     [
       jobId,
@@ -3099,7 +3120,8 @@ function buildVideoOcrDbResultPayload(job) {
     droppedSceneFrames: Number(job.droppedSceneFrames || 0),
     patchedPeriodicFrames: Number(job.patchedPeriodicFrames || 0),
     keptSceneFrames: Number(job.keptSceneFrames || 0),
-    mode: String(job.mode || 'basic')
+    mode: String(job.mode || 'basic'),
+    progressPhase: String(job.progressPhase || '')
   };
 }
 
@@ -3150,6 +3172,7 @@ function mapVideoOcrJobFromDbRow(row) {
     maxSceneFrames: Number(request.maxSceneFrames || 0),
     sceneMinGapSec: Number(request.sceneMinGapSec || 0),
     warning: String(result.warning || ''),
+    progressPhase: String(result.progressPhase || ''),
     error: String(row?.error_text || ''),
     startedAt: row?.started_at ? new Date(row.started_at).toISOString() : (row?.created_at ? new Date(row.created_at).toISOString() : ''),
     updatedAt: row?.updated_at ? new Date(row.updated_at).toISOString() : '',
@@ -3183,7 +3206,8 @@ function buildSubtitleDbResultPayload(job) {
     subtitleLabel: String(job.subtitleLabel || ''),
     model: String(job.model || WHISPER_MODEL || 'small'),
     subtitleBackend: normalizeSubtitleBackend(job.subtitleBackend || job.subtitleBackendRequested),
-    warning: String(job.warning || '')
+    warning: String(job.warning || ''),
+    progressPhase: String(job.progressPhase || '')
   };
 }
 
@@ -3204,12 +3228,39 @@ function mapSubtitleJobFromDbRow(row) {
     audioChannelIndex: Number.isFinite(Number(request.audioChannelIndex)) ? Number(request.audioChannelIndex) : null,
     subtitleBackend: normalizeSubtitleBackend(result.subtitleBackend || request.subtitleBackend),
     warning: String(result.warning || ''),
+    progressPhase: String(result.progressPhase || ''),
     asset: null,
     error: String(row?.error_text || ''),
     startedAt: row?.started_at ? new Date(row.started_at).toISOString() : (row?.created_at ? new Date(row.created_at).toISOString() : ''),
     updatedAt: row?.updated_at ? new Date(row.updated_at).toISOString() : '',
     finishedAt: row?.finished_at ? new Date(row.finished_at).toISOString() : ''
   };
+}
+
+function persistLiveMediaJobProgress(job, jobType, progress, progressPhase) {
+  if (!job || !job.jobId) return;
+  const nextProgress = Math.max(0, Math.min(99, Math.round(Number(progress) || 0)));
+  const nextPhase = String(progressPhase || '').trim();
+  if (nextProgress < Number(job.progress || 0)) return;
+  if (nextProgress === Number(job.progress || 0) && nextPhase === String(job.progressPhase || '')) return;
+  job.progress = nextProgress;
+  job.progressPhase = nextPhase;
+  job.updatedAt = new Date().toISOString();
+  const isSubtitle = jobType === 'subtitle';
+  upsertMediaProcessingJobSafe({
+    jobId: job.jobId,
+    assetId: job.assetId,
+    jobType,
+    status: job.status,
+    requestPayload: isSubtitle ? buildSubtitleDbRequestPayload(job) : buildVideoOcrDbRequestPayload(job),
+    resultPayload: isSubtitle ? buildSubtitleDbResultPayload(job) : buildVideoOcrDbResultPayload(job),
+    errorText: job.error,
+    progress: nextProgress,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    startedAt: job.startedAt || job.createdAt,
+    finishedAt: job.finishedAt || ''
+  });
 }
 
 async function saveAssetVideoOcrMetadata(assetId, row, job) {
@@ -4977,19 +5028,37 @@ function runCommandCapture(cmd, args, options = {}) {
   const cwd = options?.cwd || undefined;
   return new Promise((resolve) => {
     const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], env, cwd });
+    const untrack = trackMediaJobProcess(options?.jobId, p);
     let stdout = '';
     let stderr = '';
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      untrack();
+      resolve(result);
+    };
+    const emitProgress = (chunk) => {
+      if (typeof options?.onProgress !== 'function') return;
+      const text = chunk.toString();
+      const matches = text.matchAll(/MAM_PROGRESS[=:](\d+(?:\.\d+)?)(?:\s+([^\r\n]+))?/g);
+      for (const match of matches) {
+        options.onProgress(Math.max(0, Math.min(100, Number(match[1]) || 0)), String(match[2] || '').trim());
+      }
+    };
     p.stdout.on('data', (chunk) => {
       stdout += chunk.toString();
+      emitProgress(chunk);
     });
     p.stderr.on('data', (chunk) => {
       stderr += chunk.toString();
+      emitProgress(chunk);
     });
     p.on('error', (error) => {
-      resolve({ ok: false, code: -1, stdout, stderr: String(error.message || error) });
+      finish({ ok: false, code: -1, stdout, stderr: String(error.message || error), cancelled: isMediaJobCancelled(options?.jobId) });
     });
     p.on('close', (code) => {
-      resolve({ ok: code === 0, code: code ?? -1, stdout, stderr });
+      finish({ ok: code === 0, code: code ?? -1, stdout, stderr, cancelled: isMediaJobCancelled(options?.jobId) });
     });
   });
 }
@@ -5084,7 +5153,9 @@ async function transcribeMediaToVtt(inputPath, outputPath, options = {}) {
   if (audioStreamIndex != null || audioChannelIndex != null) {
     const prepared = await prepareAudioInputForTranscription(inputPath, {
       audioStreamIndex,
-      audioChannelIndex
+      audioChannelIndex,
+      jobId: options.jobId,
+      onProgress: options.onProgress
     });
     preparedInputPath = prepared.path;
     cleanupPreparedInput = prepared.cleanup;
@@ -5113,7 +5184,9 @@ async function transcribeMediaToVtt(inputPath, outputPath, options = {}) {
         TRANSFORMERS_OFFLINE: MAM_OFFLINE_MODE ? '1' : (process.env.TRANSFORMERS_OFFLINE || '0'),
         WHISPER_MODEL_CACHE,
         ORT_LOG_SEVERITY_LEVEL: process.env.ORT_LOG_SEVERITY_LEVEL || '3'
-      }
+      },
+      jobId: options.jobId,
+      onProgress: options.onProgress
     });
   } finally {
     try { cleanupPreparedInput(); } catch (_error) {}
@@ -5145,7 +5218,11 @@ async function prepareAudioInputForTranscription(inputPath, options = {}) {
     args.push('-af', `pan=mono|c0=c${ffChannelIndex}`, '-ac', '1');
   }
   args.push('-c:a', 'pcm_s16le', tempPath);
-  const result = await runCommandCapture('ffmpeg', args);
+  options.onProgress?.(8, 'preparing_audio');
+  const result = await runCommandCapture('ffmpeg', args, {
+    jobId: options.jobId,
+    onProgress: options.onProgress
+  });
   if (!result.ok || !fs.existsSync(tempPath)) {
     try {
       if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
@@ -5236,7 +5313,11 @@ async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
       '3',
       framePattern
     );
-    const ffmpeg = await runCommandCapture('ffmpeg', ffmpegArgs);
+    options.onProgress?.(18, 'sampling_frames');
+    const ffmpeg = await runCommandCapture('ffmpeg', ffmpegArgs, {
+      jobId: options.jobId,
+      onProgress: options.onProgress
+    });
     if (!ffmpeg.ok) throw new Error(String(ffmpeg.stderr || 'Could not sample video frames'));
 
     const sampledSceneTimes = enableSceneSampling
@@ -5246,11 +5327,13 @@ async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
         maxSceneFrames,
         sceneMinGapSec,
         rangeStartSec,
-        rangeEndSec
+        rangeEndSec,
+        jobId: options.jobId,
+        onProgress: options.onProgress
       })
       : [];
     sceneFrames = enableSceneSampling
-      ? await extractSceneFrames(inputPath, workDir, sampledSceneTimes, preprocessProfile)
+      ? await extractSceneFrames(inputPath, workDir, sampledSceneTimes, preprocessProfile, options)
       : [];
     updateOcrFrameCacheFromWorkDir({ assetId, intervalSec, workDir });
   } else {
@@ -5262,9 +5345,11 @@ async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
         intervalSec,
         sceneThreshold,
         maxSceneFrames,
-        sceneMinGapSec
+        sceneMinGapSec,
+        jobId: options.jobId,
+        onProgress: options.onProgress
       });
-      sceneFrames = await extractSceneFrames(inputPath, workDir, sampledSceneTimes, preprocessProfile);
+      sceneFrames = await extractSceneFrames(inputPath, workDir, sampledSceneTimes, preprocessProfile, options);
       updateOcrFrameCacheFromWorkDir({ assetId, intervalSec, workDir });
     }
   }
@@ -5279,7 +5364,9 @@ async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
     enableBlurFilter,
     blurThreshold,
     enableRegionMode,
-    tickerHeightPct
+    tickerHeightPct,
+    jobId: options.jobId,
+    onProgress: options.onProgress
   });
   const preparedFiles = Array.isArray(prep.files) && prep.files.length ? prep.files : files;
   if (!preparedFiles.length) throw new Error('All sampled frames were filtered out before OCR');
@@ -5289,7 +5376,9 @@ async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
     files: preparedFiles,
     intervalSec,
     ocrLang,
-    tickerMap: prep.tickerMap
+    tickerMap: prep.tickerMap,
+    jobId: options.jobId,
+    onProgress: options.onProgress
   });
 
   const frameEntriesRaw = (Array.isArray(result.frameEntries) ? result.frameEntries : [])
@@ -5420,7 +5509,9 @@ async function prepareOcrFrames({
   enableBlurFilter,
   blurThreshold,
   enableRegionMode,
-  tickerHeightPct
+  tickerHeightPct,
+  jobId,
+  onProgress
 }) {
   const base = {
     files: Array.isArray(files) ? [...files] : [],
@@ -5448,7 +5539,9 @@ async function prepareOcrFrames({
   const run = await runCommandCapture('python3', args, {
     env: {
       PYTHONWARNINGS: 'ignore'
-    }
+    },
+    jobId,
+    onProgress
   });
   if (!run.ok) {
     return {
@@ -5485,7 +5578,7 @@ async function prepareOcrFrames({
   }
 }
 
-async function extractVideoOcrFrameTextPaddle({ workDir, files, intervalSec, ocrLang, tickerMap = {} }) {
+async function extractVideoOcrFrameTextPaddle({ workDir, files, intervalSec, ocrLang, tickerMap = {}, jobId = '', onProgress = null }) {
   const sanitizeErr = (value) => String(value || '')
     .replace(/\x1B\[[0-9;]*[A-Za-z]/g, '')
     .split(/\r?\n/)
@@ -5518,7 +5611,9 @@ async function extractVideoOcrFrameTextPaddle({ workDir, files, intervalSec, ocr
         PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: 'True',
         PADDLE_PDX_CACHE_HOME: PADDLE_CACHE_DIR,
         PADDLE_HOME: PADDLE_CACHE_DIR
-      }
+      },
+      jobId,
+      onProgress
     });
     if (!run.ok) {
       lastErr = sanitizeErr(run.stderr || run.stdout || '');
@@ -5762,6 +5857,8 @@ function queueVideoOcrJob(row, options = {}) {
     frameDir: '',
     warning: '',
     error: '',
+    progress: 5,
+    progressPhase: 'queued',
     createdAt: now,
     startedAt: now,
     updatedAt: now,
@@ -5776,7 +5873,7 @@ function queueVideoOcrJob(row, options = {}) {
     requestPayload: buildVideoOcrDbRequestPayload(job),
     resultPayload: buildVideoOcrDbResultPayload(job),
     errorText: job.error,
-    progress: buildMediaJobProgress(job.status),
+    progress: job.progress,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
     startedAt: '',
@@ -5786,7 +5883,10 @@ function queueVideoOcrJob(row, options = {}) {
   setTimeout(async () => {
     const running = videoOcrJobs.get(jobId);
     if (!running) return;
+    if (isMediaJobCancelled(jobId) || running.status === 'cancelled') return;
     running.status = 'running';
+    running.progress = 10;
+    running.progressPhase = 'preparing';
     running.updatedAt = new Date().toISOString();
     await upsertMediaProcessingJobSafe({
       jobId: running.jobId,
@@ -5796,7 +5896,7 @@ function queueVideoOcrJob(row, options = {}) {
       requestPayload: buildVideoOcrDbRequestPayload(running),
       resultPayload: buildVideoOcrDbResultPayload(running),
       errorText: running.error,
-      progress: buildMediaJobProgress(running.status),
+      progress: running.progress,
       createdAt: running.createdAt,
       updatedAt: running.updatedAt,
       startedAt: running.startedAt || running.updatedAt,
@@ -5838,9 +5938,14 @@ function queueVideoOcrJob(row, options = {}) {
         sceneThreshold,
         maxSceneFrames,
         sceneMinGapSec,
-        workDir: frameDir
+        workDir: frameDir,
+        jobId: running.jobId,
+        onProgress: (progress, phase) => persistLiveMediaJobProgress(running, 'video_ocr', progress, phase)
       });
+      if (isMediaJobCancelled(running.jobId)) throw new Error('Media job cancelled');
       running.status = 'completed';
+      running.progress = 100;
+      running.progressPhase = 'completed';
       running.resultUrl = out.publicUrl;
       running.resultPath = out.absolutePath;
       running.resultLabel = preferredLabel;
@@ -5878,15 +5983,17 @@ function queueVideoOcrJob(row, options = {}) {
         requestPayload: buildVideoOcrDbRequestPayload(running),
         resultPayload: buildVideoOcrDbResultPayload(running),
         errorText: running.error,
-        progress: buildMediaJobProgress(running.status),
+        progress: running.progress,
         createdAt: running.createdAt,
         updatedAt: running.updatedAt,
         startedAt: running.startedAt || running.createdAt,
         finishedAt: running.finishedAt
       });
     } catch (error) {
-      running.status = 'failed';
-      running.error = String(error?.message || 'Video OCR failed').slice(0, 900);
+      const cancelled = isMediaJobCancelled(running.jobId) || running.status === 'cancelled';
+      running.status = cancelled ? 'cancelled' : 'failed';
+      running.progressPhase = cancelled ? 'cancelled' : 'failed';
+      running.error = cancelled ? 'Cancelled by administrator' : String(error?.message || 'Video OCR failed').slice(0, 900);
       safeRmDir(running.frameDir);
       running.frameDir = '';
       running.finishedAt = new Date().toISOString();
@@ -5899,7 +6006,7 @@ function queueVideoOcrJob(row, options = {}) {
         requestPayload: buildVideoOcrDbRequestPayload(running),
         resultPayload: buildVideoOcrDbResultPayload(running),
         errorText: running.error,
-        progress: buildMediaJobProgress(running.status),
+        progress: Number(running.progress || 0),
         createdAt: running.createdAt,
         updatedAt: running.updatedAt,
         startedAt: running.startedAt || running.createdAt,
@@ -5908,6 +6015,7 @@ function queueVideoOcrJob(row, options = {}) {
     } finally {
       safeRmDir(running.frameDir);
       running.frameDir = '';
+      clearMediaJobRuntime(running.jobId);
     }
   }, 10);
   return job;
@@ -5946,6 +6054,8 @@ function queueSubtitleGenerationJob(row, options = {}) {
     subtitleUrl: '',
     warning: '',
     error: '',
+    progress: 5,
+    progressPhase: 'queued',
     createdAt: now,
     startedAt: now,
     updatedAt: now,
@@ -5960,7 +6070,7 @@ function queueSubtitleGenerationJob(row, options = {}) {
     requestPayload: buildSubtitleDbRequestPayload(job),
     resultPayload: buildSubtitleDbResultPayload(job),
     errorText: job.error,
-    progress: buildMediaJobProgress(job.status),
+    progress: job.progress,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
     startedAt: '',
@@ -5970,7 +6080,10 @@ function queueSubtitleGenerationJob(row, options = {}) {
   setTimeout(async () => {
     const running = subtitleJobs.get(jobId);
     if (!running) return;
+    if (isMediaJobCancelled(jobId) || running.status === 'cancelled') return;
     running.status = 'running';
+    running.progress = 10;
+    running.progressPhase = 'preparing';
     running.updatedAt = new Date().toISOString();
     await upsertMediaProcessingJobSafe({
       jobId: running.jobId,
@@ -5980,7 +6093,7 @@ function queueSubtitleGenerationJob(row, options = {}) {
       requestPayload: buildSubtitleDbRequestPayload(running),
       resultPayload: buildSubtitleDbResultPayload(running),
       errorText: running.error,
-      progress: buildMediaJobProgress(running.status),
+      progress: running.progress,
       createdAt: running.createdAt,
       updatedAt: running.updatedAt,
       startedAt: running.startedAt || running.updatedAt,
@@ -5998,8 +6111,11 @@ function queueSubtitleGenerationJob(row, options = {}) {
         model,
         subtitleBackend: usedSubtitleBackend,
         audioStreamIndex,
-        audioChannelIndex
+        audioChannelIndex,
+        jobId: running.jobId,
+        onProgress: (progress, phase) => persistLiveMediaJobProgress(running, 'subtitle', progress, phase)
       });
+      if (isMediaJobCancelled(running.jobId)) throw new Error('Media job cancelled');
       let generatedCueCount = countGeneratedSubtitleCues(subtitleOut.absolutePath);
       let subtitleReady = transcription.ok && generatedCueCount > 0;
       if (!subtitleReady && usedSubtitleBackend === 'whisperx') {
@@ -6010,7 +6126,9 @@ function queueSubtitleGenerationJob(row, options = {}) {
           model,
           subtitleBackend: usedSubtitleBackend,
           audioStreamIndex,
-          audioChannelIndex
+          audioChannelIndex,
+          jobId: running.jobId,
+          onProgress: (progress, phase) => persistLiveMediaJobProgress(running, 'subtitle', progress, phase)
         });
         generatedCueCount = countGeneratedSubtitleCues(subtitleOut.absolutePath);
         subtitleReady = transcription.ok && generatedCueCount > 0;
@@ -6027,6 +6145,8 @@ function queueSubtitleGenerationJob(row, options = {}) {
           : '';
         throw new Error(emptySubtitleError || transcriptionError || 'Subtitle transcription failed');
       }
+      if (isMediaJobCancelled(running.jobId)) throw new Error('Media job cancelled');
+      persistLiveMediaJobProgress(running, 'subtitle', 94, 'saving');
       running.subtitleBackend = usedSubtitleBackend;
       if (subtitleLang.startsWith('tr')) {
         try {
@@ -6044,6 +6164,8 @@ function queueSubtitleGenerationJob(row, options = {}) {
       const subtitleUrl = subtitleOut.publicUrl;
       const updatedRow = await saveAssetSubtitleMetadata(row.id, row, subtitleUrl, subtitleLang, subtitleLabel);
       running.status = 'completed';
+      running.progress = 100;
+      running.progressPhase = 'completed';
       running.subtitleUrl = subtitleUrl;
       running.subtitleLang = subtitleLang;
       running.subtitleLabel = subtitleLabel;
@@ -6058,15 +6180,17 @@ function queueSubtitleGenerationJob(row, options = {}) {
         requestPayload: buildSubtitleDbRequestPayload(running),
         resultPayload: buildSubtitleDbResultPayload(running),
         errorText: running.error,
-        progress: buildMediaJobProgress(running.status),
+        progress: running.progress,
         createdAt: running.createdAt,
         updatedAt: running.updatedAt,
         startedAt: running.startedAt || running.createdAt,
         finishedAt: running.finishedAt
       });
     } catch (error) {
-      running.status = 'failed';
-      running.error = String(error?.message || 'Subtitle generation failed').slice(0, 800);
+      const cancelled = isMediaJobCancelled(running.jobId) || running.status === 'cancelled';
+      running.status = cancelled ? 'cancelled' : 'failed';
+      running.progressPhase = cancelled ? 'cancelled' : 'failed';
+      running.error = cancelled ? 'Cancelled by administrator' : String(error?.message || 'Subtitle generation failed').slice(0, 800);
       running.finishedAt = new Date().toISOString();
       running.updatedAt = running.finishedAt;
       await upsertMediaProcessingJobSafe({
@@ -6077,12 +6201,14 @@ function queueSubtitleGenerationJob(row, options = {}) {
         requestPayload: buildSubtitleDbRequestPayload(running),
         resultPayload: buildSubtitleDbResultPayload(running),
         errorText: running.error,
-        progress: buildMediaJobProgress(running.status),
+        progress: Number(running.progress || 0),
         createdAt: running.createdAt,
         updatedAt: running.updatedAt,
         startedAt: running.startedAt || running.createdAt,
         finishedAt: running.finishedAt
       });
+    } finally {
+      clearMediaJobRuntime(running.jobId);
     }
   }, 10);
 
@@ -8873,6 +8999,9 @@ registerAdminRoutes(app, {
   pool,
   WORKFLOW,
   proxyJobs,
+  subtitleJobs,
+  videoOcrJobs,
+  metadataEnrichmentService,
   requireScopedAdminAccess,
   publicUploadUrlToAbsolutePath,
   reloadLearnedTurkishCorrectionsFromDb,
@@ -8923,6 +9052,8 @@ registerAdminRoutes(app, {
   normalizeMediaJobStatus,
   mapSubtitleJobFromDbRow,
   mapVideoOcrJobFromDbRow,
+  cancelMediaJobRuntime,
+  hasActiveMediaJobRuntime,
   OCR_DIR,
   UPLOADS_DIR,
   SUBTITLES_DIR,

@@ -415,8 +415,10 @@ def main():
             print(f"PaddleOCR init failed: {exc}", file=sys.stderr)
         sys.exit(4)
 
+    frame_names = list_frames(frames_dir)
     items = []
-    for name in list_frames(frames_dir):
+    print("MAM_PROGRESS=35 model_ready", file=sys.stderr, flush=True)
+    for index, name in enumerate(frame_names):
         img_path = os.path.join(frames_dir, name)
         try:
             if hasattr(ocr, "predict"):
@@ -435,6 +437,8 @@ def main():
             text = ""
             confidence = 0.0
         items.append({"name": name, "text": text, "texts": texts, "confidence": confidence})
+        progress = 35 + int(((index + 1) / max(1, len(frame_names))) * 50)
+        print(f"MAM_PROGRESS={progress} recognizing_frames", file=sys.stderr, flush=True)
 
     payload = {
         "engine": "paddle",

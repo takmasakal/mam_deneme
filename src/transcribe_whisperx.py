@@ -196,8 +196,11 @@ def main() -> int:
         offline, hf_home = configure_offline_env()
         device = "cpu"
         compute_type = "int8"
+        print("MAM_PROGRESS=10 model_loading", file=sys.stderr, flush=True)
         model = whisperx.load_model(model_name, device=device, compute_type=compute_type, language=lang)
+        print("MAM_PROGRESS=25 transcribing", file=sys.stderr, flush=True)
         result = model.transcribe(in_path, batch_size=8)
+        print("MAM_PROGRESS=75 aligning", file=sys.stderr, flush=True)
         segments = list(result.get("segments", []) or [])
         detected_lang = result.get("language")
         if segments and detected_lang:
@@ -209,6 +212,7 @@ def main() -> int:
             except Exception:
                 # Alignment is optional; keep ASR segments if align stage fails.
                 pass
+        print("MAM_PROGRESS=92 writing_subtitles", file=sys.stderr, flush=True)
         cue_count = write_vtt(out_path, segments)
         print(f"ok cues={cue_count} output={out_path}")
         return 0

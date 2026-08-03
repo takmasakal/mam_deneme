@@ -282,10 +282,14 @@ function splitDocumentText(text, chunkSize = DOCUMENT_CHUNK_SIZE, overlap = DOCU
 
 async function callOllamaJson(messages, options = {}) {
   const format = options.schema || 'json';
+  const externalSignal = options.signal;
   let lastParseError = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), OLLAMA_METADATA_TIMEOUT_MS);
+    const abortFromExternal = () => controller.abort();
+    if (externalSignal?.aborted) controller.abort();
+    else externalSignal?.addEventListener?.('abort', abortFromExternal, { once: true });
     try {
       const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
         method: 'POST',
@@ -327,6 +331,7 @@ async function callOllamaJson(messages, options = {}) {
       }
     } finally {
       clearTimeout(timer);
+      externalSignal?.removeEventListener?.('abort', abortFromExternal);
     }
   }
   throw lastParseError || new Error('Ollama response did not contain valid JSON');
@@ -403,6 +408,7 @@ function createMetadataEnrichmentService(deps) {
   } = deps;
 
   const queue = [];
+  const activeJobs = new Map();
   let running = false;
 
   function resolveSourcePath(row) {
@@ -430,14 +436,20 @@ function createMetadataEnrichmentService(deps) {
       jobType: 'metadata_enrichment',
       status: job.status,
       requestPayload: { source: 'upload', family: job.family },
-      resultPayload,
+      resultPayload: { ...resultPayload, progressPhase: String(job.progressPhase || '') },
       errorText: job.error || '',
-      progress: job.status === 'completed' ? 100 : job.status === 'running' ? 40 : job.status === 'failed' ? 0 : 5,
+      progress: Math.max(0, Math.min(100, Number(job.progress) || 0)),
       createdAt: job.createdAt,
       updatedAt: now,
       startedAt: job.startedAt || '',
       finishedAt: job.finishedAt || ''
     });
+  }
+
+  async function updateJobProgress(job, progress, progressPhase) {
+    job.progress = Math.max(Number(job.progress || 0), Math.min(99, Math.round(Number(progress) || 0)));
+    job.progressPhase = String(progressPhase || '').trim();
+    await persistJob(job);
   }
 
   async function runOcrForFrames(workDir, files) {
@@ -464,29 +476,38 @@ function createMetadataEnrichmentService(deps) {
     }
   }
 
-  async function enrichDocument(row, sourcePath) {
+  async function enrichDocument(row, sourcePath, job) {
     const preview = await extractPreviewContentFromFile(row, sourcePath);
     const text = normalizeText(preview?.text || '');
     if (!text) throw new Error('No extractable text found in document');
     const chunks = splitDocumentText(text);
     const chunkSummaries = [];
     const warnings = [];
-    for (const chunk of chunks) {
+    await updateJobProgress(job, 20, 'summarizing_document');
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
+      const chunk = chunks[chunkIndex];
       let summary = '';
       try {
         const result = await callOllamaJson([
           { role: 'system', content: DOCUMENT_SUMMARY_SYSTEM_PROMPT },
           { role: 'user', content: `Belge parçası:\n\n${chunk}` }
-        ], { numPredict: 384, schema: DOCUMENT_SUMMARY_JSON_SCHEMA });
+        ], {
+          numPredict: 384,
+          schema: DOCUMENT_SUMMARY_JSON_SCHEMA,
+          signal: job.abortController?.signal
+        });
         summary = normalizeText(result?.ozet || '');
       } catch (error) {
+        if (job.abortController?.signal?.aborted) throw error;
         warnings.push(`Gemma parça özeti kullanılamadı: ${String(error?.message || 'geçersiz JSON').slice(0, 260)}`);
         summary = summarizeText(chunk, 3, 900);
       }
       if (summary) chunkSummaries.push(summary);
+      await updateJobProgress(job, 20 + (((chunkIndex + 1) / Math.max(1, chunks.length)) * 55), 'summarizing_document');
     }
     const synthesisInput = chunkSummaries.join('\n\n');
     let final = null;
+    await updateJobProgress(job, 80, 'generating_metadata');
     try {
       final = await callOllamaJson([
         { role: 'system', content: DOCUMENT_METADATA_SYSTEM_PROMPT },
@@ -494,8 +515,13 @@ function createMetadataEnrichmentService(deps) {
           role: 'user',
           content: `Belge başlığı: ${String(row.title || row.file_name || '').trim()}\n\nBelge parça özetleri:\n${synthesisInput}`
         }
-      ], { numPredict: 700, schema: DOCUMENT_METADATA_JSON_SCHEMA });
+      ], {
+        numPredict: 700,
+        schema: DOCUMENT_METADATA_JSON_SCHEMA,
+        signal: job.abortController?.signal
+      });
     } catch (error) {
+      if (job.abortController?.signal?.aborted) throw error;
       warnings.push(`Gemma metadata özeti kullanılamadı: ${String(error?.message || 'geçersiz JSON').slice(0, 260)}`);
       final = {
         ozet: summarizeText(text, 3, 1200),
@@ -703,8 +729,13 @@ function createMetadataEnrichmentService(deps) {
   }
 
   async function processJob(job) {
+    if (job.cancelled) return;
     job.status = 'running';
+    job.progress = 10;
+    job.progressPhase = 'loading_asset';
     job.startedAt = new Date().toISOString();
+    job.abortController = new AbortController();
+    activeJobs.set(job.jobId, job);
     await persistJob(job);
     try {
       const result = await pool.query('SELECT * FROM assets WHERE id = $1 LIMIT 1', [job.assetId]);
@@ -716,19 +747,28 @@ function createMetadataEnrichmentService(deps) {
       let generated = {};
       if (job.family === 'video') generated = await enrichVideo(row, sourcePath);
       else if (job.family === 'image') generated = await enrichImage(row, sourcePath);
-      else if (job.family === 'document') generated = await enrichDocument(row, sourcePath);
+      else if (job.family === 'document') generated = await enrichDocument(row, sourcePath, job);
       else generated = { summary: '', keywords: [], warning: 'Metadata extraction is not supported for this asset type.' };
 
+      if (job.cancelled || job.abortController?.signal?.aborted) throw new Error('Metadata job cancelled');
+      await updateJobProgress(job, 92, 'saving_metadata');
       const latest = await pool.query('SELECT * FROM assets WHERE id = $1 LIMIT 1', [job.assetId]);
       await saveMetadata(latest.rows[0] || row, generated, job);
       job.status = 'completed';
+      job.progress = 100;
+      job.progressPhase = 'completed';
       job.finishedAt = new Date().toISOString();
       await persistJob(job, generated);
     } catch (error) {
-      job.status = 'failed';
-      job.error = String(error?.message || 'Metadata generation failed').slice(0, 1200);
+      const cancelled = job.cancelled || job.abortController?.signal?.aborted;
+      job.status = cancelled ? 'cancelled' : 'failed';
+      job.progressPhase = cancelled ? 'cancelled' : 'failed';
+      job.error = cancelled ? 'Cancelled by administrator' : String(error?.message || 'Metadata generation failed').slice(0, 1200);
       job.finishedAt = new Date().toISOString();
       await persistJob(job);
+    } finally {
+      activeJobs.delete(job.jobId);
+      delete job.abortController;
     }
   }
 
@@ -756,6 +796,8 @@ function createMetadataEnrichmentService(deps) {
       assetId,
       family,
       status: 'queued',
+      progress: 5,
+      progressPhase: 'queued',
       error: '',
       createdAt: now,
       startedAt: '',
@@ -768,10 +810,31 @@ function createMetadataEnrichmentService(deps) {
     return { ...job };
   }
 
+  async function cancelJob(jobId) {
+    const target = String(jobId || '').trim();
+    if (!target) return false;
+    const queuedIndex = queue.findIndex((job) => job.jobId === target);
+    const job = queuedIndex >= 0 ? queue.splice(queuedIndex, 1)[0] : activeJobs.get(target);
+    if (!job) return false;
+    job.cancelled = true;
+    job.status = 'cancelled';
+    job.progressPhase = 'cancelled';
+    job.error = 'Cancelled by administrator';
+    job.finishedAt = new Date().toISOString();
+    job.abortController?.abort();
+    await persistJob(job);
+    return true;
+  }
+
   return {
     queueAsset,
+    cancelJob,
     getQueueLength: () => queue.length,
-    isRunning: () => running
+    isRunning: () => running,
+    hasJob: (jobId) => {
+      const target = String(jobId || '').trim();
+      return activeJobs.has(target) || queue.some((job) => job.jobId === target);
+    }
   };
 }
 
