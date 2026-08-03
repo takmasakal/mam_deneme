@@ -7,6 +7,8 @@ function registerAdminRoutes(app, deps) {
     pool,
     WORKFLOW,
     proxyJobs,
+    subtitleJobs,
+    videoOcrJobs,
     requireScopedAdminAccess,
     publicUploadUrlToAbsolutePath,
     reloadLearnedTurkishCorrectionsFromDb,
@@ -56,6 +58,8 @@ function registerAdminRoutes(app, deps) {
     normalizeMediaJobStatus,
     mapSubtitleJobFromDbRow,
     mapVideoOcrJobFromDbRow,
+    cancelMediaJobRuntime,
+    hasActiveMediaJobRuntime,
     OCR_DIR,
     UPLOADS_DIR,
     normalizeVttContent,
@@ -3361,9 +3365,13 @@ app.get('/api/admin/system-health', async (req, res) => {
       return {
         jobId: mapped.jobId,
         assetId: mapped.assetId,
+        jobType,
         assetTitle: String(row.asset_title || row.title || '').trim(),
         status: mapped.status,
         progress: Math.max(0, Math.min(100, Number(row.progress) || 0)),
+        progressPhase: String(resultPayload.progressPhase || mapped.progressPhase || ''),
+        createdAt: row.created_at,
+        startedAt: row.started_at,
         updatedAt: mapped.updatedAt,
         finishedAt: mapped.finishedAt,
         warning: String(mapped.warning || ''),
@@ -3376,8 +3384,42 @@ app.get('/api/admin/system-health', async (req, res) => {
       };
     };
     const settings = await getAdminSettings().catch(() => ({ mediaJobRetentionDays: 30 }));
-    const mediaJobRetentionDays = normalizeMediaJobRetentionDays(settings.mediaJobRetentionDays);
+    const mediaJobRetentionDays = Math.max(30, normalizeMediaJobRetentionDays(settings.mediaJobRetentionDays));
     cleanupMediaProcessingJobs?.(mediaJobRetentionDays).catch(() => {});
+
+    const orphanedActiveJobs = await pool.query(
+      `
+        SELECT job_id, job_type
+        FROM media_processing_jobs
+        WHERE status IN ('running', 'queued')
+          AND job_type IN ('subtitle', 'video_ocr')
+      `
+    );
+    const orphanedIds = orphanedActiveJobs.rows
+      .filter((row) => {
+        const jobId = String(row.job_id || '');
+        const type = String(row.job_type || '');
+        const inMemory = type === 'subtitle'
+          ? subtitleJobs?.get(jobId)
+          : videoOcrJobs?.get(jobId);
+        return !inMemory && !hasActiveMediaJobRuntime?.(jobId);
+      })
+      .map((row) => String(row.job_id || ''))
+      .filter(Boolean);
+    if (orphanedIds.length) {
+      await pool.query(
+        `
+          UPDATE media_processing_jobs
+          SET status = 'failed',
+              error_text = CASE WHEN error_text = '' THEN 'Interrupted by application restart' ELSE error_text END,
+              result_payload = result_payload || '{"progressPhase":"interrupted"}'::jsonb,
+              finished_at = NOW(),
+              updated_at = NOW()
+          WHERE job_id = ANY($1::text[])
+        `,
+        [orphanedIds]
+      );
+    }
 
     const [proxyRunning, proxyFailed] = [
       Array.from(proxyJobs.values()).filter((job) => ['running', 'queued'].includes(String(job.status || ''))).length,
@@ -3442,7 +3484,7 @@ app.get('/api/admin/system-health', async (req, res) => {
         WHERE mpj.job_type IN ('subtitle', 'video_ocr')
           AND mpj.updated_at >= NOW() - ($1::int * INTERVAL '1 day')
         ORDER BY mpj.updated_at DESC
-        LIMIT 200
+        LIMIT 1000
       `,
       [mediaJobRetentionDays]
     );
@@ -3465,6 +3507,14 @@ app.get('/api/admin/system-health', async (req, res) => {
         recentJobs[typeKey].latestFailed = summary;
       }
     });
+    const mediaJobs = recentJobsResult.rows
+      .map((row) => buildHealthMediaJobSummary(row))
+      .filter(Boolean)
+      .map((job) => ({
+        ...job,
+        cancelable: ['subtitle', 'video_ocr'].includes(String(job.jobType || ''))
+          && ['queued', 'running'].includes(String(job.status || ''))
+      }));
 
     const payload = {
       disk: {
@@ -3495,6 +3545,7 @@ app.get('/api/admin/system-health', async (req, res) => {
         missingOcr
       },
       recentJobs,
+      mediaJobs,
       mediaJobRetentionDays
     };
     systemHealthCache.expiresAt = Date.now() + SYSTEM_HEALTH_CACHE_TTL_MS;
@@ -3502,6 +3553,61 @@ app.get('/api/admin/system-health', async (req, res) => {
     return res.json({ ...payload, cached: false, cacheTtlSeconds: Math.ceil(SYSTEM_HEALTH_CACHE_TTL_MS / 1000) });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to load system health' });
+  }
+});
+
+app.post('/api/admin/media-jobs/:jobId/cancel', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return undefined;
+    const jobId = String(req.params.jobId || '').trim();
+    if (!jobId) return res.status(400).json({ error: 'Media job id is required' });
+    const result = await pool.query(
+      `SELECT job_id, job_type, status FROM media_processing_jobs WHERE job_id = $1 LIMIT 1`,
+      [jobId]
+    );
+    if (!result.rowCount) return res.status(404).json({ error: 'Media job not found' });
+    const row = result.rows[0];
+    if (!['queued', 'running'].includes(String(row.status || '').toLowerCase())) {
+      return res.status(409).json({ error: 'Media job is not active' });
+    }
+    const jobType = String(row.job_type || '');
+    cancelMediaJobRuntime?.(jobId);
+    const inMemoryJob = jobType === 'subtitle'
+      ? subtitleJobs?.get(jobId)
+      : jobType === 'video_ocr'
+        ? videoOcrJobs?.get(jobId)
+        : null;
+    if (inMemoryJob) {
+      inMemoryJob.status = 'cancelled';
+      inMemoryJob.progressPhase = 'cancelled';
+      inMemoryJob.error = 'Cancelled by administrator';
+      inMemoryJob.finishedAt = new Date().toISOString();
+      inMemoryJob.updatedAt = inMemoryJob.finishedAt;
+    }
+    await pool.query(
+      `
+        UPDATE media_processing_jobs
+        SET status = 'cancelled',
+            error_text = 'Cancelled by administrator',
+            result_payload = result_payload || '{"progressPhase":"cancelled"}'::jsonb,
+            finished_at = NOW(),
+            updated_at = NOW()
+        WHERE job_id = $1
+      `,
+      [jobId]
+    );
+    systemHealthCache.expiresAt = 0;
+    systemHealthCache.value = null;
+    await recordAuditEvent(req, {
+      action: 'media_job.cancelled',
+      targetType: 'media_job',
+      targetId: jobId,
+      details: { jobType: String(row.job_type || '') }
+    }).catch(() => {});
+    return res.json({ ok: true, jobId, status: 'cancelled' });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to cancel media job' });
   }
 });
 

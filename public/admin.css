@@ -468,7 +468,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 5px;
+  gap: 12px;
   margin: 0 0 5px;
 }
 
@@ -478,10 +478,214 @@ body {
   font-weight: 700;
 }
 
+.system-job-status-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.mediaJobsRefreshBtn {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(122, 154, 216, 0.45);
+  border-radius: 6px;
+  color: #eaf1ff;
+  background: #15223b;
+  font-size: 19px;
+  line-height: 1;
+}
+
+.mediaJobsRefreshBtn:hover {
+  border-color: #e9ad37;
+  color: #e9ad37;
+}
+
+.media-job-filters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.media-job-filters select {
+  width: auto;
+  min-width: 132px;
+  min-height: 34px;
+  margin: 0;
+  padding: 5px 30px 5px 9px;
+  border: 1px solid rgba(122, 154, 216, 0.45);
+  border-radius: 6px;
+  color: #eaf1ff;
+  background-color: #15223b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.media-job-column-filter {
+  display: block;
+}
+
+.media-job-filter-menu {
+  position: relative;
+  min-width: 132px;
+}
+
+.media-job-filter-menu summary {
+  min-height: 28px;
+  box-sizing: border-box;
+  padding: 5px 25px 4px 8px;
+  border: 1px solid rgba(122, 154, 216, 0.45);
+  border-radius: 5px;
+  color: #eaf1ff;
+  background-color: #15223b;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.media-job-filter-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.media-job-filter-menu summary::after {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  content: '\25BE';
+  color: #b8caf0;
+}
+
+.media-job-filter-options {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10000;
+  display: grid;
+  min-width: 174px;
+  padding: 4px;
+  border: 1px solid rgba(122, 154, 216, 0.55);
+  border-radius: 6px;
+  background: #15223b;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
+}
+
+.media-job-filter-options button {
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 4px;
+  color: #eaf1ff;
+  background: transparent;
+  text-align: left;
+  font-size: 11px;
+}
+
+.media-job-filter-options button:hover,
+.media-job-filter-options button.is-selected {
+  color: #101827;
+  background: #e9ad37;
+}
+
+@media (max-width: 760px) {
+  .system-job-status-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .media-job-filters {
+    justify-content: flex-start;
+    width: 100%;
+  }
+}
+
 .system-job-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 6px;
+}
+
+.media-jobs-table-wrap {
+  max-height: 460px;
+  overflow: auto;
+  border: 1px solid rgba(122, 154, 216, 0.35);
+  border-radius: 8px;
+}
+
+.media-jobs-table {
+  width: 100%;
+  min-width: 1080px;
+  border-collapse: collapse;
+  color: #eaf1ff;
+  background: rgba(8, 14, 27, 0.5);
+}
+
+.media-jobs-table th,
+.media-jobs-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(122, 154, 216, 0.2);
+  text-align: left;
+  vertical-align: middle;
+  font-size: 12px;
+}
+
+.media-jobs-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #15223b;
+  color: #b8caf0;
+  white-space: nowrap;
+}
+
+.media-jobs-table td:nth-child(2) {
+  min-width: 210px;
+}
+
+.media-jobs-table td strong,
+.media-jobs-table td small {
+  display: block;
+}
+
+.media-jobs-table td small {
+  max-width: 280px;
+  margin-top: 3px;
+  overflow: hidden;
+  color: #9eadd0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-job-progress {
+  width: 110px;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.media-job-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #36d399;
+}
+
+.media-jobs-table .mediaJobCancelBtn {
+  min-height: 30px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.media-jobs-empty-row td {
+  height: 72px;
+  color: #9eadd0;
+  text-align: center;
 }
 
 .system-job-card {

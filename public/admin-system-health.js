@@ -23,6 +23,11 @@
     } = elements;
     let lastPayload = null;
     let pendingRequest = null;
+    const mediaJobFilters = {
+      jobType: 'all',
+      status: 'all',
+      days: 30
+    };
 
     function humanBytes(value) {
       const n = Math.max(0, Number(value) || 0);
@@ -56,7 +61,141 @@
       if (normalized === 'queued') return t('health_job_status_queued');
       if (normalized === 'completed') return t('health_job_status_completed');
       if (normalized === 'failed') return t('health_job_status_failed');
+      if (normalized === 'cancelled') return t('health_job_status_cancelled');
       return normalized || '-';
+    }
+
+    function jobTypeLabel(type) {
+      const normalized = String(type || '').trim().toLowerCase();
+      if (normalized === 'subtitle') return t('health_subtitle_jobs');
+      if (normalized === 'video_ocr') return t('health_ocr_jobs');
+      return normalized || '-';
+    }
+
+    function jobPhaseLabel(phase) {
+      const normalized = String(phase || '').trim().toLowerCase();
+      const known = new Set([
+        'queued', 'preparing', 'preparing_audio', 'model_loading', 'transcribing', 'aligning',
+        'writing_subtitles', 'sampling_frames', 'model_ready', 'recognizing_frames', 'saving',
+        'loading_asset', 'summarizing_document', 'generating_metadata', 'saving_metadata',
+        'completed', 'failed', 'cancelled', 'interrupted'
+      ]);
+      return known.has(normalized) ? t(`health_job_phase_${normalized}`) : (normalized || '-');
+    }
+
+    function renderFilterOption(value, label, selected) {
+      return `<option value="${escapeHtml(value)}"${selected === value ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+    }
+
+    function renderMediaJobColumnFilter(key) {
+      const selectedValue = key === 'jobType' ? mediaJobFilters.jobType : mediaJobFilters.status;
+      const triggerLabel = selectedValue === 'all'
+        ? (key === 'jobType' ? t('health_job_type_short') : t('health_job_status'))
+        : (key === 'jobType' ? jobTypeLabel(selectedValue) : jobStatusLabel(selectedValue));
+      if (key === 'jobType') {
+        return `<details class="media-job-filter-menu">
+          <summary aria-label="${escapeHtml(t('health_job_type'))}">${escapeHtml(triggerLabel)}</summary>
+          <div class="media-job-filter-options">
+            ${[
+              ['all', t('health_job_filter_all_types')],
+              ['subtitle', t('health_subtitle_jobs')],
+              ['video_ocr', t('health_ocr_jobs')]
+            ].map(([value, label]) => `<button type="button" class="mediaJobFilterOption${selectedValue === value ? ' is-selected' : ''}" data-filter-key="jobType" data-filter-value="${escapeHtml(value)}">${escapeHtml(label)}</button>`).join('')}
+          </div>
+        </details>`;
+      }
+      return `<details class="media-job-filter-menu">
+        <summary aria-label="${escapeHtml(t('health_job_status'))}">${escapeHtml(triggerLabel)}</summary>
+        <div class="media-job-filter-options">
+          ${[
+            ['all', t('health_job_filter_all_statuses')],
+            ['running', t('health_job_status_running')],
+            ['queued', t('health_job_status_queued')],
+            ['completed', t('health_job_status_completed')],
+            ['failed', t('health_job_status_failed')],
+            ['cancelled', t('health_job_status_cancelled')]
+          ].map(([value, label]) => `<button type="button" class="mediaJobFilterOption${selectedValue === value ? ' is-selected' : ''}" data-filter-key="status" data-filter-value="${escapeHtml(value)}">${escapeHtml(label)}</button>`).join('')}
+        </div>
+      </details>`;
+    }
+
+    function renderMediaJobsTable(jobs = []) {
+      const rows = Array.isArray(jobs) ? jobs : [];
+      return `
+        <div class="media-jobs-table-wrap">
+          <table class="media-jobs-table">
+            <thead><tr>
+              <th><div class="media-job-column-filter">${renderMediaJobColumnFilter('jobType')}</div></th>
+              <th>${escapeHtml(t('health_job_asset'))}</th>
+              <th><div class="media-job-column-filter">${renderMediaJobColumnFilter('status')}</div></th>
+              <th>${escapeHtml(t('health_job_phase'))}</th>
+              <th>${escapeHtml(t('health_job_progress'))}</th>
+              <th>${escapeHtml(t('health_job_started'))}</th>
+              <th>${escapeHtml(t('health_job_finished'))}</th>
+              <th>${escapeHtml(t('actions'))}</th>
+            </tr></thead>
+            <tbody>${rows.length ? rows.map((job) => {
+              const status = String(job.status || '').trim().toLowerCase();
+              const badgeClass = status === 'completed' ? 'health-ok' : ['failed', 'cancelled'].includes(status) ? 'health-bad' : 'health-warn';
+              const progress = Math.max(0, Math.min(100, Number(job.progress) || 0));
+              const message = String(job.error || job.warning || '').trim();
+              return `<tr data-media-job-id="${escapeHtml(job.jobId || '')}">
+                <td>${escapeHtml(jobTypeLabel(job.jobType))}</td>
+                <td><strong>${escapeHtml(job.assetTitle || '-')}</strong>${message ? `<small title="${escapeHtml(message)}">${escapeHtml(message)}</small>` : ''}</td>
+                <td><span class="${badgeClass}">${escapeHtml(jobStatusLabel(status))}</span></td>
+                <td>${escapeHtml(jobPhaseLabel(job.progressPhase))}</td>
+                <td><div class="media-job-progress"><span style="width:${progress}%"></span></div><small>${progress}%</small></td>
+                <td>${escapeHtml(formatDateTime(job.startedAt || job.createdAt))}</td>
+                <td>${escapeHtml(formatDateTime(job.finishedAt))}</td>
+                <td>${job.cancelable ? `<button type="button" class="danger mediaJobCancelBtn" data-job-id="${escapeHtml(job.jobId || '')}">${escapeHtml(t('health_job_cancel'))}</button>` : '-'}</td>
+              </tr>`;
+            }).join('') : `<tr class="media-jobs-empty-row"><td colspan="8">${escapeHtml(t('health_job_filter_empty'))}</td></tr>`}</tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function filterMediaJobs(jobs = []) {
+      const cutoffMs = Date.now() - (Math.max(1, Number(mediaJobFilters.days) || 30) * 24 * 60 * 60 * 1000);
+      return (Array.isArray(jobs) ? jobs : []).filter((job) => {
+        const jobType = String(job.jobType || '').trim().toLowerCase();
+        const status = String(job.status || '').trim().toLowerCase();
+        if (mediaJobFilters.jobType !== 'all' && jobType !== mediaJobFilters.jobType) return false;
+        if (mediaJobFilters.status !== 'all' && status !== mediaJobFilters.status) return false;
+        const timestamp = Date.parse(String(job.updatedAt || job.finishedAt || job.startedAt || job.createdAt || ''));
+        return !Number.isFinite(timestamp) || timestamp >= cutoffMs;
+      });
+    }
+
+    function renderMediaJobFilters() {
+      return `
+        <div class="media-job-filters">
+          <select data-media-job-filter="days" aria-label="${escapeHtml(t('health_job_filter_period'))}">
+            ${[1, 5, 10, 20, 30].map((days) => renderFilterOption(String(days), t('health_recent_jobs_window').replace('{days}', String(days)), String(mediaJobFilters.days))).join('')}
+          </select>
+        </div>
+      `;
+    }
+
+    function positionMediaJobFilterMenu(details) {
+      if (!details?.open) return;
+      const summary = details.querySelector?.('summary');
+      const options = details.querySelector?.('.media-job-filter-options');
+      const rect = summary?.getBoundingClientRect?.();
+      if (!options || !rect) return;
+      const viewportWidth = Math.max(320, Number(global.innerWidth) || 0);
+      const viewportHeight = Math.max(320, Number(global.innerHeight) || 0);
+      const menuWidth = Math.max(174, Math.round(rect.width));
+      const left = Math.max(8, Math.min(rect.left, viewportWidth - menuWidth - 8));
+      options.style.left = `${Math.round(left)}px`;
+      options.style.top = `${Math.round(rect.bottom + 4)}px`;
+      options.style.minWidth = `${menuWidth}px`;
+      global.requestAnimationFrame?.(() => {
+        const menuRect = options.getBoundingClientRect?.();
+        if (!menuRect || menuRect.bottom <= viewportHeight - 8) return;
+        const aboveTop = rect.top - menuRect.height - 4;
+        if (aboveTop >= 8) options.style.top = `${Math.round(aboveTop)}px`;
+      });
     }
 
     function renderSystemJobSlot(titleKey, job, type) {
@@ -120,7 +259,7 @@
       const services = data.services || {};
       const integrity = data.integrity || {};
       const recent = data.recentJobs || {};
-      const mediaJobRetentionDays = Math.max(1, Number(data.mediaJobRetentionDays) || 30);
+      const mediaJobs = Array.isArray(data.mediaJobs) ? data.mediaJobs : [];
       const serviceEntries = [
         ['health_service_app', services.app],
         ['health_service_postgres', services.postgres],
@@ -156,19 +295,71 @@
         `<div class="row"><strong>${escapeHtml(t('health_integrity'))}</strong><span>${escapeHtml(t('health_missing_proxy'))}: ${escapeHtml(String(integrity.missingProxy || 0))} | ${escapeHtml(t('health_missing_thumbnail'))}: ${escapeHtml(String(integrity.missingThumbnail || 0))} | ${escapeHtml(t('health_missing_subtitle'))}: ${escapeHtml(String(integrity.missingSubtitle || 0))} | ${escapeHtml(t('health_missing_ocr'))}: ${escapeHtml(String(integrity.missingOcr || 0))}</span></div>`
       ].join('');
       if (systemJobStatus) {
-        const windowLabel = t('health_recent_jobs_window').replace('{days}', String(mediaJobRetentionDays));
+        const filteredMediaJobs = filterMediaJobs(mediaJobs);
         systemJobStatus.innerHTML = `
           <div class="system-job-status-head">
-            <h3>${escapeHtml(t('health_recent_jobs'))}</h3>
-            <span>${escapeHtml(windowLabel)}</span>
+            <div class="system-job-status-title">
+              <h3>${escapeHtml(t('health_recent_jobs'))}</h3>
+              <button type="button" class="mediaJobsRefreshBtn" title="${escapeHtml(t('health_job_refresh'))}" aria-label="${escapeHtml(t('health_job_refresh'))}">&#8635;</button>
+            </div>
+            ${renderMediaJobFilters()}
           </div>
-          <div class="system-job-grid">
-            ${renderSystemJobGroup('health_subtitle_jobs', recent.subtitle || {}, 'subtitle')}
-            ${renderSystemJobGroup('health_ocr_jobs', recent.ocr || {}, 'ocr')}
-          </div>
+          ${renderMediaJobsTable(filteredMediaJobs)}
         `;
       }
     }
+
+    systemJobStatus?.addEventListener?.('change', (event) => {
+      const select = event.target?.closest?.('[data-media-job-filter]');
+      if (!select) return;
+      const key = String(select.dataset.mediaJobFilter || '');
+      if (key === 'days') mediaJobFilters.days = Math.max(1, Math.min(30, Number(select.value) || 30));
+      else if (key === 'jobType' || key === 'status') mediaJobFilters[key] = String(select.value || 'all');
+      renderSystemHealth(lastPayload?.systemHealth || {});
+    });
+
+    systemJobStatus?.addEventListener?.('toggle', (event) => {
+      const details = event.target?.closest?.('details.media-job-filter-menu');
+      if (!details?.open) return;
+      systemJobStatus.querySelectorAll?.('details.media-job-filter-menu[open]').forEach((item) => {
+        if (item !== details) item.removeAttribute('open');
+      });
+      positionMediaJobFilterMenu(details);
+    }, true);
+
+    systemJobStatus?.addEventListener?.('click', async (event) => {
+      const filterOption = event.target?.closest?.('.mediaJobFilterOption');
+      if (filterOption) {
+        const key = String(filterOption.dataset.filterKey || '');
+        const value = String(filterOption.dataset.filterValue || 'all');
+        if (key === 'jobType' || key === 'status') mediaJobFilters[key] = value;
+        filterOption.closest?.('details')?.removeAttribute?.('open');
+        renderSystemHealth(lastPayload?.systemHealth || {});
+        return;
+      }
+      const refreshButton = event.target?.closest?.('.mediaJobsRefreshBtn');
+      if (refreshButton) {
+        refreshButton.disabled = true;
+        clear();
+        await refresh({ force: true, forceServer: true }).catch((error) => {
+          global.alert?.(`${t('health_job_refresh_failed')}: ${String(error?.message || 'Request failed')}`);
+        });
+        return;
+      }
+      const button = event.target?.closest?.('.mediaJobCancelBtn');
+      if (!button) return;
+      const jobId = String(button.dataset.jobId || '').trim();
+      if (!jobId || !global.confirm(t('health_job_cancel_confirm'))) return;
+      button.disabled = true;
+      try {
+        await api(`/api/admin/media-jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' });
+        clear();
+        await refresh({ force: true });
+      } catch (error) {
+        button.disabled = false;
+        global.alert?.(`${t('health_job_cancel_failed')}: ${String(error?.message || 'Request failed')}`);
+      }
+    });
 
     function render(payload) {
       if (!payload) return;
@@ -191,7 +382,7 @@
       const request = Promise.all([
         api('/api/admin/workflow-tracking'),
         api('/api/admin/ffmpeg-health'),
-        api('/api/admin/system-health'),
+        api(`/api/admin/system-health${options.forceServer ? '?refresh=1' : ''}`),
         api('/api/admin/runtime-diagnostics?limit=100').catch(() => null)
       ]).then(([tracking, health, systemHealth, diagnostics]) => {
         lastPayload = { tracking, health, systemHealth, diagnostics };
