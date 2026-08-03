@@ -3361,6 +3361,9 @@ app.get('/api/admin/system-health', async (req, res) => {
     const buildHealthMediaJobSummary = (row) => {
       if (!row) return null;
       const jobType = normalizeMediaJobType(row.job_type);
+      const resultPayload = row.result_payload && typeof row.result_payload === 'object'
+        ? row.result_payload
+        : {};
       const mapped = jobType === 'subtitle' ? mapSubtitleJobFromDbRow(row) : mapVideoOcrJobFromDbRow(row);
       return {
         jobId: mapped.jobId,
@@ -3551,7 +3554,11 @@ app.get('/api/admin/system-health', async (req, res) => {
     systemHealthCache.expiresAt = Date.now() + SYSTEM_HEALTH_CACHE_TTL_MS;
     systemHealthCache.value = payload;
     return res.json({ ...payload, cached: false, cacheTtlSeconds: Math.ceil(SYSTEM_HEALTH_CACHE_TTL_MS / 1000) });
-  } catch (_error) {
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: 'admin-system-health-error',
+      message: String(error?.message || error)
+    }));
     return res.status(500).json({ error: 'Failed to load system health' });
   }
 });
