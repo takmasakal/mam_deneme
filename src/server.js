@@ -9083,6 +9083,7 @@ registerTextProcessingRoutes(app, {
   subtitleJobs,
   getMediaProcessingJobById,
   mapSubtitleJobFromDbRow,
+  mapVideoOcrJobFromDbRow,
   queueVideoOcrJob,
   extractPhotoOcrToText,
   videoOcrJobs,
