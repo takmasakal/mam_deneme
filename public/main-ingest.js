@@ -264,6 +264,20 @@
     }
 
     function initIngestHandlers() {
+      const titleInput = ingestForm?.querySelector?.('[name="title"]');
+
+      const applyTitleValidity = () => {
+        if (!titleInput) return true;
+        const valid = Boolean(String(titleInput.value || '').trim());
+        titleInput.setCustomValidity(valid ? '' : t('asset_title_required'));
+        return valid;
+      };
+
+      titleInput?.addEventListener('invalid', applyTitleValidity);
+      titleInput?.addEventListener('input', () => {
+        titleInput.setCustomValidity('');
+      });
+
       protectUploadNavigation();
       if (mediaFileBtn && String(mediaFileBtn.tagName || '').toLowerCase() !== 'label') {
         mediaFileBtn.addEventListener('click', () => {
@@ -297,6 +311,11 @@
 
       ingestForm?.addEventListener('submit', async (event) => {
         event.preventDefault();
+        if (!applyTitleValidity()) {
+          titleInput?.reportValidity();
+          titleInput?.focus();
+          return;
+        }
         const formData = new FormData(ingestForm);
         const inputFile = mediaFileInput?.files?.[0];
         const formFile = formData.get('mediaFile');
