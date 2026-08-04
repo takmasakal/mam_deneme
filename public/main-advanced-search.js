@@ -3,7 +3,8 @@
     q: 'Query',
     ocrQ: 'OCR search',
     subtitleQ: 'Subtitle search',
-    tag: 'Tag search'
+    tag: 'Tag search',
+    clipQ: 'Clip search'
   };
   const FIELD_ORDER = Object.keys(FIELD_LABELS);
   const RANGE_FIELDS = ['durationMinSec', 'durationMaxSec', 'sizeMinMb', 'sizeMaxMb'];

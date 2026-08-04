@@ -50,6 +50,7 @@
       searchStateRef.currentSearchQuery = String(filters.q || '').trim();
       searchStateRef.currentOcrQuery = String(filters.ocrQ || '').trim();
       searchStateRef.currentSubtitleQuery = String(filters.subtitleQ || '').trim();
+      searchStateRef.currentClipQuery = hasAdvancedSearch ? String(filters.clipQ || '').trim() : '';
       searchStateRef.currentSearchHighlightQuery = searchStateRef.currentSearchQuery;
       searchStateRef.currentSearchDidYouMean = '';
       searchStateRef.currentSearchFuzzyUsed = false;

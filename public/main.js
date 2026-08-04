@@ -110,6 +110,7 @@ let lastSelectedAssetId = null;
 let currentSearchQuery = '';
 let currentOcrQuery = '';
 let currentSubtitleQuery = '';
+let currentClipQuery = '';
 let currentSearchHighlightQuery = '';
 let currentSearchDidYouMean = '';
 let currentSearchFuzzyUsed = false;
@@ -1935,7 +1936,8 @@ const assetBrowserModule = window.createMainAssetBrowserModule({
     get currentSubtitleQuery() { return currentSubtitleQuery; },
     get currentSubtitleDidYouMean() { return currentSubtitleDidYouMean; },
     get currentSubtitleFuzzyUsed() { return currentSubtitleFuzzyUsed; },
-    get currentSubtitleHighlightQuery() { return currentSubtitleHighlightQuery; }
+    get currentSubtitleHighlightQuery() { return currentSubtitleHighlightQuery; },
+    get currentClipQuery() { return currentClipQuery; }
   },
   t,
   escapeHtml,
@@ -2292,6 +2294,8 @@ const assetsModule = window.createMainAssetsModule({
     set currentOcrQuery(next) { currentOcrQuery = next; },
     get currentSubtitleQuery() { return currentSubtitleQuery; },
     set currentSubtitleQuery(next) { currentSubtitleQuery = next; },
+    get currentClipQuery() { return currentClipQuery; },
+    set currentClipQuery(next) { currentClipQuery = next; },
     get currentSearchHighlightQuery() { return currentSearchHighlightQuery; },
     set currentSearchHighlightQuery(next) { currentSearchHighlightQuery = next; },
     get currentSearchDidYouMean() { return currentSearchDidYouMean; },
