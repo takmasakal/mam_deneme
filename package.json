@@ -10,6 +10,7 @@
     "test:advanced-search": "node scripts/test_advanced_search_service.js",
     "test:asset-query": "node scripts/test_asset_list_query_service.js",
     "test:main-asset-card": "node scripts/test_main_asset_card.js",
+    "test:main-common-clip-hits": "node scripts/test_main_common_clip_hits.js",
     "test:main-asset-grid-events": "node scripts/test_main_asset_grid_events.js",
     "test:main-assets-search-meta": "node scripts/test_main_assets_search_meta.js",
     "test:main-bootstrap": "node scripts/test_main_bootstrap.js",

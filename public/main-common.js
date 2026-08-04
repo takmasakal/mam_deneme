@@ -581,7 +581,7 @@
     function clipHighlightSnippet(asset, query) {
       const terms = extractHighlightTerms(query);
       if (!terms.length || !asset || !Array.isArray(asset.cuts)) return '';
-      const clips = asset.cuts.map((cut) => ({ cutId: String(cut?.cutId || '').trim(), label: String(cut?.label || '').trim(), inPointSeconds: Math.max(0, Number(cut?.inPointSeconds || 0)) })).filter((cut) => cut.cutId && cut.label && terms.some((term) => textIncludesSearchTerm(cut.label, term))).slice(0, 2);
+      const clips = asset.cuts.map((cut) => ({ cutId: String(cut?.cutId || '').trim(), label: String(cut?.label || '').trim(), inPointSeconds: Math.max(0, Number(cut?.inPointSeconds || 0)) })).filter((cut) => cut.cutId && cut.label && terms.some((term) => textIncludesSearchTerm(cut.label, term)));
       if (!clips.length) return '';
       return clips.map((cut) => {
         const startTc = secondsToTimecode(cut.inPointSeconds, PLAYER_FPS);
