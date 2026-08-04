@@ -8,6 +8,7 @@ function createRenderer(counters) {
     .replaceAll('>', '&gt;');
   const counted = (name, result = '') => (...args) => {
     counters[name] = (counters[name] || 0) + 1;
+    counters[`${name}Args`] = args;
     return typeof result === 'function' ? result(...args) : result;
   };
   return createMainAssetCardRenderer({
@@ -59,6 +60,17 @@ const asset = {
   assert.strictEqual(counters.clip || 0, 0);
   assert.strictEqual(counters['hit-list'] || 0, 0);
   assert.strictEqual(counters['hit-pager'] || 0, 0);
+}
+
+{
+  const counters = {};
+  const html = createRenderer(counters).render(asset, {
+    currentClipQuery: 'omuz'
+  });
+  assert.match(html, /clip-hit/);
+  assert.strictEqual(counters.clip, 1);
+  assert.strictEqual(counters.clipArgs[1], 'omuz');
+  assert.strictEqual(counters.highlight || 0, 0);
 }
 
 {

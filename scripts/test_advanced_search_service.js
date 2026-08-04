@@ -1,10 +1,13 @@
 const assert = require('assert');
-const { createAdvancedSearchService } = require('../src/services/advancedSearchService');
+const {
+  createAdvancedSearchService,
+  parseAdvancedSearchDefinition
+} = require('../src/services/advancedSearchService');
 
 const rows = [
-  { id: 'video-match', type: 'video', terms: ['istanbul'] },
+  { id: 'video-match', type: 'video', terms: ['istanbul'], clips: ['boğaz klibi'] },
   { id: 'video-other', type: 'video', terms: ['ankara'] },
-  { id: 'document-match', type: 'document', terms: ['istanbul'] },
+  { id: 'document-match', type: 'document', terms: ['istanbul'], clips: [] },
   { id: 'photo-match', type: 'photo', terms: ['istanbul'] }
 ];
 
@@ -17,6 +20,9 @@ async function search(definition, valuesByField) {
       if (field === 'type') {
         const types = new Set(String(value).split(','));
         return candidates.filter((row) => types.has(row.type));
+      }
+      if (field === 'clipQ') {
+        return candidates.filter((row) => (row.clips || []).some((clip) => clip.includes(String(value).toLowerCase())));
       }
       return candidates.filter((row) => row.terms.includes(String(value).toLowerCase()));
     }
@@ -47,6 +53,25 @@ async function run() {
     { type: 'video' }
   );
   assert.deepStrictEqual(typeOnly.rows.map((row) => row.id), ['video-match', 'video-other']);
+
+  const clipOnly = await search(
+    { and: ['clipQ'], or: [], values: {} },
+    { clipQ: 'boğaz' }
+  );
+  assert.deepStrictEqual(clipOnly.rows.map((row) => row.id), ['video-match']);
+
+  const clipOrDocument = await search(
+    { and: [], or: ['clipQ', 'q'], values: {} },
+    { clipQ: 'boğaz', q: 'istanbul' }
+  );
+  assert.deepStrictEqual(clipOrDocument.rows.map((row) => row.id), ['video-match', 'document-match', 'photo-match']);
+
+  const parsed = parseAdvancedSearchDefinition(JSON.stringify({
+    and: ['clipQ'],
+    or: [],
+    values: { clipQ: 'boğaz' }
+  }));
+  assert.deepStrictEqual(parsed.and, ['clipQ']);
 
   process.stdout.write('advanced search service tests passed\n');
 }

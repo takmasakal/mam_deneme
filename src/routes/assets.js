@@ -591,6 +591,7 @@ function registerAssetRoutes(app, deps) {
           ocrQ: String(advancedDefinition.values.ocrQ ?? ocrQ).trim(),
           subtitleQ: String(advancedDefinition.values.subtitleQ ?? subtitleQ).trim(),
           tag: String(advancedDefinition.values.tag ?? tag).trim(),
+          clipQ: String(advancedDefinition.values.clipQ || '').trim(),
           type: String(advancedDefinition.values.type ?? type).trim()
         };
         rows = await fetchAssetRows();
@@ -619,6 +620,11 @@ function registerAssetRoutes(app, deps) {
               const folded = normalizeForSearch(value);
               return candidates.filter((row) => (Array.isArray(row.tags) ? row.tags : [])
                 .some((item) => normalizeForSearch(item) === folded));
+            }
+            if (field === 'clipQ') {
+              const folded = normalizeForSearch(value);
+              return candidates.filter((row) => (Array.isArray(row.cuts) ? row.cuts : [])
+                .some((cut) => normalizeForSearch(cut?.label).includes(folded)));
             }
             if (field === 'type') {
               const foldedTypes = new Set(value.toLowerCase().split(',').map((item) => item.trim()).filter(Boolean));

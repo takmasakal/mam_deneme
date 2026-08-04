@@ -107,6 +107,7 @@ const accessScopeModule = typeof window.createMainAccessScopeModule === 'functio
 let currentSearchQuery = '';
 let currentOcrQuery = '';
 let currentSubtitleQuery = '';
+let currentClipQuery = '';
 let currentSearchHighlightQuery = '';
 let currentSearchDidYouMean = '';
 let currentSearchFuzzyUsed = false;
@@ -1805,7 +1806,8 @@ const assetBrowserModule = window.createMainAssetBrowserModule({
     get currentSubtitleFuzzyUsed() { return currentSubtitleFuzzyUsed; },
     get currentSearchHighlightQuery() { return currentSearchHighlightQuery; },
     get currentOcrHighlightQuery() { return currentOcrHighlightQuery; },
-    get currentSubtitleQuery() { return currentSubtitleQuery; }
+    get currentSubtitleQuery() { return currentSubtitleQuery; },
+    get currentClipQuery() { return currentClipQuery; }
   },
   t,
   escapeHtml,
@@ -2169,6 +2171,8 @@ const assetsModule = window.createMainAssetsModule({
     set currentOcrQuery(next) { currentOcrQuery = next; },
     get currentSubtitleQuery() { return currentSubtitleQuery; },
     set currentSubtitleQuery(next) { currentSubtitleQuery = next; },
+    get currentClipQuery() { return currentClipQuery; },
+    set currentClipQuery(next) { currentClipQuery = next; },
     get currentSearchHighlightQuery() { return currentSearchHighlightQuery; },
     set currentSearchHighlightQuery(next) { currentSearchHighlightQuery = next; },
     get currentSearchDidYouMean() { return currentSearchDidYouMean; },

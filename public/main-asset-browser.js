@@ -378,7 +378,8 @@ function renderAssets(assets, options = {}) {
     currentOcrHighlightQuery: searchStateRef.currentOcrHighlightQuery,
     currentSubtitleDidYouMean: searchStateRef.currentSubtitleDidYouMean,
     currentSubtitleFuzzyUsed: searchStateRef.currentSubtitleFuzzyUsed,
-    currentSubtitleQuery: searchStateRef.currentSubtitleQuery
+    currentSubtitleQuery: searchStateRef.currentSubtitleQuery,
+    currentClipQuery: searchStateRef.currentClipQuery
   };
   const searchHighlightClass = acceptedDidYouMeanHighlightClass(
     'q',

@@ -33,6 +33,7 @@
       const currentOcrQuery = String(searchState.currentOcrQuery || '').trim();
       const currentOcrHighlightQuery = String(searchState.currentOcrHighlightQuery || '').trim();
       const currentSubtitleQuery = String(searchState.currentSubtitleQuery || '').trim();
+      const currentClipQuery = String(searchState.currentClipQuery || '').trim();
       const hasTextSearch = Boolean(currentSearchQuery || currentSearchHighlightQuery);
       const selected = selectedAssetIdsRef.get().has(asset.id) ? 'selected' : '';
       const trashClass = asset.inTrash ? 'in-trash' : '';
@@ -57,9 +58,14 @@
       const tagHits = hasTextSearch
         ? tagHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass)
         : '';
-      const clipHits = hasTextSearch
-        ? clipHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass)
-        : '';
+      const clipQueries = Array.from(new Set([
+        hasTextSearch ? currentSearchHighlightQuery : '',
+        currentClipQuery
+      ].map((value) => String(value || '').trim()).filter(Boolean)));
+      const clipHits = clipQueries
+        .map((query) => clipHighlightSnippet(asset, query, searchHighlightClass))
+        .filter(Boolean)
+        .join('');
 
       let ocrHit = '';
       let ocrPager = '';

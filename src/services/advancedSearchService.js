@@ -1,4 +1,4 @@
-const ADVANCED_SEARCH_FIELDS = Object.freeze(['q', 'ocrQ', 'subtitleQ', 'tag', 'type']);
+const ADVANCED_SEARCH_FIELDS = Object.freeze(['q', 'ocrQ', 'subtitleQ', 'tag', 'clipQ', 'type']);
 const ADVANCED_SEARCH_FIELD_SET = new Set(ADVANCED_SEARCH_FIELDS);
 
 function normalizeFieldList(value) {
