@@ -472,6 +472,67 @@ button:hover {
   line-height: 1;
 }
 
+.detail-subtitle-language-picker {
+  position: relative;
+}
+
+.detail-subtitle-language-picker > summary {
+  list-style: none;
+}
+
+.detail-subtitle-language-picker > summary::-webkit-details-marker {
+  display: none;
+}
+
+.detail-artifact-badge-button {
+  cursor: pointer;
+  user-select: none;
+}
+
+.detail-artifact-badge-button:hover,
+.detail-subtitle-language-picker[open] .detail-artifact-badge-button {
+  background: #e9a936;
+  border-color: #e9a936;
+  color: #13203a;
+}
+
+.detail-subtitle-language-menu {
+  position: absolute;
+  z-index: 30;
+  top: 0;
+  left: calc(100% + 5px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: max-content;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+}
+
+.detail-subtitle-language-choice {
+  min-width: 42px;
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+#panelDetail .detail-subtitle-language-choice {
+  color: #ffffff;
+}
+
+#panelDetail .detail-subtitle-language-tr {
+  background: #d92732;
+  border-color: #d92732;
+  color: #ffffff;
+}
+
+#panelDetail .detail-subtitle-language-choice.active {
+  box-shadow: inset 0 0 0 2px #ffffff;
+}
+
 .chips {
   display: flex;
   gap: 6px;

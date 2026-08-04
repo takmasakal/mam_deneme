@@ -580,6 +580,9 @@ let i18n = {
     ocr_hit: 'OCR',
     ocr_badge: 'OCR',
     subtitle_badge: 'SUB',
+    subtitle_choose_language: 'Choose subtitle language',
+    subtitle_lang_turkish_short: 'tur',
+    subtitle_lang_english_short: 'eng',
     asset_artifacts: 'Available artifacts',
     video_ocr: 'Video OCR',
     video_ocr_interval: 'Interval (sec)',
@@ -961,6 +964,9 @@ let i18n = {
     ocr_hit: 'OCR',
     ocr_badge: 'OCR',
     subtitle_badge: 'ALTYZ',
+    subtitle_choose_language: 'Altyazı dilini seç',
+    subtitle_lang_turkish_short: 'tur',
+    subtitle_lang_english_short: 'eng',
     asset_artifacts: 'Mevcut çıktılar',
     video_ocr: 'Video OCR',
     video_ocr_interval: 'Aralık (sn)',
@@ -2070,6 +2076,7 @@ detailModule = window.createMainDetailModule({
   currentUserCanDeleteAssetInUi,
   currentUserOwnsAsset,
   currentUserCanEditMetadata: () => currentUserCanEditMetadata,
+  currentLang: () => currentLang,
   currentUsername: () => currentUsername,
   currentSearchQuery: () => currentSearchQuery,
   currentSearchHighlightQuery: () => currentSearchHighlightQuery,
@@ -2102,6 +2109,30 @@ function getVersionSectionAccess(asset) { return detailModule.getVersionSectionA
 function renderVersionRow(asset, version, access, interactive) { return detailModule.renderVersionRow(asset, version, access, interactive); }
 async function refreshAssetDetail(assetId, workflow) { return detailModule.refreshAssetDetail(assetId, workflow); }
 function detailMarkup(asset, workflow, options = {}) { return detailModule.detailMarkup(asset, workflow, options); }
+
+function initDetailSubtitleLanguagePicker(asset, root = assetDetail) {
+  if (!asset?.id || !(root instanceof Element)) return;
+  const picker = root.querySelector('.detail-subtitle-language-picker');
+  if (!picker) return;
+  picker.querySelectorAll('[data-subtitle-language-choice]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const subtitleUrl = String(button.dataset.subtitleUrl || '').trim();
+      if (!subtitleUrl) return;
+      asset.subtitleUrl = subtitleUrl;
+      asset.subtitleLang = String(button.dataset.subtitleLang || '').trim();
+      asset.subtitleLabel = String(button.dataset.subtitleLabel || '').trim();
+      picker.querySelectorAll('[data-subtitle-language-choice]').forEach((item) => {
+        item.classList.toggle('active', item === button);
+      });
+      const currentEl = root.querySelector('#videoSubtitleCurrent');
+      if (currentEl) currentEl.textContent = asset.subtitleLabel || asset.subtitleLang || '-';
+      const statusEl = root.querySelector('#subtitleStatus');
+      if (statusEl) statusEl.textContent = `${t('subtitle_loaded')}: ${asset.subtitleLabel || asset.subtitleLang || ''}`;
+      picker.open = false;
+      syncSubtitleOverlayInOpenPlayers(asset);
+    });
+  });
+}
 async function openMultiSelectionDetail() {
   detailRequestCoordinator.invalidate();
   return detailModule.openMultiSelectionDetail();
@@ -2570,6 +2601,7 @@ async function openAsset(id, workflow, options = {}) {
     startAtSeconds: Number(options.startAtSeconds) || 0,
     focusCutId: String(options.focusCutId || '').trim()
   });
+  initDetailSubtitleLanguagePicker(asset, assetDetail);
   if (options.scrollToVideoTop) scrollDetailPanelToVideoTop(assetDetail);
   const focusFieldName = String(options.focusFieldName || '').trim();
   const focusTag = String(options.focusTag || '').trim();

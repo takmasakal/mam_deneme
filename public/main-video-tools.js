@@ -474,6 +474,9 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     asset.subtitleLang = mappedAsset.subtitleLang || asset.subtitleLang || getLang();
     asset.subtitleLabel = mappedAsset.subtitleLabel || asset.subtitleLabel || '';
     asset.subtitleItems = Array.isArray(mappedAsset.subtitleItems) ? mappedAsset.subtitleItems : (asset.subtitleItems || []);
+    asset.subtitleActiveByLang = mappedAsset.subtitleActiveByLang && typeof mappedAsset.subtitleActiveByLang === 'object'
+      ? mappedAsset.subtitleActiveByLang
+      : (asset.subtitleActiveByLang || {});
     asset.audioStreamOptions = Array.isArray(mappedAsset.audioStreamOptions) ? mappedAsset.audioStreamOptions : (asset.audioStreamOptions || []);
   };
   const renderSearchResults = (matches = [], didYouMean = '', query = '', fuzzyUsed = false) => {
@@ -579,8 +582,17 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
       itemsEl.innerHTML = `<div class="subtitle-item-empty">${escapeHtml(t('subtitle_no_items'))}</div>`;
       return;
     }
+    const languageKey = (value) => {
+      const primary = String(value || '').trim().toLowerCase().replaceAll('_', '-').split('-')[0];
+      if (primary === 'tr' || primary === 'tur') return 'tr';
+      if (primary === 'en' || primary === 'eng') return 'en';
+      return primary.replace(/[^a-z0-9]/g, '').slice(0, 12);
+    };
+    const activeByLang = asset.subtitleActiveByLang && typeof asset.subtitleActiveByLang === 'object'
+      ? asset.subtitleActiveByLang
+      : {};
     itemsEl.innerHTML = items.map((item) => {
-      const active = item.subtitleUrl === asset.subtitleUrl;
+      const active = activeByLang[languageKey(item.subtitleLang)] === item.subtitleUrl;
       return `
         <div class="subtitle-item-row ${active ? 'active' : ''}" data-subtitle-url="${escapeHtml(item.subtitleUrl)}">
           <span class="subtitle-item-label">${escapeHtml(item.subtitleLabel || item.subtitleLang || 'subtitle')}</span>

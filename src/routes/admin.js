@@ -1,6 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 const { nanoid } = require('nanoid');
+const {
+  subtitleLanguageKey,
+  resolveSubtitleActiveByLang,
+  setActiveSubtitleForLanguage
+} = require('../services/subtitleSelectionService');
 
 function registerAdminRoutes(app, deps) {
   const {
@@ -2192,7 +2197,7 @@ app.get('/api/admin/subtitle-records', async (req, res) => {
       const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
       const items = getSubtitleItemsFromDc(dc);
       if (!items.length) return;
-      const activeUrl = String(dc.subtitleUrl || '').trim();
+      const activeByLang = resolveSubtitleActiveByLang(dc, items);
       items.forEach((item) => {
         const label = String(item.subtitleLabel || '').trim();
         const lang = normalizeSubtitleLang(item.subtitleLang);
@@ -2209,7 +2214,7 @@ app.get('/api/admin/subtitle-records', async (req, res) => {
           subtitleLabel: label || 'subtitle',
           subtitleLang: lang,
           subtitleUrl: url,
-          active: activeUrl && url ? activeUrl === url : false,
+          active: Boolean(url && activeByLang[subtitleLanguageKey(lang)] === url),
           createdAt: String(item.createdAt || row.updated_at || '')
         });
       });
@@ -2246,12 +2251,16 @@ app.patch('/api/admin/subtitle-records', async (req, res) => {
     const chosen = setActive
       ? items[idx]
       : (items.find((it) => String(it.subtitleUrl || '').trim() === prevActive) || items[idx]);
+    const subtitleActiveByLang = setActive
+      ? setActiveSubtitleForLanguage(resolveSubtitleActiveByLang(dc, items), items[idx])
+      : resolveSubtitleActiveByLang(dc, items);
     const updatedDc = {
       ...dc,
       subtitleItems: items,
       subtitleUrl: String(chosen.subtitleUrl || '').trim(),
       subtitleLabel: String(chosen.subtitleLabel || '').trim(),
-      subtitleLang: normalizeSubtitleLang(chosen.subtitleLang)
+      subtitleLang: normalizeSubtitleLang(chosen.subtitleLang),
+      subtitleActiveByLang
     };
     const updatedRes = await pool.query(
       'UPDATE assets SET dc_metadata = $2::jsonb, updated_at = $3 WHERE id = $1 RETURNING *',
@@ -2293,7 +2302,12 @@ app.delete('/api/admin/subtitle-records', async (req, res) => {
       subtitleItems: nextItems,
       subtitleUrl: nextActive ? String(nextActive.subtitleUrl || '').trim() : '',
       subtitleLabel: nextActive ? String(nextActive.subtitleLabel || '').trim() : '',
-      subtitleLang: nextActive ? normalizeSubtitleLang(nextActive.subtitleLang) : ''
+      subtitleLang: nextActive ? normalizeSubtitleLang(nextActive.subtitleLang) : '',
+      subtitleActiveByLang: resolveSubtitleActiveByLang({
+        ...dc,
+        subtitleUrl: nextActive ? String(nextActive.subtitleUrl || '').trim() : '',
+        subtitleLang: nextActive ? normalizeSubtitleLang(nextActive.subtitleLang) : ''
+      }, nextItems)
     };
     const updatedRes = await pool.query(
       'UPDATE assets SET dc_metadata = $2::jsonb, updated_at = $3 WHERE id = $1 RETURNING *',
