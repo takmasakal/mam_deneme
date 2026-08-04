@@ -1435,7 +1435,20 @@ async function loadCurrentUser(options = {}) {
     applyCurrentUserAssetTypeScope();
     currentUserPermissionSignature = buildCurrentUserPermissionSignature();
     return Boolean(detectChanges && previousSignature && currentUserPermissionSignature !== previousSignature);
-  } catch (_error) {
+  } catch (error) {
+    const cachedLabel = String(sessionStorage.getItem(SESSION_CURRENT_USER_LABEL) || '').trim();
+    const hasLastKnownUser = Boolean(
+      currentUsername
+      || String(currentUserBtn.dataset.value || '').trim()
+      || cachedLabel
+    );
+    if (hasLastKnownUser) {
+      console.warn('Current user refresh failed; preserving the last verified identity.', {
+        status: Number(error?.status || 0) || 0,
+        message: String(error?.message || 'Request failed')
+      });
+      return false;
+    }
     currentUserIsSuperAdmin = false;
     currentUserCanAccessAdmin = false;
     currentUserCanEditMetadata = false;
@@ -1451,8 +1464,8 @@ async function loadCurrentUser(options = {}) {
     currentUserAllowedAssetTypes = null;
     currentUserUploadAllowedAssetTypes = null;
     currentUserBtn.dataset.value = '';
-    currentUserBtn.textContent = t('unknown_user');
-    currentUserBtn.title = t('unknown_user');
+    currentUserBtn.textContent = cachedLabel || t('user_loading');
+    currentUserBtn.title = cachedLabel || t('user_loading');
     setCurrentUserIdentityCandidates([]);
     if (adminMenuLink) adminMenuLink.classList.add('hidden');
     applyCurrentUserAssetTypeScope();
@@ -1775,7 +1788,10 @@ async function api(path, options = {}) {
     const errMsg = parsedBody && typeof parsedBody === 'object' && !Array.isArray(parsedBody)
       ? parsedBody.error
       : '';
-    throw new Error(errMsg || fallback || 'Request failed');
+    const error = new Error(errMsg || fallback || 'Request failed');
+    error.status = response.status;
+    error.body = parsedBody;
+    throw error;
   }
 
   if (!textBody) return {};

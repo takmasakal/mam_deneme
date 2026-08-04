@@ -481,7 +481,17 @@ function registerTextProcessingRoutes(app, deps) {
         });
       }
   
-      const persistedLatest = await getLatestMediaProcessingJobForAsset(assetId, 'video_ocr');
+      // Job persistence was added after the older dc_metadata OCR fields. If the
+      // table/migration is unavailable, keep the endpoint usable from metadata.
+      let persistedLatest = null;
+      try {
+        persistedLatest = await getLatestMediaProcessingJobForAsset(assetId, 'video_ocr');
+      } catch (error) {
+        console.error('video-ocr-latest-persistence-error', {
+          assetId,
+          message: String(error?.message || error).slice(0, 500)
+        });
+      }
       if (persistedLatest) {
         const mapped = mapVideoOcrJobFromDbRow(persistedLatest);
         return res.json({
