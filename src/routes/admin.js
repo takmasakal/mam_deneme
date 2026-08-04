@@ -2533,6 +2533,9 @@ app.patch('/api/admin/settings', async (req, res) => {
       autoProxyBackfillOnUpload: Object.prototype.hasOwnProperty.call(req.body, 'autoProxyBackfillOnUpload')
         ? Boolean(req.body.autoProxyBackfillOnUpload)
         : current.autoProxyBackfillOnUpload,
+      allowFilelessAssetCreation: Object.prototype.hasOwnProperty.call(req.body, 'allowFilelessAssetCreation')
+        ? Boolean(req.body.allowFilelessAssetCreation)
+        : Boolean(current.allowFilelessAssetCreation),
       newAssetDefaultVisibility: Object.prototype.hasOwnProperty.call(req.body, 'newAssetDefaultVisibility')
         ? normalizeNewAssetDefaultVisibility(req.body.newAssetDefaultVisibility)
         : normalizeNewAssetDefaultVisibility(current.newAssetDefaultVisibility),

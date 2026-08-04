@@ -14,6 +14,7 @@
       showUploadProxyDecisionModal,
       showShortcutToast,
       currentAssetsRef,
+      allowFilelessAssetCreationRef,
       getDefaultIngestType,
       loadAssets
     } = deps || {};
@@ -59,10 +60,10 @@
       uploadProgressText.textContent = '';
     }
 
-    function uploadAssetWithProgress(payload, onProgress) {
+    function uploadAssetWithProgress(payload, onProgress, endpoint = '/api/assets/upload') {
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/assets/upload');
+        xhr.open('POST', endpoint);
         const file = payload?.file instanceof File ? payload.file : null;
         let requestBody = payload;
         if (file) {
@@ -116,6 +117,7 @@
     function localizeUploadError(error) {
       const code = String(error?.code || '').trim();
       if (code === 'asset_type_upload_forbidden') return t('asset_type_upload_forbidden');
+      if (code === 'fileless_asset_creation_disabled') return t('fileless_asset_creation_disabled');
       return String(error?.message || 'Upload failed');
     }
 
@@ -299,19 +301,24 @@
         const inputFile = mediaFileInput?.files?.[0];
         const formFile = formData.get('mediaFile');
         const mediaFile = inputFile || formFile;
+        const hasFile = mediaFile instanceof File && mediaFile.size > 0;
 
-        if (!(mediaFile instanceof File)) {
-          alert(t('select_media_first'));
-          return;
-        }
-        if (!mediaFile.size) {
+        if (mediaFile instanceof File && !mediaFile.size && mediaFile.name) {
           alert(t('upload_empty_file'));
           return;
         }
-        const typeValidation = validateSelectedFileForType(mediaFile, formData.get('type'));
-        if (!typeValidation.ok) {
-          alert(formatTypeMismatchMessage(typeValidation.expected, typeValidation.actual));
-          return;
+        if (!hasFile) {
+          if (!allowFilelessAssetCreationRef?.get?.()) {
+            alert(t('fileless_asset_creation_disabled'));
+            return;
+          }
+          if (!global.confirm(t('fileless_asset_confirm'))) return;
+        } else {
+          const typeValidation = validateSelectedFileForType(mediaFile, formData.get('type'));
+          if (!typeValidation.ok) {
+            alert(formatTypeMismatchMessage(typeValidation.expected, typeValidation.actual));
+            return;
+          }
         }
 
         const payloadBase = {
@@ -319,8 +326,8 @@
           type: formData.get('type'),
           tags: formData.get('tags'),
           description: formData.get('description'),
-          fileName: mediaFile.name,
-          mimeType: mediaFile.type || 'application/octet-stream'
+          fileName: hasFile ? mediaFile.name : '',
+          mimeType: hasFile ? (mediaFile.type || 'application/octet-stream') : ''
         };
         payloadBase.dcMetadata = {
           title: String(payloadBase.title || ''),
@@ -332,17 +339,18 @@
         };
 
         resetIngestFormAfterBackgroundStart();
-        notifyUpload(t('upload_background_started'));
+        notifyUpload(hasFile ? t('upload_background_started') : t('processing'));
         setUploadInProgress(true);
 
         void (async () => {
           setUploadProgress(1, t('uploading'));
-          const payload = { ...payloadBase, file: mediaFile };
+          const payload = hasFile ? { ...payloadBase, file: mediaFile } : payloadBase;
           let created = null;
+          const endpoint = hasFile ? '/api/assets/upload' : '/api/assets';
           const sendUpload = async (extraPayload = {}) => uploadAssetWithProgress({ ...payload, ...extraPayload }, (pct) => {
             const mapped = Math.min(95, Math.round((Number(pct) || 0) * 0.95));
             setUploadProgress(mapped, t('uploading'));
-          });
+          }, endpoint);
           try {
             created = await sendUpload();
           } catch (error) {
@@ -358,8 +366,9 @@
               : { skipProxyGeneration: true });
           }
           setUploadProgress(96, t('processing'));
-          const uploadedTitle = String(created?.title || payloadBase.title || mediaFile.name || '').trim();
-          notifyUpload(uploadedTitle ? `${t('asset_uploaded')}: ${uploadedTitle}` : t('asset_uploaded'), 'success');
+          const uploadedTitle = String(created?.title || payloadBase.title || (hasFile ? mediaFile.name : '') || '').trim();
+          const successLabel = hasFile ? t('asset_uploaded') : t('asset_created');
+          notifyUpload(uploadedTitle ? `${successLabel}: ${uploadedTitle}` : successLabel, 'success');
           await waitUntilAssetVisible(created?.id || null);
           setUploadProgress(100, t('processing'));
           const warningMessage = formatIngestWarningMessage(created);

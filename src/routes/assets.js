@@ -46,6 +46,7 @@ function registerAssetRoutes(app, deps) {
     buildSubtitleCueSearchWhereSql,
     formatTimecode,
     buildUserContextFromRequest,
+    getAdminSettings,
     createAssetRecord,
     isVideoCandidate,
     computeBufferSha256,
@@ -1108,6 +1109,13 @@ function registerAssetRoutes(app, deps) {
   
   app.post('/api/assets', async (req, res) => {
     try {
+      const settings = await getAdminSettings();
+      if (!settings?.allowFilelessAssetCreation) {
+        return res.status(403).json({
+          error: 'Creating an asset without a file is disabled',
+          code: 'fileless_asset_creation_disabled'
+        });
+      }
       const context = await resolveAssetAccessContext(req).catch(async () => {
         const effective = await resolveEffectivePermissions(req).catch(() => null);
         return effective || buildUserContextFromRequest(req);

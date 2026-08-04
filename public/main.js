@@ -72,6 +72,7 @@ let currentAssetTotal = 0;
 let activePlayerCleanup = null;
 let activeDetailPinCleanup = null;
 let playerUiMode = 'vidstack';
+let allowFilelessAssetCreation = false;
 let subtitleStyleSettings = {
   customOverlayEnabled: true,
   bottomOffset: 56,
@@ -513,6 +514,9 @@ let i18n = {
     out_label: 'OUT',
     trash_confirm: 'Permanently delete this asset? This cannot be undone.',
     select_media_first: 'Select a media file to upload.',
+    fileless_asset_confirm: 'No file is selected. Create this asset using metadata only?',
+    fileless_asset_creation_disabled: 'Creating an asset without a file is disabled.',
+    asset_created: 'Asset created',
     upload_empty_file: 'The selected file is empty (0 KB). Please choose a complete file.',
     asset_type_upload_forbidden: 'You are not allowed to upload this asset type.',
     upload_type_mismatch: 'Selected asset type is {expected}, but the selected file looks like {actual}. Please choose a matching file or change the asset type.',
@@ -890,6 +894,9 @@ let i18n = {
     out_label: 'OUT',
     trash_confirm: 'Bu varlık kalıcı olarak silinecek. Geri alınamaz.',
     select_media_first: 'Yüklemek için medya dosyası seçin.',
+    fileless_asset_confirm: 'Dosya seçilmedi. Varlık yalnızca metadata ile oluşturulsun mu?',
+    fileless_asset_creation_disabled: 'Dosya olmadan varlık oluşturma devre dışı.',
+    asset_created: 'Varlık oluşturuldu',
     upload_empty_file: 'Seçilen dosya boş (0 KB). Lütfen tam inmiş/geçerli bir dosya seçin.',
     asset_type_upload_forbidden: 'Bu varlık türünü yükleme yetkiniz yok.',
     upload_type_mismatch: 'Seçilen varlık türü {expected}, ancak seçilen dosya {actual} gibi görünüyor. Lütfen uygun dosya seçin veya varlık türünü değiştirin.',
@@ -1285,9 +1292,11 @@ async function loadUiSettings() {
     const settings = await api('/api/ui-settings');
     const mode = String(settings?.playerUiMode || 'vidstack').trim().toLowerCase();
     playerUiMode = (mode === 'vidstack' || mode === 'mpegdash') ? mode : 'vidstack';
+    allowFilelessAssetCreation = Boolean(settings?.allowFilelessAssetCreation);
     subtitleStyleSettings = normalizeClientSubtitleStyle(settings?.subtitleStyle || {});
   } catch (_error) {
     playerUiMode = 'vidstack';
+    allowFilelessAssetCreation = false;
     subtitleStyleSettings = normalizeClientSubtitleStyle({});
   }
   applySubtitleStyleSettings();
@@ -1840,6 +1849,9 @@ ingestModule = window.createMainIngestModule({
   showShortcutToast,
   currentAssetsRef: {
     get: () => currentAssets
+  },
+  allowFilelessAssetCreationRef: {
+    get: () => allowFilelessAssetCreation
   },
   getDefaultIngestType,
   loadAssets: (...args) => loadAssets(...args)

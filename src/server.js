@@ -131,6 +131,7 @@ const WORKFLOW = ['Ingested', 'QC', 'Approved', 'Published', 'Archived'];
 const DEFAULT_ADMIN_SETTINGS = {
   workflowTrackingEnabled: true,
   autoProxyBackfillOnUpload: false,
+  allowFilelessAssetCreation: false,
   newAssetDefaultVisibility: 'owner_groups',
   playerUiMode: 'vidstack',
   ocrDefaultAdvancedMode: true,
@@ -6199,6 +6200,9 @@ async function getAdminSettings() {
   return {
     ...DEFAULT_ADMIN_SETTINGS,
     ...value,
+    allowFilelessAssetCreation: Object.prototype.hasOwnProperty.call(value, 'allowFilelessAssetCreation')
+      ? Boolean(value.allowFilelessAssetCreation)
+      : DEFAULT_ADMIN_SETTINGS.allowFilelessAssetCreation,
     newAssetDefaultVisibility: normalizeNewAssetDefaultVisibility(value.newAssetDefaultVisibility),
     subtitleStyle: normalizeSubtitleStyle(value.subtitleStyle),
     auditRetentionDays: normalizeAuditRetentionDays(value.auditRetentionDays),
@@ -8370,11 +8374,13 @@ app.get('/api/ui-settings', async (_req, res) => {
     const playerUiMode = normalizePlayerUiMode(settings.playerUiMode);
     return res.json({
       playerUiMode,
+      allowFilelessAssetCreation: Boolean(settings.allowFilelessAssetCreation),
       subtitleStyle: normalizeSubtitleStyle(settings.subtitleStyle)
     });
   } catch (_error) {
     return res.json({
       playerUiMode: 'vidstack',
+      allowFilelessAssetCreation: false,
       subtitleStyle: normalizeSubtitleStyle(DEFAULT_ADMIN_SETTINGS.subtitleStyle)
     });
   }
@@ -9116,6 +9122,7 @@ registerAssetRoutes(app, {
   requireAssetDelete,
   requireMetadataEdit,
   resolveEffectivePermissions,
+  getAdminSettings,
   collectAssetCleanupPaths,
   cleanupAssetFiles,
   cleanupUnreferencedAssetFiles,
