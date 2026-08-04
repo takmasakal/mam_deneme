@@ -2251,7 +2251,8 @@ body {
   border: 1px solid var(--admin-line);
   border-radius: 14px;
   background: rgba(1, 26, 41, 0.48);
-  overscroll-behavior: contain;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
   scrollbar-gutter: stable both-edges;
   position: relative;
 }
