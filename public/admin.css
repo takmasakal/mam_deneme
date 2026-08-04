@@ -1686,7 +1686,10 @@ body {
 
 .proxy-replace-modal {
   width: min(420px, 90vw);
+  height: auto;
+  max-height: min(90vh, 640px);
   display: grid;
+  grid-template-rows: repeat(5, auto);
   gap: 10px;
 }
 
@@ -1694,6 +1697,36 @@ body {
   margin: 0;
   color: #c9d7f4;
   font-size: 13px;
+}
+
+.proxy-replace-modal .content-modal-actions {
+  align-items: center;
+}
+
+.proxy-replace-modal .content-modal-actions button {
+  min-width: 112px;
+  max-width: 160px;
+  min-height: 36px;
+  padding: 8px 14px;
+  color: #fff;
+}
+
+#proxyReplaceAskCancel {
+  border: 1px solid #e15b66;
+  background: #c93645;
+}
+
+#proxyReplaceAskCancel:hover {
+  background: #dc4352;
+}
+
+#proxyReplaceAskOk {
+  border: 1px solid #45d69a;
+  background: #208f62;
+}
+
+#proxyReplaceAskOk:hover {
+  background: #27a873;
 }
 
 #subtitleRecordsRows {

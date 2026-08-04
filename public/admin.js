@@ -306,6 +306,8 @@ let i18n = {
     api_help_group_admin: 'Admin / Diagnostics',
     api_help_group_records: 'Admin Records / Audit',
     settings_group_player: 'Player',
+    settings_group_ingest: 'Asset ingest',
+    allow_fileless_asset_creation: 'Allow creating assets without a file',
     settings_group_security: 'Security',
     settings_group_identity: 'Token & OIDC',
     settings_group_audit: 'Audit Log',
@@ -797,6 +799,8 @@ let i18n = {
     api_help_group_admin: 'Yönetim / Tanı',
     api_help_group_records: 'Yönetim Kayıtları / Audit',
     settings_group_player: 'Oynatıcı',
+    settings_group_ingest: 'Varlık yükleme',
+    allow_fileless_asset_creation: 'Dosya olmadan varlık oluşturmaya izin ver',
     settings_group_security: 'Güvenlik',
     settings_group_identity: 'Token ve OIDC',
     settings_group_audit: 'Audit Log',
@@ -3571,6 +3575,7 @@ async function cleanupAuditEvents() {
 async function loadSettings() {
   const settings = await api('/api/admin/settings');
   settingsForm.elements.autoProxyBackfillOnUpload.checked = Boolean(settings.autoProxyBackfillOnUpload);
+  settingsForm.elements.allowFilelessAssetCreation.checked = Boolean(settings.allowFilelessAssetCreation);
   if (settingsForm.elements.newAssetDefaultVisibility) {
     const defaultVisibility = String(settings.newAssetDefaultVisibility || 'owner_groups').toLowerCase();
     settingsForm.elements.newAssetDefaultVisibility.value = ['owner_groups', 'public', 'private'].includes(defaultVisibility)
@@ -3792,6 +3797,7 @@ settingsForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const payload = {
     autoProxyBackfillOnUpload: settingsForm.elements.autoProxyBackfillOnUpload.checked,
+    allowFilelessAssetCreation: settingsForm.elements.allowFilelessAssetCreation.checked,
     newAssetDefaultVisibility: String(settingsForm.elements.newAssetDefaultVisibility?.value || 'owner_groups'),
     playerUiMode: String(settingsForm.elements.playerUiMode.value || 'vidstack'),
     apiTokenEnabled: settingsForm.elements.apiTokenEnabled.checked,

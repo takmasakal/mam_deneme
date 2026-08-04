@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MAM Admin</title>
     <link rel="stylesheet" href="/styles.css?v=20260424-seek-preview-1" />
-    <link rel="stylesheet" href="/admin.css?v=20260803-media-job-filters-6" />
+    <link rel="stylesheet" href="/admin.css?v=20260804-fileless-assets-1" />
   </head>
   <body>
     <main class="admin-wrap">
@@ -256,6 +256,14 @@
                     <option value="vidstack" data-i18n="player_mode_vidstack">Vidstack</option>
                     <option value="mpegdash" data-i18n="player_mode_mpegdash">MPEG-DASH (dash.js)</option>
                   </select>
+                </label>
+              </fieldset>
+
+              <fieldset class="settings-group">
+                <legend data-i18n="settings_group_ingest">Asset ingest</legend>
+                <label class="toggle-row">
+                  <input type="checkbox" name="allowFilelessAssetCreation" />
+                  <span data-i18n="allow_fileless_asset_creation">Allow creating assets without a file</span>
                 </label>
               </fieldset>
 
