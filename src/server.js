@@ -42,6 +42,10 @@ const {
   isLikelySameOcrDisplayText
 } = require('./services/ocrService');
 const { createSubtitleService } = require('./services/subtitleService');
+const {
+  resolveSubtitleActiveByLang,
+  setActiveSubtitleForLanguage
+} = require('./services/subtitleSelectionService');
 const { registerOfficeRoutes } = require('./routes/office');
 const { registerAdminRoutes } = require('./routes/admin');
 const { registerPdfRoutes } = require('./routes/pdf');
@@ -2889,19 +2893,25 @@ async function saveAssetSubtitleMetadata(assetId, row, subtitleUrl, subtitleLang
   const now = new Date().toISOString();
   const existingDc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
   const items = sanitizeSubtitleItems(existingDc.subtitleItems);
-  items.push({
+  const nextItem = {
     id: nanoid(),
     subtitleUrl: String(subtitleUrl || '').trim(),
     subtitleLang: normalizeSubtitleLang(subtitleLang),
     subtitleLabel: String(subtitleLabel || '').trim() || 'subtitle',
     createdAt: now
-  });
+  };
+  items.push(nextItem);
+  const subtitleActiveByLang = setActiveSubtitleForLanguage(
+    resolveSubtitleActiveByLang(existingDc, items),
+    nextItem
+  );
   const dcMetadata = {
     ...existingDc,
     subtitleUrl: String(subtitleUrl || '').trim(),
     subtitleLang: normalizeSubtitleLang(subtitleLang),
     subtitleLabel: String(subtitleLabel || '').trim(),
-    subtitleItems: items
+    subtitleItems: items,
+    subtitleActiveByLang
   };
   const result = await pool.query(
     `
@@ -4580,6 +4590,7 @@ function mapAssetRow(row) {
       createdAt: row.updated_at || row.created_at || new Date().toISOString()
     }];
   }
+  const subtitleActiveByLang = resolveSubtitleActiveByLang(dcMetadata, subtitleItems);
   if (!videoOcrItems.length && String(dcMetadata.videoOcrUrl || '').trim()) {
     videoOcrItems = [{
       id: nanoid(),
@@ -4653,6 +4664,7 @@ function mapAssetRow(row) {
     subtitleLang: dcMetadata.subtitleUrl ? normalizeSubtitleLang(dcMetadata.subtitleLang) : '',
     subtitleLabel: String(dcMetadata.subtitleLabel || '').trim(),
     subtitleItems,
+    subtitleActiveByLang,
     audioStreamOptions: Array.isArray(dcMetadata.audioStreamOptions) ? dcMetadata.audioStreamOptions : [],
     videoOcrUrl: String(dcMetadata.videoOcrUrl || '').trim(),
     videoOcrLabel: String(dcMetadata.videoOcrLabel || '').trim(),

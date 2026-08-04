@@ -1,5 +1,9 @@
 const fs = require('fs');
 const path = require('path');
+const {
+  resolveSubtitleActiveByLang,
+  setActiveSubtitleForLanguage
+} = require('../services/subtitleSelectionService');
 
 function registerTextProcessingRoutes(app, deps) {
   const {
@@ -774,7 +778,11 @@ function registerTextProcessingRoutes(app, deps) {
         subtitleUrl,
         subtitleLang,
         subtitleLabel,
-        subtitleItems: updatedItems
+        subtitleItems: updatedItems,
+        subtitleActiveByLang: setActiveSubtitleForLanguage(
+          resolveSubtitleActiveByLang(dc, updatedItems),
+          updatedItems.find((item) => item.subtitleUrl === subtitleUrl)
+        )
       };
       const updatedResult = await pool.query(
         `
@@ -835,7 +843,12 @@ function registerTextProcessingRoutes(app, deps) {
         subtitleUrl: nextActive,
         subtitleLang: nextLang,
         subtitleLabel: nextLabel,
-        subtitleItems: nextItems
+        subtitleItems: nextItems,
+        subtitleActiveByLang: resolveSubtitleActiveByLang({
+          ...dc,
+          subtitleUrl: nextActive,
+          subtitleLang: nextLang
+        }, nextItems)
       };
       const updatedResult = await pool.query(
         `

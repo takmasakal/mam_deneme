@@ -28,6 +28,7 @@
       currentUserCanDeleteAssets,
       currentUserCanDeleteAssetInUi,
       currentUserCanEditMetadata,
+      currentLang,
       currentUsername,
       currentSearchQuery,
       currentSearchHighlightQuery,
@@ -104,9 +105,53 @@
         || (Array.isArray(asset?.subtitleItems) && asset.subtitleItems.length)
       );
       if (!hasOcr && !hasSubtitle) return '';
+      const subtitleItems = Array.isArray(asset?.subtitleItems) ? asset.subtitleItems : [];
+      const languageKey = (value) => {
+        const primary = String(value || '').trim().toLowerCase().replaceAll('_', '-').split('-')[0];
+        if (primary === 'tr' || primary === 'tur') return 'tr';
+        if (primary === 'en' || primary === 'eng') return 'en';
+        return primary.replace(/[^a-z0-9]/g, '').slice(0, 12);
+      };
+      const grouped = new Map();
+      subtitleItems.forEach((item) => {
+        const lang = languageKey(item?.subtitleLang);
+        const url = String(item?.subtitleUrl || '').trim();
+        if (!lang || !url) return;
+        if (!grouped.has(lang)) grouped.set(lang, []);
+        grouped.get(lang).push(item);
+      });
+      const activeByLang = asset?.subtitleActiveByLang && typeof asset.subtitleActiveByLang === 'object'
+        ? asset.subtitleActiveByLang
+        : {};
+      const languageChoices = Array.from(grouped.entries())
+        .map(([lang, items]) => {
+          const activeUrl = String(activeByLang[lang] || '').trim();
+          const selected = items.find((item) => String(item.subtitleUrl || '').trim() === activeUrl)
+            || items.find((item) => String(item.subtitleUrl || '').trim() === String(asset.subtitleUrl || '').trim())
+            || items[items.length - 1];
+          return { lang, item: selected };
+        })
+        .sort((a, b) => {
+          const order = { tr: 0, en: 1 };
+          return (order[a.lang] ?? 10) - (order[b.lang] ?? 10) || a.lang.localeCompare(b.lang);
+        });
+      const languageLabel = (lang) => {
+        const uiLang = String(currentLang?.() || 'tr').toLowerCase();
+        if (lang === 'tr') return uiLang === 'tr' ? t('subtitle_lang_turkish_short') : 'tur';
+        if (lang === 'en') return uiLang === 'tr' ? t('subtitle_lang_english_short') : 'eng';
+        return lang.slice(0, 3);
+      };
+      const subtitleBadge = languageChoices.length > 1
+        ? `<details class="detail-subtitle-language-picker">
+            <summary class="detail-artifact-badge detail-artifact-badge-button" title="${escapeHtml(t('subtitle_choose_language'))}">${escapeHtml(t('subtitle_badge'))}</summary>
+            <div class="detail-subtitle-language-menu" role="menu" aria-label="${escapeHtml(t('subtitle_choose_language'))}">
+              ${languageChoices.map(({ lang, item }) => `<button type="button" role="menuitem" class="detail-subtitle-language-choice detail-subtitle-language-${escapeHtml(lang)} ${String(item.subtitleUrl || '').trim() === String(asset.subtitleUrl || '').trim() ? 'active' : ''}" data-subtitle-language-choice="1" data-subtitle-language-key="${escapeHtml(lang)}" data-subtitle-url="${escapeHtml(item.subtitleUrl || '')}" data-subtitle-lang="${escapeHtml(item.subtitleLang || lang)}" data-subtitle-label="${escapeHtml(item.subtitleLabel || lang)}">${escapeHtml(languageLabel(lang))}</button>`).join('')}
+            </div>
+          </details>`
+        : `<span class="detail-artifact-badge">${escapeHtml(t('subtitle_badge'))}</span>`;
       return `<div class="detail-artifact-badges" aria-label="${escapeHtml(t('asset_artifacts'))}">
         ${hasOcr ? `<span class="detail-artifact-badge">${escapeHtml(t('ocr_badge'))}</span>` : ''}
-        ${hasSubtitle ? `<span class="detail-artifact-badge">${escapeHtml(t('subtitle_badge'))}</span>` : ''}
+        ${hasSubtitle ? subtitleBadge : ''}
       </div>`;
     }
 
