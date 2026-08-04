@@ -1409,10 +1409,22 @@ function openTextEditorModal({
         ? convertContentTimecodesToFrames(content)
         : String(content || '');
     }
-    const renderRichEditor = (value) => {
+    const decorateEditorText = (value) => escapeHtml(String(value || ''))
+      .replace(/\b\d{2}:\d{2}:\d{2}(?:[.,:]\d{2,3})?\b/g, (token) => `<span class="content-editor-inline-tc" data-editor-tc="${escapeHtml(token)}">${escapeHtml(token)}</span>`);
+    const renderRichEditor = (value, activeFindRange = null) => {
       if (!richArea) return;
-      const escaped = escapeHtml(String(value || ''));
-      richArea.innerHTML = escaped.replace(/\b\d{2}:\d{2}:\d{2}(?:[.,:]\d{2,3})?\b/g, (token) => `<span class="content-editor-inline-tc" data-editor-tc="${escapeHtml(token)}">${escapeHtml(token)}</span>`);
+      const raw = String(value || '');
+      const start = Math.max(0, Number(activeFindRange?.start));
+      const end = Math.max(start, Number(activeFindRange?.end));
+      if (Number.isFinite(start) && Number.isFinite(end) && end > start && end <= raw.length) {
+        richArea.innerHTML = [
+          decorateEditorText(raw.slice(0, start)),
+          `<span class="content-editor-find-hit">${decorateEditorText(raw.slice(start, end))}</span>`,
+          decorateEditorText(raw.slice(end))
+        ].join('');
+        return;
+      }
+      richArea.innerHTML = decorateEditorText(raw);
     };
     renderRichEditor(area?.value || '');
     richArea?.addEventListener('input', () => {
@@ -1506,6 +1518,12 @@ function openTextEditorModal({
       let idx = foldedText.indexOf(foldedQuery, from);
       if (idx < 0) idx = foldedText.indexOf(foldedQuery, 0);
       if (idx < 0) return;
+      renderRichEditor(text, { start: idx, end: idx + foldedQuery.length });
+      const hit = richArea?.querySelector('.content-editor-find-hit');
+      if (hit) {
+        richArea?.focus({ preventScroll: true });
+        hit.scrollIntoView({ block: 'center', inline: 'nearest' });
+      }
       if (!selectRichEditorRange(idx, idx + foldedQuery.length)) {
         area.focus();
         area.setSelectionRange(idx, idx + foldedQuery.length);

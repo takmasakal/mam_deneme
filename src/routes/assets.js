@@ -883,6 +883,7 @@ function registerAssetRoutes(app, deps) {
         }
       });
     } catch (error) {
+      console.error('assets-list-error', error);
       res.status(500).json({ error: 'Failed to load assets' });
     }
   });

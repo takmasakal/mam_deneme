@@ -861,6 +861,25 @@ function pickLatestVideoOcrUrlFromDc(dcMetadata) {
   return String(last.ocrUrl || '').trim();
 }
 
+function getActiveOcrItemFromDc(dcMetadata) {
+  const dc = dcMetadata && typeof dcMetadata === 'object' ? dcMetadata : {};
+  const activeUrl = pickLatestVideoOcrUrlFromDc(dc);
+  if (!activeUrl) return null;
+  const videoItems = sanitizeVideoOcrItems(dc.videoOcrItems);
+  const photoItems = sanitizePhotoOcrItems(dc.photoOcrItems);
+  return [...videoItems, ...photoItems].find((item) => String(item.ocrUrl || '').trim() === activeUrl) || {
+    ocrUrl: activeUrl,
+    ocrEngine: dc.videoOcrEngine || dc.photoOcrEngine || 'paddle',
+    lineCount: Number(dc.videoOcrLineCount || dc.photoOcrLineCount || 0),
+    segmentCount: Number(dc.videoOcrSegmentCount || dc.photoOcrSegmentCount || 0)
+  };
+}
+
+function expectedOcrSegmentCountFromItem(item) {
+  if (!item || typeof item !== 'object') return 0;
+  return Math.max(0, Number(item.segmentCount || 0), Number(item.lineCount || 0));
+}
+
 function listOcrFilesRecursive(dirPath) {
   const out = [];
   const walk = (dir) => {
@@ -1212,6 +1231,41 @@ async function loadActiveOcrSegmentsForAssetRow(row) {
   };
 }
 
+async function ensureOcrSegmentIndexForAssetRow(row) {
+  const assetId = String(row?.id || '').trim();
+  const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+  const activeItem = getActiveOcrItemFromDc(dc);
+  const activeOcrUrl = String(activeItem?.ocrUrl || '').trim();
+  if (!assetId || !activeOcrUrl) return 0;
+
+  try {
+    const existing = await pool.query(
+      `
+        SELECT COUNT(*)::int AS count
+        FROM asset_ocr_segments
+        WHERE asset_id = $1
+          AND ocr_url = $2
+      `,
+      [assetId, activeOcrUrl]
+    );
+    const count = Number(existing.rows?.[0]?.count || 0);
+    const expected = expectedOcrSegmentCountFromItem(activeItem);
+    if (count > 0 && (!expected || count >= expected)) return count;
+
+    return await syncOcrSegmentIndexForAsset(assetId, activeOcrUrl, {
+      sourceEngine: String(activeItem?.ocrEngine || dc.videoOcrEngine || dc.photoOcrEngine || 'paddle').trim(),
+      lang: ''
+    });
+  } catch (error) {
+    console.warn('ocr-segment-index-repair-failed', {
+      assetId,
+      ocrUrl: activeOcrUrl,
+      message: error?.message || String(error)
+    });
+    return 0;
+  }
+}
+
 function mapOcrSegmentRow(segment, query, ocrUrl = '') {
   return {
     ocrUrl,
@@ -1295,6 +1349,8 @@ async function searchOcrMatchesForAssetRows(rows, queryRaw, limit = 8) {
   if (!activeUrlByAssetId.size) {
     return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(queryRaw || '').trim() };
   }
+
+  await Promise.allSettled(assetRows.map((row) => ensureOcrSegmentIndexForAssetRow(row)));
 
   const assetIds = Array.from(activeUrlByAssetId.keys());
   const activeUrls = Array.from(new Set(activeUrlByAssetId.values()));
