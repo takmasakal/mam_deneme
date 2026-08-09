@@ -23,6 +23,15 @@ export_build_metadata() {
   export MAM_GIT_COMMIT MAM_GIT_BRANCH MAM_BUILD_DATE
 }
 
+APP_IMAGE_INPUTS=(
+  Dockerfile
+  package.json
+  package-lock.json
+  src
+  public
+  scripts
+)
+
 dc() {
   if [[ -z "${DOCKER_CMD}" ]]; then
     DOCKER_CMD="$(detect_docker_cmd)"
@@ -63,13 +72,14 @@ print_running_version() {
   dc exec -T app node -e "console.log(JSON.stringify({gitCommit:process.env.MAM_GIT_COMMIT||'unknown',gitBranch:process.env.MAM_GIT_BRANCH||'unknown',buildDate:process.env.MAM_BUILD_DATE||'unknown'}, null, 2))" 2>/dev/null || echo "  app service is not running yet."
 }
 
-tracked_worktree_is_dirty() {
-  ! git diff --quiet --ignore-submodules -- 2>/dev/null || ! git diff --cached --quiet --ignore-submodules -- 2>/dev/null
+app_image_inputs_are_dirty() {
+  ! git diff --quiet --ignore-submodules -- "${APP_IMAGE_INPUTS[@]}" 2>/dev/null \
+    || ! git diff --cached --quiet --ignore-submodules -- "${APP_IMAGE_INPUTS[@]}" 2>/dev/null
 }
 
 app_image_matches_current_commit() {
-  if tracked_worktree_is_dirty; then
-    echo "Tracked working tree changes detected; app image rebuild is required."
+  if app_image_inputs_are_dirty; then
+    echo "App image input changes detected; app image rebuild is required."
     return 1
   fi
 
@@ -81,12 +91,17 @@ app_image_matches_current_commit() {
 
   # shellcheck disable=SC2086
   image_commit="$(${DOCKER_CMD} image inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${image_id}" 2>/dev/null || true)"
-  [[ "${image_commit}" == "${MAM_GIT_COMMIT}" ]]
+  if [[ -z "${image_commit}" || "${image_commit}" == "<no value>" || "${image_commit}" == "unknown" ]]; then
+    return 1
+  fi
+
+  git cat-file -e "${image_commit}^{commit}" 2>/dev/null \
+    && git diff --quiet "${image_commit}" -- "${APP_IMAGE_INPUTS[@]}"
 }
 
 up_stack_with_current_image_cache() {
   if app_image_matches_current_commit; then
-    echo "App image already matches ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT}; starting without rebuild."
+    echo "App image already matches app sources for ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT}; starting without rebuild."
     dc up -d
   else
     echo "Building app image for ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT}."
