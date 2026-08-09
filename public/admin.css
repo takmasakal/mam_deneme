@@ -1417,6 +1417,25 @@ body {
   color: #dce7ff;
 }
 
+.settings-inline-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(108px, max-content));
+  align-items: end;
+  gap: 8px;
+}
+
+.settings-inline-grid > label {
+  display: grid;
+  gap: 3px;
+  color: #dce7ff;
+}
+
+.settings-inline-grid input[type="number"] {
+  width: 56px;
+  min-width: 56px;
+  padding-right: 6px;
+}
+
 .toggle-row input {
   width: 18px;
   height: 18px;

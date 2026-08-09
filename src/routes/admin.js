@@ -51,6 +51,7 @@ function registerAdminRoutes(app, deps) {
     normalizeSubtitleStyle,
     normalizeAuditRetentionDays,
     normalizeMediaJobRetentionDays,
+    normalizeMediaJobConcurrencySettings,
     normalizeAuthSessionSettings,
     applyKeycloakAuthSessionSettings,
     cleanupAuditEvents,
@@ -2580,6 +2581,9 @@ app.patch('/api/admin/settings', async (req, res) => {
       mediaJobRetentionDays: Object.prototype.hasOwnProperty.call(req.body, 'mediaJobRetentionDays')
         ? normalizeMediaJobRetentionDays(req.body.mediaJobRetentionDays)
         : normalizeMediaJobRetentionDays(current.mediaJobRetentionDays),
+      mediaJobConcurrency: Object.prototype.hasOwnProperty.call(req.body, 'mediaJobConcurrency')
+        ? normalizeMediaJobConcurrencySettings(req.body.mediaJobConcurrency)
+        : normalizeMediaJobConcurrencySettings(current.mediaJobConcurrency),
       authSession: Object.prototype.hasOwnProperty.call(req.body, 'authSession')
         ? normalizeAuthSessionSettings(req.body.authSession)
         : normalizeAuthSessionSettings(current.authSession),
@@ -2731,15 +2735,30 @@ app.get('/api/admin/audit-events', async (req, res) => {
   try {
     const { where, values } = await buildAuditEventFilters(req);
 
-    const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 100));
+    const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 50));
+    const offset = Math.max(0, Number(req.query.offset) || 0);
+    const countValues = [...values];
+    const countResult = await pool.query(
+      `
+        SELECT COUNT(*)::int AS total
+        FROM audit_events
+        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+      `,
+      countValues
+    );
+    const total = Number(countResult.rows?.[0]?.total || 0);
+    const limitIndex = values.length + 1;
+    const offsetIndex = values.length + 2;
     values.push(limit);
+    values.push(offset);
     const result = await pool.query(
       `
         SELECT id, created_at, actor, action, target_type, target_id, target_title, client_medium, details, ip, user_agent
         FROM audit_events
         ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
         ORDER BY created_at DESC
-        LIMIT $${values.length}
+        LIMIT $${limitIndex}
+        OFFSET $${offsetIndex}
       `,
       values
     );
@@ -2757,7 +2776,14 @@ app.get('/api/admin/audit-events', async (req, res) => {
         details: row.details || {},
         ip: row.ip,
         userAgent: row.user_agent
-      }))
+      })),
+      pagination: {
+        total,
+        limit,
+        offset,
+        page: Math.floor(offset / limit) + 1,
+        totalPages: Math.max(1, Math.ceil(total / limit))
+      }
     });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to load audit events' });
@@ -3405,6 +3431,8 @@ app.get('/api/admin/system-health', async (req, res) => {
     };
     const settings = await getAdminSettings().catch(() => ({ mediaJobRetentionDays: 30 }));
     const mediaJobRetentionDays = Math.max(30, normalizeMediaJobRetentionDays(settings.mediaJobRetentionDays));
+    const requestedMediaJobDays = Math.max(1, Math.min(30, Number(req.query?.mediaJobDays) || 5));
+    const mediaJobWindowDays = Math.min(mediaJobRetentionDays, requestedMediaJobDays);
     cleanupMediaProcessingJobs?.(mediaJobRetentionDays).catch(() => {});
 
     const orphanedActiveJobs = await pool.query(
@@ -3453,7 +3481,7 @@ app.get('/api/admin/system-health', async (req, res) => {
           AND updated_at >= NOW() - ($1::int * INTERVAL '1 day')
         GROUP BY job_type, status
       `,
-      [mediaJobRetentionDays]
+      [mediaJobWindowDays]
     );
     const mediaCounts = {};
     mediaJobsStats.rows.forEach((row) => {
@@ -3506,7 +3534,7 @@ app.get('/api/admin/system-health', async (req, res) => {
         ORDER BY mpj.updated_at DESC
         LIMIT 1000
       `,
-      [mediaJobRetentionDays]
+      [mediaJobWindowDays]
     );
     const recentJobs = {
       subtitle: { active: null, latestCompleted: null, latestFailed: null },
@@ -3535,7 +3563,6 @@ app.get('/api/admin/system-health', async (req, res) => {
         cancelable: ['subtitle', 'video_ocr'].includes(String(job.jobType || ''))
           && ['queued', 'running'].includes(String(job.status || ''))
       }));
-
     const payload = {
       disk: {
         uploadsBytes,
@@ -3566,6 +3593,7 @@ app.get('/api/admin/system-health', async (req, res) => {
       },
       recentJobs,
       mediaJobs,
+      mediaJobWindowDays,
       mediaJobRetentionDays
     };
     systemHealthCache.expiresAt = Date.now() + SYSTEM_HEALTH_CACHE_TTL_MS;

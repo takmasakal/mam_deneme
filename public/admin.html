@@ -131,6 +131,11 @@
             </div>
           </div>
           <div id="auditEventsRows" class="rows"></div>
+          <div class="admin-pager" id="auditEventsPager">
+            <button id="auditEventsPrevPage" type="button" data-i18n="prev_page">Prev</button>
+            <span id="auditEventsPageInfo">Page 1 / 1 (0)</span>
+            <button id="auditEventsNextPage" type="button" data-i18n="next_page">Next</button>
+          </div>
           <div id="auditEventsMsg" class="admin-note"></div>
           <fieldset class="settings-group">
             <legend data-i18n="settings_group_audit">Audit Log</legend>
@@ -265,6 +270,44 @@
                   <input type="checkbox" name="allowFilelessAssetCreation" />
                   <span data-i18n="allow_fileless_asset_creation">Allow creating assets without a file</span>
                 </label>
+              </fieldset>
+
+              <fieldset class="settings-group">
+                <legend data-i18n="settings_group_job_concurrency">Job concurrency</legend>
+                <div class="settings-inline-grid">
+                  <label>
+                    <span data-i18n="job_concurrency_subtitle">Subtitle</span>
+                    <input name="mediaJobConcurrencySubtitle" type="number" min="1" max="8" step="1" />
+                  </label>
+                  <label>
+                    <span data-i18n="job_concurrency_video_ocr">Video OCR</span>
+                    <input name="mediaJobConcurrencyVideoOcr" type="number" min="1" max="8" step="1" />
+                  </label>
+                  <label>
+                    <span data-i18n="job_concurrency_proxy">Proxy</span>
+                    <input name="mediaJobConcurrencyProxy" type="number" min="1" max="8" step="1" />
+                  </label>
+                  <label>
+                    <span data-i18n="job_concurrency_metadata">Metadata</span>
+                    <input name="mediaJobConcurrencyMetadata" type="number" min="1" max="8" step="1" />
+                  </label>
+                  <label>
+                    <span data-i18n="job_concurrency_thumbnail">Thumbnail</span>
+                    <input name="mediaJobConcurrencyThumbnail" type="number" min="1" max="8" step="1" />
+                  </label>
+                  <label>
+                    <span data-i18n="job_concurrency_upload">Upload</span>
+                    <input name="mediaJobConcurrencyUpload" type="number" min="1" max="16" step="1" />
+                  </label>
+                  <label>
+                    <span data-i18n="job_concurrency_download">Download</span>
+                    <input name="mediaJobConcurrencyDownload" type="number" min="1" max="32" step="1" />
+                  </label>
+                  <label>
+                    <span data-i18n="job_concurrency_backup">Backup</span>
+                    <input name="mediaJobConcurrencyBackup" type="number" min="1" max="4" step="1" />
+                  </label>
+                </div>
               </fieldset>
 
               <fieldset class="settings-group">

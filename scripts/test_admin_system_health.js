@@ -61,13 +61,16 @@ async function run() {
           assetTitle: 'Old subtitle',
           status: 'completed',
           progress: 100,
-          updatedAt: new Date(Date.now() - (15 * 24 * 60 * 60 * 1000)).toISOString()
+          updatedAt: new Date(Date.now() - (3 * 24 * 60 * 60 * 1000)).toISOString()
         }
       ]
     },
     '/api/admin/runtime-diagnostics?limit=100': { activeUsers: [], errors: [] }
   };
-  responses['/api/admin/system-health?refresh=1'] = responses['/api/admin/system-health'];
+  responses['/api/admin/system-health?mediaJobDays=5'] = responses['/api/admin/system-health'];
+  responses['/api/admin/system-health?mediaJobDays=1'] = responses['/api/admin/system-health'];
+  responses['/api/admin/system-health?mediaJobDays=1&refresh=1'] = responses['/api/admin/system-health'];
+  responses['/api/admin/system-health?mediaJobDays=5&refresh=1'] = responses['/api/admin/system-health'];
   const elements = {
     ffmpegHealth: element(),
     systemHealthRows: element(),
@@ -142,17 +145,17 @@ async function run() {
   assert(elements.systemJobStatus.innerHTML.includes('media-jobs-table'));
   assert(elements.systemJobStatus.innerHTML.includes('media-jobs-empty-row'));
   filterOptionClick('status', 'all');
-  filterChange('days', '1');
+  await filterChange('days', '1');
   assert(elements.systemJobStatus.innerHTML.includes('Sample video'));
   assert(!elements.systemJobStatus.innerHTML.includes('Older OCR'));
 
   await module.refresh({ force: false });
-  assert.strictEqual(calls.length, 4, 'cached language rerender does not call APIs');
-  assert.strictEqual(diagnosticsRenders, 2);
+  assert.strictEqual(calls.length, 8, 'cached language rerender does not call APIs after day reload');
+  assert.strictEqual(diagnosticsRenders, 3);
 
   module.clear();
   await module.refresh();
-  assert.strictEqual(calls.length, 8, 'clear causes all endpoints to reload');
+  assert.strictEqual(calls.length, 12, 'clear causes all endpoints to reload');
 
   await elements.systemJobStatus.dispatch('click', {
     target: {
@@ -160,8 +163,8 @@ async function run() {
       closest: (selector) => selector === '.mediaJobsRefreshBtn' ? { disabled: false } : null
     }
   });
-  assert.strictEqual(calls.length, 12, 'refresh button reloads all health endpoints');
-  assert(calls.includes('/api/admin/system-health?refresh=1'), 'refresh button bypasses server health cache');
+  assert.strictEqual(calls.length, 16, 'refresh button reloads all health endpoints');
+  assert(calls.includes('/api/admin/system-health?mediaJobDays=1&refresh=1'), 'refresh button bypasses server health cache');
 
   console.log('admin system health tests passed');
 }
