@@ -1,10 +1,10 @@
-name: mam_deneme
+name: kaisha
 
 services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
     pull_policy: never
-    container_name: mam-elasticsearch
+    container_name: kaisha-elasticsearch
     environment:
       discovery.type: single-node
       xpack.security.enabled: "false"
@@ -17,7 +17,7 @@ services:
   postgres:
     image: postgres:16
     pull_policy: never
-    container_name: mam-postgres
+    container_name: kaisha-postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD_FILE: /run/secrets/mam_postgres_password
@@ -47,7 +47,7 @@ services:
         MAM_GIT_COMMIT: ${MAM_GIT_COMMIT:-unknown}
         MAM_GIT_BRANCH: ${MAM_GIT_BRANCH:-unknown}
         MAM_BUILD_DATE: ${MAM_BUILD_DATE:-unknown}
-    container_name: mam-app
+    container_name: kaisha-app
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,7 +113,7 @@ services:
   onlyoffice:
     image: onlyoffice/documentserver:8.3
     pull_policy: never
-    container_name: mam-onlyoffice
+    container_name: kaisha-onlyoffice
     environment:
       JWT_ENABLED: "false"
     entrypoint:
@@ -147,7 +147,7 @@ services:
   keycloak-postgres:
     image: postgres:16
     pull_policy: never
-    container_name: mam-keycloak-postgres
+    container_name: kaisha-keycloak-postgres
     environment:
       POSTGRES_USER: ${KEYCLOAK_DB_USER:-keycloak}
       POSTGRES_PASSWORD_FILE: /run/secrets/keycloak_db_password
@@ -169,7 +169,7 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:25.0
     pull_policy: never
-    container_name: mam-keycloak
+    container_name: kaisha-keycloak
     depends_on:
       keycloak-postgres:
         condition: service_healthy
@@ -216,7 +216,7 @@ services:
       dockerfile: Dockerfile.oauth2-proxy
     image: mam-oauth2-proxy:7.6.0-shell
     pull_policy: never
-    container_name: mam-oauth2-proxy
+    container_name: kaisha-oauth2-proxy
     depends_on:
       app:
         condition: service_started
@@ -292,6 +292,10 @@ secrets:
 volumes:
   pg_data:
     external: true
-    name: mam_deneme_pg_data
+    name: mam_kaisha_pg_data
   es_data:
+    external: true
+    name: mam_kaisha_es_data
   keycloak_pg_data:
+    external: true
+    name: mam_kaisha_keycloak_pg_data
