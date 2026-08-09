@@ -26,7 +26,7 @@
     const mediaJobFilters = {
       jobType: 'all',
       status: 'all',
-      days: 30
+      days: 5
     };
 
     function humanBytes(value) {
@@ -312,12 +312,17 @@
       }
     }
 
-    systemJobStatus?.addEventListener?.('change', (event) => {
+    systemJobStatus?.addEventListener?.('change', async (event) => {
       const select = event.target?.closest?.('[data-media-job-filter]');
       if (!select) return;
       const key = String(select.dataset.mediaJobFilter || '');
-      if (key === 'days') mediaJobFilters.days = Math.max(1, Math.min(30, Number(select.value) || 30));
-      else if (key === 'jobType' || key === 'status') mediaJobFilters[key] = String(select.value || 'all');
+      if (key === 'days') {
+        mediaJobFilters.days = Math.max(1, Math.min(30, Number(select.value) || 5));
+        renderSystemHealth(lastPayload?.systemHealth || {});
+        clear();
+        await refresh({ force: true, forceServer: true }).catch(() => {});
+        return;
+      } else if (key === 'jobType' || key === 'status') mediaJobFilters[key] = String(select.value || 'all');
       renderSystemHealth(lastPayload?.systemHealth || {});
     });
 
@@ -385,7 +390,7 @@
       const request = Promise.all([
         api('/api/admin/workflow-tracking'),
         api('/api/admin/ffmpeg-health'),
-        api(`/api/admin/system-health${options.forceServer ? '?refresh=1' : ''}`),
+        api(`/api/admin/system-health?mediaJobDays=${encodeURIComponent(String(mediaJobFilters.days))}${options.forceServer ? '&refresh=1' : ''}`),
         api('/api/admin/runtime-diagnostics?limit=100').catch(() => null)
       ]).then(([tracking, health, systemHealth, diagnostics]) => {
         lastPayload = { tracking, health, systemHealth, diagnostics };

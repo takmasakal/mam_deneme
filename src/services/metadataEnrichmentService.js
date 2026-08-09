@@ -404,12 +404,13 @@ function createMetadataEnrichmentService(deps) {
     queueSubtitleGenerationJob,
     subtitleJobs,
     upsertMediaProcessingJobSafe,
-    indexAssetToElastic
+    indexAssetToElastic,
+    getMediaJobConcurrencyLimit
   } = deps;
 
   const queue = [];
   const activeJobs = new Map();
-  let running = false;
+  let draining = false;
 
   function resolveSourcePath(row) {
     const sourcePath = String(row?.source_path || '').trim();
@@ -769,19 +770,25 @@ function createMetadataEnrichmentService(deps) {
     } finally {
       activeJobs.delete(job.jobId);
       delete job.abortController;
+      setImmediate(drainQueue);
     }
   }
 
   async function drainQueue() {
-    if (running) return;
-    running = true;
+    if (draining) return;
+    draining = true;
     try {
-      while (queue.length) {
+      const limit = typeof getMediaJobConcurrencyLimit === 'function'
+        ? await getMediaJobConcurrencyLimit('metadata_enrichment')
+        : 1;
+      while (queue.length && activeJobs.size < limit) {
         const job = queue.shift();
-        await processJob(job);
+        processJob(job).catch((error) => {
+          console.error(`Metadata job failed for ${job?.jobId || ''}: ${error?.message || error}`);
+        });
       }
     } finally {
-      running = false;
+      draining = false;
     }
   }
 
@@ -830,7 +837,7 @@ function createMetadataEnrichmentService(deps) {
     queueAsset,
     cancelJob,
     getQueueLength: () => queue.length,
-    isRunning: () => running,
+    isRunning: () => activeJobs.size > 0,
     hasJob: (jobId) => {
       const target = String(jobId || '').trim();
       return activeJobs.has(target) || queue.some((job) => job.jobId === target);

@@ -156,6 +156,16 @@ const DEFAULT_ADMIN_SETTINGS = {
   },
   auditRetentionDays: 180,
   mediaJobRetentionDays: 30,
+  mediaJobConcurrency: {
+    proxy: 1,
+    subtitle: 1,
+    videoOcr: 1,
+    metadata: 1,
+    thumbnail: 2,
+    upload: 3,
+    download: 6,
+    backup: 1
+  },
   authSession: {
     rememberMe: true,
     ssoIdleMinutes: 30,
@@ -233,6 +243,21 @@ function normalizeAuditRetentionDays(value) {
 
 function normalizeMediaJobRetentionDays(value) {
   return clampNumber(value, 1, 3650, DEFAULT_ADMIN_SETTINGS.mediaJobRetentionDays);
+}
+
+function normalizeMediaJobConcurrencySettings(value = {}) {
+  const defaults = DEFAULT_ADMIN_SETTINGS.mediaJobConcurrency;
+  const input = value && typeof value === 'object' ? value : {};
+  return {
+    proxy: clampNumber(input.proxy, 1, 8, defaults.proxy),
+    subtitle: clampNumber(input.subtitle, 1, 8, defaults.subtitle),
+    videoOcr: clampNumber(input.videoOcr ?? input.video_ocr, 1, 8, defaults.videoOcr),
+    metadata: clampNumber(input.metadata ?? input.metadataEnrichment ?? input.metadata_enrichment, 1, 8, defaults.metadata),
+    thumbnail: clampNumber(input.thumbnail, 1, 8, defaults.thumbnail),
+    upload: clampNumber(input.upload, 1, 16, defaults.upload),
+    download: clampNumber(input.download, 1, 32, defaults.download),
+    backup: clampNumber(input.backup, 1, 4, defaults.backup)
+  };
 }
 
 function normalizeAuthSessionSettings(value = {}) {
@@ -3330,6 +3355,74 @@ function persistLiveMediaJobProgress(job, jobType, progress, progressPhase) {
   });
 }
 
+const mediaJobQueueState = {
+  queues: new Map(),
+  running: new Map(),
+  pumping: new Set()
+};
+
+function normalizeMediaJobConcurrencyKey(jobType) {
+  const safeType = normalizeMediaJobType(jobType);
+  if (safeType === 'video_ocr') return 'videoOcr';
+  if (safeType === 'metadata_enrichment') return 'metadata';
+  if (safeType === 'subtitle' || safeType === 'proxy') return safeType;
+  return String(jobType || '').trim();
+}
+
+async function getMediaJobConcurrencyLimit(jobType) {
+  const key = normalizeMediaJobConcurrencyKey(jobType);
+  const defaults = DEFAULT_ADMIN_SETTINGS.mediaJobConcurrency;
+  try {
+    const settings = await getAdminSettings();
+    const limits = normalizeMediaJobConcurrencySettings(settings.mediaJobConcurrency);
+    return limits[key] || defaults[key] || 1;
+  } catch (_error) {
+    return defaults[key] || 1;
+  }
+}
+
+function scheduleMediaJobRun(jobType, jobId, runner) {
+  const type = normalizeMediaJobType(jobType) || String(jobType || '').trim();
+  if (!type || typeof runner !== 'function') return;
+  const queue = mediaJobQueueState.queues.get(type) || [];
+  queue.push({ jobId: String(jobId || ''), runner });
+  mediaJobQueueState.queues.set(type, queue);
+  setTimeout(() => {
+    pumpMediaJobQueue(type).catch((error) => {
+      console.error(`Media job queue pump failed for ${type}: ${error?.message || error}`);
+    });
+  }, 10);
+}
+
+async function pumpMediaJobQueue(jobType) {
+  const type = normalizeMediaJobType(jobType) || String(jobType || '').trim();
+  if (!type || mediaJobQueueState.pumping.has(type)) return;
+  mediaJobQueueState.pumping.add(type);
+  try {
+    const limit = await getMediaJobConcurrencyLimit(type);
+    const queue = mediaJobQueueState.queues.get(type) || [];
+    while (queue.length && (mediaJobQueueState.running.get(type) || 0) < limit) {
+      const item = queue.shift();
+      if (!item) continue;
+      if (isMediaJobCancelled(item.jobId)) continue;
+      mediaJobQueueState.running.set(type, (mediaJobQueueState.running.get(type) || 0) + 1);
+      Promise.resolve()
+        .then(() => item.runner())
+        .catch((error) => {
+          console.error(`Queued media job failed for ${type}/${item.jobId}: ${error?.message || error}`);
+        })
+        .finally(() => {
+          mediaJobQueueState.running.set(type, Math.max(0, (mediaJobQueueState.running.get(type) || 1) - 1));
+          pumpMediaJobQueue(type).catch((error) => {
+            console.error(`Media job queue resume failed for ${type}: ${error?.message || error}`);
+          });
+        });
+    }
+  } finally {
+    mediaJobQueueState.pumping.delete(type);
+  }
+}
+
 async function saveAssetVideoOcrMetadata(assetId, row, job) {
   const now = new Date().toISOString();
   const existingDc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
@@ -5929,7 +6022,7 @@ function queueVideoOcrJob(row, options = {}) {
     progress: 5,
     progressPhase: 'queued',
     createdAt: now,
-    startedAt: now,
+    startedAt: '',
     updatedAt: now,
     finishedAt: ''
   };
@@ -5949,14 +6042,15 @@ function queueVideoOcrJob(row, options = {}) {
     finishedAt: ''
   });
 
-  setTimeout(async () => {
+  scheduleMediaJobRun('video_ocr', jobId, async () => {
     const running = videoOcrJobs.get(jobId);
     if (!running) return;
     if (isMediaJobCancelled(jobId) || running.status === 'cancelled') return;
     running.status = 'running';
     running.progress = 10;
     running.progressPhase = 'preparing';
-    running.updatedAt = new Date().toISOString();
+    running.startedAt = running.startedAt || new Date().toISOString();
+    running.updatedAt = running.startedAt;
     await upsertMediaProcessingJobSafe({
       jobId: running.jobId,
       assetId: running.assetId,
@@ -6086,7 +6180,7 @@ function queueVideoOcrJob(row, options = {}) {
       running.frameDir = '';
       clearMediaJobRuntime(running.jobId);
     }
-  }, 10);
+  });
   return job;
 }
 
@@ -6126,7 +6220,7 @@ function queueSubtitleGenerationJob(row, options = {}) {
     progress: 5,
     progressPhase: 'queued',
     createdAt: now,
-    startedAt: now,
+    startedAt: '',
     updatedAt: now,
     finishedAt: ''
   };
@@ -6146,14 +6240,15 @@ function queueSubtitleGenerationJob(row, options = {}) {
     finishedAt: ''
   });
 
-  setTimeout(async () => {
+  scheduleMediaJobRun('subtitle', jobId, async () => {
     const running = subtitleJobs.get(jobId);
     if (!running) return;
     if (isMediaJobCancelled(jobId) || running.status === 'cancelled') return;
     running.status = 'running';
     running.progress = 10;
     running.progressPhase = 'preparing';
-    running.updatedAt = new Date().toISOString();
+    running.startedAt = running.startedAt || new Date().toISOString();
+    running.updatedAt = running.startedAt;
     await upsertMediaProcessingJobSafe({
       jobId: running.jobId,
       assetId: running.assetId,
@@ -6279,7 +6374,7 @@ function queueSubtitleGenerationJob(row, options = {}) {
     } finally {
       clearMediaJobRuntime(running.jobId);
     }
-  }, 10);
+  });
 
   return job;
 }
@@ -6289,14 +6384,16 @@ async function getAdminSettings() {
   if (!result.rowCount) {
     return {
       ...DEFAULT_ADMIN_SETTINGS,
-      subtitleStyle: normalizeSubtitleStyle(DEFAULT_ADMIN_SETTINGS.subtitleStyle)
+      subtitleStyle: normalizeSubtitleStyle(DEFAULT_ADMIN_SETTINGS.subtitleStyle),
+      mediaJobConcurrency: normalizeMediaJobConcurrencySettings(DEFAULT_ADMIN_SETTINGS.mediaJobConcurrency)
     };
   }
   const value = result.rows[0].value;
   if (!value || typeof value !== 'object') {
     return {
       ...DEFAULT_ADMIN_SETTINGS,
-      subtitleStyle: normalizeSubtitleStyle(DEFAULT_ADMIN_SETTINGS.subtitleStyle)
+      subtitleStyle: normalizeSubtitleStyle(DEFAULT_ADMIN_SETTINGS.subtitleStyle),
+      mediaJobConcurrency: normalizeMediaJobConcurrencySettings(DEFAULT_ADMIN_SETTINGS.mediaJobConcurrency)
     };
   }
   return {
@@ -6309,6 +6406,7 @@ async function getAdminSettings() {
     subtitleStyle: normalizeSubtitleStyle(value.subtitleStyle),
     auditRetentionDays: normalizeAuditRetentionDays(value.auditRetentionDays),
     mediaJobRetentionDays: normalizeMediaJobRetentionDays(value.mediaJobRetentionDays),
+    mediaJobConcurrency: normalizeMediaJobConcurrencySettings(value.mediaJobConcurrency),
     authSession: normalizeAuthSessionSettings(value.authSession),
     backup: normalizeBackupSettings(value.backup)
   };
@@ -7745,7 +7843,8 @@ const metadataEnrichmentService = createMetadataEnrichmentService({
   queueSubtitleGenerationJob,
   subtitleJobs,
   upsertMediaProcessingJobSafe,
-  indexAssetToElastic
+  indexAssetToElastic,
+  getMediaJobConcurrencyLimit
 });
 const DOCUMENT_RIGHTS_ADMIN_GROUPS = String(process.env.MAM_DOCUMENT_ADMIN_GROUPS || 'dokadmin,dokyonet,dokyönet,dokyon,dokyön')
   .split(',')
@@ -9114,6 +9213,7 @@ registerAdminRoutes(app, {
   normalizeSubtitleStyle,
   normalizeAuditRetentionDays,
   normalizeMediaJobRetentionDays,
+  normalizeMediaJobConcurrencySettings,
   normalizeAuthSessionSettings,
   applyKeycloakAuthSessionSettings,
   cleanupAuditEvents,

@@ -99,6 +99,9 @@ const exportAuditEventsBtn = document.getElementById('exportAuditEventsBtn');
 const cleanupAuditEventsBtn = document.getElementById('cleanupAuditEventsBtn');
 const auditEventsRows = document.getElementById('auditEventsRows');
 const auditEventsMsg = document.getElementById('auditEventsMsg');
+const auditEventsPrevPage = document.getElementById('auditEventsPrevPage');
+const auditEventsNextPage = document.getElementById('auditEventsNextPage');
+const auditEventsPageInfo = document.getElementById('auditEventsPageInfo');
 const assetRightsSearchInput = document.getElementById('assetRightsSearchInput');
 const assetRightsSuggestList = document.getElementById('assetRightsSuggestList');
 const assetRightsTypeFilters = Array.from(document.querySelectorAll('input[name="assetRightsType"]'));
@@ -169,6 +172,8 @@ let lastDocumentRightsAssets = [];
 let documentRightsPage = 1;
 let documentRightsLockedOnly = false;
 let documentRightsPagination = { page: 1, limit: 20, total: 0, totalPages: 1 };
+let auditEventsPage = 1;
+let auditEventsPagination = { page: 1, limit: 50, total: 0, totalPages: 1 };
 let editingGroupAdminId = '';
 let currentAdminProfile = null;
 
@@ -308,6 +313,15 @@ let i18n = {
     settings_group_player: 'Player',
     settings_group_ingest: 'Asset ingest',
     allow_fileless_asset_creation: 'Allow creating assets without a file',
+    settings_group_job_concurrency: 'Job concurrency',
+    job_concurrency_subtitle: 'Subtitle',
+    job_concurrency_video_ocr: 'Video OCR',
+    job_concurrency_proxy: 'Proxy',
+    job_concurrency_metadata: 'Metadata',
+    job_concurrency_thumbnail: 'Thumbnail',
+    job_concurrency_upload: 'Upload',
+    job_concurrency_download: 'Download',
+    job_concurrency_backup: 'Backup',
     settings_group_security: 'Security',
     settings_group_identity: 'Token & OIDC',
     settings_group_audit: 'Audit Log',
@@ -801,6 +815,15 @@ let i18n = {
     settings_group_player: 'Oynatıcı',
     settings_group_ingest: 'Varlık yükleme',
     allow_fileless_asset_creation: 'Dosya olmadan varlık oluşturmaya izin ver',
+    settings_group_job_concurrency: 'İş eşzamanlılığı',
+    job_concurrency_subtitle: 'Altyazı',
+    job_concurrency_video_ocr: 'Video OCR',
+    job_concurrency_proxy: 'Proxy',
+    job_concurrency_metadata: 'Metadata',
+    job_concurrency_thumbnail: 'Thumbnail',
+    job_concurrency_upload: 'Yükleme',
+    job_concurrency_download: 'İndirme',
+    job_concurrency_backup: 'Yedekleme',
     settings_group_security: 'Güvenlik',
     settings_group_identity: 'Token ve OIDC',
     settings_group_audit: 'Audit Log',
@@ -2158,6 +2181,7 @@ function applyAuditSuggestion(item) {
   const fileName = String(item.fileName || '').trim();
   auditTargetInput.value = title || fileName;
   hideAuditSuggestions();
+  auditEventsPage = 1;
   loadAuditEvents().catch((error) => {
     if (auditEventsMsg) auditEventsMsg.textContent = String(error.message || 'Request failed');
   });
@@ -3493,8 +3517,27 @@ function renderAuditEvents(events = []) {
   }).join('');
 }
 
-function buildAuditEventParams(limit = '100') {
+function updateAuditEventsPager() {
+  const page = Math.max(1, Number(auditEventsPagination.page || auditEventsPage || 1));
+  const totalPages = Math.max(1, Number(auditEventsPagination.totalPages || 1));
+  const total = Math.max(0, Number(auditEventsPagination.total || 0));
+  if (auditEventsPageInfo) {
+    auditEventsPageInfo.textContent = t('page_info')
+      .replace('{page}', String(page))
+      .replace('{pages}', String(totalPages))
+      .replace('{total}', String(total));
+  }
+  if (auditEventsPrevPage) auditEventsPrevPage.disabled = page <= 1;
+  if (auditEventsNextPage) auditEventsNextPage.disabled = page >= totalPages;
+}
+
+function buildAuditEventParams(limit = '50', options = {}) {
   const params = new URLSearchParams({ limit: String(limit) });
+  if (options.includeOffset !== false) {
+    const safeLimit = Math.max(1, Number(limit) || 50);
+    const safePage = Math.max(1, Number(auditEventsPage) || 1);
+    params.set('offset', String((safePage - 1) * safeLimit));
+  }
   const actor = String(auditActorInput?.value || '').trim();
   const action = String(auditActionSelect?.value || '').trim();
   const target = String(auditTargetInput?.value || '').trim();
@@ -3511,10 +3554,13 @@ function buildAuditEventParams(limit = '100') {
 async function loadAuditEvents() {
   if (!auditEventsRows) return;
   if (auditEventsMsg) auditEventsMsg.textContent = '';
-  const params = buildAuditEventParams('100');
+  const params = buildAuditEventParams(String(auditEventsPagination.limit || 50));
   try {
     const data = await api(`/api/admin/audit-events?${params.toString()}`);
+    auditEventsPagination = data.pagination || auditEventsPagination;
+    auditEventsPage = Number(auditEventsPagination.page || auditEventsPage || 1);
     renderAuditEvents(Array.isArray(data.events) ? data.events : []);
+    updateAuditEventsPager();
   } catch (error) {
     if (auditEventsMsg) auditEventsMsg.textContent = error.message || t('audit_load_failed');
   }
@@ -3523,7 +3569,7 @@ async function loadAuditEvents() {
 async function exportAuditEvents() {
   if (auditEventsMsg) auditEventsMsg.textContent = '';
   if (exportAuditEventsBtn) exportAuditEventsBtn.disabled = true;
-  const params = buildAuditEventParams('5000');
+  const params = buildAuditEventParams('5000', { includeOffset: false });
   try {
     const response = await fetch(`/api/admin/audit-events/export?${params.toString()}`);
     if (!response.ok) {
@@ -3582,6 +3628,7 @@ async function cleanupAuditEvents() {
     }
     if (auditFromInput) auditFromInput.value = '';
     if (auditToInput) auditToInput.value = '';
+    auditEventsPage = 1;
     await loadAuditEvents();
   } catch (error) {
     if (auditEventsMsg) auditEventsMsg.textContent = error.message || t('audit_cleanup_failed');
@@ -3616,6 +3663,7 @@ async function loadSettings() {
   if (settingsForm.elements.mediaJobRetentionDays) {
     settingsForm.elements.mediaJobRetentionDays.value = String(settings.mediaJobRetentionDays || 30);
   }
+  writeMediaJobConcurrencyForm(settings.mediaJobConcurrency || {});
   writeAuthSessionSettingsForm(settings.authSession || {});
   {
     const advancedModeInput = document.getElementById('ocrDefaultAdvancedMode');
@@ -3633,6 +3681,33 @@ async function loadSettings() {
   writeBackupSettingsForm(settings.backup || {});
   renderApiHelp();
   renderApiGuide();
+}
+
+function readMediaJobConcurrencyForm() {
+  const elements = settingsForm?.elements;
+  return {
+    subtitle: Number(elements?.mediaJobConcurrencySubtitle?.value) || 1,
+    videoOcr: Number(elements?.mediaJobConcurrencyVideoOcr?.value) || 1,
+    proxy: Number(elements?.mediaJobConcurrencyProxy?.value) || 1,
+    metadata: Number(elements?.mediaJobConcurrencyMetadata?.value) || 1,
+    thumbnail: Number(elements?.mediaJobConcurrencyThumbnail?.value) || 2,
+    upload: Number(elements?.mediaJobConcurrencyUpload?.value) || 3,
+    download: Number(elements?.mediaJobConcurrencyDownload?.value) || 6,
+    backup: Number(elements?.mediaJobConcurrencyBackup?.value) || 1
+  };
+}
+
+function writeMediaJobConcurrencyForm(mediaJobConcurrency = {}) {
+  const elements = settingsForm?.elements;
+  if (!elements) return;
+  elements.mediaJobConcurrencySubtitle.value = String(Number(mediaJobConcurrency.subtitle) || 1);
+  elements.mediaJobConcurrencyVideoOcr.value = String(Number(mediaJobConcurrency.videoOcr) || 1);
+  elements.mediaJobConcurrencyProxy.value = String(Number(mediaJobConcurrency.proxy) || 1);
+  elements.mediaJobConcurrencyMetadata.value = String(Number(mediaJobConcurrency.metadata) || 1);
+  elements.mediaJobConcurrencyThumbnail.value = String(Number(mediaJobConcurrency.thumbnail) || 2);
+  elements.mediaJobConcurrencyUpload.value = String(Number(mediaJobConcurrency.upload) || 3);
+  elements.mediaJobConcurrencyDownload.value = String(Number(mediaJobConcurrency.download) || 6);
+  elements.mediaJobConcurrencyBackup.value = String(Number(mediaJobConcurrency.backup) || 1);
 }
 
 function readAuthSessionSettingsForm() {
@@ -3825,7 +3900,8 @@ settingsForm.addEventListener('submit', async (event) => {
     oidcJwksUrl: String(settingsForm.elements.oidcJwksUrl.value || '').trim(),
     oidcAudience: String(settingsForm.elements.oidcAudience.value || '').trim(),
     auditRetentionDays: Number(settingsForm.elements.auditRetentionDays?.value) || 180,
-    mediaJobRetentionDays: Number(settingsForm.elements.mediaJobRetentionDays?.value) || 30
+    mediaJobRetentionDays: Number(settingsForm.elements.mediaJobRetentionDays?.value) || 30,
+    mediaJobConcurrency: readMediaJobConcurrencyForm()
   };
   await api('/api/admin/settings', { method: 'PATCH', body: JSON.stringify(payload) });
   settingsMsg.textContent = t('settings_saved');
@@ -4301,6 +4377,22 @@ refreshRuntimeDiagnosticsBtn?.addEventListener('click', () => {
 });
 
 runAuditSearchBtn?.addEventListener('click', () => {
+  auditEventsPage = 1;
+  loadAuditEvents().catch((error) => {
+    if (auditEventsMsg) auditEventsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+auditEventsPrevPage?.addEventListener('click', () => {
+  auditEventsPage = Math.max(1, Number(auditEventsPage || 1) - 1);
+  loadAuditEvents().catch((error) => {
+    if (auditEventsMsg) auditEventsMsg.textContent = String(error.message || 'Request failed');
+  });
+});
+
+auditEventsNextPage?.addEventListener('click', () => {
+  const totalPages = Math.max(1, Number(auditEventsPagination.totalPages || 1));
+  auditEventsPage = Math.min(totalPages, Number(auditEventsPage || 1) + 1);
   loadAuditEvents().catch((error) => {
     if (auditEventsMsg) auditEventsMsg.textContent = String(error.message || 'Request failed');
   });
