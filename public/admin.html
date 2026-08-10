@@ -24,6 +24,7 @@
           <button type="button" class="admin-tab" data-tab="auditEvents" data-i18n="audit_events">İşlem Geçmişi</button>
           <button type="button" class="admin-tab" data-tab="assetRights" data-i18n="asset_rights">Asset Rights</button>
           <button type="button" class="admin-tab" data-tab="documentRights" data-i18n="document_rights">Document Rights</button>
+          <button type="button" class="admin-tab" data-tab="metadata" data-i18n="metadata_generation">Metadata Generation</button>
           <button type="button" class="admin-tab" data-tab="settings" data-i18n="settings">Settings</button>
         </nav>
       </aside>
@@ -226,6 +227,93 @@
             <button id="documentRightsNextPage" type="button" data-i18n="next_page">Next</button>
           </div>
           <div id="documentRightsMsg" class="admin-note"></div>
+        </article>
+
+        <article class="admin-card admin-panel" data-panel="metadata">
+          <h2 data-i18n="metadata_generation">Metadata Generation</h2>
+          <form id="metadataSettingsForm" class="stack">
+            <fieldset class="settings-group">
+              <legend data-i18n="metadata_model_settings">Metadata model</legend>
+              <label class="toggle-row">
+                <input type="checkbox" name="metadataModelEnabled" />
+                <span data-i18n="metadata_model_enabled">Enable metadata generation</span>
+              </label>
+              <div class="settings-inline-grid ai-model-grid">
+                <label>
+                  <span data-i18n="metadata_model_provider">Provider</span>
+                  <select name="metadataModelProvider">
+                    <option value="ollama">Ollama</option>
+                    <option value="local-transformers">Local Transformers</option>
+                    <option value="openai">OpenAI</option>
+                  </select>
+                </label>
+                <label>
+                  <span data-i18n="metadata_model_name">Model</span>
+                  <input name="metadataModelName" placeholder="gemma3:4b" />
+                </label>
+                <label>
+                  <span data-i18n="metadata_model_base_url">Base URL</span>
+                  <input name="metadataModelBaseUrl" placeholder="http://host.docker.internal:11434" />
+                </label>
+                <label>
+                  <span data-i18n="metadata_model_dir">Model directory</span>
+                  <input name="metadataModelDir" placeholder="/app/models/metadata" />
+                </label>
+                <label>
+                  <span data-i18n="metadata_model_keep_alive">Keep alive</span>
+                  <input name="metadataModelKeepAlive" placeholder="10m" />
+                </label>
+                <label>
+                  <span data-i18n="metadata_model_timeout">Timeout (ms)</span>
+                  <input name="metadataModelTimeoutMs" type="number" min="30000" max="3600000" step="1000" />
+                </label>
+              </div>
+            </fieldset>
+            <fieldset class="settings-group">
+              <legend data-i18n="subtitle_translation_model_settings">Subtitle translation model</legend>
+              <label class="toggle-row">
+                <input type="checkbox" name="subtitleTranslationModelEnabled" />
+                <span data-i18n="subtitle_translation_model_enabled">Enable subtitle translation model</span>
+              </label>
+              <div class="settings-inline-grid ai-model-grid">
+                <label>
+                  <span data-i18n="metadata_model_provider">Provider</span>
+                  <select name="subtitleTranslationModelProvider">
+                    <option value="local-transformers">Local Transformers</option>
+                    <option value="ollama">Ollama</option>
+                    <option value="openai">OpenAI</option>
+                  </select>
+                </label>
+                <label>
+                  <span data-i18n="metadata_model_name">Model</span>
+                  <input name="subtitleTranslationModelName" placeholder="Helsinki-NLP/opus-mt-tc-big-en-tr" />
+                </label>
+                <label>
+                  <span data-i18n="metadata_model_dir">Model directory</span>
+                  <input name="subtitleTranslationModelDir" placeholder="/opt/mam-models/marian/opus-mt-tc-big-en-tr" />
+                </label>
+              </div>
+            </fieldset>
+            <div class="settings-submit-row">
+              <button type="submit" data-i18n="save_settings">Save Settings</button>
+            </div>
+          </form>
+          <div id="metadataSettingsMsg" class="admin-note"></div>
+
+          <div class="proxy-tool-box">
+            <h3 data-i18n="metadata_generate_later">Generate metadata later</h3>
+            <div class="proxy-tool-grid">
+              <label class="proxy-tool-asset-field">
+                <span data-i18n="proxy_tool_asset_name">Asset Name</span>
+                <input id="metadataToolAssetName" type="text" autocomplete="off" data-i18n-placeholder="proxy_tool_asset_name_ph" placeholder="Type asset name" />
+                <div id="metadataToolSuggestList" class="proxy-suggest hidden"></div>
+              </label>
+            </div>
+            <div class="proxy-tool-actions">
+              <button id="runMetadataToolBtn" type="button" data-i18n="metadata_generate_now">Generate Metadata</button>
+            </div>
+            <div id="metadataToolMsg" class="admin-note"></div>
+          </div>
         </article>
 
         <article class="admin-card admin-panel" data-panel="settings">
@@ -760,9 +848,9 @@
     </main>
 
     <script src="/session-expiry.js?v=20260714-session-expiry-3"></script>
-    <script src="/main-access-scope.js?v=20260522-hide-backup-textadmin-1"></script>
+    <script src="/main-access-scope.js?v=20260809-metadata-main-tab-1"></script>
     <script src="/admin-records.js?v=20260629-text-records-paging-1"></script>
     <script src="/admin-system-health.js?v=20260803-media-job-filters-5"></script>
-    <script src="/admin.js?v=20260803-media-job-filters-5"></script>
+    <script src="/admin.js?v=20260809-metadata-main-tab-1"></script>
   </body>
 </html>

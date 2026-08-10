@@ -52,6 +52,7 @@ function registerAdminRoutes(app, deps) {
     normalizeAuditRetentionDays,
     normalizeMediaJobRetentionDays,
     normalizeMediaJobConcurrencySettings,
+    normalizeAiModelsSettings,
     normalizeAuthSessionSettings,
     applyKeycloakAuthSessionSettings,
     cleanupAuditEvents,
@@ -2584,6 +2585,9 @@ app.patch('/api/admin/settings', async (req, res) => {
       mediaJobConcurrency: Object.prototype.hasOwnProperty.call(req.body, 'mediaJobConcurrency')
         ? normalizeMediaJobConcurrencySettings(req.body.mediaJobConcurrency)
         : normalizeMediaJobConcurrencySettings(current.mediaJobConcurrency),
+      aiModels: Object.prototype.hasOwnProperty.call(req.body, 'aiModels')
+        ? normalizeAiModelsSettings(req.body.aiModels)
+        : normalizeAiModelsSettings(current.aiModels),
       authSession: Object.prototype.hasOwnProperty.call(req.body, 'authSession')
         ? normalizeAuthSessionSettings(req.body.authSession)
         : normalizeAuthSessionSettings(current.authSession),
@@ -3779,6 +3783,53 @@ app.get('/api/admin/assets/suggest', async (req, res) => {
     );
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to suggest assets' });
+  }
+});
+
+app.post('/api/admin/metadata/generate', async (req, res) => {
+  try {
+    const effective = await requireSuperAdminRequest(req, res);
+    if (!effective) return undefined;
+    const assetId = String(req.body?.assetId || '').trim();
+    const assetName = String(req.body?.assetName || '').trim();
+    if (!assetId && !assetName) return res.status(400).json({ error: 'assetId or assetName is required' });
+    const result = assetId
+      ? await pool.query('SELECT * FROM assets WHERE id = $1 AND deleted_at IS NULL LIMIT 1', [assetId])
+      : await pool.query(
+        `
+          SELECT *
+          FROM assets
+          WHERE deleted_at IS NULL
+            AND (title ILIKE $1 OR file_name ILIKE $1)
+          ORDER BY
+            CASE
+              WHEN LOWER(title) = LOWER($2) THEN 0
+              WHEN LOWER(file_name) = LOWER($2) THEN 1
+              ELSE 2
+            END,
+            updated_at DESC
+          LIMIT 1
+        `,
+        [`%${assetName}%`, assetName]
+      );
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ error: 'Asset not found' });
+    const job = metadataEnrichmentService?.queueAsset?.(row);
+    if (!job) {
+      return res.status(400).json({
+        error: 'Metadata generation is currently supported for document assets only'
+      });
+    }
+    await recordAuditEvent?.(req, {
+      action: 'metadata.queued',
+      targetType: 'asset',
+      targetId: row.id,
+      targetTitle: row.title,
+      details: { jobId: job.jobId, source: 'admin.metadata_generation' }
+    }).catch(() => {});
+    return res.status(202).json({ ok: true, assetId: row.id, assetTitle: row.title, job });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to queue metadata generation' });
   }
 });
 

@@ -42,6 +42,7 @@ services:
         INSTALL_LIBREOFFICE: ${INSTALL_LIBREOFFICE:-true}
         PRELOAD_ML_MODELS: ${PRELOAD_ML_MODELS:-true}
         PRELOAD_PADDLE_OCR: ${PRELOAD_PADDLE_OCR:-true}
+        PRELOAD_MARIAN_TRANSLATION: ${PRELOAD_MARIAN_TRANSLATION:-false}
         WHISPER_MODEL: ${WHISPER_MODEL:-small}
         HF_TOKEN: ${HF_TOKEN:-}
         MAM_GIT_COMMIT: ${MAM_GIT_COMMIT:-unknown}
@@ -71,6 +72,7 @@ services:
       JSON_BODY_LIMIT: ${JSON_BODY_LIMIT:-1500mb}
       MAM_OFFLINE_MODE: ${MAM_OFFLINE_MODE:-true}
       MAM_MODEL_CACHE_DIR: /opt/mam-models
+      MAM_MARIAN_MODEL_DIR: /opt/mam-models/marian/opus-mt-tc-big-en-tr
       HF_HOME: /opt/mam-models/huggingface
       HF_HUB_CACHE: /opt/mam-models/huggingface/hub
       TRANSFORMERS_CACHE: /opt/mam-models/huggingface/transformers
@@ -101,6 +103,7 @@ services:
       RESTIC_PASSWORD_FILE: /run/secrets/restic_password
     volumes:
       - ./uploads:/app/uploads
+      - model_cache:/opt/mam-models
       - /home/belge/depo/netapp/belgelik:/home/belge/depo/netapp/belgelik
       - /home/belge/depo/netapp/belgelik-restic:/home/belge/depo/netapp/belgelik-restic
     secrets:
@@ -299,3 +302,4 @@ volumes:
   keycloak_pg_data:
     external: true
     name: mam_kaisha_keycloak_pg_data
+  model_cache:

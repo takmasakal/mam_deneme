@@ -6,6 +6,8 @@ const systemHealthRows = document.getElementById('systemHealthRows');
 const systemJobStatusEl = document.getElementById('systemJobStatus');
 const settingsForm = document.getElementById('settingsForm');
 const settingsMsg = document.getElementById('settingsMsg');
+const metadataSettingsForm = document.getElementById('metadataSettingsForm');
+const metadataSettingsMsg = document.getElementById('metadataSettingsMsg');
 const ocrSettingsForm = document.getElementById('ocrSettingsForm');
 const ocrSettingsMsg = document.getElementById('ocrSettingsMsg');
 const subtitleSettingsForm = document.getElementById('subtitleSettingsForm');
@@ -48,6 +50,10 @@ const proxyToolReplaceFileWrap = document.getElementById('proxyToolReplaceFileWr
 const proxyToolReplaceFile = document.getElementById('proxyToolReplaceFile');
 const runProxyToolBtn = document.getElementById('runProxyToolBtn');
 const proxyToolMsg = document.getElementById('proxyToolMsg');
+const metadataToolAssetName = document.getElementById('metadataToolAssetName');
+const metadataToolSuggestList = document.getElementById('metadataToolSuggestList');
+const runMetadataToolBtn = document.getElementById('runMetadataToolBtn');
+const metadataToolMsg = document.getElementById('metadataToolMsg');
 const languageSelect = document.getElementById('languageSelectAdmin');
 const adminTabs = Array.from(document.querySelectorAll('.admin-tab'));
 const adminPanels = Array.from(document.querySelectorAll('.admin-panel'));
@@ -145,6 +151,11 @@ let proxySuggestReqSeq = 0;
 let proxySuggestItems = [];
 let proxySuggestActiveIndex = -1;
 let proxySuggestHideTimer = null;
+let metadataSuggestTimer = null;
+let metadataSuggestReqSeq = 0;
+let metadataSuggestItems = [];
+let metadataSuggestActiveIndex = -1;
+let metadataSuggestHideTimer = null;
 let auditSuggestTimer = null;
 let auditSuggestReqSeq = 0;
 let auditSuggestItems = [];
@@ -372,6 +383,7 @@ let i18n = {
     new_asset_visibility_owner_groups: 'Owner groups',
     settings_sub_general: 'General',
     settings_sub_proxy: 'Proxy',
+    settings_sub_metadata: 'Metadata Generation',
     settings_sub_ocr: 'OCR',
     settings_sub_subtitle: 'Subtitle',
     settings_sub_backup: 'Backup',
@@ -385,6 +397,22 @@ let i18n = {
     save_auth_session: 'Save Login Settings',
     auth_session_saved: 'Login session settings saved.',
     auth_session_save_failed: 'Failed to save login session settings.',
+    metadata_generation: 'Metadata Generation',
+    metadata_model_settings: 'Metadata model',
+    metadata_model_enabled: 'Enable metadata generation',
+    metadata_model_provider: 'Provider',
+    metadata_model_name: 'Model',
+    metadata_model_base_url: 'Base URL',
+    metadata_model_dir: 'Model directory',
+    metadata_model_keep_alive: 'Keep alive',
+    metadata_model_timeout: 'Timeout (ms)',
+    subtitle_translation_model_settings: 'Subtitle translation model',
+    subtitle_translation_model_enabled: 'Enable subtitle translation model',
+    metadata_generate_later: 'Generate metadata later',
+    metadata_generate_now: 'Generate Metadata',
+    metadata_generation_queued: 'Metadata generation queued.',
+    metadata_generation_failed: 'Failed to queue metadata generation.',
+    metadata_asset_required: 'Select an asset first.',
     backup_settings: 'Backup Settings',
     backup_schedule: 'Schedule',
     backup_enabled: 'Enable daily backup',
@@ -870,6 +898,7 @@ let i18n = {
     new_asset_visibility_owner_groups: 'Sahip gruplar',
     settings_sub_general: 'Genel',
     settings_sub_proxy: 'Proxy',
+    settings_sub_metadata: 'Metadata Üretimi',
     settings_sub_ocr: 'OCR',
     settings_sub_subtitle: 'Altyazı',
     settings_sub_backup: 'Yedekleme',
@@ -883,6 +912,22 @@ let i18n = {
     save_auth_session: 'Giriş Ayarlarını Kaydet',
     auth_session_saved: 'Giriş oturumu ayarları kaydedildi.',
     auth_session_save_failed: 'Giriş oturumu ayarları kaydedilemedi.',
+    metadata_generation: 'Metadata Üretimi',
+    metadata_model_settings: 'Metadata modeli',
+    metadata_model_enabled: 'Metadata üretimini aç',
+    metadata_model_provider: 'Sağlayıcı',
+    metadata_model_name: 'Model',
+    metadata_model_base_url: 'Base URL',
+    metadata_model_dir: 'Model dizini',
+    metadata_model_keep_alive: 'Keep alive',
+    metadata_model_timeout: 'Zaman aşımı (ms)',
+    subtitle_translation_model_settings: 'Altyazı çeviri modeli',
+    subtitle_translation_model_enabled: 'Altyazı çeviri modelini aç',
+    metadata_generate_later: 'Sonradan metadata üret',
+    metadata_generate_now: 'Metadata Üret',
+    metadata_generation_queued: 'Metadata üretimi kuyruğa alındı.',
+    metadata_generation_failed: 'Metadata üretimi kuyruğa alınamadı.',
+    metadata_asset_required: 'Önce bir varlık seçin.',
     backup_settings: 'Yedekleme Ayarları',
     backup_schedule: 'Zamanlama',
     backup_enabled: 'Günlük yedeklemeyi aç',
@@ -2124,6 +2169,86 @@ function queueProxySuggestionRequest() {
   if (proxySuggestTimer) clearTimeout(proxySuggestTimer);
   proxySuggestTimer = setTimeout(() => {
     requestProxySuggestions().catch(() => {});
+  }, 180);
+}
+
+function hideMetadataSuggestions() {
+  if (!metadataToolSuggestList) return;
+  metadataToolSuggestList.classList.add('hidden');
+  metadataToolSuggestList.innerHTML = '';
+  metadataSuggestItems = [];
+  metadataSuggestActiveIndex = -1;
+}
+
+function setMetadataSuggestActive(index) {
+  if (!metadataToolSuggestList) return;
+  const buttons = Array.from(metadataToolSuggestList.querySelectorAll('.proxy-suggest-item'));
+  if (!buttons.length) {
+    metadataSuggestActiveIndex = -1;
+    return;
+  }
+  const safeIndex = Math.max(0, Math.min(buttons.length - 1, index));
+  metadataSuggestActiveIndex = safeIndex;
+  buttons.forEach((btn, idx) => {
+    btn.classList.toggle('active', idx === safeIndex);
+  });
+}
+
+function applyMetadataSuggestion(item) {
+  if (!item || !metadataToolAssetName) return;
+  const title = String(item.title || '').trim();
+  const fileName = String(item.fileName || '').trim();
+  metadataToolAssetName.value = title || fileName;
+  metadataToolAssetName.dataset.assetId = String(item.id || '');
+  hideMetadataSuggestions();
+}
+
+function renderMetadataSuggestions(items, query) {
+  if (!metadataToolSuggestList) return;
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {
+    hideMetadataSuggestions();
+    return;
+  }
+  metadataSuggestItems = list;
+  metadataSuggestActiveIndex = -1;
+  metadataToolSuggestList.innerHTML = list.map((item, index) => {
+    const title = String(item.title || item.fileName || item.id || '');
+    const fileName = String(item.fileName || '');
+    const type = String(item.type || '-');
+    const trashState = item.inTrash ? 'trash' : 'active';
+    return `
+      <button type="button" class="proxy-suggest-item" data-index="${index}">
+        <strong>${highlightSuggestion(title, query)}</strong>
+        <span>${escapeHtml(type)} | ${escapeHtml(fileName || '-')} | ${escapeHtml(trashState)}</span>
+      </button>
+    `;
+  }).join('');
+  metadataToolSuggestList.classList.remove('hidden');
+}
+
+async function requestMetadataSuggestions() {
+  const query = String(metadataToolAssetName?.value || '').trim();
+  if (query.length < 3) {
+    hideMetadataSuggestions();
+    return;
+  }
+  const reqId = ++metadataSuggestReqSeq;
+  const params = new URLSearchParams({ q: query, limit: '8', includeTrash: '0' });
+  try {
+    const result = await api(`/api/admin/assets/suggest?${params.toString()}`);
+    if (reqId !== metadataSuggestReqSeq) return;
+    renderMetadataSuggestions(result, query);
+  } catch (_error) {
+    if (reqId !== metadataSuggestReqSeq) return;
+    hideMetadataSuggestions();
+  }
+}
+
+function queueMetadataSuggestionRequest() {
+  if (metadataSuggestTimer) clearTimeout(metadataSuggestTimer);
+  metadataSuggestTimer = setTimeout(() => {
+    requestMetadataSuggestions().catch(() => {});
   }, 180);
 }
 
@@ -3638,6 +3763,7 @@ async function loadSettings() {
     settingsForm.elements.mediaJobRetentionDays.value = String(settings.mediaJobRetentionDays || 30);
   }
   writeMediaJobConcurrencyForm(settings.mediaJobConcurrency || {});
+  writeAiModelsForm(settings.aiModels || {});
   writeAuthSessionSettingsForm(settings.authSession || {});
   {
     const advancedModeInput = document.getElementById('ocrDefaultAdvancedMode');
@@ -3682,6 +3808,45 @@ function writeMediaJobConcurrencyForm(mediaJobConcurrency = {}) {
   elements.mediaJobConcurrencyUpload.value = String(Number(mediaJobConcurrency.upload) || 3);
   elements.mediaJobConcurrencyDownload.value = String(Number(mediaJobConcurrency.download) || 6);
   elements.mediaJobConcurrencyBackup.value = String(Number(mediaJobConcurrency.backup) || 1);
+}
+
+function readAiModelsForm() {
+  const elements = metadataSettingsForm?.elements;
+  return {
+    metadata: {
+      enabled: Boolean(elements?.metadataModelEnabled?.checked),
+      provider: String(elements?.metadataModelProvider?.value || 'ollama'),
+      model: String(elements?.metadataModelName?.value || '').trim(),
+      baseUrl: String(elements?.metadataModelBaseUrl?.value || '').trim(),
+      modelDir: String(elements?.metadataModelDir?.value || '').trim(),
+      keepAlive: String(elements?.metadataModelKeepAlive?.value || '').trim(),
+      timeoutMs: Number(elements?.metadataModelTimeoutMs?.value) || 600000
+    },
+    subtitleTranslation: {
+      enabled: Boolean(elements?.subtitleTranslationModelEnabled?.checked),
+      provider: String(elements?.subtitleTranslationModelProvider?.value || 'local-transformers'),
+      model: String(elements?.subtitleTranslationModelName?.value || '').trim(),
+      modelDir: String(elements?.subtitleTranslationModelDir?.value || '').trim()
+    }
+  };
+}
+
+function writeAiModelsForm(aiModels = {}) {
+  const elements = metadataSettingsForm?.elements;
+  if (!elements) return;
+  const metadata = aiModels.metadata || {};
+  const subtitleTranslation = aiModels.subtitleTranslation || {};
+  elements.metadataModelEnabled.checked = metadata.enabled !== false;
+  elements.metadataModelProvider.value = String(metadata.provider || 'ollama');
+  elements.metadataModelName.value = String(metadata.model || 'gemma3:4b');
+  elements.metadataModelBaseUrl.value = String(metadata.baseUrl || 'http://host.docker.internal:11434');
+  elements.metadataModelDir.value = String(metadata.modelDir || '');
+  elements.metadataModelKeepAlive.value = String(metadata.keepAlive || '10m');
+  elements.metadataModelTimeoutMs.value = String(Number(metadata.timeoutMs) || 600000);
+  elements.subtitleTranslationModelEnabled.checked = Boolean(subtitleTranslation.enabled);
+  elements.subtitleTranslationModelProvider.value = String(subtitleTranslation.provider || 'local-transformers');
+  elements.subtitleTranslationModelName.value = String(subtitleTranslation.model || 'Helsinki-NLP/opus-mt-tc-big-en-tr');
+  elements.subtitleTranslationModelDir.value = String(subtitleTranslation.modelDir || '/opt/mam-models/marian/opus-mt-tc-big-en-tr');
 }
 
 function readAuthSessionSettingsForm() {
@@ -3881,6 +4046,23 @@ settingsForm.addEventListener('submit', async (event) => {
   settingsMsg.textContent = t('settings_saved');
   renderApiHelp();
   renderApiGuide();
+});
+
+metadataSettingsForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    const current = await api('/api/admin/settings');
+    await api('/api/admin/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        ...current,
+        aiModels: readAiModelsForm()
+      })
+    });
+    if (metadataSettingsMsg) metadataSettingsMsg.textContent = t('settings_saved');
+  } catch (error) {
+    if (metadataSettingsMsg) metadataSettingsMsg.textContent = String(error.message || 'Request failed');
+  }
 });
 
 backupSettingsForm?.addEventListener('submit', async (event) => {
@@ -4231,6 +4413,88 @@ proxyToolSuggestList?.addEventListener('click', (event) => {
   const index = Number(button.dataset.index);
   if (!Number.isFinite(index) || index < 0 || index >= proxySuggestItems.length) return;
   applyProxySuggestion(proxySuggestItems[index]);
+});
+
+runMetadataToolBtn?.addEventListener('click', async () => {
+  hideMetadataSuggestions();
+  const assetName = String(metadataToolAssetName?.value || '').trim();
+  const assetId = String(metadataToolAssetName?.dataset?.assetId || '').trim();
+  if (!assetName && !assetId) {
+    if (metadataToolMsg) metadataToolMsg.textContent = t('metadata_asset_required');
+    return;
+  }
+  if (metadataToolMsg) metadataToolMsg.textContent = `${t('loading')}...`;
+  if (runMetadataToolBtn) runMetadataToolBtn.disabled = true;
+  try {
+    const result = await api('/api/admin/metadata/generate', {
+      method: 'POST',
+      body: JSON.stringify({ assetId, assetName })
+    });
+    if (metadataToolMsg) {
+      metadataToolMsg.textContent = `${t('metadata_generation_queued')} ${result.assetTitle || result.assetId || ''}`.trim();
+    }
+    await refreshTrackingAndHealth({ forceServer: true });
+  } catch (error) {
+    if (metadataToolMsg) metadataToolMsg.textContent = error.message || t('metadata_generation_failed');
+  } finally {
+    if (runMetadataToolBtn) runMetadataToolBtn.disabled = false;
+  }
+});
+
+metadataToolAssetName?.addEventListener('focus', () => {
+  if (metadataSuggestHideTimer) {
+    clearTimeout(metadataSuggestHideTimer);
+    metadataSuggestHideTimer = null;
+  }
+  queueMetadataSuggestionRequest();
+});
+
+metadataToolAssetName?.addEventListener('input', () => {
+  metadataToolAssetName.dataset.assetId = '';
+  queueMetadataSuggestionRequest();
+});
+
+metadataToolAssetName?.addEventListener('blur', () => {
+  if (metadataSuggestHideTimer) clearTimeout(metadataSuggestHideTimer);
+  metadataSuggestHideTimer = setTimeout(() => {
+    hideMetadataSuggestions();
+    metadataSuggestHideTimer = null;
+  }, 120);
+});
+
+metadataToolAssetName?.addEventListener('keydown', (event) => {
+  const isOpen = Boolean(metadataToolSuggestList && !metadataToolSuggestList.classList.contains('hidden'));
+  if (!isOpen && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+    queueMetadataSuggestionRequest();
+    return;
+  }
+  if (!isOpen) return;
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    setMetadataSuggestActive((metadataSuggestActiveIndex < 0 ? -1 : metadataSuggestActiveIndex) + 1);
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    setMetadataSuggestActive((metadataSuggestActiveIndex < 0 ? metadataSuggestItems.length : metadataSuggestActiveIndex) - 1);
+  } else if (event.key === 'Enter') {
+    if (metadataSuggestActiveIndex >= 0 && metadataSuggestItems[metadataSuggestActiveIndex]) {
+      event.preventDefault();
+      applyMetadataSuggestion(metadataSuggestItems[metadataSuggestActiveIndex]);
+    }
+  } else if (event.key === 'Escape') {
+    hideMetadataSuggestions();
+  }
+});
+
+metadataToolSuggestList?.addEventListener('mousedown', (event) => {
+  event.preventDefault();
+});
+
+metadataToolSuggestList?.addEventListener('click', (event) => {
+  const button = event.target.closest('.proxy-suggest-item');
+  if (!button) return;
+  const index = Number(button.dataset.index);
+  if (!Number.isFinite(index) || index < 0 || index >= metadataSuggestItems.length) return;
+  applyMetadataSuggestion(metadataSuggestItems[index]);
 });
 
 auditTargetInput?.addEventListener('input', () => {

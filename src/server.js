@@ -21,6 +21,7 @@ const { createAssetDeletionService } = require('./services/assetDeletionService'
 const { createAssetAccessService } = require('./services/assetAccessService');
 const { createAssetEditLockService } = require('./services/assetEditLockService');
 const { createImageDerivativeService } = require('./services/imageDerivativeService');
+const { createMetadataEnrichmentService } = require('./services/metadataEnrichmentService');
 const {
   normalizeOcrText,
   normalizeOcrLine,
@@ -91,6 +92,10 @@ const OCR_FRAME_CACHE_ENABLED = String(process.env.OCR_FRAME_CACHE_ENABLE || 'fa
 const OCR_FRAME_CACHE_TTL_DAYS = Math.max(1, Math.min(30, Number(process.env.OCR_FRAME_CACHE_TTL_DAYS) || 3));
 const MAM_OFFLINE_MODE = String(process.env.MAM_OFFLINE_MODE ?? 'true').trim().toLowerCase() !== 'false';
 const MAM_MODEL_CACHE_DIR = process.env.MAM_MODEL_CACHE_DIR || '/opt/mam-models';
+const DEFAULT_MARIAN_TRANSLATION_MODEL = 'Helsinki-NLP/opus-mt-tc-big-en-tr';
+const LEGACY_MARIAN_TRANSLATION_MODEL_DIR = '/app/models/marian_buyuk_model';
+const DEFAULT_MARIAN_TRANSLATION_MODEL_DIR = process.env.MAM_MARIAN_MODEL_DIR
+  || path.join(MAM_MODEL_CACHE_DIR, 'marian', 'opus-mt-tc-big-en-tr');
 const HF_HOME = process.env.HF_HOME || path.join(MAM_MODEL_CACHE_DIR, 'huggingface');
 const HF_HUB_CACHE = process.env.HF_HUB_CACHE || path.join(HF_HOME, 'hub');
 const TRANSFORMERS_CACHE = process.env.TRANSFORMERS_CACHE || path.join(HF_HOME, 'transformers');
@@ -164,6 +169,35 @@ const DEFAULT_ADMIN_SETTINGS = {
     upload: 3,
     download: 6,
     backup: 1
+  },
+  aiModels: {
+    metadata: {
+      enabled: true,
+      provider: 'ollama',
+      model: process.env.OLLAMA_METADATA_MODEL || 'gemma3:4b',
+      baseUrl: process.env.OLLAMA_BASE_URL || 'http://host.docker.internal:11434',
+      modelDir: '',
+      keepAlive: process.env.OLLAMA_METADATA_KEEP_ALIVE || '10m',
+      timeoutMs: Number(process.env.OLLAMA_METADATA_TIMEOUT_MS) || 10 * 60 * 1000
+    },
+    subtitleTranslation: {
+      enabled: true,
+      provider: 'local-transformers',
+      model: DEFAULT_MARIAN_TRANSLATION_MODEL,
+      baseUrl: '',
+      modelDir: DEFAULT_MARIAN_TRANSLATION_MODEL_DIR,
+      keepAlive: '',
+      timeoutMs: 10 * 60 * 1000
+    },
+    summary: {
+      enabled: true,
+      provider: 'ollama',
+      model: process.env.OLLAMA_METADATA_MODEL || 'gemma3:4b',
+      baseUrl: process.env.OLLAMA_BASE_URL || 'http://host.docker.internal:11434',
+      modelDir: '',
+      keepAlive: process.env.OLLAMA_METADATA_KEEP_ALIVE || '10m',
+      timeoutMs: Number(process.env.OLLAMA_METADATA_TIMEOUT_MS) || 10 * 60 * 1000
+    }
   },
   authSession: {
     rememberMe: false,
@@ -256,6 +290,40 @@ function normalizeMediaJobConcurrencySettings(value = {}) {
     upload: clampNumber(input.upload, 1, 16, defaults.upload),
     download: clampNumber(input.download, 1, 32, defaults.download),
     backup: clampNumber(input.backup, 1, 4, defaults.backup)
+  };
+}
+
+function normalizeAiProvider(value, fallback) {
+  const provider = String(value || '').trim().toLowerCase();
+  if (provider === 'ollama' || provider === 'local-transformers' || provider === 'openai') return provider;
+  return fallback;
+}
+
+function normalizeAiModelConfig(value = {}, defaults = {}) {
+  const input = value && typeof value === 'object' ? value : {};
+  const provider = normalizeAiProvider(input.provider, defaults.provider || 'ollama');
+  const rawModelDir = String(input.modelDir || input.model_dir || defaults.modelDir || '').trim();
+  const modelDir = rawModelDir === LEGACY_MARIAN_TRANSLATION_MODEL_DIR
+    ? DEFAULT_MARIAN_TRANSLATION_MODEL_DIR
+    : rawModelDir;
+  return {
+    enabled: Object.prototype.hasOwnProperty.call(input, 'enabled') ? Boolean(input.enabled) : defaults.enabled !== false,
+    provider,
+    model: String(input.model || defaults.model || '').trim(),
+    baseUrl: String(input.baseUrl || input.base_url || defaults.baseUrl || '').trim().replace(/\/+$/, ''),
+    modelDir,
+    keepAlive: String(input.keepAlive || input.keep_alive || defaults.keepAlive || '').trim(),
+    timeoutMs: clampNumber(input.timeoutMs ?? input.timeout_ms, 30_000, 60 * 60 * 1000, defaults.timeoutMs || 10 * 60 * 1000)
+  };
+}
+
+function normalizeAiModelsSettings(value = {}) {
+  const defaults = DEFAULT_ADMIN_SETTINGS.aiModels;
+  const input = value && typeof value === 'object' ? value : {};
+  return {
+    metadata: normalizeAiModelConfig(input.metadata, defaults.metadata),
+    subtitleTranslation: normalizeAiModelConfig(input.subtitleTranslation || input.subtitle_translation, defaults.subtitleTranslation),
+    summary: normalizeAiModelConfig(input.summary, defaults.summary)
   };
 }
 
@@ -757,6 +825,7 @@ function normalizeSubtitleLang(value) {
 
 function normalizeSubtitleBackend(value) {
   const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'translate' || raw === 'translation' || raw === 'marian') return 'translate';
   return raw === 'whisperx' ? 'whisperx' : 'whisper';
 }
 
@@ -3205,6 +3274,8 @@ function buildSubtitleDbRequestPayload(job) {
     model: String(job.model || WHISPER_MODEL || 'small'),
     subtitleLang: normalizeSubtitleLang(job.subtitleLang),
     subtitleLabel: String(job.subtitleLabel || 'auto-whisper'),
+    sourceSubtitleUrl: String(job.sourceSubtitleUrl || ''),
+    targetLang: normalizeSubtitleLang(job.targetLang || job.subtitleLang),
     turkishAiCorrect: Boolean(job.turkishAiCorrect),
     useZemberekLexicon: Boolean(job.useZemberekLexicon),
     audioStreamIndex: Number.isFinite(Number(job.audioStreamIndex)) ? Number(job.audioStreamIndex) : null,
@@ -3218,6 +3289,8 @@ function buildSubtitleDbResultPayload(job) {
     subtitleUrl: String(job.subtitleUrl || ''),
     subtitleLang: normalizeSubtitleLang(job.subtitleLang),
     subtitleLabel: String(job.subtitleLabel || ''),
+    sourceSubtitleUrl: String(job.sourceSubtitleUrl || ''),
+    targetLang: normalizeSubtitleLang(job.targetLang || job.subtitleLang),
     model: String(job.model || WHISPER_MODEL || 'small'),
     subtitleBackend: normalizeSubtitleBackend(job.subtitleBackend || job.subtitleBackendRequested),
     warning: String(job.warning || ''),
@@ -6289,13 +6362,194 @@ function queueSubtitleGenerationJob(row, options = {}) {
   return job;
 }
 
+function findSubtitleItemForTranslation(row, requestedUrl = '') {
+  const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
+  const items = sanitizeSubtitleItems(dc.subtitleItems);
+  const sourceUrl = String(requestedUrl || dc.subtitleUrl || '').trim();
+  if (sourceUrl) {
+    const exact = items.find((item) => String(item.subtitleUrl || '').trim() === sourceUrl);
+    if (exact) return exact;
+    return {
+      subtitleUrl: sourceUrl,
+      subtitleLang: normalizeSubtitleLang(dc.subtitleLang || 'en'),
+      subtitleLabel: String(dc.subtitleLabel || 'subtitle').trim() || 'subtitle'
+    };
+  }
+  return items.find((item) => normalizeSubtitleLang(item.subtitleLang).startsWith('en')) || items[0] || null;
+}
+
+function queueSubtitleTranslationJob(row, options = {}) {
+  const sourceItem = findSubtitleItemForTranslation(row, options.sourceSubtitleUrl);
+  if (!sourceItem || !String(sourceItem.subtitleUrl || '').trim()) {
+    throw new Error('No source subtitle found for this asset');
+  }
+  const sourceSubtitleUrl = String(sourceItem.subtitleUrl || '').trim();
+  const sourcePath = publicUploadUrlToAbsolutePath(sourceSubtitleUrl);
+  if (!sourcePath || !fs.existsSync(sourcePath)) {
+    throw new Error('Source subtitle file is missing on disk');
+  }
+  const ext = path.extname(sourcePath).toLowerCase();
+  if (ext !== '.vtt' && ext !== '.srt') {
+    throw new Error('Only .srt and .vtt subtitle files can be translated');
+  }
+
+  const modelConfig = options.modelConfig && typeof options.modelConfig === 'object' ? options.modelConfig : {};
+  const model = String(options.model || modelConfig.model || DEFAULT_MARIAN_TRANSLATION_MODEL).trim() || DEFAULT_MARIAN_TRANSLATION_MODEL;
+  const rawModelDir = String(options.modelDir || modelConfig.modelDir || DEFAULT_MARIAN_TRANSLATION_MODEL_DIR).trim() || DEFAULT_MARIAN_TRANSLATION_MODEL_DIR;
+  const modelDir = rawModelDir === LEGACY_MARIAN_TRANSLATION_MODEL_DIR
+    ? DEFAULT_MARIAN_TRANSLATION_MODEL_DIR
+    : rawModelDir;
+  const targetLang = normalizeSubtitleLang(options.targetLang || 'tr');
+  const baseLabel = String(options.label || sourceItem.subtitleLabel || path.basename(sourcePath, ext) || 'subtitle').trim() || 'subtitle';
+  const subtitleLabel = baseLabel.toLocaleLowerCase('tr-TR').includes('tr') ? baseLabel : `${baseLabel}_TR`;
+  const jobId = nanoid();
+  const now = new Date().toISOString();
+  const job = {
+    jobId,
+    assetId: row.id,
+    status: 'queued',
+    model,
+    modelDir,
+    sourceSubtitleUrl,
+    targetLang,
+    subtitleLang: targetLang,
+    subtitleLabel,
+    subtitleUrl: '',
+    subtitleBackendRequested: 'translate',
+    subtitleBackend: 'translate',
+    warning: '',
+    error: '',
+    progress: 5,
+    progressPhase: 'queued',
+    createdAt: now,
+    startedAt: '',
+    updatedAt: now,
+    finishedAt: ''
+  };
+  subtitleJobs.set(jobId, job);
+  upsertMediaProcessingJobSafe({
+    jobId: job.jobId,
+    assetId: job.assetId,
+    jobType: 'subtitle',
+    status: job.status,
+    requestPayload: buildSubtitleDbRequestPayload(job),
+    resultPayload: buildSubtitleDbResultPayload(job),
+    errorText: job.error,
+    progress: job.progress,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    startedAt: '',
+    finishedAt: ''
+  });
+
+  scheduleMediaJobRun('subtitle', jobId, async () => {
+    const running = subtitleJobs.get(jobId);
+    if (!running) return;
+    if (isMediaJobCancelled(jobId) || running.status === 'cancelled') return;
+    running.status = 'running';
+    running.progress = 10;
+    running.progressPhase = 'preparing';
+    running.startedAt = running.startedAt || new Date().toISOString();
+    running.updatedAt = running.startedAt;
+    await upsertMediaProcessingJobSafe({
+      jobId: running.jobId,
+      assetId: running.assetId,
+      jobType: 'subtitle',
+      status: running.status,
+      requestPayload: buildSubtitleDbRequestPayload(running),
+      resultPayload: buildSubtitleDbResultPayload(running),
+      errorText: running.error,
+      progress: running.progress,
+      createdAt: running.createdAt,
+      updatedAt: running.updatedAt,
+      startedAt: running.startedAt || running.updatedAt,
+      finishedAt: ''
+    });
+
+    try {
+      const storedName = `${Date.now()}-${nanoid()}-${sanitizeFileName(row.id)}-translated-tr.vtt`;
+      const subtitleOut = buildArtifactPath('subtitles', storedName, row.created_at);
+      const result = await runCommandCapture('python3', [
+        path.join(__dirname, 'translate_subtitle_marian.py'),
+        '--input', sourcePath,
+        '--output', subtitleOut.absolutePath,
+        '--model-dir', running.modelDir,
+        '--model-name', running.model,
+        '--batch-size', String(Math.max(1, Math.min(64, Number(options.batchSize) || 16)))
+      ], {
+        jobId: running.jobId,
+        onProgress: (progress, phase) => persistLiveMediaJobProgress(running, 'subtitle', progress, phase)
+      });
+      if (isMediaJobCancelled(running.jobId)) throw new Error('Media job cancelled');
+      if (!result.ok || !fs.existsSync(subtitleOut.absolutePath)) {
+        throw new Error(compactCommandOutput(result.stderr || result.stdout || 'Subtitle translation failed'));
+      }
+      const generatedCueCount = countGeneratedSubtitleCues(subtitleOut.absolutePath);
+      if (!generatedCueCount) throw new Error('Translated subtitle did not contain any cues');
+      persistLiveMediaJobProgress(running, 'subtitle', 96, 'saving');
+      const subtitleUrl = subtitleOut.publicUrl;
+      const updatedRow = await saveAssetSubtitleMetadata(row.id, row, subtitleUrl, targetLang, subtitleLabel);
+      await syncSubtitleCueIndexForAssetRow(updatedRow);
+      running.status = 'completed';
+      running.progress = 100;
+      running.progressPhase = 'completed';
+      running.subtitleUrl = subtitleUrl;
+      running.subtitleLang = targetLang;
+      running.subtitleLabel = subtitleLabel;
+      running.asset = mapAssetRow(updatedRow);
+      running.finishedAt = new Date().toISOString();
+      running.updatedAt = running.finishedAt;
+      await upsertMediaProcessingJobSafe({
+        jobId: running.jobId,
+        assetId: running.assetId,
+        jobType: 'subtitle',
+        status: running.status,
+        requestPayload: buildSubtitleDbRequestPayload(running),
+        resultPayload: buildSubtitleDbResultPayload(running),
+        errorText: running.error,
+        progress: running.progress,
+        createdAt: running.createdAt,
+        updatedAt: running.updatedAt,
+        startedAt: running.startedAt || running.createdAt,
+        finishedAt: running.finishedAt
+      });
+    } catch (error) {
+      const cancelled = isMediaJobCancelled(running.jobId) || running.status === 'cancelled';
+      running.status = cancelled ? 'cancelled' : 'failed';
+      running.progressPhase = cancelled ? 'cancelled' : 'failed';
+      running.error = cancelled ? 'Cancelled by administrator' : String(error?.message || 'Subtitle translation failed').slice(0, 800);
+      running.finishedAt = new Date().toISOString();
+      running.updatedAt = running.finishedAt;
+      await upsertMediaProcessingJobSafe({
+        jobId: running.jobId,
+        assetId: running.assetId,
+        jobType: 'subtitle',
+        status: running.status,
+        requestPayload: buildSubtitleDbRequestPayload(running),
+        resultPayload: buildSubtitleDbResultPayload(running),
+        errorText: running.error,
+        progress: Number(running.progress || 0),
+        createdAt: running.createdAt,
+        updatedAt: running.updatedAt,
+        startedAt: running.startedAt || running.createdAt,
+        finishedAt: running.finishedAt
+      });
+    } finally {
+      clearMediaJobRuntime(running.jobId);
+    }
+  });
+
+  return job;
+}
+
 async function getAdminSettings() {
   const result = await pool.query("SELECT value FROM admin_settings WHERE key = 'general' LIMIT 1");
   if (!result.rowCount) {
     return {
       ...DEFAULT_ADMIN_SETTINGS,
       subtitleStyle: normalizeSubtitleStyle(DEFAULT_ADMIN_SETTINGS.subtitleStyle),
-      mediaJobConcurrency: normalizeMediaJobConcurrencySettings(DEFAULT_ADMIN_SETTINGS.mediaJobConcurrency)
+      mediaJobConcurrency: normalizeMediaJobConcurrencySettings(DEFAULT_ADMIN_SETTINGS.mediaJobConcurrency),
+      aiModels: normalizeAiModelsSettings(DEFAULT_ADMIN_SETTINGS.aiModels)
     };
   }
   const value = result.rows[0].value;
@@ -6303,7 +6557,8 @@ async function getAdminSettings() {
     return {
       ...DEFAULT_ADMIN_SETTINGS,
       subtitleStyle: normalizeSubtitleStyle(DEFAULT_ADMIN_SETTINGS.subtitleStyle),
-      mediaJobConcurrency: normalizeMediaJobConcurrencySettings(DEFAULT_ADMIN_SETTINGS.mediaJobConcurrency)
+      mediaJobConcurrency: normalizeMediaJobConcurrencySettings(DEFAULT_ADMIN_SETTINGS.mediaJobConcurrency),
+      aiModels: normalizeAiModelsSettings(DEFAULT_ADMIN_SETTINGS.aiModels)
     };
   }
   return {
@@ -6317,6 +6572,7 @@ async function getAdminSettings() {
     auditRetentionDays: normalizeAuditRetentionDays(value.auditRetentionDays),
     mediaJobRetentionDays: normalizeMediaJobRetentionDays(value.mediaJobRetentionDays),
     mediaJobConcurrency: normalizeMediaJobConcurrencySettings(value.mediaJobConcurrency),
+    aiModels: normalizeAiModelsSettings(value.aiModels),
     authSession: normalizeAuthSessionSettings(value.authSession),
     backup: normalizeBackupSettings(value.backup)
   };
@@ -7745,6 +8001,21 @@ const assetEditLockService = createAssetEditLockService({
   pool,
   ttlSeconds: Number(process.env.ASSET_EDIT_LOCK_TTL_SECONDS || 900)
 });
+const metadataEnrichmentService = createMetadataEnrichmentService({
+  pool,
+  nanoid,
+  runCommandCapture,
+  buildArtifactPath,
+  publicUploadUrlToAbsolutePath,
+  extractPreviewContentFromFile,
+  extractVideoOcrFrameTextPaddle,
+  queueSubtitleGenerationJob,
+  subtitleJobs,
+  upsertMediaProcessingJobSafe,
+  indexAssetToElastic,
+  getMediaJobConcurrencyLimit,
+  getAiModelSettings: async () => (await getAdminSettings()).aiModels
+});
 const DOCUMENT_RIGHTS_ADMIN_GROUPS = String(process.env.MAM_DOCUMENT_ADMIN_GROUPS || 'dokadmin,dokyonet,dokyönet,dokyon,dokyön')
   .split(',')
   .map((value) => normalizeIdentityKey(value.replace(/^\/+/, '').trim()))
@@ -9113,6 +9384,7 @@ registerAdminRoutes(app, {
   normalizeAuditRetentionDays,
   normalizeMediaJobRetentionDays,
   normalizeMediaJobConcurrencySettings,
+  normalizeAiModelsSettings,
   normalizeAuthSessionSettings,
   applyKeycloakAuthSessionSettings,
   cleanupAuditEvents,
@@ -9151,6 +9423,7 @@ registerAdminRoutes(app, {
   getAssetStoredFileHash,
   findDuplicateAssetByHash,
   buildDuplicateAssetPayload,
+  metadataEnrichmentService,
   sanitizeFileName,
   inferMimeTypeFromFileName,
   inferAssetType,
@@ -9197,6 +9470,7 @@ registerTextProcessingRoutes(app, {
   WHISPER_MODEL,
   normalizeSubtitleBackend,
   queueSubtitleGenerationJob,
+  queueSubtitleTranslationJob,
   subtitleJobs,
   getMediaProcessingJobById,
   mapSubtitleJobFromDbRow,
@@ -9224,6 +9498,7 @@ registerTextProcessingRoutes(app, {
   normalizeOcrEngine,
   assetAccessService,
   resolveEffectivePermissions,
+  getAdminSettings,
   nanoid
 });
 

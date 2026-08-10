@@ -1436,6 +1436,15 @@ body {
   padding-right: 6px;
 }
 
+.settings-inline-grid.ai-model-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.settings-inline-grid.ai-model-grid input,
+.settings-inline-grid.ai-model-grid select {
+  width: 100%;
+}
+
 .toggle-row input {
   width: 18px;
   height: 18px;

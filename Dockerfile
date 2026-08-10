@@ -10,6 +10,7 @@ ENV NODE_ENV=production \
   PYTHONDONTWRITEBYTECODE=1 \
   MAM_OFFLINE_MODE=true \
   MAM_MODEL_CACHE_DIR=/opt/mam-models \
+  MAM_MARIAN_MODEL_DIR=/opt/mam-models/marian/opus-mt-tc-big-en-tr \
   HF_HOME=/opt/mam-models/huggingface \
   HF_HUB_CACHE=/opt/mam-models/huggingface/hub \
   TRANSFORMERS_CACHE=/opt/mam-models/huggingface/transformers \
@@ -38,7 +39,7 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
   pip3 install --break-system-packages --retries 5 --default-timeout=300 requests faster-whisper==1.1.1 opencv-python-headless==4.10.0.84 numpy==1.26.4
 
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
-  pip3 install --break-system-packages --retries 5 --default-timeout=300 torch==2.5.1 torchaudio==2.5.1 whisperx==3.3.1
+  pip3 install --break-system-packages --retries 5 --default-timeout=300 torch==2.6.0 torchaudio==2.6.0 whisperx==3.3.1
 
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
   arch="${TARGETARCH}" \
@@ -56,6 +57,7 @@ FROM ml-deps AS deps
 ARG INSTALL_LIBREOFFICE=false
 ARG PRELOAD_ML_MODELS=false
 ARG PRELOAD_PADDLE_OCR=false
+ARG PRELOAD_MARIAN_TRANSLATION=false
 ARG WHISPER_MODEL=small
 ARG HF_TOKEN=""
 
@@ -80,9 +82,9 @@ RUN --mount=type=cache,target=/root/.npm,sharing=locked \
 
 COPY scripts/prepare_offline_models.py ./scripts/prepare_offline_models.py
 
-RUN mkdir -p /opt/mam-models/huggingface /opt/mam-models/paddle \
+RUN mkdir -p /opt/mam-models/huggingface /opt/mam-models/paddle /opt/mam-models/marian \
   && if [ "$PRELOAD_ML_MODELS" = "true" ]; then \
-      python3 scripts/prepare_offline_models.py --whisper-model "$WHISPER_MODEL" $(if [ "$PRELOAD_PADDLE_OCR" = "true" ]; then printf '%s' "--paddle-ocr"; else printf '%s' "--skip-paddle-ocr"; fi); \
+      python3 scripts/prepare_offline_models.py --whisper-model "$WHISPER_MODEL" $(if [ "$PRELOAD_PADDLE_OCR" = "true" ]; then printf '%s' "--paddle-ocr"; else printf '%s' "--skip-paddle-ocr"; fi) $(if [ "$PRELOAD_MARIAN_TRANSLATION" = "true" ]; then printf '%s' "--marian-model"; fi); \
     else \
       echo "Skipping offline model preload. Set PRELOAD_ML_MODELS=true to bake model caches into the image."; \
     fi

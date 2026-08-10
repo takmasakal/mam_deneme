@@ -20,6 +20,7 @@ function registerTextProcessingRoutes(app, deps) {
     WHISPER_MODEL,
     normalizeSubtitleBackend,
     queueSubtitleGenerationJob,
+    queueSubtitleTranslationJob,
     subtitleJobs,
     getMediaProcessingJobById,
     mapSubtitleJobFromDbRow,
@@ -47,6 +48,7 @@ function registerTextProcessingRoutes(app, deps) {
     normalizeOcrEngine,
     assetAccessService,
     resolveEffectivePermissions,
+    getAdminSettings,
     nanoid
   } = deps;
 
@@ -203,6 +205,46 @@ function registerTextProcessingRoutes(app, deps) {
       });
     } catch (_error) {
       return res.status(500).json({ error: 'Failed to generate subtitle' });
+    }
+  });
+
+  app.post('/api/assets/:id/subtitles/translate', async (req, res) => {
+    try {
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) {
+        return res.status(loaded.status).json({ error: loaded.error });
+      }
+      const row = loaded.row;
+      if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+        return res.status(400).json({ error: 'Subtitle translation is supported only for video assets' });
+      }
+      if (typeof queueSubtitleTranslationJob !== 'function') {
+        return res.status(500).json({ error: 'Subtitle translation service is not available' });
+      }
+      const settings = typeof getAdminSettings === 'function' ? await getAdminSettings() : {};
+      const modelConfig = settings?.aiModels?.subtitleTranslation || {};
+      if (modelConfig.enabled === false) {
+        return res.status(400).json({ error: 'Subtitle translation model is disabled' });
+      }
+      const job = queueSubtitleTranslationJob(row, {
+        sourceSubtitleUrl: req.body?.subtitleUrl,
+        targetLang: req.body?.targetLang || 'tr',
+        label: req.body?.label,
+        batchSize: req.body?.batchSize,
+        modelConfig
+      });
+      return res.status(202).json({
+        jobId: job.jobId,
+        status: job.status,
+        sourceSubtitleUrl: job.sourceSubtitleUrl || '',
+        subtitleLang: job.subtitleLang || 'tr',
+        subtitleLabel: job.subtitleLabel || '',
+        model: job.model || '',
+        subtitleBackend: normalizeSubtitleBackend(job.subtitleBackend || job.subtitleBackendRequested),
+        warning: String(job.warning || '')
+      });
+    } catch (error) {
+      return res.status(500).json({ error: String(error?.message || 'Failed to translate subtitle') });
     }
   });
   
