@@ -335,6 +335,14 @@ async function initDb() {
       updated_at TIMESTAMPTZ NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS user_preferences (
+      username TEXT NOT NULL,
+      key TEXT NOT NULL,
+      value JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL,
+      PRIMARY KEY (username, key)
+    );
+
     CREATE TABLE IF NOT EXISTS audit_events (
       id TEXT PRIMARY KEY,
       created_at TIMESTAMPTZ NOT NULL,

@@ -2374,6 +2374,7 @@ const advancedSearchModule = typeof window.createMainAdvancedSearchModule === 'f
     searchForm,
     assetTypeFilters,
     t,
+    api,
     loadAssets,
     updateClearSearchButtonState,
     canUseAdvancedSearch: () => currentUserCanAccessAdvancedSearch,

@@ -16,6 +16,7 @@
       searchForm,
       t = (key) => key,
       loadAssets,
+      api,
       assetTypeFilters = [],
       updateClearSearchButtonState = () => {},
       canUseAdvancedSearch = () => true,
@@ -34,6 +35,8 @@
     let advancedTypeValue = '';
     let lastSelectedSortValue = '';
     let storageKey = getStorageKey(initialUserIdentity);
+    let savedItems = [];
+    let savedLoaded = false;
     let enabled = false;
 
     function getStorageKey(identity) {
@@ -42,6 +45,7 @@
     }
 
     function readSaved() {
+      if (savedLoaded) return savedItems.slice(0, 5);
       try {
         const parsed = JSON.parse(localStorage.getItem(storageKey) || '[]');
         return Array.isArray(parsed) ? parsed.filter((item) => item && typeof item === 'object').slice(0, 5) : [];
@@ -51,7 +55,60 @@
     }
 
     function writeSaved(items) {
-      try { localStorage.setItem(storageKey, JSON.stringify(items.slice(0, 5))); } catch (_error) { /* storage is optional */ }
+      savedItems = normalizeSavedItems(items);
+      savedLoaded = true;
+      try { localStorage.setItem(storageKey, JSON.stringify(savedItems)); } catch (_error) { /* storage is optional */ }
+      persistSaved().catch(() => {});
+    }
+
+    function normalizeSavedItems(items) {
+      return (Array.isArray(items) ? items : [])
+        .filter((item) => item && typeof item === 'object')
+        .slice(0, 5)
+        .map((item) => ({
+          name: String(item.name || '').trim().slice(0, 80),
+          state: item.state && typeof item.state === 'object' ? item.state : {},
+          values: item.values && typeof item.values === 'object' ? item.values : {}
+        }))
+        .filter((item) => item.name);
+    }
+
+    function readLocalSaved() {
+      try {
+        return normalizeSavedItems(JSON.parse(localStorage.getItem(storageKey) || '[]'));
+      } catch (_error) {
+        return [];
+      }
+    }
+
+    async function loadSavedFromServer() {
+      if (typeof api !== 'function') {
+        savedItems = readLocalSaved();
+        savedLoaded = true;
+        refreshSavedOptions();
+        return;
+      }
+      try {
+        const result = await api('/api/user-preferences/advanced-searches');
+        const remoteItems = normalizeSavedItems(result?.searches || []);
+        const localItems = readLocalSaved();
+        savedItems = remoteItems.length ? remoteItems : localItems;
+        savedLoaded = true;
+        if (!remoteItems.length && localItems.length) await persistSaved();
+        refreshSavedOptions();
+      } catch (_error) {
+        savedItems = readLocalSaved();
+        savedLoaded = true;
+        refreshSavedOptions();
+      }
+    }
+
+    async function persistSaved() {
+      if (typeof api !== 'function' || !savedLoaded) return;
+      await api('/api/user-preferences/advanced-searches', {
+        method: 'PUT',
+        body: JSON.stringify({ searches: savedItems })
+      });
     }
 
     function fieldValue(field) {
@@ -457,6 +514,7 @@
     function open() {
       if (!canUseAdvancedSearch()) return;
       enabled = true;
+      if (!savedLoaded) loadSavedFromServer().catch(() => {});
       let savedValues = {};
       try { savedValues = JSON.parse(fieldValue('advancedSearch') || '{}')?.values || {}; } catch (_error) { /* ignore invalid old state */ }
       const savedType = savedValues.type || '';
@@ -585,8 +643,11 @@
 
     function setUserIdentity(identity) {
       storageKey = getStorageKey(identity);
+      savedItems = [];
+      savedLoaded = false;
       if (savedSelect) savedSelect.value = '';
       refreshSavedOptions();
+      loadSavedFromServer().catch(() => {});
     }
 
     function refreshLanguage() {
@@ -673,6 +734,7 @@
         syncHiddenInput();
       });
       refreshSavedOptions();
+      loadSavedFromServer().catch(() => {});
       syncHiddenInput();
     }
 

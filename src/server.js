@@ -8767,6 +8767,60 @@ app.get('/api/ui-settings', async (_req, res) => {
   }
 });
 
+function normalizeUserPreferenceIdentity(req) {
+  const user = buildUserContextFromRequest(req);
+  const raw = String(user.username || user.email || user.displayName || '').trim().toLowerCase();
+  return raw || '';
+}
+
+function normalizeAdvancedSearchPreferences(value) {
+  const items = Array.isArray(value) ? value : [];
+  return items
+    .filter((item) => item && typeof item === 'object')
+    .slice(0, 5)
+    .map((item) => ({
+      name: String(item.name || '').trim().slice(0, 80),
+      state: item.state && typeof item.state === 'object' ? item.state : {},
+      values: item.values && typeof item.values === 'object' ? item.values : {}
+    }))
+    .filter((item) => item.name);
+}
+
+app.get('/api/user-preferences/advanced-searches', async (req, res) => {
+  try {
+    const username = normalizeUserPreferenceIdentity(req);
+    if (!username) return res.status(401).json({ error: 'Authentication required' });
+    const result = await pool.query(
+      "SELECT value FROM user_preferences WHERE username = $1 AND key = 'advanced_searches' LIMIT 1",
+      [username]
+    );
+    return res.json({ searches: normalizeAdvancedSearchPreferences(result.rows[0]?.value || []) });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to load advanced search preferences' });
+  }
+});
+
+app.put('/api/user-preferences/advanced-searches', async (req, res) => {
+  try {
+    const username = normalizeUserPreferenceIdentity(req);
+    if (!username) return res.status(401).json({ error: 'Authentication required' });
+    const searches = normalizeAdvancedSearchPreferences(req.body?.searches || []);
+    const updatedAt = new Date().toISOString();
+    await pool.query(
+      `
+        INSERT INTO user_preferences (username, key, value, updated_at)
+        VALUES ($1, 'advanced_searches', $2::jsonb, $3)
+        ON CONFLICT (username, key)
+        DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
+      `,
+      [username, JSON.stringify(searches), updatedAt]
+    );
+    return res.json({ searches });
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to save advanced search preferences' });
+  }
+});
+
 function normalizeTrashScope(value, fallback = 'active') {
   const raw = String(value || fallback).trim().toLowerCase();
   return ['active', 'trash', 'all'].includes(raw) ? raw : fallback;
