@@ -374,6 +374,7 @@ let i18n = {
     asset_uploaded: 'Asset uploaded',
     upload_finished: 'Upload finished',
     upload_failed: 'Upload failed',
+    search_loading: 'Searching...',
     btn_apply_filters: 'Apply Filters',
     search_result_count: '{count} matches',
     no_assets: 'No assets found.',
@@ -763,6 +764,7 @@ let i18n = {
     asset_uploaded: 'Varlık yüklendi',
     upload_finished: 'yükleme bitti',
     upload_failed: 'yükleme başarısız',
+    search_loading: 'Aranıyor...',
     btn_apply_filters: 'Filtreleri Uygula',
     search_result_count: '{count} eslesme',
     no_assets: 'Varlık bulunamadı.',
@@ -2342,6 +2344,7 @@ const assetsModule = window.createMainAssetsModule({
   syncOcrQueryInputs,
   ocrQueryInput,
   renderAssets: renderAssetsPage,
+  assetGrid,
   getAssetPagingRequest: (...args) => assetBrowserModule.getAssetPagingRequest(...args),
   currentAssetsRef: {
     get value() { return currentAssets; },

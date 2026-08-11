@@ -57,6 +57,10 @@ const {
   inferMimeTypeFromFileName
 } = require('./utils/files');
 const {
+  normalizedTextHasLongSuffixTerm,
+  longSuffixPostgresRegex
+} = require('./services/searchTokenService');
+const {
   proxyJobs,
   subtitleJobs,
   videoOcrJobs,
@@ -645,6 +649,7 @@ function parseSearchTokens(value, normalizeFn = (input) => String(input || '').t
   const mustIncludeExact = [];
   const mustExclude = [];
   const mustExcludeExact = [];
+  const mustExcludeLongSuffix = [];
   const optional = [];
   const optionalExact = [];
   let hasOperators = false;
@@ -664,7 +669,10 @@ function parseSearchTokens(value, normalizeFn = (input) => String(input || '').t
     const strippedValue = (prefix === '+' || prefix === '-') && !isQuoted
       ? tokenRaw.slice(1)
       : tokenRaw;
-    const normalizedToken = normalizeFn(strippedValue);
+    const longSuffixValue = !isQuoted && prefix === '-' && strippedValue.startsWith('?*')
+      ? strippedValue.slice(2)
+      : '';
+    const normalizedToken = normalizeFn(longSuffixValue || strippedValue);
     if (!normalizedToken) continue;
 
     const pushUnique = (bucket, valueToPush) => {
@@ -682,6 +690,10 @@ function parseSearchTokens(value, normalizeFn = (input) => String(input || '').t
     }
     if (prefix === '-') {
       hasOperators = true;
+      if (longSuffixValue) {
+        pushUnique(mustExcludeLongSuffix, normalizedToken);
+        continue;
+      }
       pushUnique(isQuoted ? mustExcludeExact : mustExclude, normalizedToken);
       continue;
     }
@@ -698,13 +710,14 @@ function parseSearchTokens(value, normalizeFn = (input) => String(input || '').t
 
   return {
     raw: sawOrOperator
-      ? [...mustInclude, ...mustIncludeExact, ...mustExclude, ...mustExcludeExact, ...optional, ...optionalExact].join(' ').trim()
+      ? [...mustInclude, ...mustIncludeExact, ...mustExclude, ...mustExcludeExact, ...mustExcludeLongSuffix, ...optional, ...optionalExact].join(' ').trim()
       : normalizeFn(raw),
     hasOperators,
     mustInclude,
     mustIncludeExact,
     mustExclude,
     mustExcludeExact,
+    mustExcludeLongSuffix,
     optional,
     optionalExact
   };
@@ -1071,6 +1084,8 @@ function ocrLineMatchesParsedQuery(line, parsedQuery) {
   if (!excludesForbidden) return false;
   const excludesForbiddenExact = parsedQuery.mustExcludeExact.every((term) => !normalizedTextHasExactTerm(comparable, term));
   if (!excludesForbiddenExact) return false;
+  const excludesLongSuffix = (parsedQuery.mustExcludeLongSuffix || []).every((term) => !normalizedTextHasLongSuffixTerm(comparable, term));
+  if (!excludesLongSuffix) return false;
   const optionalHit = parsedQuery.optional.some((term) => comparable.includes(term));
   const optionalExactHit = parsedQuery.optionalExact.some((term) => normalizedTextHasExactTerm(comparable, term));
   if (parsedQuery.optional.length === 0 && parsedQuery.optionalExact.length === 0) return true;
@@ -1466,7 +1481,9 @@ const subtitleService = createSubtitleService({
   normalizeComparableOcr,
   parseSearchTokens,
   exactNormalizedTextRegex,
-  normalizedTextHasExactTerm
+  normalizedTextHasExactTerm,
+  normalizedTextHasLongSuffixTerm,
+  longSuffixPostgresRegex
 });
 const {
   normalizeSubtitleTime,
@@ -2472,6 +2489,8 @@ function assetTextMatchesParsedQuery(text, parsedQuery) {
   if (!excludesForbidden) return false;
   const excludesForbiddenExact = parsedQuery.mustExcludeExact.every((term) => !normalizedTextHasExactTerm(normalizedText, term));
   if (!excludesForbiddenExact) return false;
+  const excludesLongSuffix = (parsedQuery.mustExcludeLongSuffix || []).every((term) => !normalizedTextHasLongSuffixTerm(normalizedText, term));
+  if (!excludesLongSuffix) return false;
   const optionalTerms = parsedQuery.optional.filter((term) => normalizedText.includes(term));
   const optionalExactTerms = parsedQuery.optionalExact.filter((term) => normalizedTextHasExactTerm(normalizedText, term));
   if (parsedQuery.optional.length === 0 && parsedQuery.optionalExact.length === 0) return true;
@@ -9003,7 +9022,9 @@ async function queryAssetSuggestions(options = {}) {
   }
 
   let rows = [];
-  const rankedIds = await suggestAssetIdsElastic(q, limit * 3);
+  const rankedIds = (parsedQuery.mustExcludeLongSuffix || []).length
+    ? null
+    : await suggestAssetIdsElastic(q, limit * 3);
   if (Array.isArray(rankedIds) && rankedIds.length) {
     const rankedValues = [...baseValues];
     rankedValues.push(rankedIds);
@@ -9052,6 +9073,15 @@ async function queryAssetSuggestions(options = {}) {
       parsedQuery.mustIncludeExact.forEach((term) => appendAssetTextGroup(term, { exact: true }));
       parsedQuery.mustExclude.forEach((term) => appendAssetTextGroup(term, { negate: true }));
       parsedQuery.mustExcludeExact.forEach((term) => appendAssetTextGroup(term, { exact: true, negate: true }));
+      (parsedQuery.mustExcludeLongSuffix || []).forEach((term) => {
+        fallbackValues.push(longSuffixPostgresRegex(term));
+        const idx = fallbackValues.length;
+        qSearchClauses.push(`(
+          NOT (${sqlTextFold('title')} ~ $${idx})
+          AND NOT (${sqlTextFold('file_name')} ~ $${idx})
+          AND NOT (${sqlTextFold('owner')} ~ $${idx})
+        )`);
+      });
       if (parsedQuery.optional.length > 0 || parsedQuery.optionalExact.length > 0) {
         const optionalGroups = [];
         parsedQuery.optional.forEach((term) => {
@@ -9583,6 +9613,7 @@ registerAssetRoutes(app, {
   sqlTagFold,
   sqlTextFold,
   exactNormalizedTextRegex,
+  longSuffixPostgresRegex,
   buildAssetOrderClause,
   searchAssetIdsElastic,
   searchAssetsByFuzzyQuery,

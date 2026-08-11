@@ -10,6 +10,7 @@
       syncOcrQueryInputs,
       ocrQueryInput,
       renderAssets,
+      assetGrid,
       getAssetPagingRequest,
       currentAssetsRef,
       selectedAssetIdsRef,
@@ -18,6 +19,29 @@
       searchStateRef
     } = deps || {};
     let loadRequestSeq = 0;
+
+    function setAssetSearchLoading(visible) {
+      if (!assetGrid) return;
+      const existing = assetGrid.querySelector('.asset-search-loading-overlay');
+      if (!visible) {
+        assetGrid.classList.remove('is-search-loading');
+        existing?.remove();
+        return;
+      }
+      assetGrid.classList.add('is-search-loading');
+      if (existing) return;
+      const overlay = document.createElement('div');
+      overlay.className = 'asset-search-loading-overlay';
+      overlay.setAttribute('role', 'status');
+      overlay.setAttribute('aria-live', 'polite');
+      overlay.innerHTML = `
+        <div class="asset-search-loading-card">
+          <span class="asset-search-loading-spinner" aria-hidden="true"></span>
+          <span>${escapeHtml(t('search_loading') || 'Searching...')}</span>
+        </div>
+      `;
+      assetGrid.appendChild(overlay);
+    }
 
     function getSelectedAssetTypesForRequest() {
       const enabledFilters = assetTypeFilters.filter((el) => !el.disabled);
@@ -89,6 +113,19 @@
       if (isTypeFilterNarrowed && !hasAdvancedSearch) {
         params.set('types', selectedTypes.join(','));
       }
+      const shouldShowSearchLoading = Boolean(
+        searchStateRef.currentSearchQuery
+        || searchStateRef.currentOcrQuery
+        || searchStateRef.currentSubtitleQuery
+        || hasAdvancedSearch
+        || String(filters.tag || '').trim()
+        || String(filters.uploadDateFrom || '').trim()
+        || String(filters.uploadDateTo || '').trim()
+        || String(filters.sortBy || '').trim()
+        || String(filters.status || '').trim()
+        || trashScope !== 'active'
+        || isTypeFilterNarrowed
+      );
 
       const canUseServerPagination = !searchStateRef.currentSearchQuery
         && !searchStateRef.currentOcrQuery
@@ -98,7 +135,13 @@
         params.set('limit', String(paging.limit));
         params.set('offset', String(paging.offset));
       }
-      const result = await api(`/api/assets?${params.toString()}`);
+      if (shouldShowSearchLoading) setAssetSearchLoading(true);
+      let result;
+      try {
+        result = await api(`/api/assets?${params.toString()}`);
+      } finally {
+        if (requestSeq === loadRequestSeq) setAssetSearchLoading(false);
+      }
       if (requestSeq !== loadRequestSeq) return null;
       const payload = Array.isArray(result) ? { assets: result, searchMeta: {} } : (result || {});
       const pagination = payload.pagination && typeof payload.pagination === 'object'
