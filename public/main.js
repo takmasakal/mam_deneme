@@ -52,6 +52,7 @@ const LOGIN_LANG_COOKIE = 'mam.login.lang';
 const LOCAL_VIDEO_TOOLS_ORDER = 'mam.video.tools.order';
 const LOCAL_ASSET_VIEW_MODE = 'mam.assets.view.mode';
 const LOCAL_DETAIL_VIDEO_PIN = 'mam.detail.video.pin';
+const SESSION_VIDEO_TOOLS_RETURN_SEARCH = 'mam.videoTools.returnSearch';
 const selectedImageVersionIds = new Map();
 const SESSION_CURRENT_USER_LABEL = 'mam.current.user.label';
 const LOCAL_PERMISSION_REFRESH = 'mam.permissions.updated';
@@ -83,6 +84,35 @@ let subtitleStyleSettings = {
   horizontalPadding: 16,
   maxWidth: 82
 };
+
+function restoreVideoToolsReturnSearchState() {
+  if (isVideoToolsPageMode || (!requestedOpenAssetId && !requestedRestorePanels)) return;
+  const escapeSelector = (value) => (window.CSS && typeof window.CSS.escape === 'function'
+    ? window.CSS.escape(value)
+    : String(value).replace(/["\\]/g, '\\$&'));
+  let snapshot = null;
+  try {
+    snapshot = JSON.parse(sessionStorage.getItem(SESSION_VIDEO_TOOLS_RETURN_SEARCH) || 'null');
+    sessionStorage.removeItem(SESSION_VIDEO_TOOLS_RETURN_SEARCH);
+  } catch (_error) {
+    snapshot = null;
+  }
+  if (!snapshot || typeof snapshot !== 'object') return;
+  if (Date.now() - Number(snapshot.savedAt || 0) > 30 * 60 * 1000) return;
+  const fields = snapshot.fields && typeof snapshot.fields === 'object' ? snapshot.fields : {};
+  Object.entries(fields).forEach(([name, value]) => {
+    const field = searchForm?.querySelector(`[name="${escapeSelector(name)}"]`);
+    if (field && 'value' in field) field.value = String(value || '');
+  });
+  const selectedTypes = new Map((Array.isArray(snapshot.assetTypes) ? snapshot.assetTypes : [])
+    .map((item) => [String(item?.value || ''), Boolean(item?.checked)]));
+  if (selectedTypes.size) {
+    assetTypeFilters.forEach((input) => {
+      const value = String(input.value || '');
+      if (selectedTypes.has(value)) input.checked = Boolean(selectedTypes.get(value));
+    });
+  }
+}
 let detailVideoPinned = localStorage.getItem(LOCAL_DETAIL_VIDEO_PIN) !== '0';
 let commonModule = null;
 let detailModule = null;
@@ -3023,6 +3053,7 @@ function startCurrentUserPermissionRefresh() {
 
 function prepareInitialShell() {
     applyVideoToolsPageLayoutMode();
+    restoreVideoToolsReturnSearchState();
     currentLang = currentLang === 'tr' ? 'tr' : 'en';
     if (languageSelect) languageSelect.value = currentLang;
     applyStaticI18n();
