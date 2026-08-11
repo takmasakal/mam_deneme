@@ -1,3 +1,8 @@
+const {
+  reverseSearchToken,
+  reverseSearchTokens
+} = require('./searchTokenService');
+
 function createSearchService(deps) {
   const {
     pool,
@@ -13,6 +18,10 @@ function createSearchService(deps) {
 
   function escapeElasticQueryTerm(value) {
     return String(value || '').replace(/[\\*?]/g, '\\$&');
+  }
+
+  function escapeElasticRegexpTerm(value) {
+    return String(value || '').replace(/[.?+*|{}[\]()"\\#@&<>~]/g, '\\$&');
   }
 
   async function elasticRequest(method, endpoint, body) {
@@ -45,8 +54,23 @@ function createSearchService(deps) {
   }
 
   async function ensureElasticIndex() {
+    const suffixProperties = {
+      titleRev: { type: 'text' },
+      descriptionRev: { type: 'text' },
+      ownerRev: { type: 'text' },
+      typeRev: { type: 'text' },
+      statusRev: { type: 'text' },
+      tagsRev: { type: 'text' },
+      dcRev: { type: 'text' },
+      clipsRev: { type: 'text' }
+    };
     const exists = await elasticRequest('HEAD', `/${elasticIndex}`);
-    if (exists.ok) return true;
+    if (exists.ok) {
+      await elasticRequest('PUT', `/${elasticIndex}/_mapping`, {
+        properties: suffixProperties
+      });
+      return true;
+    }
 
     const create = await elasticRequest('PUT', `/${elasticIndex}`, {
       mappings: {
@@ -60,6 +84,7 @@ function createSearchService(deps) {
           tags: { type: 'text' },
           dc: { type: 'text' },
           clips: { type: 'text' },
+          ...suffixProperties,
           inTrash: { type: 'boolean' }
         }
       }
@@ -68,6 +93,9 @@ function createSearchService(deps) {
   }
 
   function mapAssetSearchDoc(row, cutLabels = []) {
+    const tags = Array.isArray(row.tags) ? row.tags.join(' ') : '';
+    const dc = JSON.stringify(row.dc_metadata || {});
+    const clips = (Array.isArray(cutLabels) ? cutLabels : []).map((label) => String(label || '')).join(' ');
     return {
       id: row.id,
       title: row.title || '',
@@ -75,9 +103,17 @@ function createSearchService(deps) {
       owner: row.owner || '',
       type: row.type || '',
       status: row.status || '',
-      tags: Array.isArray(row.tags) ? row.tags.join(' ') : '',
-      dc: JSON.stringify(row.dc_metadata || {}),
-      clips: (Array.isArray(cutLabels) ? cutLabels : []).map((label) => String(label || '')).join(' '),
+      tags,
+      dc,
+      clips,
+      titleRev: reverseSearchTokens(row.title || ''),
+      descriptionRev: reverseSearchTokens(row.description || ''),
+      ownerRev: reverseSearchTokens(row.owner || ''),
+      typeRev: reverseSearchTokens(row.type || ''),
+      statusRev: reverseSearchTokens(row.status || ''),
+      tagsRev: reverseSearchTokens(tags),
+      dcRev: reverseSearchTokens(dc),
+      clipsRev: reverseSearchTokens(clips),
       inTrash: Boolean(row.deleted_at)
     };
   }
@@ -108,6 +144,7 @@ function createSearchService(deps) {
     await ensureElasticIndex();
     const parsedQuery = parseTextSearchQuery(q, normalizeForSearch);
     const fields = ['title^4', 'description^2', 'owner^2', 'tags^2', 'dc', 'clips^3', 'type', 'status'];
+    const reverseFields = ['titleRev', 'descriptionRev', 'ownerRev', 'tagsRev', 'dcRev', 'clipsRev', 'typeRev', 'statusRev'];
     const buildElasticShouldClauses = (term) => ([
       { multi_match: { query: term, type: 'bool_prefix', fields, boost: 3 } },
       { match_phrase_prefix: { title: { query: term, boost: 6 } } },
@@ -130,6 +167,18 @@ function createSearchService(deps) {
         }
       }
     }));
+    const buildElasticLongSuffixClauses = (term) => {
+      const reversed = escapeElasticRegexpTerm(reverseSearchToken(term));
+      if (!reversed) return [];
+      return reverseFields.map((fieldName) => ({
+        regexp: {
+          [fieldName]: {
+            value: `${reversed}.+`,
+            case_insensitive: true
+          }
+        }
+      }));
+    };
     const result = await elasticRequest('POST', `/${elasticIndex}/_search`, {
       size: limit,
       query: {
@@ -140,7 +189,8 @@ function createSearchService(deps) {
           ],
           must_not: [
             ...parsedQuery.mustExclude.flatMap((term) => buildElasticWildcardClauses(term)),
-            ...parsedQuery.mustExcludeExact.flatMap((term) => buildElasticExactClauses(term))
+            ...parsedQuery.mustExcludeExact.flatMap((term) => buildElasticExactClauses(term)),
+            ...parsedQuery.mustExcludeLongSuffix.flatMap((term) => buildElasticLongSuffixClauses(term))
           ],
           should: [
             ...parsedQuery.optional.flatMap((term) => buildElasticShouldClauses(term)),
@@ -169,6 +219,7 @@ function createSearchService(deps) {
     await ensureElasticIndex();
     const parsedQuery = parseTextSearchQuery(q, normalizeForSearch);
     const simpleFields = ['title', 'owner', 'tags'];
+    const reverseSimpleFields = ['titleRev', 'ownerRev', 'tagsRev'];
     const buildWildcardClauses = (term) => simpleFields.map((fieldName) => ({
       wildcard: {
         [fieldName]: {
@@ -182,6 +233,18 @@ function createSearchService(deps) {
       { match_phrase: { owner: { query: term, boost: 4 } } },
       { match_phrase: { tags: { query: term, boost: 4 } } }
     ]);
+    const buildLongSuffixSuggestClauses = (term) => {
+      const reversed = escapeElasticRegexpTerm(reverseSearchToken(term));
+      if (!reversed) return [];
+      return reverseSimpleFields.map((fieldName) => ({
+        regexp: {
+          [fieldName]: {
+            value: `${reversed}.+`,
+            case_insensitive: true
+          }
+        }
+      }));
+    };
     const result = await elasticRequest('POST', `/${elasticIndex}/_search`, {
       size: Math.max(1, Math.min(20, Number(limit) || 10)),
       query: {
@@ -192,7 +255,8 @@ function createSearchService(deps) {
           ],
           must_not: [
             ...parsedQuery.mustExclude.flatMap((term) => buildWildcardClauses(term)),
-            ...parsedQuery.mustExcludeExact.flatMap((term) => buildExactSuggestClauses(term))
+            ...parsedQuery.mustExcludeExact.flatMap((term) => buildExactSuggestClauses(term)),
+            ...parsedQuery.mustExcludeLongSuffix.flatMap((term) => buildLongSuffixSuggestClauses(term))
           ],
           should: [
             ...parsedQuery.optional.flatMap((term) => ([

@@ -13,6 +13,7 @@
       syncOcrQueryInputs,
       ocrQueryInput,
       renderAssets,
+      assetGrid,
       currentAssetsRef,
       selectedAssetIdsRef,
       selectedAssetIdRef,
@@ -21,6 +22,29 @@
       assetPaginationRef
     } = deps || {};
     let loadRequestSeq = 0;
+
+    function setAssetSearchLoading(visible) {
+      if (!assetGrid) return;
+      const existing = assetGrid.querySelector('.asset-search-loading-overlay');
+      if (!visible) {
+        assetGrid.classList.remove('is-search-loading');
+        existing?.remove();
+        return;
+      }
+      assetGrid.classList.add('is-search-loading');
+      if (existing) return;
+      const overlay = document.createElement('div');
+      overlay.className = 'asset-search-loading-overlay';
+      overlay.setAttribute('role', 'status');
+      overlay.setAttribute('aria-live', 'polite');
+      overlay.innerHTML = `
+        <div class="asset-search-loading-card">
+          <span class="asset-search-loading-spinner" aria-hidden="true"></span>
+          <span>${escapeHtml(t('search_loading') || 'Searching...')}</span>
+        </div>
+      `;
+      assetGrid.appendChild(overlay);
+    }
 
     function getSelectedAssetTypesForRequest() {
       const enabledFilters = assetTypeFilters.filter((el) => !el.disabled);
@@ -100,6 +124,19 @@
       if (isTypeFilterNarrowed && !hasAdvancedSearch) {
         params.set('types', selectedTypes.join(','));
       }
+      const shouldShowSearchLoading = Boolean(
+        searchStateRef.currentSearchQuery
+        || searchStateRef.currentOcrQuery
+        || searchStateRef.currentSubtitleQuery
+        || hasAdvancedSearch
+        || String(filters.tag || '').trim()
+        || String(filters.uploadDateFrom || '').trim()
+        || String(filters.uploadDateTo || '').trim()
+        || String(filters.sortBy || '').trim()
+        || String(filters.status || '').trim()
+        || trashScope !== 'active'
+        || isTypeFilterNarrowed
+      );
       // Asset results must reflect the current filter state immediately; avoid
       // reusing a browser/proxy-cached response after applying a new search.
       params.set('_ts', String(Date.now()));
@@ -116,7 +153,13 @@
         params.set('offset', String(Math.max(0, (Number(pagination.page) - 1) * pageSize)));
       }
 
-      const result = await api(`/api/assets?${params.toString()}`);
+      if (shouldShowSearchLoading) setAssetSearchLoading(true);
+      let result;
+      try {
+        result = await api(`/api/assets?${params.toString()}`);
+      } finally {
+        if (requestSeq === loadRequestSeq) setAssetSearchLoading(false);
+      }
       // A slow earlier request must not overwrite a newer search result.
       if (requestSeq !== loadRequestSeq) return;
       const payload = Array.isArray(result) ? { assets: result, searchMeta: {} } : (result || {});

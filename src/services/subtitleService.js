@@ -4,7 +4,9 @@ function createSubtitleService(deps = {}) {
     normalizeComparableOcr,
     parseSearchTokens,
     exactNormalizedTextRegex,
-    normalizedTextHasExactTerm
+    normalizedTextHasExactTerm,
+    normalizedTextHasLongSuffixTerm,
+    longSuffixPostgresRegex
   } = deps;
   const normalizeCueText = typeof normalizeOcrText === 'function'
     ? normalizeOcrText
@@ -213,6 +215,12 @@ function createSubtitleService(deps = {}) {
       clauses.push(`NOT (${normColumn} ~ $${idx})`);
       idx += 1;
     });
+
+    (parsedQuery.mustExcludeLongSuffix || []).forEach((term) => {
+      params.push(longSuffixPostgresRegex(term));
+      clauses.push(`NOT (${normColumn} ~ $${idx})`);
+      idx += 1;
+    });
   
     if (parsedQuery.optional.length > 0) {
       const optionalClauses = [];
@@ -254,6 +262,8 @@ function createSubtitleService(deps = {}) {
     if (!excludesForbidden) return false;
     const excludesForbiddenExact = parsedQuery.mustExcludeExact.every((term) => !normalizedTextHasExactTerm(normalizedText, term));
     if (!excludesForbiddenExact) return false;
+    const excludesLongSuffix = (parsedQuery.mustExcludeLongSuffix || []).every((term) => !normalizedTextHasLongSuffixTerm(normalizedText, term));
+    if (!excludesLongSuffix) return false;
     const optionalTerms = parsedQuery.optional.filter((term) => normalizedText.includes(term));
     const optionalExactTerms = parsedQuery.optionalExact.filter((term) => normalizedTextHasExactTerm(normalizedText, term));
     if (parsedQuery.optional.length === 0 && parsedQuery.optionalExact.length === 0) return true;

@@ -33,6 +33,7 @@ function registerAssetRoutes(app, deps) {
     sqlTagFold,
     sqlTextFold,
     exactNormalizedTextRegex,
+    longSuffixPostgresRegex,
     buildAssetOrderClause,
     searchAssetIdsElastic,
     searchAssetsByFuzzyQuery,
@@ -468,6 +469,21 @@ function registerAssetRoutes(app, deps) {
           parsedQuery.mustIncludeExact.forEach((term) => pushAssetQueryGroup(term, { exact: true }));
           parsedQuery.mustExclude.forEach((term) => pushAssetQueryGroup(term, { negate: true }));
           parsedQuery.mustExcludeExact.forEach((term) => pushAssetQueryGroup(term, { exact: true, negate: true }));
+          (parsedQuery.mustExcludeLongSuffix || []).forEach((term) => {
+            params.push(longSuffixPostgresRegex(term));
+            const idx = baseValues.length + params.length;
+            clauses.push(`(
+              NOT (${sqlTextFold('title')} ~ $${idx})
+              AND NOT (${sqlTextFold('description')} ~ $${idx})
+              AND NOT (${sqlTextFold('owner')} ~ $${idx})
+              AND NOT (${sqlTextFold("dc_metadata::text")} ~ $${idx})
+              AND NOT EXISTS (
+                SELECT 1
+                FROM asset_cuts c
+                WHERE c.asset_id = assets.id AND ${sqlTextFold('c.label')} ~ $${idx}
+              )
+            )`);
+          });
           if (parsedQuery.optional.length > 0 || parsedQuery.optionalExact.length > 0) {
             const optionalGroups = [];
             parsedQuery.optional.forEach((term) => {
@@ -698,7 +714,10 @@ function registerAssetRoutes(app, deps) {
         if (rankedIds === null) {
           rows = await fetchAssetRows(textWhere.clauses, textWhere.params);
         } else if (rankedIds.length) {
-          rows = await fetchAssetRows([], [], { rankedIds });
+          const needsSqlSuffixGuard = (parsedAssetQuery.mustExcludeLongSuffix || []).length > 0;
+          rows = needsSqlSuffixGuard
+            ? await fetchAssetRows(textWhere.clauses, textWhere.params, { rankedIds })
+            : await fetchAssetRows([], [], { rankedIds });
         } else {
           // Elasticsearch can be empty/stale after local rebuilds; SQL remains the source of truth.
           rows = await fetchAssetRows(textWhere.clauses, textWhere.params);
