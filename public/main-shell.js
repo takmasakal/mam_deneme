@@ -28,6 +28,24 @@
 function openVideoToolsPage(assetId, startAtSeconds = 0) {
   const id = String(assetId || '').trim();
   if (!id) return;
+  try {
+    const fields = {};
+    const formData = new FormData(searchForm);
+    formData.forEach((value, key) => {
+      fields[key] = String(value || '');
+    });
+    const assetTypes = assetTypeFilters.map((input) => ({
+      value: String(input.value || ''),
+      checked: Boolean(input.checked)
+    }));
+    sessionStorage.setItem('mam.videoTools.returnSearch', JSON.stringify({
+      fields,
+      assetTypes,
+      savedAt: Date.now()
+    }));
+  } catch (_error) {
+    // Returning from video tools should still work if sessionStorage is unavailable.
+  }
   const next = new URL(window.location.href);
   const backPanels = `${isPanelVisible('panelIngest') ? '1' : '0'}${isPanelVisible('panelAssets') ? '1' : '0'}${isPanelVisible('panelDetail') ? '1' : '0'}`;
   next.searchParams.set('view', 'video-tools');
