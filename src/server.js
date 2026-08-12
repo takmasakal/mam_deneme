@@ -22,6 +22,9 @@ const { createAssetAccessService } = require('./services/assetAccessService');
 const { createAssetEditLockService } = require('./services/assetEditLockService');
 const { createImageDerivativeService } = require('./services/imageDerivativeService');
 const { createMetadataEnrichmentService } = require('./services/metadataEnrichmentService');
+const { createMediaArtifactService } = require('./services/mediaArtifactService');
+const { createTextAssetIndexService } = require('./services/textAssetIndexService');
+const { createSubtitleIndexService } = require('./services/subtitleIndexService');
 const {
   normalizeOcrText,
   normalizeOcrLine,
@@ -57,6 +60,7 @@ const {
   inferMimeTypeFromFileName
 } = require('./utils/files');
 const {
+  escapePostgresRegex,
   normalizedTextHasLongSuffixTerm,
   longSuffixPostgresRegex
 } = require('./services/searchTokenService');
@@ -107,6 +111,26 @@ const WHISPER_MODEL_CACHE = process.env.WHISPER_MODEL_CACHE || HF_HOME;
 const PADDLE_CACHE_DIR = process.env.PADDLE_PDX_CACHE_HOME || path.join(MAM_MODEL_CACHE_DIR, 'paddle');
 const DOWNLOAD_AUDIT_THROTTLE_MS = Math.max(60_000, Math.min(3_600_000, Number(process.env.DOWNLOAD_AUDIT_THROTTLE_MS) || 300_000));
 const recentDownloadAuditKeys = new Map();
+const mediaArtifactService = createMediaArtifactService({
+  uploadsDir: UPLOADS_DIR,
+  proxiesDir: PROXIES_DIR,
+  thumbnailsDir: THUMBNAILS_DIR,
+  subtitlesDir: SUBTITLES_DIR,
+  ocrDir: OCR_DIR,
+  ocrFramesDir: OCR_FRAMES_DIR,
+  sanitizeFileName,
+  nanoid
+});
+const {
+  artifactRoot,
+  artifactFolder,
+  buildArtifactPath,
+  createOcrFrameWorkDir,
+  getUploadDateDir,
+  publicUploadUrlToAbsolutePath,
+  isUploadArtifactPath,
+  resolveStoredUrl
+} = mediaArtifactService;
 app.use(express.json({ limit: JSON_BODY_LIMIT }));
 app.get('/api/health', (_req, res) => {
   res.json({
@@ -800,10 +824,6 @@ function suggestDidYouMeanFromTexts(texts, query, options = {}) {
   return suggestion;
 }
 
-function escapePostgresRegex(value) {
-  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function exactNormalizedTextRegex(term) {
   const normalized = String(term || '').trim();
   if (!normalized) return '';
@@ -951,531 +971,6 @@ function relabelOcrItemsForAsset(assetTitle, fileName, items = []) {
   }));
 }
 
-function pickLatestVideoOcrUrlFromDc(dcMetadata) {
-  const dc = dcMetadata && typeof dcMetadata === 'object' ? dcMetadata : {};
-  const direct = String(dc.videoOcrUrl || '').trim();
-  if (direct) return direct;
-  const items = sanitizeVideoOcrItems(dc.videoOcrItems);
-  if (items.length) {
-    const last = items[items.length - 1];
-    return String(last.ocrUrl || '').trim();
-  }
-  const photoDirect = String(dc.photoOcrUrl || '').trim();
-  if (photoDirect) return photoDirect;
-  const photoItems = sanitizePhotoOcrItems(dc.photoOcrItems);
-  if (!photoItems.length) return '';
-  const last = photoItems[photoItems.length - 1];
-  return String(last.ocrUrl || '').trim();
-}
-
-function listOcrFilesRecursive(dirPath) {
-  const out = [];
-  const walk = (dir) => {
-    let entries = [];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch (_error) {
-      return;
-    }
-    entries.forEach((entry) => {
-      const abs = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        walk(abs);
-        return;
-      }
-      if (entry.isFile() && entry.name.toLowerCase().endsWith('.txt')) out.push(abs);
-    });
-  };
-  walk(dirPath);
-  return out;
-}
-
-function listUploadArtifactFilesRecursive(folderName, extension) {
-  const safeFolder = String(folderName || '').trim();
-  const safeExt = String(extension || '').trim().toLowerCase();
-  if (!safeFolder || !safeExt) return [];
-  return listOcrFilesRecursive(UPLOADS_DIR)
-    .filter((filePath) => {
-      const resolvedPath = path.resolve(filePath);
-      if (!resolvedPath.toLowerCase().endsWith(safeExt)) return false;
-      return resolvedPath.split(path.sep).includes(safeFolder);
-    });
-}
-
-function getCandidateOcrFilePathsForRow(row) {
-  const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
-  const directUrl = pickLatestVideoOcrUrlFromDc(dc);
-  const directPath = directUrl ? publicUploadUrlToAbsolutePath(directUrl) : '';
-  const paths = [];
-  if (directPath && fs.existsSync(directPath)) paths.push(directPath);
-  if (paths.length) return paths;
-
-  const titleSlug = sanitizeFileName(String(row?.title || '').trim().toLowerCase());
-  const fileSlug = sanitizeFileName(path.basename(String(row?.file_name || ''), path.extname(String(row?.file_name || ''))).toLowerCase());
-  const createdDay = getDatePart(row?.created_at);
-  const allTxt = Array.from(new Set([
-    ...listOcrFilesRecursive(OCR_DIR),
-    ...listUploadArtifactFilesRecursive('ocr', '.txt')
-  ]));
-  const ranked = allTxt
-    .map((p) => {
-      const base = path.basename(p).toLowerCase();
-      const rel = path.relative(UPLOADS_DIR, p).replace(/\\/g, '/');
-      const hasFile = fileSlug && fileSlug.length >= 4 && base.includes(fileSlug);
-      const hasTitle = titleSlug && titleSlug.length >= 5 && base.includes(titleSlug);
-      const inSameDay = createdDay && rel.startsWith(`${createdDay}/`);
-      const hasAssetId = String(row?.id || '').trim() && base.includes(String(row?.id || '').trim().toLowerCase());
-      let score = 0;
-      if (hasFile) score += 6;
-      if (hasTitle) score += 4;
-      if (hasAssetId) score += 8;
-      if (inSameDay) score += 1;
-      return { p, score, hasFile, hasTitle, hasAssetId, inSameDay };
-    })
-    // Strict fallback: only consider files that match asset filename/title/id.
-    .filter((x) => x.score > 0 && (x.hasFile || x.hasTitle || x.hasAssetId))
-    .sort((a, b) => b.score - a.score);
-  if (ranked.length) return ranked.slice(0, 8).map((x) => x.p);
-  // Alakasiz OCR dosyalarina geri dusmemek icin burada "recent fallback" yok.
-  // Boylece farkli asset'lerde ayni OCR satirinin gorunmesi engellenir.
-  return [];
-}
-
-function extractOcrMatchLine(content, queryNorm) {
-  const lines = String(content || '').replace(/\r\n?/g, '\n').split('\n');
-  for (const raw of lines) {
-    const line = String(raw || '').trim();
-    if (!line) continue;
-    const comparable = normalizeComparableOcr(line);
-    if (comparable && comparable.includes(queryNorm)) {
-      return line;
-    }
-  }
-  return '';
-}
-
-function extractOcrMatchLines(content, queryNorm, limit = 8) {
-  const out = [];
-  const lines = String(content || '').replace(/\r\n?/g, '\n').split('\n');
-  const cap = Math.max(1, Math.min(50, Number(limit) || 8));
-  for (const raw of lines) {
-    const line = String(raw || '').trim();
-    if (!line) continue;
-    const comparable = normalizeComparableOcr(line);
-    if (comparable && comparable.includes(queryNorm)) {
-      out.push(line);
-      if (out.length >= cap) break;
-    }
-  }
-  return out;
-}
-
-function ocrLineMatchesParsedQuery(line, parsedQuery) {
-  const comparable = normalizeComparableOcr(line);
-  if (!comparable || !parsedQuery?.raw) return false;
-  if (!parsedQuery.hasOperators) {
-    return comparable.includes(parsedQuery.raw);
-  }
-  const includesAllRequired = parsedQuery.mustInclude.every((term) => comparable.includes(term));
-  if (!includesAllRequired) return false;
-  const includesAllRequiredExact = parsedQuery.mustIncludeExact.every((term) => normalizedTextHasExactTerm(comparable, term));
-  if (!includesAllRequiredExact) return false;
-  const excludesForbidden = parsedQuery.mustExclude.every((term) => !comparable.includes(term));
-  if (!excludesForbidden) return false;
-  const excludesForbiddenExact = parsedQuery.mustExcludeExact.every((term) => !normalizedTextHasExactTerm(comparable, term));
-  if (!excludesForbiddenExact) return false;
-  const excludesLongSuffix = (parsedQuery.mustExcludeLongSuffix || []).every((term) => !normalizedTextHasLongSuffixTerm(comparable, term));
-  if (!excludesLongSuffix) return false;
-  const optionalHit = parsedQuery.optional.some((term) => comparable.includes(term));
-  const optionalExactHit = parsedQuery.optionalExact.some((term) => normalizedTextHasExactTerm(comparable, term));
-  if (parsedQuery.optional.length === 0 && parsedQuery.optionalExact.length === 0) return true;
-  return optionalHit || optionalExactHit;
-}
-
-function extractOcrMatchLinesByParsedQuery(content, parsedQuery, limit = 8) {
-  const out = [];
-  const lines = String(content || '').replace(/\r\n?/g, '\n').split('\n');
-  const cap = Math.max(1, Math.min(50, Number(limit) || 8));
-  for (const raw of lines) {
-    const line = String(raw || '').trim();
-    if (!line) continue;
-    if (!ocrLineMatchesParsedQuery(line, parsedQuery)) continue;
-    out.push(line);
-    if (out.length >= cap) break;
-  }
-  return out;
-}
-
-function parseTimecodePrefixToSec(line) {
-  const raw = String(line || '');
-  const match = raw.match(/\[(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})\]/);
-  const parse = (v) => {
-    const m = String(v || '').match(/^(\d{2}):(\d{2}):(\d{2})\.(\d{3})$/);
-    if (!m) return null;
-    return (Number(m[1]) * 3600) + (Number(m[2]) * 60) + Number(m[3]) + (Number(m[4]) / 1000);
-  };
-  if (match) {
-    const start = parse(match[1]);
-    const end = parse(match[2]);
-    if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
-    return { startSec: start, endSec: end };
-  }
-  const single = raw.match(/\[(\d{2}:\d{2}:\d{2}\.\d{3})\]/);
-  if (!single) return null;
-  const at = parse(single[1]);
-  if (!Number.isFinite(at)) return null;
-  return { startSec: at, endSec: at };
-}
-
-function findOcrMatchInRow(row, queryRaw) {
-  const parsedQuery = parseTextSearchQuery(queryRaw, normalizeSubtitleSearchText);
-  if (!parsedQuery.raw) return null;
-  const candidates = getCandidateOcrFilePathsForRow(row);
-  for (const filePath of candidates) {
-    let raw = '';
-    try {
-      raw = fs.readFileSync(filePath, 'utf8');
-    } catch (_error) {
-      continue;
-    }
-    const line = extractOcrMatchLinesByParsedQuery(raw, parsedQuery, 1)[0] || '';
-    if (!line) continue;
-    const tc = parseTimecodePrefixToSec(line);
-    const relative = path.relative(UPLOADS_DIR, filePath).replace(/\\/g, '/');
-    const ocrUrl = relative ? `/uploads/${relative}` : '';
-    return {
-      ocrUrl,
-      line,
-      startSec: Number(tc?.startSec || 0),
-      endSec: Number(tc?.endSec || 0)
-    };
-  }
-  return null;
-}
-
-function findOcrMatchesInRow(row, queryRaw, limit = 8) {
-  const parsedQuery = parseTextSearchQuery(queryRaw, normalizeSubtitleSearchText);
-  if (!parsedQuery.raw) return [];
-  const cap = Math.max(1, Math.min(50, Number(limit) || 8));
-  const out = [];
-  const seen = new Set();
-  const candidates = getCandidateOcrFilePathsForRow(row);
-  for (const filePath of candidates) {
-    let raw = '';
-    try {
-      raw = fs.readFileSync(filePath, 'utf8');
-    } catch (_error) {
-      continue;
-    }
-    const lines = extractOcrMatchLinesByParsedQuery(raw, parsedQuery, cap);
-    if (!lines.length) continue;
-    const relative = path.relative(UPLOADS_DIR, filePath).replace(/\\/g, '/');
-    const ocrUrl = relative ? `/uploads/${relative}` : '';
-    for (const line of lines) {
-      const key = normalizeComparableOcr(line) || line.toLowerCase();
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      const tc = parseTimecodePrefixToSec(line);
-      out.push({
-        ocrUrl,
-        line,
-        startSec: Number(tc?.startSec || 0),
-        endSec: Number(tc?.endSec || 0)
-      });
-      if (out.length >= cap) return out;
-    }
-  }
-  return out;
-}
-
-async function findOcrMatchForAssetRow(row, queryRaw) {
-  const hits = await findOcrMatchesForAssetRow(row, queryRaw, 1);
-  return hits[0] || null;
-}
-
-async function findOcrMatchesForAssetRow(row, queryRaw, limit = 8) {
-  const parsedQuery = parseTextSearchQuery(queryRaw, normalizeSubtitleSearchText);
-  const assetId = String(row?.id || '').trim();
-  const cap = Math.max(1, Math.min(50, Number(limit) || 8));
-  if (!assetId || !parsedQuery.raw) return [];
-  const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
-  const activeOcrUrl = String(pickLatestVideoOcrUrlFromDc(dc) || '').trim();
-  if (activeOcrUrl) {
-    const buildOcrWhere = () => buildSubtitleCueSearchWhereSql({
-      normColumn: 'norm_text',
-      startIndex: 3,
-      parsedQuery
-    });
-    const fetchDbMatch = async () => {
-      const ocrWhere = buildOcrWhere();
-      return pool.query(
-        `
-          SELECT start_sec, end_sec, segment_text
-          FROM asset_ocr_segments
-          WHERE asset_id = $1
-            AND ocr_url = $2
-            ${ocrWhere.clauses.length ? `AND ${ocrWhere.clauses.join(' AND ')}` : ''}
-          ORDER BY start_sec ASC
-          LIMIT $${ocrWhere.nextIndex}
-        `,
-        [assetId, activeOcrUrl, ...ocrWhere.params, cap]
-      );
-    };
-    let dbHit = await fetchDbMatch();
-    if (!dbHit.rowCount) {
-      const exists = await pool.query(
-        `
-          SELECT 1
-          FROM asset_ocr_segments
-          WHERE asset_id = $1
-            AND ocr_url = $2
-          LIMIT 1
-        `,
-        [assetId, activeOcrUrl]
-      );
-      if (!exists.rowCount) {
-        await syncOcrSegmentIndexForAsset(assetId, activeOcrUrl, {
-          sourceEngine: String(dc.videoOcrEngine || 'paddle').trim(),
-          lang: ''
-        });
-        dbHit = await fetchDbMatch();
-      }
-    }
-    if (dbHit.rowCount) {
-      return dbHit.rows.map((hit) => ({
-        ocrUrl: activeOcrUrl,
-        line: String(hit.segment_text || ''),
-        startSec: Number(hit.start_sec || 0),
-        endSec: Number(hit.end_sec || 0)
-      }));
-    }
-  }
-  return findOcrMatchesInRow(row, queryRaw, cap);
-}
-
-async function loadActiveOcrSegmentsForAssetRow(row) {
-  const assetId = String(row?.id || '').trim();
-  const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
-  const activeOcrUrl = String(pickLatestVideoOcrUrlFromDc(dc) || '').trim();
-  if (!assetId || !activeOcrUrl) return { ocrUrl: activeOcrUrl, segments: [] };
-
-  const existing = await pool.query(
-    `
-      SELECT start_sec, end_sec, segment_text
-      FROM asset_ocr_segments
-      WHERE asset_id = $1
-        AND ocr_url = $2
-      ORDER BY start_sec ASC
-    `,
-    [assetId, activeOcrUrl]
-  );
-  if (existing.rowCount) {
-    return {
-      ocrUrl: activeOcrUrl,
-      segments: existing.rows.map((segment) => ({
-        startSec: Number(segment.start_sec || 0),
-        endSec: Number(segment.end_sec || 0),
-        segmentText: String(segment.segment_text || '')
-      }))
-    };
-  }
-
-  await syncOcrSegmentIndexForAsset(assetId, activeOcrUrl, {
-    sourceEngine: String(dc.videoOcrEngine || 'paddle').trim(),
-    lang: ''
-  });
-
-  const refreshed = await pool.query(
-    `
-      SELECT start_sec, end_sec, segment_text
-      FROM asset_ocr_segments
-      WHERE asset_id = $1
-        AND ocr_url = $2
-      ORDER BY start_sec ASC
-    `,
-    [assetId, activeOcrUrl]
-  );
-  return {
-    ocrUrl: activeOcrUrl,
-    segments: refreshed.rows.map((segment) => ({
-      startSec: Number(segment.start_sec || 0),
-      endSec: Number(segment.end_sec || 0),
-      segmentText: String(segment.segment_text || '')
-    }))
-  };
-}
-
-function mapOcrSegmentRow(segment, query, ocrUrl = '') {
-  return {
-    ocrUrl,
-    line: String(segment?.segmentText || segment?.line || '').trim(),
-    startSec: Number(segment?.startSec || 0),
-    endSec: Number(segment?.endSec || 0),
-    query: String(query || '').trim()
-  };
-}
-
-async function searchOcrMatchesForAssetRow(row, queryRaw, limit = 8) {
-  const parsedQuery = parseTextSearchQuery(queryRaw, normalizeSubtitleSearchText);
-  const cap = Math.max(1, Math.min(2000, Number(limit) || 8));
-  if (!parsedQuery.raw) {
-    return { ocrUrl: '', matches: [], didYouMean: '', fuzzyUsed: false, highlightQuery: String(queryRaw || '').trim() };
-  }
-
-  const exactMatches = await findOcrMatchesForAssetRow(row, queryRaw, cap);
-  if (exactMatches.length || parsedQuery.hasOperators) {
-    const ocrUrl = String(exactMatches[0]?.ocrUrl || pickLatestVideoOcrUrlFromDc(row?.dc_metadata || {}) || '').trim();
-    return {
-      ocrUrl,
-      matches: exactMatches.map((item) => mapOcrSegmentRow(item, queryRaw, item.ocrUrl || ocrUrl)),
-      didYouMean: '',
-      fuzzyUsed: false,
-      highlightQuery: String(queryRaw || '').trim()
-    };
-  }
-
-  const { ocrUrl, segments } = await loadActiveOcrSegmentsForAssetRow(row);
-  if (!segments.length) {
-    return { ocrUrl, matches: [], didYouMean: '', fuzzyUsed: false, highlightQuery: String(queryRaw || '').trim() };
-  }
-
-  const fuzzyMatches = segments
-    .filter((segment) => fuzzySearchTextMatch(parsedQuery.raw, segment.segmentText, normalizeSubtitleSearchText))
-    .slice(0, cap)
-    .map((segment) => mapOcrSegmentRow(segment, queryRaw, ocrUrl));
-  const didYouMean = suggestDidYouMeanFromTexts(
-    segments.map((segment) => segment.segmentText),
-    queryRaw,
-    { parseFn: parseTextSearchQuery, normalizeFn: normalizeSubtitleSearchText }
-  );
-
-  let matches = fuzzyMatches;
-  let fuzzyUsed = fuzzyMatches.length > 0;
-  let highlightQuery = String(queryRaw || '').trim();
-  if (didYouMean) {
-    highlightQuery = didYouMean;
-    const suggestedQuery = parseTextSearchQuery(didYouMean, normalizeSubtitleSearchText);
-    const suggestedMatches = segments
-      .filter((segment) => ocrLineMatchesParsedQuery(segment.segmentText, suggestedQuery))
-      .slice(0, cap)
-      .map((segment) => mapOcrSegmentRow(segment, didYouMean, ocrUrl));
-    if (suggestedMatches.length) {
-      matches = suggestedMatches;
-      fuzzyUsed = true;
-    } else if (matches.length) {
-      matches = matches.map((item) => ({ ...item, query: didYouMean }));
-    }
-  }
-
-  return { ocrUrl, matches, didYouMean, fuzzyUsed, highlightQuery };
-}
-
-async function searchOcrMatchesForAssetRows(rows, queryRaw, limit = 8) {
-  const parsedQuery = parseTextSearchQuery(queryRaw, normalizeSubtitleSearchText);
-  const cap = Math.max(1, Math.min(500, Number(limit) || 8));
-  const byAssetId = new Map();
-  const assetRows = Array.isArray(rows) ? rows : [];
-  if (!parsedQuery.raw || !assetRows.length) {
-    return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(queryRaw || '').trim() };
-  }
-
-  const activeUrlByAssetId = new Map();
-  assetRows.forEach((row) => {
-    const assetId = String(row?.id || '').trim();
-    const ocrUrl = String(pickLatestVideoOcrUrlFromDc(row?.dc_metadata || {}) || '').trim();
-    if (assetId && ocrUrl) activeUrlByAssetId.set(assetId, ocrUrl);
-  });
-  if (!activeUrlByAssetId.size) {
-    return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(queryRaw || '').trim() };
-  }
-
-  const assetIds = Array.from(activeUrlByAssetId.keys());
-  const activeUrls = Array.from(new Set(activeUrlByAssetId.values()));
-  const ocrWhere = buildSubtitleCueSearchWhereSql({
-    normColumn: 'norm_text',
-    startIndex: 3,
-    parsedQuery
-  });
-  const exactResult = await pool.query(
-    `
-      WITH matched AS (
-        SELECT asset_id, ocr_url, start_sec, end_sec, segment_text,
-               ROW_NUMBER() OVER (PARTITION BY asset_id ORDER BY start_sec ASC) AS rn
-        FROM asset_ocr_segments
-        WHERE asset_id = ANY($1::text[])
-          AND ocr_url = ANY($2::text[])
-          ${ocrWhere.clauses.length ? `AND ${ocrWhere.clauses.join(' AND ')}` : ''}
-      )
-      SELECT asset_id, ocr_url, start_sec, end_sec, segment_text
-      FROM matched
-      WHERE rn <= $${ocrWhere.nextIndex}
-      ORDER BY asset_id, start_sec ASC
-    `,
-    [assetIds, activeUrls, ...ocrWhere.params, cap]
-  );
-
-  exactResult.rows.forEach((row) => {
-    const assetId = String(row.asset_id || '').trim();
-    const activeUrl = activeUrlByAssetId.get(assetId);
-    if (!activeUrl || String(row.ocr_url || '').trim() !== activeUrl) return;
-    if (!byAssetId.has(assetId)) byAssetId.set(assetId, []);
-    byAssetId.get(assetId).push(mapOcrSegmentRow({
-      line: String(row.segment_text || ''),
-      startSec: Number(row.start_sec || 0),
-      endSec: Number(row.end_sec || 0)
-    }, queryRaw, activeUrl));
-  });
-
-  if (byAssetId.size || parsedQuery.hasOperators) {
-    return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(queryRaw || '').trim() };
-  }
-
-  const segmentResult = await pool.query(
-    `
-      SELECT asset_id, ocr_url, start_sec, end_sec, segment_text
-      FROM asset_ocr_segments
-      WHERE asset_id = ANY($1::text[])
-        AND ocr_url = ANY($2::text[])
-      ORDER BY asset_id, start_sec ASC
-    `,
-    [assetIds, activeUrls]
-  );
-  const activeSegments = segmentResult.rows.filter((row) => {
-    const assetId = String(row.asset_id || '').trim();
-    return String(row.ocr_url || '').trim() === activeUrlByAssetId.get(assetId);
-  });
-  const didYouMean = suggestDidYouMeanFromTexts(
-    activeSegments.map((row) => String(row.segment_text || '')),
-    queryRaw,
-    { parseFn: parseTextSearchQuery, normalizeFn: normalizeSubtitleSearchText }
-  );
-  const highlightQuery = didYouMean || String(queryRaw || '').trim();
-  const suggestedQuery = didYouMean ? parseTextSearchQuery(didYouMean, normalizeSubtitleSearchText) : null;
-
-  activeSegments.forEach((row) => {
-    const assetId = String(row.asset_id || '').trim();
-    if (!assetId || (byAssetId.get(assetId) || []).length >= cap) return;
-    const text = String(row.segment_text || '');
-    const matched = suggestedQuery
-      ? ocrLineMatchesParsedQuery(text, suggestedQuery)
-      : fuzzySearchTextMatch(parsedQuery.raw, text, normalizeSubtitleSearchText);
-    if (!matched) return;
-    if (!byAssetId.has(assetId)) byAssetId.set(assetId, []);
-    byAssetId.get(assetId).push(mapOcrSegmentRow({
-      line: text,
-      startSec: Number(row.start_sec || 0),
-      endSec: Number(row.end_sec || 0)
-    }, highlightQuery, String(row.ocr_url || '').trim()));
-  });
-
-  return {
-    byAssetId,
-    didYouMean,
-    fuzzyUsed: byAssetId.size > 0,
-    highlightQuery
-  };
-}
-
 const subtitleService = createSubtitleService({
   normalizeOcrText,
   normalizeComparableOcr,
@@ -1499,6 +994,57 @@ const {
   subtitleCueMatchesParsedQuery,
   findSubtitleMatchesInText
 } = subtitleService;
+
+const subtitleIndexService = createSubtitleIndexService({
+  pool,
+  publicUploadUrlToAbsolutePath,
+  parseSubtitleCues,
+  normalizeSubtitleSearchText,
+  parseSubtitleTextSearchQuery,
+  buildSubtitleCueSearchWhereSql,
+  subtitleCueMatchesParsedQuery,
+  formatTimecode,
+  normalizeSubtitleLang,
+  resolveSubtitleActiveByLang,
+  levenshteinDistance
+});
+const {
+  searchSubtitleMatchesForAssetRow,
+  searchSubtitleMatchesForAssetRows,
+  syncSubtitleCueIndexForAssetRow,
+  ensureSubtitleCueIndexForAssetRow
+} = subtitleIndexService;
+
+const textAssetIndexService = createTextAssetIndexService({
+  pool,
+  uploadsDir: UPLOADS_DIR,
+  ocrDir: OCR_DIR,
+  sanitizeFileName,
+  publicUploadUrlToAbsolutePath,
+  isUploadArtifactPath,
+  sanitizeVideoOcrItems,
+  sanitizePhotoOcrItems,
+  normalizeOcrEngine,
+  normalizeComparableOcr,
+  normalizeSubtitleSearchText,
+  parseTextSearchQuery,
+  buildSubtitleCueSearchWhereSql,
+  normalizedTextHasExactTerm,
+  normalizedTextHasLongSuffixTerm,
+  parseTimedOcrSegments,
+  fuzzySearchTextMatch,
+  suggestDidYouMeanFromTexts
+});
+const {
+  pickLatestVideoOcrUrlFromDc,
+  getCandidateOcrFilePathsForRow,
+  findOcrMatchForAssetRow,
+  findOcrMatchesForAssetRow,
+  searchOcrMatchesForAssetRow,
+  searchOcrMatchesForAssetRows,
+  ensureOcrSegmentIndexForAssetRow,
+  syncOcrSegmentIndexForAsset
+} = textAssetIndexService;
 
 const TURKISH_OCR_CHAR_FIXES = [
   [/\bı([aeiouöü])/g, 'i$1'],
@@ -2532,435 +2078,6 @@ function searchAssetsByFuzzyQuery(rows, query, limit = 500) {
   return { rows: matches, didYouMean, fuzzyUsed, highlightQuery };
 }
 
-function tokenizeSubtitleSearchTokens(value) {
-  return normalizeSubtitleSearchText(value)
-    .split(/\s+/)
-    .map((token) => token.trim())
-    .filter((token) => token && /[\p{L}\p{N}]/u.test(token));
-}
-
-function fuzzySubtitleTokenMatch(queryToken, candidateToken) {
-  const query = String(queryToken || '').trim();
-  const candidate = String(candidateToken || '').trim();
-  if (!query || !candidate) return false;
-  if (query === candidate) return true;
-  if (query.charAt(0) !== candidate.charAt(0)) return false;
-  const lenDiff = Math.abs(query.length - candidate.length);
-  if (lenDiff > 2) return false;
-  const maxAllowed = query.length >= 7 ? 2 : 1;
-  return levenshteinDistance(query, candidate) <= maxAllowed;
-}
-
-function fuzzySubtitleTextMatch(queryText, candidateText) {
-  const queryTokens = tokenizeSubtitleSearchTokens(queryText);
-  const candidateTokens = tokenizeSubtitleSearchTokens(candidateText);
-  if (!queryTokens.length || !candidateTokens.length) return false;
-  return queryTokens.every((queryToken) => (
-    candidateTokens.some((candidateToken) => fuzzySubtitleTokenMatch(queryToken, candidateToken))
-  ));
-}
-
-function suggestSubtitleDidYouMean(cues, query) {
-  const parsedQuery = parseSubtitleTextSearchQuery(query);
-  if (!parsedQuery.raw || parsedQuery.hasOperators) return '';
-  const sourceTokens = tokenizeSubtitleSearchTokens(parsedQuery.raw);
-  if (!sourceTokens.length) return '';
-
-  const vocab = new Set();
-  (Array.isArray(cues) ? cues : []).forEach((cue) => {
-    tokenizeSubtitleSearchTokens(cue?.cueText || cue?.text || '').forEach((token) => vocab.add(token));
-  });
-  if (!vocab.size) return '';
-
-  let replaced = false;
-  const suggestedTokens = sourceTokens.map((token) => {
-    let best = token;
-    let bestDistance = Number.POSITIVE_INFINITY;
-    for (const candidate of vocab) {
-      const lenDiff = Math.abs(candidate.length - token.length);
-      if (lenDiff > 2) continue;
-      if (candidate.charAt(0) !== token.charAt(0)) continue;
-      const dist = levenshteinDistance(token, candidate);
-      if (dist < bestDistance) {
-        bestDistance = dist;
-        best = candidate;
-      }
-      if (bestDistance === 1) break;
-    }
-    const maxAllowed = token.length >= 7 ? 2 : 1;
-    if (best !== token && bestDistance <= maxAllowed) {
-      replaced = true;
-      return best;
-    }
-    return token;
-  });
-
-  if (!replaced) return '';
-  const suggestion = suggestedTokens.join(' ').trim();
-  if (!suggestion || suggestion === parsedQuery.raw) return '';
-  return suggestion;
-}
-
-function mapSubtitleCueRow(row, query) {
-  const startSec = Number(row?.start_sec ?? row?.startSec ?? 0);
-  const endSec = Number(row?.end_sec ?? row?.endSec ?? startSec);
-  const text = String(row?.cue_text ?? row?.cueText ?? row?.text ?? '').trim();
-  return {
-    seq: Number(row?.seq || 0),
-    startSec,
-    endSec,
-    startTc: formatTimecode(startSec),
-    endTc: formatTimecode(endSec),
-    text,
-    query: String(query || '').trim()
-  };
-}
-
-function loadActiveSubtitleCuesForAssetRow(row) {
-  const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
-  const subtitleUrl = String(dc.subtitleUrl || '').trim();
-  if (!subtitleUrl) return { subtitleUrl: '', cues: [] };
-  const subtitlePath = publicUploadUrlToAbsolutePath(subtitleUrl);
-  if (!subtitlePath || !fs.existsSync(subtitlePath)) return { subtitleUrl, cues: [] };
-  try {
-    const raw = fs.readFileSync(subtitlePath, 'utf8');
-    return { subtitleUrl, cues: parseSubtitleCues(raw) };
-  } catch (_error) {
-    return { subtitleUrl, cues: [] };
-  }
-}
-
-async function searchSubtitleMatchesForAssetRow(row, query, limit = 20) {
-  const assetId = String(row?.id || '').trim();
-  const parsedQuery = parseSubtitleTextSearchQuery(query);
-  const safeLimit = Math.max(1, Math.min(2000, Number(limit) || 20));
-  if (!assetId || !parsedQuery.raw) {
-    return { subtitleUrl: '', matches: [], didYouMean: '', fuzzyUsed: false, highlightQuery: String(query || '').trim() };
-  }
-
-  const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
-  const subtitleUrl = String(dc.subtitleUrl || '').trim();
-  if (!subtitleUrl) {
-    return { subtitleUrl: '', matches: [], didYouMean: '', fuzzyUsed: false, highlightQuery: String(query || '').trim() };
-  }
-
-  await ensureSubtitleCueIndexForAssetRow(row);
-  const subtitleWhere = buildSubtitleCueSearchWhereSql({
-    normColumn: 'norm_text',
-    startIndex: 3,
-    parsedQuery
-  });
-  const result = await pool.query(
-    `
-      SELECT seq, start_sec, end_sec, cue_text
-      FROM asset_subtitle_cues
-      WHERE asset_id = $1
-        AND subtitle_url = $2
-        ${subtitleWhere.clauses.length ? `AND ${subtitleWhere.clauses.join(' AND ')}` : ''}
-      ORDER BY start_sec ASC
-      LIMIT $${subtitleWhere.nextIndex}
-    `,
-    [assetId, subtitleUrl, ...subtitleWhere.params, safeLimit]
-  );
-  const exactMatches = result.rows.map((item) => mapSubtitleCueRow(item, query));
-  if (exactMatches.length || parsedQuery.hasOperators) {
-    return {
-      subtitleUrl,
-      matches: exactMatches,
-      didYouMean: '',
-      fuzzyUsed: false,
-      highlightQuery: String(query || '').trim()
-    };
-  }
-
-  const { cues } = loadActiveSubtitleCuesForAssetRow(row);
-  if (!cues.length) {
-    return {
-      subtitleUrl,
-      matches: [],
-      didYouMean: '',
-      fuzzyUsed: false,
-      highlightQuery: String(query || '').trim()
-    };
-  }
-
-  const fuzzyMatches = cues
-    .filter((cue) => fuzzySubtitleTextMatch(parsedQuery.raw, cue.cueText))
-    .slice(0, safeLimit)
-    .map((cue) => mapSubtitleCueRow(cue, query));
-  const didYouMean = suggestSubtitleDidYouMean(cues, query);
-  let highlightQuery = String(query || '').trim();
-  let matches = fuzzyMatches;
-  let fuzzyUsed = fuzzyMatches.length > 0;
-
-  if (didYouMean) {
-    highlightQuery = didYouMean;
-    const suggestedQuery = parseSubtitleTextSearchQuery(didYouMean);
-    const suggestedMatches = cues
-      .filter((cue) => subtitleCueMatchesParsedQuery(cue.cueText, suggestedQuery))
-      .slice(0, safeLimit)
-      .map((cue) => mapSubtitleCueRow(cue, didYouMean));
-    if (suggestedMatches.length) {
-      matches = suggestedMatches;
-      fuzzyUsed = true;
-    } else if (matches.length) {
-      matches = matches.map((item) => ({ ...item, query: didYouMean }));
-    }
-  }
-
-  return {
-    subtitleUrl,
-    matches,
-    didYouMean,
-    fuzzyUsed,
-    highlightQuery
-  };
-}
-
-async function searchSubtitleMatchesForAssetRows(rows, query, limit = 8) {
-  const parsedQuery = parseSubtitleTextSearchQuery(query);
-  const cap = Math.max(1, Math.min(500, Number(limit) || 8));
-  const byAssetId = new Map();
-  const assetRows = Array.isArray(rows) ? rows : [];
-  if (!parsedQuery.raw || !assetRows.length) {
-    return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(query || '').trim() };
-  }
-
-  const activeUrlByAssetId = new Map();
-  assetRows.forEach((row) => {
-    const assetId = String(row?.id || '').trim();
-    const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
-    const subtitleUrl = String(dc.subtitleUrl || '').trim();
-    if (assetId && subtitleUrl) activeUrlByAssetId.set(assetId, subtitleUrl);
-  });
-  if (!activeUrlByAssetId.size) {
-    return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(query || '').trim() };
-  }
-
-  for (const row of assetRows) {
-    const assetId = String(row?.id || '').trim();
-    if (!activeUrlByAssetId.has(assetId)) continue;
-    try {
-      await ensureSubtitleCueIndexForAssetRow(row);
-    } catch (error) {
-      console.warn(`Subtitle cue index sync skipped for asset ${assetId}: ${error?.message || error}`);
-    }
-  }
-
-  const assetIds = Array.from(activeUrlByAssetId.keys());
-  const activeUrls = Array.from(new Set(activeUrlByAssetId.values()));
-  const subtitleWhere = buildSubtitleCueSearchWhereSql({
-    normColumn: 'norm_text',
-    startIndex: 3,
-    parsedQuery
-  });
-  const exactResult = await pool.query(
-    `
-      WITH matched AS (
-        SELECT asset_id, subtitle_url, seq, start_sec, end_sec, cue_text,
-               ROW_NUMBER() OVER (PARTITION BY asset_id ORDER BY start_sec ASC) AS rn
-        FROM asset_subtitle_cues
-        WHERE asset_id = ANY($1::text[])
-          AND subtitle_url = ANY($2::text[])
-          ${subtitleWhere.clauses.length ? `AND ${subtitleWhere.clauses.join(' AND ')}` : ''}
-      )
-      SELECT asset_id, subtitle_url, seq, start_sec, end_sec, cue_text
-      FROM matched
-      WHERE rn <= $${subtitleWhere.nextIndex}
-      ORDER BY asset_id, start_sec ASC
-    `,
-    [assetIds, activeUrls, ...subtitleWhere.params, cap]
-  );
-
-  exactResult.rows.forEach((row) => {
-    const assetId = String(row.asset_id || '').trim();
-    const activeUrl = activeUrlByAssetId.get(assetId);
-    if (!activeUrl || String(row.subtitle_url || '').trim() !== activeUrl) return;
-    if (!byAssetId.has(assetId)) byAssetId.set(assetId, []);
-    byAssetId.get(assetId).push(mapSubtitleCueRow(row, query));
-  });
-
-  if (byAssetId.size) {
-    return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(query || '').trim() };
-  }
-
-  const cueResult = await pool.query(
-    `
-      SELECT asset_id, subtitle_url, seq, start_sec, end_sec, cue_text
-      FROM asset_subtitle_cues
-      WHERE asset_id = ANY($1::text[])
-        AND subtitle_url = ANY($2::text[])
-      ORDER BY asset_id, start_sec ASC
-    `,
-    [assetIds, activeUrls]
-  );
-  const activeCues = cueResult.rows.filter((row) => {
-    const assetId = String(row.asset_id || '').trim();
-    return String(row.subtitle_url || '').trim() === activeUrlByAssetId.get(assetId);
-  });
-  if (!activeCues.length) {
-    assetRows.forEach((assetRow) => {
-      const assetId = String(assetRow?.id || '').trim();
-      const loaded = loadActiveSubtitleCuesForAssetRow(assetRow);
-      const cues = Array.isArray(loaded.cues) ? loaded.cues : [];
-      cues.forEach((cue) => {
-        if (!assetId || (byAssetId.get(assetId) || []).length >= cap) return;
-        const text = String(cue.cueText || '');
-        const matched = parsedQuery.hasOperators
-          ? subtitleCueMatchesParsedQuery(text, parsedQuery)
-          : fuzzySubtitleTextMatch(parsedQuery.raw, text);
-        if (!matched) return;
-        if (!byAssetId.has(assetId)) byAssetId.set(assetId, []);
-        byAssetId.get(assetId).push(mapSubtitleCueRow(cue, query));
-      });
-    });
-    return {
-      byAssetId,
-      didYouMean: '',
-      fuzzyUsed: byAssetId.size > 0,
-      highlightQuery: String(query || '').trim()
-    };
-  }
-  if (parsedQuery.hasOperators) {
-    return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(query || '').trim() };
-  }
-  const didYouMean = suggestSubtitleDidYouMean(
-    activeCues.map((row) => ({ cueText: String(row.cue_text || '') })),
-    query
-  );
-  const highlightQuery = didYouMean || String(query || '').trim();
-  const suggestedQuery = didYouMean ? parseSubtitleTextSearchQuery(didYouMean) : null;
-
-  activeCues.forEach((row) => {
-    const assetId = String(row.asset_id || '').trim();
-    if (!assetId || (byAssetId.get(assetId) || []).length >= cap) return;
-    const text = String(row.cue_text || '');
-    const matched = suggestedQuery
-      ? subtitleCueMatchesParsedQuery(text, suggestedQuery)
-      : fuzzySubtitleTextMatch(parsedQuery.raw, text);
-    if (!matched) return;
-    if (!byAssetId.has(assetId)) byAssetId.set(assetId, []);
-    byAssetId.get(assetId).push(mapSubtitleCueRow(row, highlightQuery));
-  });
-
-  return {
-    byAssetId,
-    didYouMean,
-    fuzzyUsed: byAssetId.size > 0,
-    highlightQuery
-  };
-}
-
-async function syncSubtitleCueIndexForAssetRow(row) {
-  const assetId = String(row?.id || '').trim();
-  if (!assetId) return 0;
-  const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
-  const subtitleUrl = String(dc.subtitleUrl || '').trim();
-  if (!subtitleUrl) {
-    await pool.query('DELETE FROM asset_subtitle_cues WHERE asset_id = $1', [assetId]);
-    return 0;
-  }
-  const subtitlePath = publicUploadUrlToAbsolutePath(subtitleUrl);
-  if (!subtitlePath || !fs.existsSync(subtitlePath)) {
-    await pool.query('DELETE FROM asset_subtitle_cues WHERE asset_id = $1', [assetId]);
-    return 0;
-  }
-  const raw = fs.readFileSync(subtitlePath, 'utf8');
-  const cues = parseSubtitleCues(raw);
-  const now = new Date().toISOString();
-
-  await pool.query('DELETE FROM asset_subtitle_cues WHERE asset_id = $1', [assetId]);
-  if (!cues.length) return 0;
-
-  for (let idx = 0; idx < cues.length; idx += 1) {
-    const cue = cues[idx];
-    const normText = normalizeSubtitleSearchText(cue.cueText);
-    await pool.query(
-      `
-        INSERT INTO asset_subtitle_cues (
-          asset_id, subtitle_url, seq, start_sec, end_sec, cue_text, norm_text, confidence, source_engine, lang, created_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-      `,
-      [
-        assetId,
-        subtitleUrl,
-        idx + 1,
-        cue.startSec,
-        cue.endSec,
-        cue.cueText,
-        normText,
-        1,
-        'whisper',
-        normalizeSubtitleLang(dc.subtitleLang),
-        now
-      ]
-    );
-  }
-  return cues.length;
-}
-
-async function ensureSubtitleCueIndexForAssetRow(row) {
-  const assetId = String(row?.id || '').trim();
-  if (!assetId) return 0;
-  const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
-  const subtitleUrl = String(dc.subtitleUrl || '').trim();
-  if (!subtitleUrl) return 0;
-  const existing = await pool.query(
-    'SELECT COUNT(*)::int AS count FROM asset_subtitle_cues WHERE asset_id = $1 AND subtitle_url = $2',
-    [assetId, subtitleUrl]
-  );
-  const count = Number(existing.rows?.[0]?.count || 0);
-  if (count > 0) return count;
-  return syncSubtitleCueIndexForAssetRow(row);
-}
-
-async function syncOcrSegmentIndexForAsset(assetId, ocrUrl, options = {}) {
-  const safeAssetId = String(assetId || '').trim();
-  const safeOcrUrl = String(ocrUrl || '').trim();
-  if (!safeAssetId || !safeOcrUrl) return 0;
-  const ocrPath = publicUploadUrlToAbsolutePath(safeOcrUrl);
-  await pool.query('DELETE FROM asset_ocr_segments WHERE asset_id = $1 AND ocr_url = $2', [safeAssetId, safeOcrUrl]);
-  if (!ocrPath || !isUploadArtifactPath(ocrPath, 'ocr') || !fs.existsSync(ocrPath)) return 0;
-  let raw = '';
-  try {
-    raw = fs.readFileSync(ocrPath, 'utf8');
-  } catch (_error) {
-    return 0;
-  }
-  const segments = parseTimedOcrSegments(raw);
-  if (!segments.length) return 0;
-  const sourceEngine = normalizeOcrEngine(options.sourceEngine || 'paddle');
-  const lang = String(options.lang || '').trim();
-  const now = new Date().toISOString();
-  for (let idx = 0; idx < segments.length; idx += 1) {
-    const seg = segments[idx];
-    const normText = normalizeSubtitleSearchText(seg.segmentText);
-    await pool.query(
-      `
-        INSERT INTO asset_ocr_segments (
-          asset_id, ocr_url, seq, start_sec, end_sec, segment_text, norm_text, confidence, source_engine, lang, created_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-      `,
-      [
-        safeAssetId,
-        safeOcrUrl,
-        idx + 1,
-        seg.startSec,
-        seg.endSec,
-        seg.segmentText,
-        normText,
-        1,
-        sourceEngine,
-        lang,
-        now
-      ]
-    );
-  }
-  return segments.length;
-}
-
 function buildGeneratedSubtitleVtt(assetTitle, durationSeconds) {
   const total = Math.max(15, Math.round(Number(durationSeconds) || 0));
   const segmentCount = Math.min(16, Math.max(3, Math.ceil(total / 15)));
@@ -3567,61 +2684,6 @@ function inferAssetStorageSubdir(input = {}) {
   return normalizeTypeFolder(input.type, input.mimeType, input.fileName);
 }
 
-function getDatePart(value) {
-  const d = value ? new Date(value) : new Date();
-  return getUploadDateDir(Number.isFinite(d.getTime()) ? d : new Date());
-}
-
-function artifactRoot(kind) {
-  if (kind === 'proxies') return PROXIES_DIR;
-  if (kind === 'thumbnails') return THUMBNAILS_DIR;
-  if (kind === 'subtitles') return SUBTITLES_DIR;
-  if (kind === 'ocr') return OCR_DIR;
-  throw new Error(`Unknown artifact kind: ${kind}`);
-}
-
-function getUploadDateDir(value = new Date()) {
-  const d = value instanceof Date ? value : new Date(value);
-  const safeDate = Number.isFinite(d.getTime()) ? d : new Date();
-  const year = String(safeDate.getUTCFullYear());
-  const month = String(safeDate.getUTCMonth() + 1);
-  const day = String(safeDate.getUTCDate());
-  return path.join(year, month, day);
-}
-
-function artifactFolder(kind) {
-  if (kind === 'proxies') return 'previews';
-  if (kind === 'thumbnails') return 'thumbnails';
-  if (kind === 'subtitles') return 'subtitles';
-  if (kind === 'ocr') return 'ocr';
-  if (kind === 'attachments') return 'attachments';
-  throw new Error(`Unknown artifact kind: ${kind}`);
-}
-
-function buildArtifactPath(kind, storedName, dateValue) {
-  const datePart = getDatePart(dateValue);
-  const safeName = sanitizeFileName(storedName);
-  const folder = artifactFolder(kind);
-  const dir = path.join(UPLOADS_DIR, datePart, folder);
-  fs.mkdirSync(dir, { recursive: true });
-  const absolutePath = path.join(dir, safeName);
-  const publicUrl = `/uploads/${datePart.replace(/\\/g, '/')}/${folder}/${safeName}`;
-  return { absolutePath, publicUrl, datePart };
-}
-
-function createOcrFrameWorkDir(dateValue) {
-  const datePart = getDatePart(dateValue);
-  const dir = path.join(OCR_FRAMES_DIR, datePart, `${Date.now()}-${nanoid()}-frames`);
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
-}
-
-function safeRmDir(target) {
-  try {
-    if (target && fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
-  } catch (_error) {}
-}
-
 let lastOcrFrameCacheCleanupAt = 0;
 
 function normalizeFrameCacheKeyPart(value, fallback = 'unknown') {
@@ -4074,23 +3136,6 @@ async function ensurePdfThumbnailForRow(row) {
   return { ...row, thumbnail_url: thumbnailUrl };
 }
 
-function publicUploadUrlToAbsolutePath(publicUrl) {
-  const url = String(publicUrl || '');
-  if (!url.startsWith('/uploads/')) return '';
-  const rel = url.replace('/uploads/', '');
-  return path.join(UPLOADS_DIR, rel);
-}
-
-function isUploadArtifactPath(filePath, folderName) {
-  const safePath = String(filePath || '').trim();
-  const safeFolder = String(folderName || '').trim();
-  if (!safePath || !safeFolder) return false;
-  const resolvedPath = path.resolve(safePath);
-  const uploadsRoot = path.resolve(UPLOADS_DIR);
-  if (resolvedPath !== uploadsRoot && !resolvedPath.startsWith(`${uploadsRoot}${path.sep}`)) return false;
-  return resolvedPath.split(path.sep).includes(safeFolder);
-}
-
 function pruneDownloadAuditCache(now = Date.now()) {
   if (recentDownloadAuditKeys.size < 2000) return;
   for (const [key, ts] of recentDownloadAuditKeys.entries()) {
@@ -4357,40 +3402,6 @@ async function findDuplicateAssetByHash(fileHash, { excludeAssetId = '', include
     if (candidateHash === safeHash) return row;
   }
   return null;
-}
-
-function resolveStoredUrl(value, defaultSubdir) {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-
-  const candidates = [];
-  if (raw.startsWith('/uploads/')) {
-    candidates.push(raw);
-  } else if (raw.startsWith('uploads/')) {
-    candidates.push(`/${raw}`);
-  } else if (path.isAbsolute(raw)) {
-    const rel = path.relative(UPLOADS_DIR, raw);
-    if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) {
-      candidates.push(`/uploads/${rel.replace(/\\/g, '/')}`);
-    }
-  } else {
-    // Legacy rows may store only filename; use subdir hint.
-    if (defaultSubdir) candidates.push(`/uploads/${defaultSubdir}/${raw}`);
-    candidates.push(`/uploads/${raw}`);
-  }
-
-  for (const candidate of candidates) {
-    const absolute = publicUploadUrlToAbsolutePath(candidate);
-    if (!absolute) continue;
-    try {
-      if (fs.existsSync(absolute) && fs.statSync(absolute).size > 0) {
-        return candidate;
-      }
-    } catch (_error) {
-      // Try next candidate.
-    }
-  }
-  return '';
 }
 
 function hasStoredFile(value, defaultSubdir) {

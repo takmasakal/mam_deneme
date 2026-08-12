@@ -44,7 +44,6 @@ function registerAssetRoutes(app, deps) {
     ensureDocumentThumbnailForRow,
     queryAssetSuggestions,
     findOcrMatchForAssetRow,
-    buildSubtitleCueSearchWhereSql,
     formatTimecode,
     buildUserContextFromRequest,
     getAdminSettings,
@@ -1091,28 +1090,9 @@ function registerAssetRoutes(app, deps) {
   
       const out = [];
       for (const row of result.rows) {
-        const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
-        const activeSubtitleUrl = String(dc.subtitleUrl || '').trim();
-        if (!activeSubtitleUrl) continue;
-        const subtitleWhere = buildSubtitleCueSearchWhereSql({
-          normColumn: 'norm_text',
-          startIndex: 3,
-          parsedQuery
-        });
-        const hitRes = await pool.query(
-          `
-            SELECT start_sec, cue_text
-            FROM asset_subtitle_cues
-            WHERE asset_id = $1
-              AND subtitle_url = $2
-              ${subtitleWhere.clauses.length ? `AND ${subtitleWhere.clauses.join(' AND ')}` : ''}
-            ORDER BY start_sec ASC
-            LIMIT 1
-          `,
-          [String(row.id || '').trim(), activeSubtitleUrl, ...subtitleWhere.params]
-        );
-        if (!hitRes.rowCount) continue;
-        const hit = hitRes.rows[0];
+        const subtitleSearch = await searchSubtitleMatchesForAssetRow(row, q, 1);
+        const hit = Array.isArray(subtitleSearch.matches) ? subtitleSearch.matches[0] : null;
+        if (!hit) continue;
         out.push({
           id: row.id,
           title: String(row.title || row.file_name || row.id || ''),
@@ -1121,8 +1101,9 @@ function registerAssetRoutes(app, deps) {
           status: String(row.status || ''),
           inTrash: Boolean(row.deleted_at),
           updatedAt: row.updated_at,
-          subtitleHitText: String(hit.cue_text || ''),
-          startSec: Number(hit.start_sec || 0)
+          subtitleHitText: String(hit.text || ''),
+          subtitleUrl: String(hit.subtitleUrl || subtitleSearch.subtitleUrl || '').trim(),
+          startSec: Number(hit.startSec || 0)
         });
         if (out.length >= limit) break;
       }

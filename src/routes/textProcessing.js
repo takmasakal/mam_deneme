@@ -40,9 +40,6 @@ function registerTextProcessingRoutes(app, deps) {
     syncSubtitleCueIndexForAssetRow,
     searchSubtitleMatchesForAssetRow,
     searchOcrMatchesForAssetRow,
-    ensureSubtitleCueIndexForAssetRow,
-    parseSubtitleTextSearchQuery,
-    buildSubtitleCueSearchWhereSql,
     formatTimecode,
     normalizeOcrPreset,
     normalizeOcrEngine,
@@ -283,7 +280,7 @@ function registerTextProcessingRoutes(app, deps) {
       return res.status(500).json({ error: 'Failed to load subtitle job' });
     }
   });
-  
+
   app.post('/api/assets/:id/photo-ocr/extract', async (req, res) => {
     try {
       const loaded = await loadVisibleAssetRow(req, req.params.id);
@@ -572,12 +569,13 @@ function registerTextProcessingRoutes(app, deps) {
         finishedAt: String(last.createdAt || ''),
         saved: true
       });
-    } catch (_error) {
-      console.warn(JSON.stringify({
-        event: 'video-ocr-latest-error',
+    } catch (error) {
+      console.error('video-ocr-latest-error', {
         assetId: String(req.params.id || '').trim(),
-        message: String(_error?.message || _error || 'Unknown error')
-      }));
+        requestId: String(req.id || req.headers?.['x-request-id'] || '').trim(),
+        message: String(error?.message || error).slice(0, 700),
+        stack: String(error?.stack || '').split('\n').slice(0, 4).join('\n')
+      });
       return res.status(500).json({ error: 'Failed to load latest OCR job' });
     }
   });
@@ -673,7 +671,9 @@ function registerTextProcessingRoutes(app, deps) {
       const loaded = await loadVisibleAssetRow(req, req.params.id);
       if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
       const row = loaded.row;
-      if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) return res.status(400).json({ error: 'OCR selection is supported only for video assets' });
+      if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+        return res.status(400).json({ error: 'OCR selection is supported only for video assets' });
+      }
       const itemId = String(req.body?.itemId || '').trim();
       if (!itemId) return res.status(400).json({ error: 'itemId is required' });
       const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
@@ -689,7 +689,10 @@ function registerTextProcessingRoutes(app, deps) {
         videoOcrSegmentCount: Math.max(0, Number(selected.segmentCount) || 0),
         videoOcrItems: items
       };
-      const updated = await pool.query('UPDATE assets SET dc_metadata = $2::jsonb, updated_at = $3 WHERE id = $1 RETURNING *', [req.params.id, JSON.stringify(updatedDc), new Date().toISOString()]);
+      const updated = await pool.query(
+        'UPDATE assets SET dc_metadata = $2::jsonb, updated_at = $3 WHERE id = $1 RETURNING *',
+        [req.params.id, JSON.stringify(updatedDc), new Date().toISOString()]
+      );
       return res.json({ ok: true, asset: mapAssetRow(updated.rows[0]) });
     } catch (error) {
       console.error(`Failed to activate OCR for asset ${req.params.id}: ${error?.message || error}`);
@@ -702,7 +705,9 @@ function registerTextProcessingRoutes(app, deps) {
       const loaded = await loadVisibleAssetRow(req, req.params.id);
       if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
       const row = loaded.row;
-      if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) return res.status(400).json({ error: 'OCR removal is supported only for video assets' });
+      if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
+        return res.status(400).json({ error: 'OCR removal is supported only for video assets' });
+      }
       const itemId = String(req.body?.itemId || '').trim();
       if (!itemId) return res.status(400).json({ error: 'itemId is required' });
       const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
@@ -711,7 +716,9 @@ function registerTextProcessingRoutes(app, deps) {
       if (!target) return res.status(404).json({ error: 'OCR item not found' });
       const nextItems = items.filter((item) => String(item.id || '') !== itemId);
       const previousActive = String(dc.videoOcrUrl || '').trim();
-      const nextActive = nextItems.find((item) => String(item.ocrUrl || '').trim() === previousActive) || nextItems[nextItems.length - 1] || null;
+      const nextActive = nextItems.find((item) => String(item.ocrUrl || '').trim() === previousActive)
+        || nextItems[nextItems.length - 1]
+        || null;
       const updatedDc = {
         ...dc,
         videoOcrUrl: nextActive ? String(nextActive.ocrUrl || '').trim() : '',
@@ -721,7 +728,10 @@ function registerTextProcessingRoutes(app, deps) {
         videoOcrSegmentCount: nextActive ? Math.max(0, Number(nextActive.segmentCount) || 0) : 0,
         videoOcrItems: nextItems
       };
-      const updated = await pool.query('UPDATE assets SET dc_metadata = $2::jsonb, updated_at = $3 WHERE id = $1 RETURNING *', [req.params.id, JSON.stringify(updatedDc), new Date().toISOString()]);
+      const updated = await pool.query(
+        'UPDATE assets SET dc_metadata = $2::jsonb, updated_at = $3 WHERE id = $1 RETURNING *',
+        [req.params.id, JSON.stringify(updatedDc), new Date().toISOString()]
+      );
       const filePath = publicUploadUrlToAbsolutePath(String(target.ocrUrl || '').trim());
       if (filePath && typeof cleanupAssetFiles === 'function') cleanupAssetFiles([filePath]);
       return res.json({ ok: true, removed: target.ocrUrl || '', asset: mapAssetRow(updated.rows[0]) });
@@ -965,36 +975,15 @@ function registerTextProcessingRoutes(app, deps) {
       const loaded = await loadVisibleAssetRow(req, assetId);
       if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
       const row = loaded.row;
-      const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
-      const subtitleUrl = String(dc.subtitleUrl || '').trim();
-      if (!subtitleUrl) return res.json([]);
-  
-      await ensureSubtitleCueIndexForAssetRow(row);
-      const parsedQuery = parseSubtitleTextSearchQuery(query);
-      if (!parsedQuery.raw) return res.json([]);
-      const subtitleWhere = buildSubtitleCueSearchWhereSql({
-        normColumn: 'norm_text',
-        startIndex: 3,
-        parsedQuery
-      });
-      const result = await pool.query(
-        `
-          SELECT seq, start_sec, end_sec, cue_text
-          FROM asset_subtitle_cues
-          WHERE asset_id = $1
-            AND subtitle_url = $2
-            ${subtitleWhere.clauses.length ? `AND ${subtitleWhere.clauses.join(' AND ')}` : ''}
-          ORDER BY start_sec ASC
-          LIMIT $${subtitleWhere.nextIndex}
-        `,
-        [assetId, subtitleUrl, ...subtitleWhere.params, limit]
-      );
-      return res.json(result.rows.map((item) => ({
+      const subtitleSearch = await searchSubtitleMatchesForAssetRow(row, query, limit);
+      const matches = Array.isArray(subtitleSearch.matches) ? subtitleSearch.matches : [];
+      return res.json(matches.slice(0, limit).map((item) => ({
         seq: Number(item.seq || 0),
-        startSec: Number(item.start_sec || 0),
-        endSec: Number(item.end_sec || 0),
-        startTc: formatTimecode(Number(item.start_sec || 0)),
-        text: String(item.cue_text || '')
+        subtitleUrl: String(item.subtitleUrl || '').trim(),
+        startSec: Number(item.startSec || 0),
+        endSec: Number(item.endSec || 0),
+        startTc: String(item.startTc || formatTimecode(Number(item.startSec || 0))),
+        text: String(item.text || '')
       })));
     } catch (_error) {
       return res.status(500).json({ error: 'Failed to suggest subtitle matches' });
