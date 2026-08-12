@@ -51,7 +51,7 @@ body.login-pf,
 #kc-header {
   width: 100% !important;
   max-width: none !important;
-  margin: 10px 0 18px !important;
+  margin: 0 0 20px !important;
   background: transparent !important;
   border-radius: 0 !important;
   padding: 0 !important;
@@ -78,7 +78,7 @@ body.login-pf,
   box-shadow: 0 14px 28px rgba(0, 0, 0, 0.25) !important;
   background: #2a2d36 !important;
   color: #e7ebf2 !important;
-  padding: 30px 18px 18px !important;
+  padding: 26px 18px 18px !important;
   position: relative !important;
   margin: 0 auto !important;
   overflow: hidden !important;
@@ -234,9 +234,11 @@ body.login-pf,
 
 #kc-page-title {
   color: #aab1c1 !important;
-  font-size: 24px !important;
+  font-size: 21px !important;
   line-height: 1.15 !important;
   font-weight: 600 !important;
+  margin: 0 0 22px !important;
+  text-align: center !important;
 }
 
 #kc-form-options a,
@@ -362,7 +364,7 @@ a[href*='login-actions/reset-credentials'] {
   display: inline-block !important;
   z-index: 1000 !important;
   align-self: flex-start !important;
-  margin: 0 0 8px !important;
+  margin: 0 0 20px !important;
 }
 
 #kc-locale a,
