@@ -2684,6 +2684,12 @@ function inferAssetStorageSubdir(input = {}) {
   return normalizeTypeFolder(input.type, input.mimeType, input.fileName);
 }
 
+function safeRmDir(target) {
+  try {
+    if (target && fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
+  } catch (_error) {}
+}
+
 let lastOcrFrameCacheCleanupAt = 0;
 
 function normalizeFrameCacheKeyPart(value, fallback = 'unknown') {
