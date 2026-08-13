@@ -29,6 +29,7 @@ const { createKeycloakService } = require('./services/keycloakService');
 const { createAuthContextService } = require('./services/authContextService');
 const { createEffectivePermissionService } = require('./services/effectivePermissionService');
 const { createMePayloadService } = require('./services/mePayloadService');
+const { createAuthMiddlewareService } = require('./services/authMiddlewareService');
 const { createTextAssetIndexService } = require('./services/textAssetIndexService');
 const { createSubtitleIndexService } = require('./services/subtitleIndexService');
 const {
@@ -6426,6 +6427,22 @@ const mePayloadService = createMePayloadService({
 const {
   buildMePayload
 } = mePayloadService;
+const authMiddlewareService = createAuthMiddlewareService({
+  resolveEffectivePermissions,
+  assetAccessService,
+  hasDocumentRightsAdminAccess,
+  includeScopedTextAdmin: false,
+  allowGroupAdminAssetRightsFallback: true
+});
+const {
+  requireAdminAccess,
+  requireTextAdminAccess,
+  requireScopedAdminAccess,
+  requireAssetDelete,
+  requireMetadataEdit,
+  requireOfficeEdit,
+  requirePdfAdvancedTools
+} = authMiddlewareService;
 
 app.get('/api/workflow', (_req, res) => {
   res.json(WORKFLOW);
@@ -6919,126 +6936,6 @@ app.post('/api/assets/backfill-proxies', async (_req, res) => {
   }
 });
 
-async function requireAdminAccess(req, res, next) {
-  try {
-    const effective = await resolveEffectivePermissions(req);
-    if (!effective.canAccessAdmin) return res.status(403).json({ error: 'Forbidden' });
-    req.userPermissions = effective;
-    return next();
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to verify admin permissions' });
-  }
-}
-
-async function requireTextAdminAccess(req, res, next) {
-  try {
-    const effective = await resolveEffectivePermissions(req);
-    if (!effective.canAccessTextAdmin) return res.status(403).json({ error: 'Forbidden' });
-    req.userPermissions = effective;
-    return next();
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to verify text admin permissions' });
-  }
-}
-
-async function requireScopedAdminAccess(req, res, next) {
-  const textAdminPaths = [
-    /^\/ocr-records(?:\/content)?$/,
-    /^\/subtitle-records(?:\/content)?$/,
-    /^\/text-search$/
-  ];
-  const assetRightsAdminPaths = [
-    /^\/assets\/access$/,
-    /^\/assets\/access-groups$/,
-    /^\/assets\/[^/]+\/access$/,
-    /^\/asset-types\/access$/,
-    /^\/asset-types\/[^/]+\/access$/
-  ];
-  const documentRightsAdminPaths = [
-    /^\/document-rights\/assets$/,
-    /^\/document-rights\/assets\/[^/]+\/access$/,
-    /^\/document-rights\/assets\/[^/]+\/edit-lock$/
-  ];
-  const safePath = String(req.path || '').trim();
-  if (textAdminPaths.some((pattern) => pattern.test(safePath))) {
-    return requireTextAdminAccess(req, res, next);
-  }
-  if (documentRightsAdminPaths.some((pattern) => pattern.test(safePath))) {
-    try {
-      const effective = await resolveEffectivePermissions(req);
-      const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
-      if (hasDocumentRightsAdminAccess(effective, accessContext)) {
-        req.userPermissions = effective;
-        return next();
-      }
-      return res.status(403).json({ error: 'Forbidden' });
-    } catch (_error) {
-      return res.status(500).json({ error: 'Failed to verify document rights admin permissions' });
-    }
-  }
-  if (assetRightsAdminPaths.some((pattern) => pattern.test(safePath))) {
-    try {
-      const effective = await resolveEffectivePermissions(req);
-      if (effective.canAccessAdmin) {
-        req.userPermissions = effective;
-        return next();
-      }
-      const groupAdminGroups = await assetAccessService.getGroupAdminGroupsForUser(effective).catch(() => []);
-      if (Array.isArray(groupAdminGroups) && groupAdminGroups.length) {
-        req.userPermissions = effective;
-        return next();
-      }
-      return res.status(403).json({ error: 'Forbidden' });
-    } catch (_error) {
-      return res.status(500).json({ error: 'Failed to verify admin permissions' });
-    }
-  }
-  return requireAdminAccess(req, res, next);
-}
-
-async function requireAssetDelete(req, res, next) {
-  try {
-    const effective = await resolveEffectivePermissions(req);
-    if (!effective.canDeleteAssets) return res.status(403).json({ error: 'Forbidden' });
-    req.userPermissions = effective;
-    return next();
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to verify delete permissions' });
-  }
-}
-
-async function requireMetadataEdit(req, res, next) {
-  try {
-    const effective = await resolveEffectivePermissions(req);
-    if (!effective.canEditMetadata) return res.status(403).json({ error: 'Forbidden' });
-    req.userPermissions = effective;
-    return next();
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to verify metadata edit permissions' });
-  }
-}
-
-async function requireOfficeEdit(req, res, next) {
-  try {
-    const effective = await resolveEffectivePermissions(req);
-    if (!effective.canEditOffice) return res.status(403).json({ error: 'Forbidden' });
-    req.userPermissions = effective;
-    return next();
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to verify office edit permissions' });
-  }
-}
-
-async function requirePdfAdvancedTools(req, res, next) {
-  try {
-    const effective = await resolveEffectivePermissions(req);
-    if (!effective.canUsePdfAdvancedTools) return res.status(403).json({ error: 'Forbidden' });
-    req.userPermissions = effective;
-    return next();
-  } catch (_error) {
-    return res.status(500).json({ error: 'Failed to verify PDF advanced permissions' });
-  }
-}
 
 function canManagePdfVersionRow(userPermissions, versionRow) {
   if (!userPermissions?.canUsePdfAdvancedTools || !versionRow) return false;
