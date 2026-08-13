@@ -97,6 +97,7 @@ function registerAdminRoutes(app, deps) {
     resolveAssetInputPath,
     buildArtifactPath,
     generateVideoThumbnail,
+    summarizeFfmpegError,
     regenerateVideoThumbnailForAsset,
     ensurePdfThumbnailForRow,
     isPdfCandidate,
@@ -4004,7 +4005,10 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
           error: 'Source media not found. Choose a source video file in New Asset File, then run proxy generation again.'
         });
       }
-      row = await ensureVideoProxyAndThumbnail(row, { forceProxy: true });
+      row = await ensureVideoProxyAndThumbnail(row, {
+        forceProxy: true,
+        allowAudioFallback: true
+      });
       info = {
         proxyUrl: resolveStoredUrl(row.proxy_url, 'proxies'),
         thumbnailUrl: resolveStoredUrl(row.thumbnail_url, 'thumbnails')
@@ -4235,7 +4239,7 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
       asset: mapAssetRow(row)
     });
   } catch (error) {
-    return res.status(500).json({ error: `Failed to run proxy tool action: ${String(error?.message || 'unknown error').slice(0, 260)}` });
+    return res.status(500).json({ error: `Failed to run proxy tool action: ${typeof summarizeFfmpegError === 'function' ? summarizeFfmpegError(error) : String(error?.message || 'unknown error').slice(0, 260)}` });
   }
 });
 

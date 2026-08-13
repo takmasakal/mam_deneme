@@ -6816,7 +6816,9 @@ async function ensureVideoProxyAndThumbnail(row, options = {}) {
   if (!proxyUrl) {
     const proxyStoredName = `${Date.now()}-${nanoid()}-proxy.mp4`;
     const proxyOut = buildArtifactPath('proxies', proxyStoredName, row.created_at);
-    await generateVideoProxy(inputPath, proxyOut.absolutePath);
+    await generateVideoProxy(inputPath, proxyOut.absolutePath, {
+      allowAudioFallback: Boolean(options.allowAudioFallback)
+    });
     proxyUrl = proxyOut.publicUrl;
     proxyStatus = 'ready';
     detectedAudioChannels = await getMediaAudioChannelCount(proxyOut.absolutePath);
