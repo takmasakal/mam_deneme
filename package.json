@@ -25,7 +25,8 @@
     "test:media-artifacts": "node scripts/test_media_artifact_service.js",
     "test:text-asset-index": "node scripts/test_text_asset_index_service.js",
     "test:subtitle-index": "node scripts/test_subtitle_index_service.js",
-    "test:media-tools": "node scripts/test_media_tool_service.js"
+    "test:media-tools": "node scripts/test_media_tool_service.js",
+    "test:backup-service": "node scripts/test_backup_service.js"
   },
   "dependencies": {
     "@embedpdf/snippet": "^2.8.0",
