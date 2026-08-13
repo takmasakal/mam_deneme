@@ -21,6 +21,7 @@
     "test:main-technical-info-store": "node scripts/test_main_technical_info_store.js",
     "test:admin-system-health": "node scripts/test_admin_system_health.js",
     "test:auth-context": "node scripts/test_auth_context_service.js",
+    "test:auth-middleware": "node scripts/test_auth_middleware_service.js",
     "test:backup-service": "node scripts/test_backup_service.js",
     "test:effective-permissions": "node scripts/test_effective_permission_service.js",
     "test:keycloak-service": "node scripts/test_keycloak_service.js",
