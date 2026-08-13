@@ -29,6 +29,7 @@
     "test:backup-service": "node scripts/test_backup_service.js",
     "test:auth-context": "node scripts/test_auth_context_service.js",
     "test:auth-middleware": "node scripts/test_auth_middleware_service.js",
+    "test:asset-mapper": "node scripts/test_asset_mapper_service.js",
     "test:asset-version": "node scripts/test_asset_version_service.js",
     "test:effective-permissions": "node scripts/test_effective_permission_service.js",
     "test:keycloak-service": "node scripts/test_keycloak_service.js",
