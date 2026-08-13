@@ -5111,11 +5111,11 @@ async function generateVideoProxy(inputPath, outputPath, options = {}) {
   const technicalInfo = await probeMediaTechnicalInfo(inputPath);
   const sourceWidth = Number(technicalInfo?.video?.width || 0);
   const sourceHeight = Number(technicalInfo?.video?.height || 0);
-  // Keep portrait proxies at a 640px long edge so phone videos do not become
-  // larger than necessary while landscape proxy behavior remains unchanged.
+  // Keep proxy generation conservative: never upscale small/near-proxy videos,
+  // and cap the long edge at 640px.
   const proxyScaleFilter = sourceHeight > sourceWidth
-    ? 'scale=640:640:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2'
-    : 'scale=640:-2:force_original_aspect_ratio=decrease';
+    ? 'scale=-2:min(640\\,ih)'
+    : 'scale=min(640\\,iw):-2';
   const allowAudioFallback = Boolean(options.allowAudioFallback);
   const runProxy = async (includeAudio) => {
     await new Promise((resolve, reject) => {
@@ -5144,27 +5144,13 @@ async function generateVideoProxy(inputPath, outputPath, options = {}) {
 
       if (!includeAudio || audioStreams.length === 0) {
         args.push('-an');
-      } else if (audioStreams.length === 1) {
-        // Browser/iOS compatible MP4 proxy: always downmix audio to AAC stereo.
+      } else {
+        // Browser/iOS compatible MP4 proxy: use the first audio stream and
+        // downmix it to AAC stereo. Merging every source audio stream is fragile
+        // for broadcast files with many layouts/tracks.
         args.push(
           '-map',
           '0:a:0',
-          '-c:a',
-          'aac',
-          '-ac',
-          '2',
-          '-ar',
-          '48000',
-          '-b:a',
-          '160k'
-        );
-      } else {
-        const inputs = audioStreams.map((_s, idx) => `[0:a:${idx}]`).join('');
-        args.push(
-          '-filter_complex',
-          `${inputs}amerge=inputs=${audioStreams.length}[aout]`,
-          '-map',
-          '[aout]',
           '-c:a',
           'aac',
           '-ac',
