@@ -20,6 +20,10 @@
     "test:main-detail-request-coordinator": "node scripts/test_main_detail_request_coordinator.js",
     "test:main-technical-info-store": "node scripts/test_main_technical_info_store.js",
     "test:admin-system-health": "node scripts/test_admin_system_health.js",
+    "test:media-artifacts": "node scripts/test_media_artifact_service.js",
+    "test:media-tools": "node scripts/test_media_tool_service.js",
+    "test:subtitle-index": "node scripts/test_subtitle_index_service.js",
+    "test:text-asset-index": "node scripts/test_text_asset_index_service.js",
     "test:media-jobs": "node scripts/test_media_jobs.js",
     "sync-login-version": "node scripts/sync-login-version.js"
   },

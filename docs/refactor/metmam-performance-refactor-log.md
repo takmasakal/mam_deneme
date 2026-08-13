@@ -10,6 +10,160 @@ This log records refactor steps that are tested in MetMAM before they are consid
 - Transfer only completed and verified steps to Kaisha.
 - Record unrelated dirty-worktree files and exclude them from commits.
 
+## Step 11 - Media artifact path service
+
+Status: implemented; automated checks passed.
+
+Scope:
+
+- Added `src/services/mediaArtifactService.js`.
+- Moved upload artifact path helpers out of `src/server.js`:
+  - `artifactRoot`
+  - `artifactFolder`
+  - `getUploadDateDir`
+  - `buildArtifactPath`
+  - `createOcrFrameWorkDir`
+  - `publicUploadUrlToAbsolutePath`
+  - `isUploadArtifactPath`
+  - `resolveStoredUrl`
+- Kept the existing upload layout behavior:
+  - generated artifacts still use `uploads/YYYY/M/D/<folder>/...`
+  - `proxies` artifacts still map to the `previews` folder for new output
+  - legacy filename-only rows can still resolve through a subdir hint such as
+    `proxies`
+  - absolute paths under the uploads root still resolve to `/uploads/...`
+- Added `scripts/test_media_artifact_service.js`.
+- Added `npm run test:media-artifacts`.
+
+Checks:
+
+- `node --check src/services/mediaArtifactService.js`
+- `node --check src/server.js`
+- `node scripts/test_media_artifact_service.js`
+- `npm run check`
+
+Performance note:
+
+This is a structural refactor and is not expected to improve response time by
+itself. It creates a stable boundary for OCR, subtitle, thumbnail, proxy,
+metadata attachment, cleanup, and backup code before the heavier text/media
+processing extraction.
+
+Kaisha transfer status: not transferred.
+
+## Step 12 - OCR text asset index service
+
+Status: implemented; automated checks passed.
+
+Scope:
+
+- Added `src/services/textAssetIndexService.js`.
+- Moved OCR text/index helpers out of `src/server.js`:
+  - active OCR URL resolution from Dublin Core metadata
+  - active OCR item and expected segment count detection
+  - OCR text-file candidate discovery and short-lived file index cache
+  - OCR timed segment indexing into `asset_ocr_segments`
+  - per-asset OCR match lookup
+  - batch OCR match lookup for asset-list cards
+  - OCR fuzzy fallback and `didYouMean` result shaping
+- Kept the existing search behavior and dependencies:
+  - the service still uses the subtitle/search normalization helpers
+  - `-?*suffix` long-suffix exclusion remains supported through
+    `normalizedTextHasLongSuffixTerm`
+  - DB segment index is lazily repaired when missing
+  - file-based OCR fallback remains available for legacy rows
+- Added `scripts/test_text_asset_index_service.js`.
+- Added `npm run test:text-asset-index`.
+
+Checks:
+
+- `node --check src/services/textAssetIndexService.js`
+- `node --check src/server.js`
+- `npm run test:text-asset-index`
+- `npm run check`
+
+Follow-up fix:
+
+- `src/routes/textProcessing.js` already used `mapVideoOcrJobFromDbRow` for
+  persisted `video-ocr/latest` responses, but did not destructure it from route
+  dependencies. This caused HTTP 500 with `mapVideoOcrJobFromDbRow is not
+  defined` after OCR generation. Added the missing dependency binding.
+
+Performance note:
+
+This is primarily a structural refactor. It isolates the OCR indexing/search
+path so later work can optimize segment indexing, cache invalidation, and
+batch search without expanding `src/server.js`.
+
+Kaisha transfer status: not transferred.
+
+## Step 13 - Subtitle cue index service
+
+Status: implemented; automated checks passed.
+
+Scope:
+
+- Added `src/services/subtitleIndexService.js`.
+- Moved subtitle cue index/search helpers out of `src/server.js`:
+  - active subtitle file loading
+  - cue row mapping and timecode formatting wrapper
+  - subtitle fuzzy token matching
+  - subtitle `didYouMean` suggestion generation
+  - per-asset subtitle match lookup
+  - batch subtitle match lookup for asset-list cards
+  - `asset_subtitle_cues` sync and lazy index repair
+- Kept `src/services/subtitleService.js` focused on parsing and text/time
+  normalization:
+  - VTT/SRT conversion
+  - cue parsing
+  - search query SQL clause generation
+  - direct cue text matching
+- Added `scripts/test_subtitle_index_service.js`.
+- Added `npm run test:subtitle-index`.
+
+Checks:
+
+- `node --check src/services/subtitleIndexService.js`
+- `node --check src/server.js`
+- `npm run test:subtitle-index`
+- `npm run check`
+
+Follow-up fix:
+
+- Subtitle search now indexes and searches all subtitle files attached to an
+  asset through `dc_metadata.subtitleItems`, not only the globally active
+  `dc_metadata.subtitleUrl`.
+- This preserves the active subtitle choice for playback while allowing a user
+  to search text in inactive language versions. Example: after generating
+  English subtitles and translating them to Turkish, searching `brain` can
+  still match the English subtitle even when Turkish is active.
+- Subtitle match payloads now keep `subtitleUrl` so the matched file/language
+  can be surfaced later if needed.
+- `scripts/test_subtitle_index_service.js` covers active Turkish plus inactive
+  English subtitles and asserts that an English-only `brain` match is returned.
+- The active-subtitle model is language scoped: search uses one active subtitle
+  per language from `subtitleActiveByLang`, not every historical subtitle item
+  and not only the global `subtitleUrl`.
+- Global first-column subtitle suggestions and asset-specific subtitle
+  suggestions now use the same subtitle index service. This prevents cases
+  where a video detail/player can highlight a match but the second-column card
+  or suggestion list omits it.
+- Fixed multi-language subtitle cue indexing for the real
+  `asset_subtitle_cues` primary key. The table key is `(asset_id, seq)`, so
+  sequence numbers must be unique across all active language subtitles for the
+  same asset. The service now uses one asset-wide sequence counter instead of
+  restarting at 1 for each subtitle file. This fixes cases where English cues
+  were indexed but Turkish translated cues failed with duplicate `(asset_id,
+  seq)` and therefore did not appear in second-column subtitle search.
+
+Performance note:
+
+This is a structural refactor. It isolates subtitle indexing and card-search
+behavior so future work can optimize index repair, batch query limits, and
+fuzzy matching without growing `src/server.js`.
+
+Kaisha transfer status: not transferred.
+
 ## Step 1 - Asset list query parsing
 
 Status: implemented; automated and runtime UI checks passed.
