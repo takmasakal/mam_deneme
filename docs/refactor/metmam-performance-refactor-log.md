@@ -51,6 +51,38 @@ processing extraction.
 
 Kaisha transfer status: not transferred.
 
+## Step 5 - Backup service extraction
+
+Status: implemented; automated checks passed.
+
+Scope:
+
+- Added `src/services/backupService.js`.
+- Moved backup execution, backup file listing, retention cleanup, pg_dump/tar
+  backup helpers, restic repository initialization, restic upload backup, and
+  scheduler logic out of `src/server.js`.
+- Kept `normalizeBackupSettings` in `src/server.js` because it is part of the
+  broader admin settings normalization block.
+- Left admin routes unchanged by preserving the existing `runSystemBackup`,
+  `listBackupFiles`, and `scheduleSystemBackups` names through service wiring.
+- Added `scripts/test_backup_service.js` and `npm run test:backup-service`.
+
+Checks:
+
+- `node --check src/server.js`
+- `node --check src/services/backupService.js`
+- `node --check scripts/test_backup_service.js`
+- `node scripts/test_backup_service.js`
+
+Runtime note:
+
+The new test uses a fake command runner and a temporary backup directory, so it
+does not call real `pg_dump`, `tar`, or `restic`. It verifies command argument
+construction, generated backup file listing, restic snapshot id extraction, and
+the system backup orchestration path.
+
+Kaisha transfer status: not transferred.
+
 ## Step 12 - OCR text asset index service
 
 Status: implemented; automated checks passed.

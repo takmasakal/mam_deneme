@@ -24,6 +24,7 @@ const { createImageDerivativeService } = require('./services/imageDerivativeServ
 const { createMetadataEnrichmentService } = require('./services/metadataEnrichmentService');
 const { createMediaToolService } = require('./services/mediaToolService');
 const { createMediaArtifactService } = require('./services/mediaArtifactService');
+const { createBackupService } = require('./services/backupService');
 const { createTextAssetIndexService } = require('./services/textAssetIndexService');
 const { createSubtitleIndexService } = require('./services/subtitleIndexService');
 const {
@@ -4127,6 +4128,27 @@ const imageDerivativeService = createImageDerivativeService({
   nanoid,
   getFileExtension
 });
+const backupService = createBackupService({
+  fs,
+  path,
+  uploadsDir: UPLOADS_DIR,
+  defaultBackupDir: DEFAULT_BACKUP_DIR,
+  defaultResticRepository: DEFAULT_RESTIC_REPOSITORY,
+  backupTimeZone: process.env.BACKUP_TIME_ZONE || process.env.TZ || 'Europe/Istanbul',
+  runCommandCapture,
+  compactCommandOutput,
+  clampNumber,
+  readEnvOrFile,
+  normalizeBackupSettings,
+  defaultBackupSettings: DEFAULT_ADMIN_SETTINGS.backup,
+  getAdminSettings,
+  logger: console
+});
+const {
+  listBackupFiles,
+  runSystemBackup,
+  scheduleSystemBackups
+} = backupService;
 
 function runCommandQuiet(cmd, args) {
   return new Promise((resolve) => {
@@ -5492,278 +5514,6 @@ async function saveAdminSettings(settings) {
     [JSON.stringify(settings), updatedAt]
   );
   return settings;
-}
-
-let backupInProgress = false;
-let lastBackupRunDate = '';
-const BACKUP_TIME_ZONE = String(process.env.BACKUP_TIME_ZONE || process.env.TZ || 'Europe/Istanbul').trim() || 'Europe/Istanbul';
-
-function backupDateParts(value = new Date()) {
-  const date = value instanceof Date ? value : new Date(value);
-  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: BACKUP_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23'
-  }).formatToParts(safeDate);
-  const getPart = (type) => String(parts.find((part) => part.type === type)?.value || '');
-  return {
-    year: getPart('year'),
-    month: getPart('month'),
-    day: getPart('day'),
-    hour: Number(getPart('hour')),
-    minute: getPart('minute'),
-    second: getPart('second'),
-    millisecond: String(safeDate.getMilliseconds()).padStart(3, '0')
-  };
-}
-
-function backupDateStamp(value = new Date()) {
-  const parts = backupDateParts(value);
-  return `${parts.year}-${parts.month}-${parts.day}T${String(parts.hour).padStart(2, '0')}-${parts.minute}-${parts.second}-${parts.millisecond}`;
-}
-
-function getDbConnectionConfig(prefix = 'MAM') {
-  if (prefix === 'KEYCLOAK') {
-    return {
-      host: process.env.KEYCLOAK_DB_URL_HOST || process.env.KEYCLOAK_DB_HOST || 'keycloak-postgres',
-      port: process.env.KEYCLOAK_DB_PORT || '5432',
-      user: process.env.KEYCLOAK_DB_USERNAME || process.env.KEYCLOAK_DB_USER || 'keycloak',
-      database: process.env.KEYCLOAK_DB_URL_DATABASE || process.env.KEYCLOAK_DB_NAME || 'keycloak',
-      password: readEnvOrFile('KEYCLOAK_DB_PASSWORD')
-    };
-  }
-  return {
-    host: process.env.MAM_DB_HOST || 'postgres',
-    port: process.env.MAM_DB_PORT || '5432',
-    user: process.env.MAM_DB_USER || process.env.POSTGRES_USER || 'postgres',
-    database: process.env.MAM_DB_NAME || process.env.POSTGRES_DB || 'mam_mvp',
-    password: readEnvOrFile('MAM_DB_PASSWORD') || readEnvOrFile('POSTGRES_PASSWORD')
-  };
-}
-
-async function runPgDumpBackup(targetPath, dbConfig) {
-  const args = [
-    '-h', String(dbConfig.host || 'postgres'),
-    '-p', String(dbConfig.port || '5432'),
-    '-U', String(dbConfig.user || 'postgres'),
-    '-d', String(dbConfig.database || 'mam_mvp'),
-    '-Fc',
-    '-f', targetPath
-  ];
-  const result = await runCommandCapture('pg_dump', args, {
-    env: {
-      PGPASSWORD: String(dbConfig.password || '')
-    }
-  });
-  if (!result.ok) {
-    throw new Error(compactCommandOutput(result.stderr || result.stdout || 'pg_dump failed'));
-  }
-  return targetPath;
-}
-
-async function runTarArchiveBackup(targetPath, sourcePath) {
-  const parentDir = path.dirname(sourcePath);
-  const baseName = path.basename(sourcePath);
-  const result = await runCommandCapture('tar', ['-czf', targetPath, '--exclude', '_backups', '-C', parentDir, baseName]);
-  if (!result.ok) {
-    throw new Error(compactCommandOutput(result.stderr || result.stdout || 'uploads archive failed'));
-  }
-  return targetPath;
-}
-
-function getResticEnv() {
-  const env = {};
-  if (process.env.RESTIC_PASSWORD_FILE) {
-    env.RESTIC_PASSWORD_FILE = process.env.RESTIC_PASSWORD_FILE;
-    return env;
-  }
-  const password = readEnvOrFile('RESTIC_PASSWORD');
-  if (password) {
-    env.RESTIC_PASSWORD = password;
-    return env;
-  }
-  throw new Error('Restic password is not configured. Set RESTIC_PASSWORD_FILE or RESTIC_PASSWORD.');
-}
-
-async function ensureResticRepository(repository, env) {
-  const repo = path.resolve(String(repository || DEFAULT_RESTIC_REPOSITORY));
-  await fs.promises.mkdir(path.dirname(repo), { recursive: true });
-  const configPath = path.join(repo, 'config');
-  const hasConfig = await fs.promises.access(configPath).then(() => true).catch(() => false);
-  if (hasConfig) {
-    const snapshots = await runCommandCapture('restic', ['-r', repo, 'snapshots', '--json'], { env });
-    if (!snapshots.ok) {
-      throw new Error(compactCommandOutput(snapshots.stderr || snapshots.stdout || 'restic snapshots failed'));
-    }
-    return repo;
-  }
-  const init = await runCommandCapture('restic', ['-r', repo, 'init'], { env });
-  if (!init.ok) {
-    throw new Error(compactCommandOutput(init.stderr || init.stdout || 'restic init failed'));
-  }
-  return repo;
-}
-
-function extractResticSnapshotId(output) {
-  const match = String(output || '').match(/snapshot\s+([0-9a-f]{8,})\s+saved/i);
-  return match ? match[1] : '';
-}
-
-async function runResticUploadsBackup(repository, backup) {
-  const env = getResticEnv();
-  const repo = await ensureResticRepository(repository, env);
-  const backupResult = await runCommandCapture('restic', [
-    '-r', repo,
-    'backup', UPLOADS_DIR,
-    '--exclude', path.join(UPLOADS_DIR, '_backups'),
-    '--exclude', path.join(UPLOADS_DIR, '_audit_exports')
-  ], { env });
-  if (!backupResult.ok) {
-    throw new Error(compactCommandOutput(backupResult.stderr || backupResult.stdout || 'restic backup failed'));
-  }
-  const forget = await runCommandCapture('restic', [
-    '-r', repo,
-    'forget',
-    '--keep-daily', String(backup.resticKeepDaily),
-    '--keep-weekly', String(backup.resticKeepWeekly),
-    '--keep-monthly', String(backup.resticKeepMonthly),
-    '--prune'
-  ], { env });
-  if (!forget.ok) {
-    throw new Error(compactCommandOutput(forget.stderr || forget.stdout || 'restic forget failed'));
-  }
-  return {
-    repository: repo,
-    snapshotId: extractResticSnapshotId(backupResult.stdout || backupResult.stderr),
-    output: compactCommandOutput(backupResult.stdout || backupResult.stderr)
-  };
-}
-
-async function cleanupExpiredBackupFiles(directory, retentionDays) {
-  const days = clampNumber(retentionDays, 1, 3650, DEFAULT_ADMIN_SETTINGS.backup.retentionDays);
-  const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
-  let deleted = 0;
-  try {
-    const entries = await fs.promises.readdir(directory, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isFile()) continue;
-      if (!/^mam-backup-/.test(entry.name)) continue;
-      const filePath = path.join(directory, entry.name);
-      const stat = await fs.promises.stat(filePath).catch(() => null);
-      if (stat && stat.mtimeMs < cutoff) {
-        await fs.promises.unlink(filePath).catch(() => {});
-        deleted += 1;
-      }
-    }
-  } catch (_error) {
-    // Missing backup directory is not a cleanup failure.
-  }
-  return deleted;
-}
-
-async function listBackupFiles(settings = DEFAULT_ADMIN_SETTINGS.backup) {
-  const backup = normalizeBackupSettings(settings);
-  const directory = path.resolve(backup.directory || DEFAULT_BACKUP_DIR);
-  try {
-    const entries = await fs.promises.readdir(directory, { withFileTypes: true });
-    const files = [];
-    for (const entry of entries) {
-      if (!entry.isFile()) continue;
-      if (!/^mam-backup-/.test(entry.name)) continue;
-      const filePath = path.join(directory, entry.name);
-      const stat = await fs.promises.stat(filePath).catch(() => null);
-      files.push({
-        fileName: entry.name,
-        path: filePath,
-        size: stat ? Number(stat.size || 0) : 0,
-        updatedAt: stat ? stat.mtime.toISOString() : ''
-      });
-    }
-    files.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
-    return { directory, files };
-  } catch (_error) {
-    return { directory, files: [] };
-  }
-}
-
-async function runSystemBackup(settings = DEFAULT_ADMIN_SETTINGS.backup, requestedBy = '') {
-  if (backupInProgress) {
-    const error = new Error('Backup is already running');
-    error.code = 'backup_in_progress';
-    throw error;
-  }
-  const backup = normalizeBackupSettings(settings);
-  const directory = path.resolve(backup.directory || DEFAULT_BACKUP_DIR);
-  backupInProgress = true;
-  const startedAt = new Date();
-  const stamp = backupDateStamp(startedAt);
-  const result = {
-    startedAt: startedAt.toISOString(),
-    finishedAt: '',
-    directory,
-    requestedBy: String(requestedBy || '').trim(),
-    files: [],
-    errors: []
-  };
-  try {
-    await fs.promises.mkdir(directory, { recursive: true });
-    if (backup.includeMamDb) {
-      const filePath = path.join(directory, `mam-backup-${stamp}-mam-db.dump`);
-      await runPgDumpBackup(filePath, getDbConnectionConfig('MAM'));
-      const stat = await fs.promises.stat(filePath).catch(() => null);
-      result.files.push({ type: 'mam_db', path: filePath, size: stat ? Number(stat.size || 0) : 0 });
-    }
-    if (backup.includeKeycloakDb) {
-      const filePath = path.join(directory, `mam-backup-${stamp}-keycloak-db.dump`);
-      await runPgDumpBackup(filePath, getDbConnectionConfig('KEYCLOAK'));
-      const stat = await fs.promises.stat(filePath).catch(() => null);
-      result.files.push({ type: 'keycloak_db', path: filePath, size: stat ? Number(stat.size || 0) : 0 });
-    }
-    if (backup.includeUploadsArchive) {
-      const filePath = path.join(directory, `mam-backup-${stamp}-uploads.tar.gz`);
-      await runTarArchiveBackup(filePath, UPLOADS_DIR);
-      const stat = await fs.promises.stat(filePath).catch(() => null);
-      result.files.push({ type: 'uploads_archive', path: filePath, size: stat ? Number(stat.size || 0) : 0 });
-    }
-    if (backup.includeUploadsRestic) {
-      const restic = await runResticUploadsBackup(backup.resticRepository, backup);
-      result.files.push({ type: 'uploads_restic', path: restic.repository, size: 0, snapshotId: restic.snapshotId, output: restic.output });
-    }
-    await cleanupExpiredBackupFiles(directory, backup.retentionDays);
-    result.finishedAt = new Date().toISOString();
-    return result;
-  } finally {
-    backupInProgress = false;
-  }
-}
-
-function scheduleSystemBackups() {
-  const runIfDue = async () => {
-    const settings = await getAdminSettings().catch(() => DEFAULT_ADMIN_SETTINGS);
-    const backup = normalizeBackupSettings(settings.backup);
-    if (!backup.enabled) return;
-    const now = backupDateParts();
-    const today = `${now.year}-${now.month}-${now.day}`;
-    if (lastBackupRunDate === today) return;
-    if (now.hour !== backup.dailyHour) return;
-    lastBackupRunDate = today;
-    try {
-      const result = await runSystemBackup(backup, 'scheduler');
-      console.log(`System backup completed: ${result.files.map((file) => file.path).join(', ')}`);
-    } catch (error) {
-      lastBackupRunDate = '';
-      console.error(`System backup failed: ${error?.message || error}`);
-    }
-  };
-  setInterval(() => {
-    runIfDue().catch(() => {});
-  }, 10 * 60 * 1000);
 }
 
 let auditCleanupInProgress = false;
