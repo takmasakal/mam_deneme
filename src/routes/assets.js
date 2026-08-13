@@ -1109,6 +1109,11 @@ function registerAssetRoutes(app, deps) {
       }
       return res.json(out);
     } catch (_error) {
+      console.error(JSON.stringify({
+        event: 'subtitle-suggest-error',
+        query: String(req.query.q || '').trim(),
+        message: String(_error?.message || _error || 'Unknown error')
+      }));
       return res.status(500).json({ error: 'Failed to suggest subtitle matches' });
     }
   });
