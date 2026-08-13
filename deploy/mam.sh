@@ -25,6 +25,29 @@ if [[ -z "${DOCKER_CMD}" ]]; then
   exit 1
 fi
 
+current_git_branch() {
+  local branch
+  branch="$(git symbolic-ref --short HEAD 2>/dev/null || true)"
+  if [[ -z "${branch}" ]]; then
+    branch="$(git branch --show-current 2>/dev/null || true)"
+  fi
+  if [[ -z "${branch}" ]]; then
+    branch="$(git name-rev --name-only HEAD 2>/dev/null \
+      | sed -E 's#^remotes/origin/##; s#^origin/##; s#~[0-9]+$##' || true)"
+  fi
+  if [[ -z "${branch}" || "${branch}" == "undefined" ]]; then
+    branch="unknown"
+  fi
+  echo "${branch}"
+}
+
+export_build_metadata() {
+  MAM_GIT_COMMIT="$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
+  MAM_GIT_BRANCH="$(current_git_branch)"
+  MAM_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  export MAM_GIT_COMMIT MAM_GIT_BRANCH MAM_BUILD_DATE
+}
+
 dc() {
   # shellcheck disable=SC2086
   ${DOCKER_CMD} compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
@@ -110,6 +133,7 @@ case "${cmd}" in
     ;;
   up)
     ensure_init "${2:-}"
+    export_build_metadata
     dc up -d --no-build
     sync_keycloak_remember_me
     ;;
@@ -117,6 +141,7 @@ case "${cmd}" in
     dc down
     ;;
   restart)
+    export_build_metadata
     dc down
     dc up -d --no-build
     sync_keycloak_remember_me

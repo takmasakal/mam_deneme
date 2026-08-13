@@ -28,6 +28,7 @@ const { createBackupService } = require('./services/backupService');
 const { createKeycloakService } = require('./services/keycloakService');
 const { createAuthContextService } = require('./services/authContextService');
 const { createEffectivePermissionService } = require('./services/effectivePermissionService');
+const { createMePayloadService } = require('./services/mePayloadService');
 const { createTextAssetIndexService } = require('./services/textAssetIndexService');
 const { createSubtitleIndexService } = require('./services/subtitleIndexService');
 const {
@@ -6424,6 +6425,17 @@ const {
   hasDocumentRightsAdminAccess,
   resolveEffectivePermissions
 } = effectivePermissionService;
+const mePayloadService = createMePayloadService({
+  resolveEffectivePermissions,
+  getAdminSettings,
+  normalizeAuthSessionSettings,
+  assetAccessService,
+  hasDocumentRightsAdminAccess,
+  officeEditorProvider: OFFICE_EDITOR_PROVIDER
+});
+const {
+  buildMePayload
+} = mePayloadService;
 
 app.get('/api/workflow', (_req, res) => {
   res.json(WORKFLOW);
@@ -6442,44 +6454,11 @@ app.get('/api/me', async (req, res) => {
   res.set('Expires', '0');
   res.set('Surrogate-Control', 'no-store');
   try {
-    const effective = await resolveEffectivePermissions(req);
-    if (!String(effective.username || '').trim() && !String(effective.email || '').trim()) {
+    const me = await buildMePayload(req);
+    if (!me.authenticated) {
       return res.status(401).json({ error: 'Authentication required' });
     }
-    const authSession = normalizeAuthSessionSettings((await getAdminSettings()).authSession);
-    const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
-    const canAccessTextAdmin = Boolean(
-      effective.canAccessTextAdmin
-      || assetAccessService.hasScopedAdminScopeAccess(accessContext, 'text-admin')
-    );
-    res.json({
-      username: effective.username,
-      displayName: effective.displayName,
-      email: effective.email || '',
-      groups: effective.groups || [],
-      roles: effective.roles || [],
-      groupAdminGroups: accessContext.groupAdminGroups || [],
-      isSuperAdmin: Boolean(effective.isSuperAdmin),
-      isAdmin: effective.isAdmin,
-	      canAccessAdmin: effective.canAccessAdmin,
-	      canAccessTextAdmin,
-	      canAccessAssetRightsAdmin: Boolean(effective.canAccessAdmin || assetAccessService.hasScopedAssetRightsAdminAccess(accessContext)),
-	      canAccessDocumentRightsAdmin: hasDocumentRightsAdminAccess(effective, accessContext),
-	      canEditMetadata: effective.canEditMetadata,
-      canEditOffice: effective.canEditOffice,
-      canDeleteAssets: effective.canDeleteAssets,
-	      canUsePdfAdvancedTools: effective.canUsePdfAdvancedTools,
-	      canAccessAdvancedSearch: Boolean(effective.canAccessAdvancedSearch),
-	      allowedAssetTypes: assetAccessService.getAllowedAssetTypeGroups(accessContext),
-	      uploadAllowedAssetTypes: assetAccessService.getAllowedUploadAssetTypeGroups(accessContext),
-      officeEditorProvider: OFFICE_EDITOR_PROVIDER,
-      permissionKeys: effective.permissionKeys,
-      deniedPermissionKeys: effective.deniedPermissionKeys || [],
-      authSession: {
-        clientIdleMinutes: authSession.clientIdleMinutes,
-        clientMaxHours: authSession.clientMaxHours
-      }
-    });
+    res.json(me.payload);
   } catch (_error) {
     console.warn(JSON.stringify({
       event: 'api-me-error',
