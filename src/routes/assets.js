@@ -682,6 +682,7 @@ function registerAssetRoutes(app, deps) {
                 const visibleHits = hits.slice(0, assetCardMatchPageSize);
                 const mapped = visibleHits.map((item) => ({
                   query: String(item.query || hitQuery).trim() || hitQuery,
+                  subtitleUrl: String(item.subtitleUrl || '').trim(),
                   text: String(item.line || item.text || ''),
                   startSec: Number(item.startSec || 0),
                   endSec: Number(item.endSec || 0),
@@ -808,6 +809,7 @@ function registerAssetRoutes(app, deps) {
             const match = hits[0];
             row._subtitle_search_hit = {
               query: hitQuery,
+              subtitleUrl: String(match.subtitleUrl || '').trim(),
               text: String(match.text || ''),
               startSec: Number(match.startSec || 0),
               endSec: Number(match.endSec || 0),
@@ -815,6 +817,7 @@ function registerAssetRoutes(app, deps) {
             };
             row._subtitle_search_hits = visibleHits.map((item) => ({
               query: String(item.query || hitQuery).trim() || hitQuery,
+              subtitleUrl: String(item.subtitleUrl || '').trim(),
               text: String(item.text || ''),
               startSec: Number(item.startSec || 0),
               endSec: Number(item.endSec || 0),
@@ -1109,28 +1112,9 @@ function registerAssetRoutes(app, deps) {
   
       const out = [];
       for (const row of result.rows) {
-        const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
-        const activeSubtitleUrl = String(dc.subtitleUrl || '').trim();
-        if (!activeSubtitleUrl) continue;
-        const subtitleWhere = buildSubtitleCueSearchWhereSql({
-          normColumn: 'norm_text',
-          startIndex: 3,
-          parsedQuery
-        });
-        const hitRes = await pool.query(
-          `
-            SELECT start_sec, cue_text
-            FROM asset_subtitle_cues
-            WHERE asset_id = $1
-              AND subtitle_url = $2
-              ${subtitleWhere.clauses.length ? `AND ${subtitleWhere.clauses.join(' AND ')}` : ''}
-            ORDER BY start_sec ASC
-            LIMIT 1
-          `,
-          [String(row.id || '').trim(), activeSubtitleUrl, ...subtitleWhere.params]
-        );
-        if (!hitRes.rowCount) continue;
-        const hit = hitRes.rows[0];
+        const subtitleSearch = await searchSubtitleMatchesForAssetRow(row, q, 1);
+        const hit = Array.isArray(subtitleSearch.matches) ? subtitleSearch.matches[0] : null;
+        if (!hit) continue;
         out.push({
           id: row.id,
           title: String(row.title || row.file_name || row.id || ''),
@@ -1139,13 +1123,19 @@ function registerAssetRoutes(app, deps) {
           status: String(row.status || ''),
           inTrash: Boolean(row.deleted_at),
           updatedAt: row.updated_at,
-          subtitleHitText: String(hit.cue_text || ''),
-          startSec: Number(hit.start_sec || 0)
+          subtitleHitText: String(hit.text || ''),
+          subtitleUrl: String(hit.subtitleUrl || subtitleSearch.subtitleUrl || '').trim(),
+          startSec: Number(hit.startSec || 0)
         });
         if (out.length >= limit) break;
       }
       return res.json(out);
     } catch (_error) {
+      console.error(JSON.stringify({
+        event: 'subtitle-suggest-error',
+        query: String(req.query.q || '').trim(),
+        message: String(_error?.message || _error || 'Unknown error')
+      }));
       return res.status(500).json({ error: 'Failed to suggest subtitle matches' });
     }
   });

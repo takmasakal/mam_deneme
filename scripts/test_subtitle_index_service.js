@@ -226,6 +226,11 @@ const service = createSubtitleIndexService({
   assert.strictEqual(single.matches[0].startTc, '00:00:01.000');
   assert.strictEqual(single.matches[0].subtitleUrl, subtitleUrlTr);
 
+  const fuzzySingle = await service.searchSubtitleMatchesForAssetRow(row, 'istambul', 20);
+  assert.strictEqual(fuzzySingle.matches.length, 1, 'Expected fuzzy single-asset subtitle match');
+  assert.strictEqual(fuzzySingle.subtitleUrl, subtitleUrlTr, 'Fuzzy single-asset result should expose subtitleUrl');
+  assert.strictEqual(fuzzySingle.fuzzyUsed, true, 'Fuzzy single-asset path should be marked');
+
   const batch = await service.searchSubtitleMatchesForAssetRows([row], 'ankara', 8);
   const batchMatches = batch.byAssetId.get(row.id) || [];
   assert.strictEqual(batchMatches.length, 1, 'Expected one batch subtitle match');

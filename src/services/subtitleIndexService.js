@@ -240,7 +240,7 @@ function createSubtitleIndexService(deps = {}) {
     }
 
     return {
-      subtitleUrl,
+      subtitleUrl: matches[0]?.subtitleUrl || subtitleUrls[0] || '',
       matches,
       didYouMean,
       fuzzyUsed,
