@@ -144,6 +144,10 @@ Usage:
   ./deploy/mam-kaisha.sh urls
   ./deploy/mam-kaisha.sh version
   ./deploy/mam-kaisha.sh sync-keycloak
+  ./deploy/mam-kaisha.sh maintenance-on
+  ./deploy/mam-kaisha.sh maintenance-off
+  ./deploy/mam-kaisha.sh maintenance-status
+  ./deploy/mam-kaisha.sh maintenance-restart
 HELP
 }
 
@@ -214,6 +218,18 @@ case "${cmd}" in
   version)
     ensure_init
     print_running_version
+    ;;
+  maintenance-on)
+    ./deploy/belgelik-maintenance.sh on
+    ;;
+  maintenance-off)
+    ./deploy/belgelik-maintenance.sh off
+    ;;
+  maintenance-status)
+    ./deploy/belgelik-maintenance.sh status
+    ;;
+  maintenance-restart)
+    ./deploy/belgelik-maintenance.sh with-maintenance -- ./deploy/mam-kaisha.sh restart
     ;;
   ""|-h|--help|help)
     usage
