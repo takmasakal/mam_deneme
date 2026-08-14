@@ -131,6 +131,119 @@ ensure_init() {
   fi
 }
 
+# ADDED:
+# Beklenen tüm Kaisha container'larının çalışmasını bekler.
+# Healthcheck tanımlı container'lar için ayrıca "healthy" durumu aranır.
+# Tüm servisler hazır olduğunda maintenance modu kapatılır.
+wait_for_kaisha_ready() {
+  local timeout_seconds="${1:-180}"
+  local interval_seconds="${2:-3}"
+  local elapsed=0
+  local all_ready
+  local container
+  local status
+  local health
+
+  local expected_containers=(
+    "kaisha-oauth2-proxy"
+    "kaisha-app"
+    "kaisha-onlyoffice"
+    "kaisha-keycloak"
+    "kaisha-elasticsearch"
+    "kaisha-keycloak-postgres"
+    "kaisha-postgres"
+  )
+
+  if [[ -z "${DOCKER_CMD}" ]]; then
+    DOCKER_CMD="$(detect_docker_cmd)"
+  fi
+
+  if [[ -z "${DOCKER_CMD}" ]]; then
+    echo "Docker daemon is not reachable. Start Docker or use sudo."
+    return 1
+  fi
+
+  echo
+  echo "Waiting for Kaisha stack to become ready..."
+
+  while (( elapsed < timeout_seconds )); do
+    all_ready=true
+
+    echo
+    echo "Container status check (${elapsed}s/${timeout_seconds}s):"
+
+    for container in "${expected_containers[@]}"; do
+
+      # shellcheck disable=SC2086
+      status="$(
+        ${DOCKER_CMD} inspect \
+          --format '{{.State.Status}}' \
+          "${container}" 2>/dev/null || echo "missing"
+      )"
+
+      if [[ "${status}" != "running" ]]; then
+        printf "  %-28s %s\n" "${container}" "${status}"
+        all_ready=false
+        continue
+      fi
+
+      # Healthcheck tanımlıysa healthy olmasını bekle.
+      # Healthcheck yoksa "running" durumu yeterli kabul edilir.
+      # shellcheck disable=SC2086
+      health="$(
+        ${DOCKER_CMD} inspect \
+          --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+          "${container}" 2>/dev/null || echo "unknown"
+      )"
+
+      case "${health}" in
+        healthy)
+          printf "  %-28s running (healthy)\n" "${container}"
+          ;;
+
+        none)
+          printf "  %-28s running\n" "${container}"
+          ;;
+
+        starting)
+          printf "  %-28s running (health: starting)\n" "${container}"
+          all_ready=false
+          ;;
+
+        unhealthy)
+          printf "  %-28s running (health: UNHEALTHY)\n" "${container}"
+          all_ready=false
+          ;;
+
+        *)
+          printf "  %-28s running (health: %s)\n" "${container}" "${health}"
+          all_ready=false
+          ;;
+      esac
+    done
+
+    if [[ "${all_ready}" == "true" ]]; then
+      echo
+      echo "All Kaisha containers are ready."
+
+      # ADDED:
+      # Maintenance sadece tüm container kontrolleri başarılı olduktan sonra kapatılır.
+      ./deploy/belgelik-maintenance.sh off
+
+      echo "Maintenance mode is OFF."
+      return 0
+    fi
+
+    sleep "${interval_seconds}"
+    elapsed=$((elapsed + interval_seconds))
+  done
+
+  echo
+  echo "ERROR: Kaisha stack did not become ready within ${timeout_seconds} seconds."
+  echo "Maintenance mode remains ON."
+  return 1
+}
+
 usage() {
   cat <<'HELP'
 Usage:
@@ -168,46 +281,103 @@ case "${cmd}" in
     ensure_init
     ensure_external_volumes
     export_build_metadata
+
+    # ADDED:
+    # "up" sırasında kullanıcı trafiğinin erken açılmaması için
+    # maintenance modu başlangıçta açık tutulur.
+    ./deploy/belgelik-maintenance.sh on
+
     echo "Starting MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
+
     dc up -d postgres keycloak-postgres
-    DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-postgres-password.sh --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}"
-    DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-keycloak-postgres-password.sh --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}"
+
+    DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-postgres-password.sh \
+      --env-file "${ENV_FILE}" \
+      -f "${BASE_COMPOSE}" \
+      -f "${KAISHA_COMPOSE}"
+
+    DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-keycloak-postgres-password.sh \
+      --env-file "${ENV_FILE}" \
+      -f "${BASE_COMPOSE}" \
+      -f "${KAISHA_COMPOSE}"
+
     up_stack_with_current_image_cache
-    KEYCLOAK_CONTAINER=kaisha-keycloak ENV_FILE="${ENV_FILE}" ./deploy/keycloak-sync-defaults.sh
+
+    KEYCLOAK_CONTAINER=kaisha-keycloak \
+      ENV_FILE="${ENV_FILE}" \
+      ./deploy/keycloak-sync-defaults.sh
+
     print_running_version
+
+    # ADDED:
+    # Tüm beklenen container'lar hazır olmadan maintenance kapatılmaz.
+    # Başarısız olursa set -e nedeniyle script burada durur ve maintenance açık kalır.
+    wait_for_kaisha_ready
     ;;
+
   down)
     ./deploy/belgelik-maintenance.sh on
     dc down
     echo "Belgelik stack is down. Maintenance mode remains ON."
     ;;
+
   restart)
     ensure_init
     ensure_external_volumes
     export_build_metadata
+
+    # ADDED:
+    # Restart başlamadan önce maintenance modunu aç.
+    # Böylece dc down sırasında kullanıcı hata ekranı görmez.
+    ./deploy/belgelik-maintenance.sh on
+
     echo "Restarting MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
+
     dc down
+
     dc up -d postgres keycloak-postgres
-    DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-postgres-password.sh --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}"
-    DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-keycloak-postgres-password.sh --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}"
+
+    DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-postgres-password.sh \
+      --env-file "${ENV_FILE}" \
+      -f "${BASE_COMPOSE}" \
+      -f "${KAISHA_COMPOSE}"
+
+    DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-keycloak-postgres-password.sh \
+      --env-file "${ENV_FILE}" \
+      -f "${BASE_COMPOSE}" \
+      -f "${KAISHA_COMPOSE}"
+
     up_stack_with_current_image_cache
-    KEYCLOAK_CONTAINER=kaisha-keycloak ENV_FILE="${ENV_FILE}" ./deploy/keycloak-sync-defaults.sh
+
+    KEYCLOAK_CONTAINER=kaisha-keycloak \
+      ENV_FILE="${ENV_FILE}" \
+      ./deploy/keycloak-sync-defaults.sh
+
     print_running_version
+
+    # ADDED:
+    # Restart sonrasında tüm container'ların gerçekten hazır olmasını bekle.
+    # Hepsi hazır olduğunda fonksiyon maintenance modunu otomatik kapatır.
+    wait_for_kaisha_ready
     ;;
+
   ps)
     ensure_init
     ensure_external_volumes
     dc ps
     ;;
+
   logs)
     ensure_init
     shift || true
     dc logs -f "$@"
     ;;
+
   sync-keycloak)
     ensure_init
     KEYCLOAK_CONTAINER=kaisha-keycloak ENV_FILE="${ENV_FILE}" ./deploy/keycloak-sync-defaults.sh
     ;;
+
   urls)
     ensure_init
     # shellcheck disable=SC1090
@@ -217,25 +387,32 @@ case "${cmd}" in
     echo "OnlyOffice: ${PUBLIC_OFFICE_URL}"
     echo "Access mode: direct host ports"
     ;;
+
   version)
     ensure_init
     print_running_version
     ;;
+
   maintenance-on)
     ./deploy/belgelik-maintenance.sh on
     ;;
+
   maintenance-off)
     ./deploy/belgelik-maintenance.sh off
     ;;
+
   maintenance-status)
     ./deploy/belgelik-maintenance.sh status
     ;;
+
   maintenance-restart)
     ./deploy/belgelik-maintenance.sh with-maintenance -- ./deploy/mam-kaisha.sh restart
     ;;
+
   ""|-h|--help|help)
     usage
     ;;
+
   *)
     echo "Unknown command: ${cmd}"
     usage
