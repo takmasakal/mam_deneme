@@ -96,6 +96,24 @@ Akış:
 4. Health check geçerse maintenance modu kapatılır.
 5. Restart veya health check başarısızsa maintenance modu açık bırakılır.
 
+## Bakım Moduyla Kapatma
+
+Belgelik tamamen durdurulacaksa çıplak `docker compose down` yerine şu komut kullanılmalıdır:
+
+```bash
+./deploy/mam-kaisha.sh down
+```
+
+Bu komut önce maintenance modunu açar, sonra container'ları kapatır. Uygulama kapalı kalacağı için maintenance modu açık bırakılır. Bu sayede Nginx kapalı upstream'e proxy etmeye çalışmaz ve kullanıcı 520/502 yerine bakım sayfasını görür.
+
+Tekrar normal yayına dönmek için:
+
+```bash
+./deploy/mam-kaisha.sh up
+./deploy/belgelik-maintenance.sh wait-health
+./deploy/mam-kaisha.sh maintenance-off
+```
+
 ## Manuel Akış
 
 ```bash

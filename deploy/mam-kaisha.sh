@@ -137,7 +137,7 @@ Usage:
   ./deploy/mam-kaisha.sh init [MAM_HOST] [KEYCLOAK_HOST] [OFFICE_HOST] [WHITELIST_DOMAIN]
   ./deploy/mam-kaisha.sh build
   ./deploy/mam-kaisha.sh up
-  ./deploy/mam-kaisha.sh down
+  ./deploy/mam-kaisha.sh down           # enable maintenance first, then stop containers
   ./deploy/mam-kaisha.sh restart        # restart and rebuild app image when current commit changed
   ./deploy/mam-kaisha.sh ps
   ./deploy/mam-kaisha.sh logs [SERVICE...]
@@ -177,7 +177,9 @@ case "${cmd}" in
     print_running_version
     ;;
   down)
+    ./deploy/belgelik-maintenance.sh on
     dc down
+    echo "Belgelik stack is down. Maintenance mode remains ON."
     ;;
   restart)
     ensure_init
