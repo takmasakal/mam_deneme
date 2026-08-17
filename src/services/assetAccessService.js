@@ -309,21 +309,22 @@ function createAssetAccessService({ pool }) {
     if (identifiers.length) {
       values.push(identifiers);
       const idx = values.length;
-      conditions.push(`${alias}.owner_user = ANY($${idx}::text[])`);
+      conditions.push(`(COALESCE(${alias}.visibility, 'public') <> 'groups' AND ${alias}.owner_user = ANY($${idx}::text[]))`);
       conditions.push(`${alias}.allowed_users && $${idx}::text[]`);
     }
     if (groups.length) {
       values.push(groups);
       const idx = values.length;
-      conditions.push(`${alias}.owner_groups && $${idx}::text[]`);
+      conditions.push(`(COALESCE(${alias}.visibility, 'public') <> 'groups' AND ${alias}.owner_groups && $${idx}::text[])`);
       conditions.push(`${alias}.allowed_groups && $${idx}::text[]`);
     }
   }
 
   function hasExplicitAssetViewGrant(asset = {}, identity = {}) {
+    const canUseOwnerScope = asset.visibility !== 'groups';
     return Boolean(
-      (identity.identifiers || []).some((id) => id && (id === asset.ownerUser || asset.allowedUsers.includes(id)))
-      || (identity.groups || []).some((group) => asset.ownerGroups.includes(group) || asset.allowedGroups.includes(group))
+      (identity.identifiers || []).some((id) => id && ((canUseOwnerScope && id === asset.ownerUser) || asset.allowedUsers.includes(id)))
+      || (identity.groups || []).some((group) => (canUseOwnerScope && asset.ownerGroups.includes(group)) || asset.allowedGroups.includes(group))
     );
   }
 
