@@ -152,6 +152,7 @@
       auditEvents: canShowFullAdminPanels,
       assetRights: canShowFullAdminPanels || access.canAccessAssetRightsAdmin,
       documentRights: !access.canAccessAdmin && access.canAccessDocumentRightsAdmin,
+      metadata: canShowFullAdminPanels,
       settings: canShowFullAdminPanels || access.canAccessTextAdmin
     };
     Object.entries(visibleMainTabs).forEach(([tabName, visible]) => {

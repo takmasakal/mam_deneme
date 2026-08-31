@@ -450,6 +450,7 @@
           groups.set(assetId, {
             assetId,
             assetTitle: String(item.assetTitle || item.fileName || item.assetId || '').trim(),
+            assetType: String(item.type || '').trim().toLowerCase(),
             items: []
           });
         }
@@ -468,8 +469,9 @@
         const first = group.items[0] || {};
         const firstLabel = String(first.subtitleLabel || '').trim();
         const firstLang = String(first.subtitleLang || 'tr').trim() || 'tr';
+        const mediaClass = group.assetType === 'audio' ? 'subtitle-row-audio' : 'subtitle-row-video';
         return `
-          <div class="row subtitle-row" data-asset-id="${escapeHtml(group.assetId)}">
+          <div class="row subtitle-row ${mediaClass}" data-asset-id="${escapeHtml(group.assetId)}" data-asset-type="${escapeHtml(group.assetType)}">
             <div class="subtitle-row-main">
               <strong>${escapeHtml(group.assetTitle || group.assetId)}</strong>
               <span class="subtitle-selected-meta">${escapeHtml(firstLabel || 'subtitle')} | ${escapeHtml(t('subtitle_lang'))}: ${escapeHtml(firstLang)}${first.active ? ' | ACTIVE' : ''}</span>

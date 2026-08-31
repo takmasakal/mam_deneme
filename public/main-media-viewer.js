@@ -187,6 +187,7 @@ function mediaViewer(asset, options = {}) {
               <div class="tool-actions">
                 <label class="video-tools-check subtitle-backend-check tool-toggle-pill"><input id="subtitleZemberekCheck" type="checkbox" checked /> ${t('subtitle_use_zemberek')}</label>
                 <button type="button" id="subtitleGenerateBtn">${t('subtitle_generate')}</button>
+                <button type="button" id="subtitleTranslateBtn">${t('subtitle_translate_tr')}</button>
                 <button type="button" id="subtitleRenameBtn">${t('subtitle_save_name')}</button>
                 <div class="tool-file-wrap">
                   <input id="subtitleFileInput" type="file" accept=".vtt,.srt,text/vtt,application/x-subrip" />
@@ -307,10 +308,50 @@ function mediaViewer(asset, options = {}) {
   }
 
   if (isAudio(asset)) {
+    const audioToolsMode = options.audioToolsMode === true;
     return `
-      <div class="viewer-resizable">
-        <audio id="assetMediaEl" class="asset-viewer" controls src="${playbackUrl}"${audioChannelsAttr}></audio>
+      ${audioToolsMode ? '<div class="video-top-layout audio-tools-top-layout"><div class="video-main-col">' : ''}
+      <div class="viewer-resizable audio-viewer-resizable">
+        <div class="audio-subtitle-stage" data-subtitle-overlay-host="audio" data-subtitle-overlay-scale="width" aria-live="polite"></div>
+        <audio id="assetMediaEl" data-asset-id="${escapeHtml(asset.id)}" class="asset-viewer${audioToolsMode ? ' audio-tools-media' : ''}"${audioToolsMode ? '' : ' controls'} src="${playbackUrl}"${audioChannelsAttr}>
+          ${subtitleTrackMarkup(asset)}
+        </audio>
       </div>
+      ${audioToolsMode ? `
+      <div class="custom-player-bar audio-custom-player-bar" id="customPlayerBar">
+        <button type="button" id="customPlayPauseBtn" title="${t('play')}">▶</button>
+        <span id="customCurrentTime" class="custom-time">00:00:00</span>
+        <div class="custom-seek-wrap">
+          <input type="range" id="customSeekRange" class="custom-seek" min="0" max="1000" step="1" value="0" />
+          <span id="customMarkInTick" class="custom-seek-tick custom-seek-tick-in hidden" data-label="IN" title="IN"></span>
+          <span id="customMarkOutTick" class="custom-seek-tick custom-seek-tick-out hidden" data-label="OUT" title="OUT"></span>
+        </div>
+        <span id="customDurationTime" class="custom-time">00:00:00</span>
+        <div class="custom-volume-wrap" id="customVolumeWrap">
+          <button type="button" id="customMuteBtn" title="Volume" aria-label="Volume">🔊</button>
+          <div class="custom-volume-popover" id="customVolumePopover">
+            <input type="range" id="customVolumeRange" class="custom-volume custom-volume-vertical" min="0" max="1" step="0.01" value="1" />
+          </div>
+        </div>
+      </div>
+      <div class="player-controls-box control-stickbar audio-player-controls">
+        <div class="player-toolbar-row">
+          <div class="player-tools pro-tools">
+            <button type="button" id="playBtn" title="${t('play')}" aria-label="${t('play')}">▶</button>
+            <button type="button" id="reverseFrameBtn" title="${t('reverse_frame')}" aria-label="${t('reverse_frame')}">◀◀</button>
+            <button type="button" id="forwardFrameBtn" title="${t('forward_frame')}" aria-label="${t('forward_frame')}">▶▶</button>
+          </div>
+          <div class="timecode-bar compact-timecode control-tools">
+            <button type="button" id="markInBtn">${t('set_in')}</button>
+            <button type="button" id="markOutBtn">${t('set_out')}</button>
+            <button type="button" id="goInBtn">${t('go_in')}</button>
+            <button type="button" id="goOutBtn">${t('go_out')}</button>
+            <div class="viewer-tc viewer-tc-inline">${t('tc')}: <strong id="currentTimecode">00:00:00:00</strong> <span class="viewer-rate-group"><button type="button" id="playbackRateBackBtn" class="viewer-rate-arrow" aria-label="Reverse playback rates">◀</button><button type="button" id="playbackRateBtn" class="viewer-rate-btn" aria-label="Playback rate">1x</button><button type="button" id="playbackRateForwardBtn" class="viewer-rate-arrow" aria-label="Forward playback rates">▶</button></span></div>
+          </div>
+        </div>
+      </div>
+      </div>
+      <div class="audio-side-col">
       <div class="audio-tools">
         <div class="audio-tools-header">
           <strong>${t('audio_channels')}</strong>
@@ -325,6 +366,74 @@ function mediaViewer(asset, options = {}) {
           </div>
         </div>
       </div>
+      </div>
+      </div>
+      <div class="viewer-extra audio-tools-sortable-host">
+      ${includeSubtitleTools ? `
+      <div class="subtitle-tools collapsible-section" data-section="subtitles">
+        <div class="collapsible-head">
+          <strong>${t('subtitles')}</strong>
+          ${includeSectionHide ? `<label class="section-hide-toggle"><input type="checkbox" class="section-hide-check" /> ${t('hide_section')}</label>` : ''}
+        </div>
+        <div class="collapsible-body">
+          <div class="subtitle-tools-header">
+            <span id="subtitleStatus" class="subtitle-status">${asset.subtitleUrl ? `${t('subtitle_loaded')}: ${escapeHtml(asset.subtitleLabel || asset.subtitleLang || '')}` : t('subtitle_none')}</span>
+            <span class="subtitle-current-inline"><strong>${t('subtitle_current')}:</strong> <span id="videoSubtitleCurrent">${escapeHtml(asset.subtitleLabel || asset.subtitleLang || '-')}</span></span>
+            <span class="audio-subtitle-size-control" aria-label="${escapeHtml(t('subtitle_font_size'))}">
+              <button type="button" id="audioSubtitleSizeDownBtn" title="${escapeHtml(t('subtitle_font_size'))}">−</button>
+              <span id="audioSubtitleSizeValue"></span>
+              <button type="button" id="audioSubtitleSizeUpBtn" title="${escapeHtml(t('subtitle_font_size'))}">+</button>
+            </span>
+            <span id="subtitleBusy" class="subtitle-busy hidden"><span class="spinner"></span>${t('processing')}</span>
+          </div>
+          <div class="subtitle-list-wrap">
+            <div class="viewer-meta"><strong>${t('subtitle_list')}:</strong></div>
+            <div id="subtitleItems" class="subtitle-items"></div>
+          </div>
+          <div class="subtitle-list-wrap">
+            <div class="viewer-meta"><strong>${t('subtitle_search_results')}:</strong></div>
+            <div class="subtitle-tools-row">
+              <div class="search-query-wrap">
+                <input id="subtitleSearchInput" class="subtitle-name-input" type="text" placeholder="${escapeHtml(t('subtitle_search_ph'))}" />
+                <div id="subtitleSearchSuggest" class="search-suggest hidden"></div>
+              </div>
+              <button type="button" id="subtitleSearchBtn">${t('subtitle_search_btn')}</button>
+            </div>
+            <div id="subtitleSearchResults" class="subtitle-items"></div>
+          </div>
+          <div class="subtitle-tools-layout">
+            <div class="tool-grid tool-grid-subtitle">
+              <label class="tool-field" for="subtitleLangInput"><span>${t('subtitle_lang')}</span><input id="subtitleLangInput" class="subtitle-lang-input" type="text" maxlength="12" value="${escapeHtml(asset.subtitleLang || currentLang || 'tr')}" /></label>
+              <label class="tool-field" for="subtitleLabelInput"><span>${t('subtitle_name')}</span><input id="subtitleLabelInput" class="subtitle-name-input" type="text" maxlength="120" value="${escapeHtml(asset.subtitleLabel || '')}" /></label>
+              <label class="tool-field" for="subtitleModelSelect"><span>${t('subtitle_model')}</span><select id="subtitleModelSelect" class="subtitle-lang-input"><option value="small" selected>${t('subtitle_model_small')}</option></select></label>
+              <label class="tool-field" for="subtitleAudioStreamSelect"><span>${t('subtitle_audio_stream')}</span><select id="subtitleAudioStreamSelect" class="subtitle-lang-input"></select></label>
+              <label class="tool-field" for="subtitleAudioChannelSelect"><span>${t('subtitle_audio_channel')}</span><select id="subtitleAudioChannelSelect" class="subtitle-lang-input"></select></label>
+            </div>
+            <div class="tool-actions">
+              <label class="video-tools-check subtitle-backend-check tool-toggle-pill"><input id="subtitleZemberekCheck" type="checkbox" checked /> ${t('subtitle_use_zemberek')}</label>
+              <button type="button" id="subtitleGenerateBtn">${t('subtitle_generate')}</button>
+              <button type="button" id="subtitleTranslateBtn">${t('subtitle_translate_tr')}</button>
+              <button type="button" id="subtitleRenameBtn">${t('subtitle_save_name')}</button>
+              <div class="tool-file-wrap">
+                <input id="subtitleFileInput" type="file" accept=".vtt,.srt,text/vtt,application/x-subrip" />
+                <button type="button" id="subtitleUploadBtn">${t('subtitle_upload')}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      ` : ''}
+      <div class="subtitle-tools audio-clips-tools collapsible-section" data-section="clips">
+        <div class="collapsible-head"><strong>${t('audio_clips')}</strong></div>
+        <div class="collapsible-body">
+          <div class="viewer-meta" id="markSummary"><span class="tc-in-label">${t('in_label')}</span>: --:--:--:-- | <span class="tc-out-label">${t('out_label')}</span>: --:--:--:-- | ${t('segment')}: --:--:--:--</div>
+          <div class="cut-label-row"><label>${t('clip_name')}</label><input id="cutLabelInput" type="text" placeholder="${escapeHtml(t('ph_clip_name'))}" /></div>
+          <div class="cut-actions"><button type="button" id="saveCutBtn">${t('save_cut')}</button><button type="button" id="clearMarksBtn">${t('delete_marks')}</button></div>
+          <div id="cutsList" class="cuts-list"></div>
+        </div>
+      </div>
+      </div>
+      ` : ''}
     `;
   }
 
@@ -375,10 +484,11 @@ function mediaViewer(asset, options = {}) {
 }
 
 function videoToolsPageMarkup(asset) {
+  const toolsTitle = isAudio(asset) ? t('audio_tools_title') : t('video_tools_title');
   return `
-    <div class="video-tools-page-body">
+    <div class="video-tools-page-body${isAudio(asset) ? ' audio-tools-page-body' : ''}">
       <button type="button" id="leaveVideoToolsPageBtn" class="video-tools-page-close-btn" aria-label="${escapeHtml(t('close'))}" title="${escapeHtml(t('close'))}">×</button>
-      <div class="video-tools-modal video-tools-modal-large video-tools-page-shell" role="region" aria-label="${escapeHtml(t('video_tools_title'))}">
+      <div class="video-tools-modal video-tools-modal-large video-tools-page-shell" role="region" aria-label="${escapeHtml(toolsTitle)}">
         <div class="video-tools-modal-body">
           ${mediaViewer(asset, {
             showVideoToolsButton: false,
@@ -386,7 +496,8 @@ function videoToolsPageMarkup(asset) {
             includeSectionHide: false,
             audioSideLayout: true,
             audioOverlayInViewer: false,
-            tcInControlBar: true
+            tcInControlBar: true,
+            audioToolsMode: isAudio(asset)
           })}
         </div>
       </div>

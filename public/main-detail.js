@@ -494,7 +494,10 @@
 
     function scrollDetailPanelToVideoTop(root = assetDetail()) {
       if (!(root instanceof Element)) return;
-      const target = root.querySelector('.detail-video-fixed') || root.querySelector('.viewer-shell') || root.querySelector('#assetMediaEl');
+      const target = root.querySelector('.detail-video-fixed')
+        || root.querySelector('.viewer-shell')
+        || root.querySelector('.audio-viewer-resizable')
+        || root.querySelector('#assetMediaEl');
       if (!(target instanceof Element)) return;
       requestAnimationFrame(() => {
         const rootRect = root.getBoundingClientRect();
@@ -515,7 +518,7 @@
       try {
         const maxSec = Number.isFinite(mediaEl.duration) && mediaEl.duration > 0 ? Math.min(targetSec, mediaEl.duration) : targetSec;
         mediaEl.currentTime = maxSec;
-        scrollDetailPanelToVideoTop(assetDetail());
+        if (String(mediaEl.tagName || '').toUpperCase() !== 'AUDIO') scrollDetailPanelToVideoTop(assetDetail());
         return true;
       } catch (_error) {
         return false;

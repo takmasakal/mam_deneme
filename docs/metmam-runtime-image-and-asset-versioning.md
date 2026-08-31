@@ -22,7 +22,7 @@ Bu image içinde şunlar bulunur:
 - PaddleOCR ve PaddlePaddle
 - Poppler, Antiword, Restic
 - LibreOffice (etkinleştirilmişse)
-- Offline Whisper/Paddle model cache'leri
+- Offline Whisper/Paddle/Marian model cache'leri
 
 Uygulama image'ı (`mam_deneme-app`) yalnızca runtime image'ını temel alır ve npm bağımlılıkları ile `public`/`src` kaynaklarını ekler.
 
@@ -48,6 +48,37 @@ docker compose up -d --no-build app
 ```
 
 `build-runtime.sh` çalıştırılmadığı sürece runtime bağımlılıkları güncellenmez.
+
+`Dockerfile.runtime` değiştiğinde veya runtime image ilk kez kurulurken FFmpeg/Python/Torch katmanı tekrar oluşabilir. Normal uygulama kodu güncellemelerinde `docker build -f Dockerfile.runtime ...` çalıştırılmamalıdır.
+
+## 4.1 Offline model cache hazırlama
+
+Runtime bağımlılıklarını yeniden kurmadan, çalışan app container'ındaki kalıcı model cache volume'unu doldurmak için:
+
+```bash
+./deploy/prepare-models.sh marian
+```
+
+Bu komut İngilizce altyazıyı Türkçeye çevirmek için kullanılan Marian modelini şu dizine hazırlar:
+
+```text
+/opt/mam-models/marian/opus-mt-tc-big-en-tr
+```
+
+Diğer seçenekler:
+
+```bash
+./deploy/prepare-models.sh whisper
+./deploy/prepare-models.sh paddle
+./deploy/prepare-models.sh all
+```
+
+Yeni bir model eklendiğinde tercih edilen akış:
+
+1. Model için `scripts/prepare_offline_models.py` içine açık bir preload seçeneği eklenir.
+2. `deploy/prepare-models.sh` içine kısa komut eklenir.
+3. Runtime kodu modeli eksikse internetten indirmez, net hata verir.
+4. Model cache'i `/opt/mam-models` altında kalıcı volume'da tutulur.
 
 ## 5. Görsel versiyon oluşturma
 

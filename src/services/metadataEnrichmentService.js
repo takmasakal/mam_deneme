@@ -280,23 +280,42 @@ function splitDocumentText(text, chunkSize = DOCUMENT_CHUNK_SIZE, overlap = DOCU
   return chunks;
 }
 
+function normalizeMetadataModelConfig(value = {}) {
+  const input = value && typeof value === 'object' ? value : {};
+  return {
+    enabled: Object.prototype.hasOwnProperty.call(input, 'enabled') ? Boolean(input.enabled) : true,
+    provider: String(input.provider || 'ollama').trim().toLowerCase() || 'ollama',
+    model: String(input.model || OLLAMA_METADATA_MODEL).trim() || OLLAMA_METADATA_MODEL,
+    baseUrl: String(input.baseUrl || OLLAMA_BASE_URL).trim().replace(/\/+$/, '') || OLLAMA_BASE_URL,
+    keepAlive: String(input.keepAlive || OLLAMA_METADATA_KEEP_ALIVE).trim() || OLLAMA_METADATA_KEEP_ALIVE,
+    timeoutMs: Math.max(30_000, Number(input.timeoutMs) || OLLAMA_METADATA_TIMEOUT_MS)
+  };
+}
+
 async function callOllamaJson(messages, options = {}) {
   const format = options.schema || 'json';
   const externalSignal = options.signal;
+  const modelConfig = normalizeMetadataModelConfig(options.modelConfig);
+  if (modelConfig.provider !== 'ollama') {
+    throw new Error(`Unsupported metadata model provider: ${modelConfig.provider}`);
+  }
+  if (!modelConfig.enabled) {
+    throw new Error('Metadata model is disabled');
+  }
   let lastParseError = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), OLLAMA_METADATA_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), modelConfig.timeoutMs);
     const abortFromExternal = () => controller.abort();
     if (externalSignal?.aborted) controller.abort();
     else externalSignal?.addEventListener?.('abort', abortFromExternal, { once: true });
     try {
-      const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+      const response = await fetch(`${modelConfig.baseUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
         body: JSON.stringify({
-          model: OLLAMA_METADATA_MODEL,
+          model: modelConfig.model,
           messages: attempt === 0
             ? messages
             : [
@@ -308,7 +327,7 @@ async function callOllamaJson(messages, options = {}) {
             ],
           format,
           stream: false,
-          keep_alive: OLLAMA_METADATA_KEEP_ALIVE,
+          keep_alive: modelConfig.keepAlive,
           options: {
             num_ctx: 8192,
             num_predict: Math.min(Number(options.numPredict) || 900, attempt ? 500 : 900),
@@ -405,7 +424,8 @@ function createMetadataEnrichmentService(deps) {
     subtitleJobs,
     upsertMediaProcessingJobSafe,
     indexAssetToElastic,
-    getMediaJobConcurrencyLimit
+    getMediaJobConcurrencyLimit,
+    getAiModelSettings
   } = deps;
 
   const queue = [];
@@ -427,6 +447,12 @@ function createMetadataEnrichmentService(deps) {
     if (type === 'photo' || type === 'image' || mime.startsWith('image/')) return 'image';
     if (type === 'document' || mime.includes('pdf') || mime.includes('word') || mime.startsWith('text/')) return 'document';
     return 'other';
+  }
+
+  async function getMetadataModelConfig() {
+    if (typeof getAiModelSettings !== 'function') return normalizeMetadataModelConfig();
+    const settings = await getAiModelSettings().catch(() => null);
+    return normalizeMetadataModelConfig(settings?.metadata || settings);
   }
 
   async function persistJob(job, resultPayload = {}) {
@@ -478,6 +504,7 @@ function createMetadataEnrichmentService(deps) {
   }
 
   async function enrichDocument(row, sourcePath, job) {
+    const modelConfig = await getMetadataModelConfig();
     const preview = await extractPreviewContentFromFile(row, sourcePath);
     const text = normalizeText(preview?.text || '');
     if (!text) throw new Error('No extractable text found in document');
@@ -495,6 +522,7 @@ function createMetadataEnrichmentService(deps) {
         ], {
           numPredict: 384,
           schema: DOCUMENT_SUMMARY_JSON_SCHEMA,
+          modelConfig,
           signal: job.abortController?.signal
         });
         summary = normalizeText(result?.ozet || '');
@@ -519,6 +547,7 @@ function createMetadataEnrichmentService(deps) {
       ], {
         numPredict: 700,
         schema: DOCUMENT_METADATA_JSON_SCHEMA,
+        modelConfig,
         signal: job.abortController?.signal
       });
     } catch (error) {
@@ -536,7 +565,8 @@ function createMetadataEnrichmentService(deps) {
       summary: normalizeText(final?.ozet || ''),
       keywords,
       extractedTextLength: text.length,
-      model: OLLAMA_METADATA_MODEL,
+      model: modelConfig.model,
+      provider: modelConfig.provider,
       chunkCount: chunks.length,
       warning: warnings.join(' | ')
     };

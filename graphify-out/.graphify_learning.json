@@ -1,0 +1,139 @@
+{
+  "generated_at": "2026-08-31T12:21:31.479190+00:00",
+  "nodes": {
+    "public_admin_records_createadminrecordsmodule_rendersubtitlerecords": {
+      "code_fingerprint": "28fa9f78ca1796bb6f4ad15e36e9ccf245e12c77558cb59614e66a2bdfb9ed2b",
+      "label": "renderSubtitleRecords()",
+      "last": "2026-08-31T12:05:29.610483+00:00",
+      "provenance": [
+        {
+          "date": "2026-08-31T12:05:29.610483+00:00",
+          "outcome": "useful",
+          "q": "Ses dosyaları için altyazı çıkarma, arama ve yönetim desteği nasıl eklenir?"
+        }
+      ],
+      "score": 0.999742812,
+      "source_file": "public/admin-records.js",
+      "status": "tentative",
+      "uses": 1
+    },
+    "public_main_detail_createmaindetailmodule_detailartifactbadges": {
+      "code_fingerprint": "70c6cf2f171435556dc1012ce0e2ee1ea8486b366ed7513a8b69584625953fc0",
+      "label": "detailArtifactBadges()",
+      "last": "2026-08-31T08:30:39.159277+00:00",
+      "provenance": [
+        {
+          "date": "2026-08-31T08:30:39.159277+00:00",
+          "outcome": "useful",
+          "q": "MetMAM OCR tamamlandığında üçüncü kolonda OCR etiketi neden otomatik görünmüyor ve nasıl düzeltilir?"
+        }
+      ],
+      "score": 0.996302494,
+      "source_file": "public/main-detail.js",
+      "status": "tentative",
+      "uses": 1
+    },
+    "src_server_queuesubtitlegenerationjob": {
+      "code_fingerprint": "d86bac434ee49196d594116eac056482660dd83bfd157dceb23e6054f7fa3d28",
+      "label": "queueSubtitleGenerationJob()",
+      "last": "2026-08-31T12:05:29.610483+00:00",
+      "provenance": [
+        {
+          "date": "2026-08-31T12:05:29.610483+00:00",
+          "outcome": "useful",
+          "q": "Ses dosyaları için altyazı çıkarma, arama ve yönetim desteği nasıl eklenir?"
+        }
+      ],
+      "score": 0.999742812,
+      "source_file": "src/server.js",
+      "status": "tentative",
+      "uses": 1
+    },
+    "src_server_queuevideoocrjob": {
+      "code_fingerprint": "d86bac434ee49196d594116eac056482660dd83bfd157dceb23e6054f7fa3d28",
+      "label": "queueVideoOcrJob()",
+      "last": "2026-08-31T08:30:39.159277+00:00",
+      "provenance": [
+        {
+          "date": "2026-08-31T08:30:39.159277+00:00",
+          "outcome": "useful",
+          "q": "MetMAM OCR tamamlandığında üçüncü kolonda OCR etiketi neden otomatik görünmüyor ve nasıl düzeltilir?"
+        }
+      ],
+      "score": 0.996302494,
+      "source_file": "src/server.js",
+      "status": "tentative",
+      "uses": 1
+    },
+    "src_server_saveassetsubtitlemetadata": {
+      "code_fingerprint": "d86bac434ee49196d594116eac056482660dd83bfd157dceb23e6054f7fa3d28",
+      "label": "saveAssetSubtitleMetadata()",
+      "last": "2026-08-31T12:05:29.610483+00:00",
+      "provenance": [
+        {
+          "date": "2026-08-31T12:05:29.610483+00:00",
+          "outcome": "useful",
+          "q": "Ses dosyaları için altyazı çıkarma, arama ve yönetim desteği nasıl eklenir?"
+        },
+        {
+          "date": "2026-08-31T08:30:39.159277+00:00",
+          "outcome": "useful",
+          "q": "MetMAM OCR tamamlandığında üçüncü kolonda OCR etiketi neden otomatik görünmüyor ve nasıl düzeltilir?"
+        }
+      ],
+      "score": 1.996045307,
+      "source_file": "src/server.js",
+      "status": "preferred",
+      "uses": 2
+    },
+    "src_server_saveassetvideoocrmetadata": {
+      "code_fingerprint": "d86bac434ee49196d594116eac056482660dd83bfd157dceb23e6054f7fa3d28",
+      "label": "saveAssetVideoOcrMetadata()",
+      "last": "2026-08-31T08:30:39.159277+00:00",
+      "provenance": [
+        {
+          "date": "2026-08-31T08:30:39.159277+00:00",
+          "outcome": "useful",
+          "q": "MetMAM OCR tamamlandığında üçüncü kolonda OCR etiketi neden otomatik görünmüyor ve nasıl düzeltilir?"
+        }
+      ],
+      "score": 0.996302494,
+      "source_file": "src/server.js",
+      "status": "tentative",
+      "uses": 1
+    },
+    "src_server_transcribemediatovtt": {
+      "code_fingerprint": "d86bac434ee49196d594116eac056482660dd83bfd157dceb23e6054f7fa3d28",
+      "label": "transcribeMediaToVtt()",
+      "last": "2026-08-31T12:05:29.610483+00:00",
+      "provenance": [
+        {
+          "date": "2026-08-31T12:05:29.610483+00:00",
+          "outcome": "useful",
+          "q": "Ses dosyaları için altyazı çıkarma, arama ve yönetim desteği nasıl eklenir?"
+        }
+      ],
+      "score": 0.999742812,
+      "source_file": "src/server.js",
+      "status": "tentative",
+      "uses": 1
+    },
+    "src_services_subtitleindexservice_createsubtitleindexservice_syncsubtitlecueindexforassetrow": {
+      "code_fingerprint": "272d6a29e61a5ac3665a518ffd318d962e0a6060e7db0ae76ebe2aab7c498a91",
+      "label": "syncSubtitleCueIndexForAssetRow()",
+      "last": "2026-08-31T12:05:29.610483+00:00",
+      "provenance": [
+        {
+          "date": "2026-08-31T12:05:29.610483+00:00",
+          "outcome": "useful",
+          "q": "Ses dosyaları için altyazı çıkarma, arama ve yönetim desteği nasıl eklenir?"
+        }
+      ],
+      "score": 0.999742812,
+      "source_file": "src/services/subtitleIndexService.js",
+      "status": "tentative",
+      "uses": 1
+    }
+  },
+  "version": 1
+}

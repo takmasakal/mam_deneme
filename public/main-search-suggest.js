@@ -186,7 +186,7 @@
       if (id) {
         setSingleSelection(id);
         const workflow = await getWorkflow();
-        await openAsset(id, workflow, { startAtSeconds });
+        await openAsset(id, workflow, { startAtSeconds, scrollToVideoTop: true });
         return;
       }
       if (runSearch) await loadAssets();
@@ -280,7 +280,7 @@
       if (id) {
         setSingleSelection(id);
         const workflow = await getWorkflow();
-        await openAsset(id, workflow, { startAtSeconds });
+        await openAsset(id, workflow, { startAtSeconds, scrollToVideoTop: true });
         return;
       }
       if (runSearch) await loadAssets();

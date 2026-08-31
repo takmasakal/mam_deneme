@@ -485,11 +485,11 @@
             `;
           })
           .join('');
-        if (activeCutId) {
+        if (activeCutId && isVideo(asset)) {
           const activeRow = cutsList.querySelector(`.cut-item[data-cut-id="${CSS.escape(activeCutId)}"]`);
-          activeRow?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          activeRow?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
         }
-        if (clipsSection && !clipsSection.classList.contains('collapsed')) {
+        if (isVideo(asset) && clipsSection && !clipsSection.classList.contains('collapsed')) {
           requestAnimationFrame(() => ensureDetailPanelMinWidth(measureClipsPanelRequiredWidth(root)));
         }
       };
@@ -510,7 +510,7 @@
       };
 
       const onClipsSectionPointerDown = () => {
-        if (!clipsSection || clipsSection.classList.contains('collapsed')) return;
+        if (!isVideo(asset) || !clipsSection || clipsSection.classList.contains('collapsed')) return;
         ensureDetailPanelMinWidth(measureClipsPanelRequiredWidth(root));
       };
       clipsSection?.addEventListener('pointerdown', onClipsSectionPointerDown);

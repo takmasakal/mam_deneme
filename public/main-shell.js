@@ -676,13 +676,13 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
   };
 }
 
-function setPanelVideoToolsButtonState(visible, onClick = null) {
+function setPanelVideoToolsButtonState(visible, onClick = null, labelKey = 'video_tools') {
   if (!panelVideoToolsBtn) return;
   const show = Boolean(visible);
   panelVideoToolsBtn.classList.toggle('hidden', !show);
   panelVideoToolsBtn.removeAttribute('title');
-  panelVideoToolsBtn.setAttribute('aria-label', t('video_tools'));
-  panelVideoToolsBtn.dataset.tooltip = t('video_tools');
+  panelVideoToolsBtn.setAttribute('aria-label', t(labelKey));
+  panelVideoToolsBtn.dataset.tooltip = t(labelKey);
   panelVideoToolsBtn.onclick = show && typeof onClick === 'function' ? onClick : null;
 }
 

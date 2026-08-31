@@ -1032,6 +1032,11 @@ body {
   gap: 8px;
 }
 
+.subtitle-row.subtitle-row-audio {
+  border-color: #2f9ec4;
+  box-shadow: inset 3px 0 0 #2f9ec4;
+}
+
 .subtitle-row-main {
   display: grid;
   gap: 2px;
@@ -1441,6 +1446,15 @@ body {
   width: 56px;
   min-width: 56px;
   padding-right: 6px;
+}
+
+.settings-inline-grid.ai-model-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.settings-inline-grid.ai-model-grid input,
+.settings-inline-grid.ai-model-grid select {
+  width: 100%;
 }
 
 .toggle-row input {

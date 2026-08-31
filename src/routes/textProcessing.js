@@ -10,6 +10,7 @@ function registerTextProcessingRoutes(app, deps) {
     pool,
     requireAssetDelete,
     isVideoCandidate,
+    getAssetFamily,
     sanitizeFileName,
     convertSrtToVtt,
     normalizeVttContent,
@@ -89,6 +90,13 @@ function registerTextProcessingRoutes(app, deps) {
       || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tif', 'tiff', 'heic', 'heif'].includes(ext);
   }
 
+  function supportsSubtitles(row) {
+    const family = typeof getAssetFamily === 'function'
+      ? getAssetFamily({ mimeType: row?.mime_type, fileName: row?.file_name, declaredType: row?.type })
+      : (isVideoCandidate({ mimeType: row?.mime_type, fileName: row?.file_name, declaredType: row?.type }) ? 'video' : 'unknown');
+    return family === 'video' || family === 'audio';
+  }
+
   function resolvePhotoOcrInputPath(row) {
     const candidates = [
       String(row?.proxy_url || '').trim(),
@@ -113,8 +121,8 @@ function registerTextProcessingRoutes(app, deps) {
         return res.status(loaded.status).json({ error: loaded.error });
       }
       const row = loaded.row;
-      if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
-        return res.status(400).json({ error: 'Subtitles are supported only for video assets' });
+      if (!supportsSubtitles(row)) {
+        return res.status(400).json({ error: 'Subtitles are supported only for video or audio assets' });
       }
   
       const safeName = sanitizeFileName(fileName);
@@ -163,8 +171,8 @@ function registerTextProcessingRoutes(app, deps) {
         return res.status(loaded.status).json({ error: loaded.error });
       }
       const row = loaded.row;
-      if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
-        return res.status(400).json({ error: 'Subtitles are supported only for video assets' });
+      if (!supportsSubtitles(row)) {
+        return res.status(400).json({ error: 'Subtitles are supported only for video or audio assets' });
       }
   
       const subtitleLang = normalizeSubtitleLang(req.body?.lang);
@@ -212,8 +220,8 @@ function registerTextProcessingRoutes(app, deps) {
         return res.status(loaded.status).json({ error: loaded.error });
       }
       const row = loaded.row;
-      if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
-        return res.status(400).json({ error: 'Subtitle translation is supported only for video assets' });
+      if (!supportsSubtitles(row)) {
+        return res.status(400).json({ error: 'Subtitle translation is supported only for video or audio assets' });
       }
       if (typeof queueSubtitleTranslationJob !== 'function') {
         return res.status(500).json({ error: 'Subtitle translation service is not available' });
@@ -791,8 +799,8 @@ function registerTextProcessingRoutes(app, deps) {
         return res.status(loaded.status).json({ error: loaded.error });
       }
       const row = loaded.row;
-      if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
-        return res.status(400).json({ error: 'Subtitles are supported only for video assets' });
+      if (!supportsSubtitles(row)) {
+        return res.status(400).json({ error: 'Subtitles are supported only for video or audio assets' });
       }
   
       const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
@@ -857,8 +865,8 @@ function registerTextProcessingRoutes(app, deps) {
         return res.status(loaded.status).json({ error: loaded.error });
       }
       const row = loaded.row;
-      if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
-        return res.status(400).json({ error: 'Subtitles are supported only for video assets' });
+      if (!supportsSubtitles(row)) {
+        return res.status(400).json({ error: 'Subtitles are supported only for video or audio assets' });
       }
   
       const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
@@ -936,8 +944,8 @@ function registerTextProcessingRoutes(app, deps) {
       const loaded = await loadVisibleAssetRow(req, assetId);
       if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
       const row = loaded.row;
-      if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
-        return res.status(400).json({ error: 'Subtitle search is supported only for video assets' });
+      if (!supportsSubtitles(row)) {
+        return res.status(400).json({ error: 'Subtitle search is supported only for video or audio assets' });
       }
       const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
       const subtitleUrl = String(dc.subtitleUrl || '').trim();

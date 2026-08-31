@@ -12,6 +12,7 @@ docker build \
   --build-arg INSTALL_LIBREOFFICE="${INSTALL_LIBREOFFICE:-false}" \
   --build-arg PRELOAD_ML_MODELS="${PRELOAD_ML_MODELS:-true}" \
   --build-arg PRELOAD_PADDLE_OCR="${PRELOAD_PADDLE_OCR:-true}" \
+  --build-arg PRELOAD_MARIAN_TRANSLATION="${PRELOAD_MARIAN_TRANSLATION:-false}" \
   --build-arg WHISPER_MODEL="${WHISPER_MODEL:-small}" \
   .
 

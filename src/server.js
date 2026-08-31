@@ -2927,6 +2927,14 @@ function isVideoCandidate({ mimeType, fileName, declaredType }) {
   return String(declaredType || '').trim().toLowerCase() === 'video';
 }
 
+function isAudioCandidate({ mimeType, fileName, declaredType }) {
+  const mime = String(mimeType || '').toLowerCase();
+  const ext = path.extname(String(fileName || '')).toLowerCase();
+  return mime.startsWith('audio/')
+    || ['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.oga'].includes(ext)
+    || String(declaredType || '').trim().toLowerCase() === 'audio';
+}
+
 function isPdfMime(mimeType) {
   return String(mimeType || '').toLowerCase().includes('pdf');
 }
@@ -3029,7 +3037,7 @@ const {
 
 function getAssetFamily({ mimeType, fileName, declaredType }) {
   if (isVideoCandidate({ mimeType, fileName, declaredType })) return 'video';
-  if (String(mimeType || '').toLowerCase().startsWith('audio/')) return 'audio';
+  if (isAudioCandidate({ mimeType, fileName, declaredType })) return 'audio';
   if (String(mimeType || '').toLowerCase().startsWith('image/') || isImageByExtension(fileName)) return 'image';
   if (isDocumentCandidate({ mimeType, fileName, declaredType })) return 'document';
   return 'unknown';
@@ -4924,6 +4932,9 @@ function queueVideoOcrJob(row, options = {}) {
       }
       running.finishedAt = new Date().toISOString();
       running.updatedAt = running.finishedAt;
+      const currentAssetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [running.assetId]);
+      if (!currentAssetResult.rowCount) throw new Error('Asset not found while saving OCR result');
+      await saveAssetVideoOcrMetadata(running.assetId, currentAssetResult.rows[0], running);
       await upsertMediaProcessingJobSafe({
         jobId: running.jobId,
         assetId: running.assetId,
@@ -6945,6 +6956,7 @@ registerTextProcessingRoutes(app, {
   pool,
   requireAssetDelete,
   isVideoCandidate,
+  getAssetFamily,
   sanitizeFileName,
   convertSrtToVtt,
   normalizeVttContent,

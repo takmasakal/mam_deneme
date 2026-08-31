@@ -20,7 +20,9 @@
       initCustomSubtitleOverlay,
       getSubtitleOverlayEnabled,
       setSubtitleOverlayEnabled,
-      syncSubtitleOverlayInOpenPlayers
+      syncSubtitleOverlayInOpenPlayers,
+      adjustSubtitleFontSize,
+      getSubtitleFontSize
     } = deps || {};
 
     function initAssetPlayer(asset, root = document, options = {}) {
@@ -64,6 +66,58 @@
         if (isVideo(asset) || isAudio(asset)) {
           cleanups.push(initAudioTools(mediaEl, root));
         }
+        if (isAudio(asset)) {
+          cleanups.push(initFrameControls(mediaEl, asset, root, options));
+          cleanups.push(initCustomVideoControls(mediaEl, root));
+          cleanups.push(initVideoSubtitleTools(mediaEl, asset, root));
+          cleanups.push(initCollapsibleSections(root));
+          cleanups.push(initVideoToolsSorting(root));
+          if (typeof initCustomSubtitleOverlay === 'function') {
+            cleanups.push(initCustomSubtitleOverlay(mediaEl, asset, root));
+          }
+          const overlayCheck = root.querySelector('#subtitleOverlayCheck');
+          const applySubtitleOverlay = (enabled) => {
+            setSubtitleOverlayEnabled?.(asset.id, Boolean(enabled));
+            syncSubtitleOverlayInOpenPlayers?.(asset);
+          };
+          const onOverlayChange = () => applySubtitleOverlay(overlayCheck?.checked);
+          const hasFrameControls = Boolean(root.querySelector('#playBtn'));
+          const onSubtitleShortcut = (event) => {
+            if (event.key !== 'A' || !event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+            if (document.querySelector('.video-tools-backdrop') && !root.closest?.('.video-tools-backdrop')) return;
+            const target = event.target;
+            if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"]')) return;
+            const next = !getSubtitleOverlayEnabled?.(asset.id, false);
+            if (overlayCheck) overlayCheck.checked = next;
+            applySubtitleOverlay(next);
+            event.preventDefault();
+          };
+          overlayCheck?.addEventListener('change', onOverlayChange);
+          if (!hasFrameControls) document.addEventListener('keydown', onSubtitleShortcut);
+          cleanups.push(() => {
+            overlayCheck?.removeEventListener('change', onOverlayChange);
+            if (!hasFrameControls) document.removeEventListener('keydown', onSubtitleShortcut);
+          });
+          const audioToolsBtn = root.querySelector('#audioToolsBtn');
+          const onAudioTools = () => openVideoToolsDialog(asset, { startAtSeconds: Number(mediaEl.currentTime) || 0 });
+          audioToolsBtn?.addEventListener('click', onAudioTools);
+          cleanups.push(() => audioToolsBtn?.removeEventListener('click', onAudioTools));
+          const sizeDownBtn = root.querySelector('#audioSubtitleSizeDownBtn');
+          const sizeUpBtn = root.querySelector('#audioSubtitleSizeUpBtn');
+          const sizeValue = root.querySelector('#audioSubtitleSizeValue');
+          const syncSizeValue = () => {
+            if (sizeValue) sizeValue.textContent = `${Number(getSubtitleFontSize?.() || 24)}px`;
+          };
+          const onSizeDown = () => { adjustSubtitleFontSize?.(-2, asset); syncSizeValue(); };
+          const onSizeUp = () => { adjustSubtitleFontSize?.(2, asset); syncSizeValue(); };
+          sizeDownBtn?.addEventListener('click', onSizeDown);
+          sizeUpBtn?.addEventListener('click', onSizeUp);
+          syncSizeValue();
+          cleanups.push(() => {
+            sizeDownBtn?.removeEventListener('click', onSizeDown);
+            sizeUpBtn?.removeEventListener('click', onSizeUp);
+          });
+        }
         const startAt = Math.max(0, Number(options.startAtSeconds) || 0);
         if (startAt > 0) {
           const seekToStart = () => {
@@ -91,15 +145,16 @@
         setSubtitleOverlayEnabled(asset.id, getSubtitleOverlayEnabled(asset.id, false));
       }
       const overlay = document.createElement('div');
+      const toolsTitle = isAudio(asset) ? t('audio_tools_title') : t('video_tools_title');
       overlay.className = 'clip-modal-backdrop video-tools-backdrop';
       overlay.innerHTML = `
-        <div class="clip-modal video-tools-modal video-tools-modal-large" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('video_tools_title'))}">
+        <div class="clip-modal video-tools-modal video-tools-modal-large" role="dialog" aria-modal="true" aria-label="${escapeHtml(toolsTitle)}">
           <div class="video-tools-modal-head">
-            <h4>${t('video_tools_title')}</h4>
+            <h4>${escapeHtml(toolsTitle)}</h4>
             <button type="button" id="videoToolsCloseBtn">${t('close')}</button>
           </div>
           <div class="video-tools-modal-body">
-            ${mediaViewer(asset, { showVideoToolsButton: false, includeSubtitleTools: true, includeSectionHide: true, audioSideLayout: true, tcInControlBar: true })}
+            ${mediaViewer(asset, { showVideoToolsButton: false, includeSubtitleTools: true, includeSectionHide: true, audioSideLayout: true, tcInControlBar: true, audioToolsMode: isAudio(asset) })}
           </div>
         </div>
       `;

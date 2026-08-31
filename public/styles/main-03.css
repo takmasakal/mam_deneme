@@ -173,6 +173,60 @@
 
 .video-tools-page-body {
   position: relative;
+  padding-top: 18px;
+}
+
+.audio-tools-page-body {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.audio-tools-page-body .video-tools-page-shell,
+.audio-tools-page-body .video-tools-modal-body,
+.audio-tools-page-body .audio-clips-tools,
+.audio-tools-page-body .collapsible-body,
+.audio-tools-page-body .cuts-list,
+.audio-tools-page-body .cut-item {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.audio-tools-page-body .cut-item-tc-row {
+  display: flex;
+  flex-wrap: wrap;
+  padding-left: 0;
+  white-space: normal;
+}
+
+.audio-tools-page-body .cut-item-actions {
+  flex-wrap: wrap;
+}
+
+.audio-subtitle-size-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.audio-subtitle-size-control button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.audio-subtitle-size-control span {
+  min-width: 38px;
+  text-align: center;
+  font-size: 12px;
+  color: #d5dded;
 }
 
 .video-tools-page-close-btn {
@@ -418,6 +472,81 @@ video::-webkit-media-text-track-display * {
   border-radius: var(--mam-subtitle-overlay-hit-radius, 5px);
   padding: 0 var(--mam-subtitle-overlay-hit-pad-x, 3px);
   text-shadow: none;
+}
+
+.viewer-resizable.audio-viewer-resizable {
+  position: relative;
+  width: 100%;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 0 8px 8px;
+  background: #000;
+  border: 1px solid #292929;
+  border-radius: 10px;
+  overflow: hidden;
+  resize: none;
+}
+
+.audio-viewer-resizable .mam-subtitle-overlay {
+  bottom: 76px;
+}
+
+.audio-subtitle-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: clamp(120px, 18vh, 180px);
+  min-height: 120px;
+  box-sizing: border-box;
+  padding: 14px 18px;
+}
+
+.audio-viewer-resizable > audio.asset-viewer {
+  display: block;
+  width: 100%;
+  height: 54px;
+  min-height: 54px;
+  border: 0;
+}
+
+.audio-viewer-resizable > audio.asset-viewer.audio-tools-media {
+  display: none;
+}
+
+.audio-subtitle-stage .mam-subtitle-overlay {
+  position: static;
+  left: auto;
+  transform: none;
+  top: auto;
+  bottom: auto !important;
+  max-width: 92%;
+  width: auto;
+}
+
+.audio-tools-sortable-host {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.audio-custom-player-bar .custom-seek-wrap {
+  overflow: visible;
+  padding-bottom: 16px;
+}
+
+.audio-player-controls {
+  margin-top: 10px;
+}
+
+.audio-tools-top-layout .audio-side-col .audio-tools {
+  margin-top: 0;
+}
+
+.audio-tools-top-layout .audio-graph-frame {
+  grid-template-columns: 1fr;
 }
 
 .mam-fs-root:fullscreen,

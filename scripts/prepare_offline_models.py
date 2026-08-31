@@ -12,6 +12,8 @@ import sys
 
 
 DEFAULT_MODEL_CACHE = "/opt/mam-models"
+DEFAULT_MARIAN_MODEL = "Helsinki-NLP/opus-mt-tc-big-en-tr"
+DEFAULT_MARIAN_MODEL_DIR = "/opt/mam-models/marian/opus-mt-tc-big-en-tr"
 
 
 def _truthy(value: str) -> bool:
@@ -70,6 +72,33 @@ def preload_paddle_ocr() -> None:
         print(f"Prepared PaddleOCR model cache: {label}")
 
 
+def preload_marian_translation(model_name: str, model_dir: str) -> None:
+    from transformers import MarianMTModel, MarianTokenizer
+    import torch
+
+    model_name = str(model_name or DEFAULT_MARIAN_MODEL).strip() or DEFAULT_MARIAN_MODEL
+    model_dir = os.path.abspath(str(model_dir or DEFAULT_MARIAN_MODEL_DIR).strip() or DEFAULT_MARIAN_MODEL_DIR)
+    os.makedirs(model_dir, exist_ok=True)
+    print(f"Preparing Marian subtitle translation model: {model_name} -> {model_dir}")
+    version_parts = str(torch.__version__).split("+", 1)[0].split(".")
+    try:
+        torch_major = int(version_parts[0])
+        torch_minor = int(version_parts[1])
+    except (IndexError, ValueError):
+        torch_major = 0
+        torch_minor = 0
+    if (torch_major, torch_minor) < (2, 6):
+        raise RuntimeError(
+            f"Marian model preparation requires torch>=2.6 because this model uses PyTorch weights. "
+            f"Current torch version is {torch.__version__}. Rebuild the runtime image with ./deploy/build-runtime.sh."
+        )
+    tokenizer = MarianTokenizer.from_pretrained(model_name)
+    model = MarianMTModel.from_pretrained(model_name)
+    tokenizer.save_pretrained(model_dir)
+    model.save_pretrained(model_dir)
+    print(f"Prepared Marian subtitle translation model: {model_dir}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prepare MAM offline model caches")
     parser.add_argument("--cache-root", default=os.getenv("MAM_MODEL_CACHE_DIR", DEFAULT_MODEL_CACHE))
@@ -77,6 +106,9 @@ def main() -> int:
     parser.add_argument("--skip-whisper", action="store_true")
     parser.add_argument("--paddle-ocr", action="store_true")
     parser.add_argument("--skip-paddle-ocr", action="store_true")
+    parser.add_argument("--marian-model", action="store_true")
+    parser.add_argument("--marian-model-name", default=os.getenv("MAM_MARIAN_MODEL", DEFAULT_MARIAN_MODEL))
+    parser.add_argument("--marian-model-dir", default=os.getenv("MAM_MARIAN_MODEL_DIR", DEFAULT_MARIAN_MODEL_DIR))
     args = parser.parse_args()
 
     hf_home, _paddle_home = configure_cache(args.cache_root)
@@ -91,6 +123,11 @@ def main() -> int:
         preload_paddle_ocr()
     else:
         print("Skipping PaddleOCR model preload.")
+
+    if args.marian_model or _truthy(os.getenv("PRELOAD_MARIAN_TRANSLATION", "false")):
+        preload_marian_translation(args.marian_model_name, args.marian_model_dir)
+    else:
+        print("Skipping Marian subtitle translation model preload.")
 
     return 0
 

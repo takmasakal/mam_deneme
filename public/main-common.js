@@ -688,6 +688,9 @@
       const height = Number(mediaRect?.height) || Number(hostRect?.height) || 506;
       const widthScale = width / 900;
       const heightScale = height / 506;
+      if (hostEl?.dataset?.subtitleOverlayScale === 'width') {
+        return Math.max(0.72, Math.min(1.55, (Number(hostRect?.width) || width) / 900));
+      }
       return Math.max(0.46, Math.min(1.55, Math.min(widthScale, heightScale)));
     }
 
@@ -701,7 +704,9 @@
       const radius = Math.max(4, Math.round(8 * scale));
       const hitRadius = Math.max(3, Math.round(5 * scale));
       const hitPadding = Math.max(1, Math.round(3 * scale));
-      overlayEl.style.bottom = `${bottomOffset}px`;
+      overlayEl.style.bottom = overlayEl.parentElement?.dataset?.subtitleOverlayHost === 'audio'
+        ? '12px'
+        : `${bottomOffset}px`;
       overlayEl.style.fontSize = `${fontSize}px`;
       overlayEl.style.color = style.textColor;
       overlayEl.style.maxWidth = `${style.maxWidth}%`;
@@ -862,8 +867,13 @@
 
     function initCustomSubtitleOverlay(mediaEl, asset, root = document) {
       if (!(mediaEl instanceof HTMLMediaElement) || !asset?.id) return () => {};
-      const host = mediaEl.closest('.viewer-resizable') || mediaEl.parentElement || mediaEl.closest('.viewer-core') || root;
+      const host = root.querySelector?.('[data-subtitle-overlay-host="audio"]')
+        || mediaEl.closest('.viewer-resizable')
+        || mediaEl.parentElement
+        || mediaEl.closest('.viewer-core')
+        || root;
       if (!(host instanceof HTMLElement)) return () => {};
+      const isAudioOverlayHost = host.dataset.subtitleOverlayHost === 'audio';
       let disposed = false;
       let cues = [];
       let loadedUrl = '';
@@ -909,7 +919,9 @@
 
       const render = () => {
         if (disposed) return;
-        const enabled = getSubtitleOverlayEnabled(asset.id, false) && Boolean(asset.subtitleUrl) && customSubtitleOverlayEnabled();
+        const enabled = getSubtitleOverlayEnabled(asset.id, false)
+          && Boolean(asset.subtitleUrl)
+          && (isAudioOverlayHost || customSubtitleOverlayEnabled());
         if (!enabled) {
           overlay.classList.add('hidden');
           overlay.innerHTML = '';
@@ -931,7 +943,7 @@
 
       const refresh = async () => {
         if (disposed) return;
-        if (!customSubtitleOverlayEnabled()) {
+        if (!isAudioOverlayHost && !customSubtitleOverlayEnabled()) {
           overlay.classList.add('hidden');
           scheduleNativeSubtitleCuePosition(mediaEl);
           return;
@@ -947,7 +959,7 @@
       };
       const onLoadedMetadata = () => refresh();
       const onResize = () => {
-        if (customSubtitleOverlayEnabled()) render();
+        if (isAudioOverlayHost || customSubtitleOverlayEnabled()) render();
         else scheduleNativeSubtitleCuePosition(mediaEl);
       };
       let resizeObserver = null;

@@ -386,6 +386,7 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
   const fileInput = byId('subtitleFileInput');
   const uploadBtn = byId('subtitleUploadBtn');
   const generateBtn = byId('subtitleGenerateBtn');
+  const translateBtn = byId('subtitleTranslateBtn');
   const searchInput = byId('subtitleSearchInput');
   const searchBtn = byId('subtitleSearchBtn');
   const searchSuggestEl = byId('subtitleSearchSuggest');
@@ -417,6 +418,7 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     renameBtn.disabled = busy;
     uploadBtn.disabled = busy;
     generateBtn.disabled = busy;
+    if (translateBtn) translateBtn.disabled = busy;
     modelSelect.disabled = busy;
     audioStreamSelect.disabled = busy || getAudioStreamOptions().length <= 1;
     audioChannelSelect.disabled = busy || audioChannelSelect.options.length <= 1;
@@ -736,6 +738,41 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     }
   };
 
+  const onTranslateToTurkish = async () => {
+    const sourceUrl = String(asset.subtitleUrl || '').trim();
+    if (!sourceUrl) {
+      alert(t('subtitle_translate_source_required'));
+      return;
+    }
+    setBusy(true);
+    try {
+      const queued = await api(`/api/assets/${asset.id}/subtitles/translate`, {
+        method: 'POST',
+        body: JSON.stringify({
+          subtitleUrl: sourceUrl,
+          targetLang: 'tr',
+          label: labelInput.value || asset.subtitleLabel || 'subtitle'
+        })
+      });
+      setStatus(t('subtitle_translate_started'));
+      const result = await pollSubtitleJob(queued.jobId);
+      if (String(result.warning || '').trim()) {
+        alert(String(result.warning));
+      }
+      applyAssetFromApi(result.asset);
+      if (!asset.subtitleUrl) asset.subtitleUrl = result.subtitleUrl || '';
+      if (!asset.subtitleLang) asset.subtitleLang = result.subtitleLang || 'tr';
+      if (!asset.subtitleLabel) asset.subtitleLabel = result.subtitleLabel || queued.subtitleLabel || 'subtitle_TR';
+      applyTrack(asset.subtitleUrl, asset.subtitleLang, asset.subtitleLabel);
+      renderSubtitleItems();
+      setStatus(`${t('subtitle_translate_success')} ${asset.subtitleLabel}`.trim());
+    } catch (error) {
+      alert(String(error?.message || t('subtitle_translate_failed')));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const onRename = async () => {
     if (!asset.subtitleUrl) {
       setStatus(t('subtitle_none'));
@@ -829,6 +866,7 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
   renameBtn.addEventListener('click', onRename);
   uploadBtn.addEventListener('click', onUpload);
   generateBtn.addEventListener('click', onGenerate);
+  translateBtn?.addEventListener('click', onTranslateToTurkish);
   searchBtn.addEventListener('click', onSubtitleSearch);
   searchInput.addEventListener('keydown', onSubtitleSearchEnter);
   searchInput.addEventListener('input', queueSubtitleSuggest);
@@ -1267,6 +1305,7 @@ function initCollapsibleSections(root = document) {
   if (!rows.length) return () => {};
   const cleanups = [];
   const isVideoToolsModal = Boolean(root.querySelector('.video-tools-modal-body'));
+  const isAudioToolsPage = Boolean(root.querySelector('.audio-tools-page-body'));
   const defaultCollapsedInVideoTools = new Set(['subtitles', 'ocr', 'clips']);
   rows.forEach((section) => {
     const check = section.querySelector('.section-hide-check');
@@ -1276,7 +1315,7 @@ function initCollapsibleSections(root = document) {
       const collapsed = Boolean(nextCollapsed);
       section.classList.toggle('collapsed', collapsed);
       if (check) check.checked = collapsed;
-      if (sectionKey === 'clips') {
+      if (sectionKey === 'clips' && !isAudioToolsPage) {
         if (collapsed) {
           resetDetailPanelDynamicMinWidth();
         } else {
@@ -1316,7 +1355,7 @@ function initCollapsibleSections(root = document) {
 }
 
 function initVideoToolsSorting(root = document) {
-  const viewerExtra = root.querySelector('.viewer-extra');
+  const viewerExtra = root.querySelector('.viewer-extra') || root.querySelector('.audio-tools-sortable-host');
   if (!viewerExtra) return () => {};
 
   const sectionMap = new Map();

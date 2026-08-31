@@ -53,6 +53,7 @@ const LOGIN_LANG_COOKIE = 'mam.login.lang';
 const LOCAL_VIDEO_TOOLS_ORDER = 'mam.video.tools.order';
 const LOCAL_ASSET_VIEW_MODE = 'mam.assets.view.mode';
 const LOCAL_DETAIL_VIDEO_PIN = 'mam.detail.video.pin';
+const LOCAL_SUBTITLE_FONT_SIZE = 'mam.subtitle.fontSize';
 const SESSION_VIDEO_TOOLS_RETURN_SEARCH = 'mam.videoTools.returnSearch';
 const selectedImageVersionIds = new Map();
 const I18N_PATH = '/i18n.json';
@@ -296,8 +297,8 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
   return shellModule.initFullscreenOverlay(mediaEl, fullscreenTarget, asset);
 }
 
-function setPanelVideoToolsButtonState(visible, onClick = null) {
-  return shellModule.setPanelVideoToolsButtonState(visible, onClick);
+function setPanelVideoToolsButtonState(visible, onClick = null, labelKey = 'video_tools') {
+  return shellModule.setPanelVideoToolsButtonState(visible, onClick, labelKey);
 }
 
 function syncOcrQueryInputs(source) {
@@ -1277,6 +1278,24 @@ function applySubtitleStyleSettings() {
   document.body.classList.toggle('subtitle-custom-overlay-enabled', style.customOverlayEnabled);
 }
 
+function getSubtitleFontSize() {
+  return normalizeClientSubtitleStyle(subtitleStyleSettings).fontSize;
+}
+
+function adjustSubtitleFontSize(delta, asset = null) {
+  subtitleStyleSettings = normalizeClientSubtitleStyle({
+    ...subtitleStyleSettings,
+    fontSize: getSubtitleFontSize() + Number(delta || 0)
+  });
+  try { localStorage.setItem(LOCAL_SUBTITLE_FONT_SIZE, String(subtitleStyleSettings.fontSize)); } catch (_error) {}
+  applySubtitleStyleSettings();
+  if (asset) syncSubtitleOverlayInOpenPlayers(asset);
+  document.querySelectorAll('audio[data-asset-id], video[data-asset-id]').forEach((mediaEl) => {
+    mediaEl.dispatchEvent(new CustomEvent('mam:subtitle-overlay-sync'));
+  });
+  return subtitleStyleSettings.fontSize;
+}
+
 async function loadUiSettings() {
   try {
     const settings = await api('/api/ui-settings');
@@ -1289,6 +1308,12 @@ async function loadUiSettings() {
     allowFilelessAssetCreation = false;
     subtitleStyleSettings = normalizeClientSubtitleStyle({});
   }
+  try {
+    const storedFontSize = Number(localStorage.getItem(LOCAL_SUBTITLE_FONT_SIZE));
+    if (Number.isFinite(storedFontSize)) {
+      subtitleStyleSettings = normalizeClientSubtitleStyle({ ...subtitleStyleSettings, fontSize: storedFontSize });
+    }
+  } catch (_error) {}
   applySubtitleStyleSettings();
 }
 
@@ -2197,7 +2222,9 @@ const playerBootstrapModule = window.createMainPlayerBootstrapModule({
   initCustomSubtitleOverlay,
   getSubtitleOverlayEnabled,
   setSubtitleOverlayEnabled,
-  syncSubtitleOverlayInOpenPlayers
+  syncSubtitleOverlayInOpenPlayers,
+  adjustSubtitleFontSize,
+  getSubtitleFontSize
 });
 
 function openVideoToolsDialog(asset, options = {}) {
@@ -2459,7 +2486,7 @@ async function openAsset(id, workflow, options = {}) {
   clearDetailHeaderTimecode();
   resetDetailPanelDynamicMinWidth();
 
-  if (isVideoToolsPageMode && isVideo(asset)) {
+  if (isVideoToolsPageMode && (isVideo(asset) || isAudio(asset))) {
     panelDetail?.classList.add('panel-video-detail');
     assetDetail.innerHTML = videoToolsPageMarkup(asset);
     assetDetail.classList.remove('empty');
@@ -2488,6 +2515,7 @@ async function openAsset(id, workflow, options = {}) {
     : '';
   assetDetail.innerHTML = detailMarkup(asset, workflow, { imagePreviewUrl: selectedImagePreviewUrl });
   const hasPlayableVideoProxy = isVideo(asset) && Boolean(String(asset.proxyUrl || '').trim());
+  const hasPlayableAudio = isAudio(asset) && Boolean(String(asset.mediaUrl || '').trim());
   assetDetail.classList.toggle('video-detail-mode', hasPlayableVideoProxy);
   panelDetail?.classList.toggle('panel-video-detail', hasPlayableVideoProxy);
   assetDetail.classList.remove('video-tools-page-detail');
@@ -2498,7 +2526,7 @@ async function openAsset(id, workflow, options = {}) {
     assetDetail.classList.remove('detail-video-pinned');
     resetDetailPanelDynamicMinWidth();
   }
-  setPanelVideoToolsButtonState(hasPlayableVideoProxy && !isVideoToolsPageMode, () => {
+  setPanelVideoToolsButtonState((hasPlayableVideoProxy || hasPlayableAudio) && !isVideoToolsPageMode, () => {
     const panelMedia = assetDetail.querySelector('#assetMediaEl');
     const panelSubtitleCheck = assetDetail.querySelector('#subtitleOverlayCheck');
     const panelTrackEnabled = panelMedia
@@ -2514,7 +2542,7 @@ async function openAsset(id, workflow, options = {}) {
     }
     const startAtSeconds = panelMedia ? Number(panelMedia.currentTime || 0) : 0;
     openVideoToolsPage(asset.id, startAtSeconds);
-  });
+  }, hasPlayableAudio ? 'audio_tools' : 'video_tools');
   activePlayerCleanup = initAssetPlayer(asset, assetDetail, {
     startAtSeconds: Number(options.startAtSeconds) || 0,
     focusCutId: String(options.focusCutId || '').trim()
@@ -2590,12 +2618,16 @@ assetGrid.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     const id = String(ocrJumpBtn.dataset.id || '').trim();
+    const hitType = String(ocrJumpBtn.dataset.hitType || 'ocr').trim().toLowerCase();
     const startAtSeconds = Math.max(0, Number(ocrJumpBtn.dataset.startSec || 0));
     if (!id) return;
     if (seekOpenDetailMedia(id, startAtSeconds)) return;
     setSingleSelection(id);
     const workflow = await getWorkflow();
-    await openAsset(id, workflow, { startAtSeconds, scrollToVideoTop: true });
+    const targetAsset = currentAssets.find((item) => String(item?.id || '') === id) || null;
+    const audioSubtitleHit = hitType === 'subtitle' && targetAsset && isAudio(targetAsset);
+    await openAsset(id, workflow, { startAtSeconds, scrollToVideoTop: !audioSubtitleHit });
+    if (audioSubtitleHit) assetDetail.scrollTo({ top: 0, behavior: 'auto' });
     return;
   }
 
@@ -2944,7 +2976,7 @@ async function openInitialView(workflow) {
     applyAssetViewModeUI();
     if (isVideoToolsPageMode) {
       const targetId = requestedVideoToolsAssetId
-        || String(currentAssets.find((item) => isVideo(item))?.id || '').trim();
+        || String(currentAssets.find((item) => isVideo(item) || isAudio(item))?.id || '').trim();
       if (targetId) {
         await openAsset(targetId, workflow, { startAtSeconds: requestedVideoToolsStartSec });
       } else {

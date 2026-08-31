@@ -61,6 +61,7 @@ services:
       MAM_BUILD_DATE: ${MAM_BUILD_DATE:-unknown}
       MAM_OFFLINE_MODE: ${MAM_OFFLINE_MODE:-true}
       MAM_MODEL_CACHE_DIR: /opt/mam-models
+      MAM_MARIAN_MODEL_DIR: /opt/mam-models/marian/opus-mt-tc-big-en-tr
       HF_HOME: /opt/mam-models/huggingface
       HF_HUB_CACHE: /opt/mam-models/huggingface/hub
       TRANSFORMERS_CACHE: /opt/mam-models/huggingface/transformers
@@ -95,6 +96,7 @@ services:
     volumes:
       - ./uploads:/app/uploads
       - ./mountvolume/backup:/mountvolume/backup
+      - model_cache:/opt/mam-models
     restart: unless-stopped
 
   onlyoffice:
@@ -228,3 +230,4 @@ volumes:
     name: mam_deneme_pg_data
   es_data:
   keycloak_pg_data:
+  model_cache:

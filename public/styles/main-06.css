@@ -146,6 +146,82 @@
   display: none;
 }
 
+/* Audio clips must never contribute a min-content width larger than the tools page. */
+body.video-tools-page-mode .video-tools-page-body.audio-tools-page-body {
+  width: 100%;
+  max-width: 100vw;
+  min-width: 0;
+  overflow-x: clip;
+  contain: inline-size;
+}
+
+body.video-tools-page-mode .audio-tools-page-body .audio-clips-tools {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  contain: inline-size;
+  box-sizing: border-box;
+}
+
+body.video-tools-page-mode .audio-tools-page-body .collapsible-body,
+body.video-tools-page-mode .audio-tools-page-body .cuts-list,
+body.video-tools-page-mode .audio-tools-page-body .cut-item,
+body.video-tools-page-mode .audio-tools-page-body .cut-item-meta {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+body.video-tools-page-mode .audio-tools-page-body #markSummary.viewer-meta,
+body.video-tools-page-mode .audio-tools-page-body .video-tools-modal .cut-item-tc-row {
+  display: flex;
+  flex-flow: row wrap;
+  width: 100%;
+  min-width: 0;
+  padding-left: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+body.video-tools-page-mode .audio-tools-page-body #markSummary.viewer-meta {
+  width: max-content;
+  max-width: 100%;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  gap: 8px;
+  white-space: nowrap;
+  overflow: visible;
+}
+
+body.video-tools-page-mode .audio-tools-page-body #markSummary.viewer-meta > * {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  margin: 0;
+}
+
+body.video-tools-page-mode .audio-tools-page-body .cut-label-row {
+  grid-template-columns: 84px minmax(0, 1fr);
+  width: 100%;
+  min-width: 0;
+}
+
+body.video-tools-page-mode .audio-tools-page-body .cut-label-row input {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+body.video-tools-page-mode .audio-tools-page-body .cut-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
 @media (max-width: 1024px) {
   .panel-splitter {
     display: none;
