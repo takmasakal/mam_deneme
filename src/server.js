@@ -4876,7 +4876,6 @@ function queueVideoOcrJob(row, options = {}) {
         onProgress: (progress, phase) => persistLiveMediaJobProgress(running, 'video_ocr', progress, phase)
       });
       if (isMediaJobCancelled(running.jobId)) throw new Error('Media job cancelled');
-      running.status = 'completed';
       running.progress = 100;
       running.progressPhase = 'completed';
       running.resultUrl = out.publicUrl;
@@ -4897,6 +4896,9 @@ function queueVideoOcrJob(row, options = {}) {
       running.mode = String(result.mode || (ocrPreset === 'credits' ? 'credits' : (advancedMode ? 'advanced' : 'basic')));
       running.ocrPreset = normalizeOcrPreset(result.preset || ocrPreset);
       running.ocrEngine = normalizeOcrEngine(result.engine || selectedEngine);
+      const saved = await saveAssetVideoOcrMetadata(row.id, row, running);
+      running.asset = mapAssetRow(saved.row);
+      running.status = 'completed';
       const prepWarning = String(result.preprocessingWarning || '').trim();
       if (prepWarning) {
         running.warning = running.warning ? `${running.warning} | ${prepWarning}` : prepWarning;
