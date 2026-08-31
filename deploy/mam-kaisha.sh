@@ -121,7 +121,8 @@ up_stack_with_current_image_cache() {
     dc up -d
   else
     echo "Building app image for ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT}."
-    dc up -d --build
+    dc build app
+    dc up -d --no-build
   fi
 }
 
