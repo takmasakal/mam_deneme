@@ -20,7 +20,8 @@
       initCustomSubtitleOverlay,
       getSubtitleOverlayEnabled,
       setSubtitleOverlayEnabled,
-      syncSubtitleOverlayInOpenPlayers
+      syncSubtitleOverlayInOpenPlayers,
+      showShortcutToast
     } = deps || {};
 
     function initAssetPlayer(asset, root = document, options = {}) {
@@ -79,6 +80,9 @@
               const nextEnabled = !getSubtitleOverlayEnabled(asset.id, false);
               setSubtitleOverlayEnabled(asset.id, nextEnabled);
               syncSubtitleOverlayInOpenPlayers(asset);
+              showShortcutToast?.(nextEnabled ? t('subtitle_shortcut_on') : t('subtitle_shortcut_off'), {
+                type: nextEnabled ? 'success' : 'error'
+              });
               event.preventDefault();
               event.stopPropagation();
             };

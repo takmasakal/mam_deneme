@@ -2336,7 +2336,8 @@ const playerBootstrapModule = window.createMainPlayerBootstrapModule({
   initCustomSubtitleOverlay,
   getSubtitleOverlayEnabled,
   setSubtitleOverlayEnabled,
-  syncSubtitleOverlayInOpenPlayers
+  syncSubtitleOverlayInOpenPlayers,
+  showShortcutToast
 });
 
 function openVideoToolsDialog(asset, options = {}) {
