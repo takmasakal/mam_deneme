@@ -21,6 +21,7 @@
       getSubtitleOverlayEnabled,
       setSubtitleOverlayEnabled,
       syncSubtitleOverlayInOpenPlayers,
+      showShortcutToast,
       adjustSubtitleFontSize,
       getSubtitleFontSize
     } = deps || {};
@@ -90,6 +91,9 @@
             const next = !getSubtitleOverlayEnabled?.(asset.id, false);
             if (overlayCheck) overlayCheck.checked = next;
             applySubtitleOverlay(next);
+            showShortcutToast?.(next ? t('subtitle_shortcut_on') : t('subtitle_shortcut_off'), {
+              type: next ? 'success' : 'error'
+            });
             event.preventDefault();
           };
           overlayCheck?.addEventListener('change', onOverlayChange);

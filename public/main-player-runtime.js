@@ -699,7 +699,9 @@
         setSubtitleOverlayEnabled(asset.id, nextEnabled);
         if (subtitleOverlayCheck) subtitleOverlayCheck.checked = nextEnabled;
         syncSubtitleOverlayInOpenPlayers(asset);
-        showShortcutToast(nextEnabled ? t('subtitle_shortcut_on') : t('subtitle_shortcut_off'));
+        showShortcutToast(nextEnabled ? t('subtitle_shortcut_on') : t('subtitle_shortcut_off'), {
+          type: nextEnabled ? 'success' : 'error'
+        });
         event.preventDefault();
         event.stopPropagation();
       };

@@ -2223,6 +2223,7 @@ const playerBootstrapModule = window.createMainPlayerBootstrapModule({
   getSubtitleOverlayEnabled,
   setSubtitleOverlayEnabled,
   syncSubtitleOverlayInOpenPlayers,
+  showShortcutToast,
   adjustSubtitleFontSize,
   getSubtitleFontSize
 });
