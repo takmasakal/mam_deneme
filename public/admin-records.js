@@ -358,6 +358,7 @@
           groups.set(assetId, {
             assetId,
             assetTitle: String(item.assetTitle || item.fileName || item.assetId || '').trim(),
+            assetType: String(item.type || '').trim().toLowerCase(),
             items: []
           });
         }
@@ -467,8 +468,10 @@
         const first = group.items[0] || {};
         const firstLabel = String(first.subtitleLabel || '').trim();
         const firstLang = String(first.subtitleLang || 'tr').trim() || 'tr';
+        const assetType = String(group.assetType || first.type || '').trim().toLowerCase();
+        const audioRow = assetType === 'audio' || assetType === 'sound';
         return `
-          <div class="row subtitle-row" data-asset-id="${escapeHtml(group.assetId)}">
+          <div class="row subtitle-row ${audioRow ? 'subtitle-row-audio' : 'subtitle-row-video'}" data-asset-id="${escapeHtml(group.assetId)}" data-asset-type="${escapeHtml(assetType)}">
             <div class="subtitle-row-main">
               <strong>${escapeHtml(group.assetTitle || group.assetId)}</strong>
               <span class="subtitle-selected-meta">${escapeHtml(firstLabel || 'subtitle')} | ${escapeHtml(t('subtitle_lang'))}: ${escapeHtml(firstLang)}${first.active ? ' | ACTIVE' : ''}</span>
@@ -745,7 +748,7 @@
               title: `${t('subtitle_records')} - ${rowEl.querySelector('.subtitle-row-main strong')?.textContent || assetId}`,
               content: String(readResult.content || ''),
               mediaUrl,
-              previewMode: 'audio',
+              previewMode: String(rowEl.dataset.assetType || '').toLowerCase() === 'audio' ? 'audio' : 'video',
               onSave: async (nextContent) => {
                 await api('/api/admin/subtitle-records/content', {
                   method: 'PATCH',

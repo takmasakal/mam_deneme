@@ -30,6 +30,7 @@ function mediaViewer(asset, options = {}) {
   const audioOverlayInViewer = options.audioOverlayInViewer === true;
   const includeDetailPin = options.includeDetailPin === true;
   const tcInControlBar = options.tcInControlBar === true;
+  const audioToolsPage = options.audioToolsPage === true;
   const imagePreviewUrl = String(options.imagePreviewUrl || '').trim();
   if (!asset.mediaUrl) return `<div class="empty">${escapeHtml(t('no_media'))}</div>`;
   const declaredType = String(asset?.type || '').trim().toLowerCase();
@@ -313,23 +314,127 @@ function mediaViewer(asset, options = {}) {
   }
 
   if (isAudio(asset)) {
-    return `
-      <div class="viewer-resizable">
-        <audio id="assetMediaEl" class="asset-viewer" controls src="${playbackUrl}"${audioChannelsAttr}></audio>
-      </div>
-      <div class="audio-tools">
-        <div class="audio-tools-header">
-          <strong>${t('audio_channels')}</strong>
-        </div>
-        <div class="audio-graph-frame">
-          <canvas id="audioGraph" class="audio-graph" width="900" height="240"></canvas>
-          <div class="audio-graph-controls-box">
-            <div id="channelControls" class="channel-controls"></div>
-            <div class="audio-graph-options">
-              <label><input type="checkbox" id="groupChannels" checked /> ${t('group_channel_selection')}</label>
+    if (audioToolsPage) {
+      return `
+        <div class="viewer-shell audio-tools-viewer-shell">
+          <div class="viewer-core">
+            <div class="viewer-head">
+              <h4 class="viewer-asset-name">${escapeHtml(asset.title)}</h4>
+              <div class="viewer-tc">${t('tc')}: <strong id="currentTimecode">00:00:00:00</strong></div>
+            </div>
+            <div class="video-top-layout audio-tools-top-layout">
+              <div class="video-main-col">
+                <div class="audio-subtitle-stage" data-audio-subtitle-stage="1">
+                  <audio id="assetMediaEl" data-asset-id="${escapeHtml(asset.id)}" class="asset-viewer audio-tools-media" preload="metadata" src="${playbackUrl}"${audioChannelsAttr}></audio>
+                </div>
+                <div class="custom-player-bar" id="customPlayerBar">
+                  <button type="button" id="customPlayPauseBtn" title="${t('play')}">▶</button>
+                  <span id="customCurrentTime" class="custom-time">00:00:00</span>
+                  <div class="custom-seek-wrap">
+                    <input type="range" id="customSeekRange" class="custom-seek" min="0" max="1000" step="1" value="0" />
+                    <span id="customMarkInTick" class="custom-seek-tick custom-seek-tick-in hidden" data-label="IN" title="IN"></span>
+                    <span id="customMarkOutTick" class="custom-seek-tick custom-seek-tick-out hidden" data-label="OUT" title="OUT"></span>
+                  </div>
+                  <span id="customDurationTime" class="custom-time">00:00:00</span>
+                  <div class="custom-volume-wrap" id="customVolumeWrap">
+                    <button type="button" id="customMuteBtn" title="Volume" aria-label="Volume">🔊</button>
+                    <div class="custom-volume-popover" id="customVolumePopover">
+                      <input type="range" id="customVolumeRange" class="custom-volume custom-volume-vertical" min="0" max="1" step="0.01" value="1" />
+                    </div>
+                  </div>
+                </div>
+                <div class="player-controls-box control-stickbar">
+                  <div class="player-toolbar-row">
+                    <div class="player-tools pro-tools">
+                      <button type="button" id="playBtn" title="${t('play')}" aria-label="${t('play')}">▶</button>
+                      <button type="button" id="reverseFrameBtn" title="${t('reverse_frame')}" aria-label="${t('reverse_frame')}">◀◀</button>
+                      <button type="button" id="forwardFrameBtn" title="${t('forward_frame')}" aria-label="${t('forward_frame')}">▶▶</button>
+                    </div>
+                    <div class="timecode-bar compact-timecode control-tools">
+                      <button type="button" id="markInBtn">${t('set_in')}</button>
+                      <button type="button" id="markOutBtn">${t('set_out')}</button>
+                      <button type="button" id="goInBtn">${t('go_in')}</button>
+                      <button type="button" id="goOutBtn">${t('go_out')}</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="audio-side-col">
+                <div class="audio-tools collapsible-section" data-section="audio">
+                  <div class="audio-tools-header collapsible-head"><strong>${t('audio_channels')}</strong></div>
+                  <div class="collapsible-body">
+                    <div class="audio-graph-frame">
+                      <canvas id="audioGraph" class="audio-graph audio-graph-vertical" width="320" height="320"></canvas>
+                      <div class="audio-graph-controls-box">
+                        <div id="channelControls" class="channel-controls"></div>
+                        <div class="audio-graph-options"><label><input type="checkbox" id="groupChannels" checked /> ${t('group_channel_selection')}</label></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="viewer-extra audio-tools-sortable">
+            <div class="subtitle-tools collapsible-section" data-section="subtitles">
+              <div class="collapsible-head">
+                <strong>${t('subtitles')}</strong>
+                <div class="subtitle-head-toggles">
+                  <div class="subtitle-font-controls" aria-label="${escapeHtml(t('subtitle_font_size'))}">
+                    <button type="button" id="subtitleFontDecreaseBtn" aria-label="${escapeHtml(t('subtitle_font_decrease'))}">−</button>
+                    <output id="subtitleFontSizeValue">24px</output>
+                    <button type="button" id="subtitleFontIncreaseBtn" aria-label="${escapeHtml(t('subtitle_font_increase'))}">+</button>
+                  </div>
+                  <label class="video-tools-check subtitle-overlay-head-check"><input id="subtitleOverlayCheck" type="checkbox" ${getSubtitleOverlayEnabled(asset.id, false) ? 'checked' : ''} /> ${t('subtitle_overlay_enabled')}</label>
+                </div>
+              </div>
+              <div class="collapsible-body">
+                <div class="subtitle-tools-header">
+                  <span id="subtitleStatus" class="subtitle-status">${asset.subtitleUrl ? `${t('subtitle_loaded')}: ${escapeHtml(asset.subtitleLabel || asset.subtitleLang || '')}` : t('subtitle_none')}</span>
+                  <span class="subtitle-current-inline"><strong>${t('subtitle_current')}:</strong> <span id="videoSubtitleCurrent">${escapeHtml(asset.subtitleLabel || asset.subtitleLang || '-')}</span></span>
+                  <span id="subtitleBusy" class="subtitle-busy hidden"><span class="spinner"></span>${t('processing')}</span>
+                </div>
+                <div class="subtitle-list-wrap"><div class="viewer-meta"><strong>${t('subtitle_list')}:</strong></div><div id="subtitleItems" class="subtitle-items"></div></div>
+                <div class="subtitle-list-wrap">
+                  <div class="viewer-meta"><strong>${t('subtitle_search_results')}:</strong></div>
+                  <div class="subtitle-tools-row"><div class="search-query-wrap"><input id="subtitleSearchInput" class="subtitle-name-input" type="text" placeholder="${escapeHtml(t('subtitle_search_ph'))}" /><div id="subtitleSearchSuggest" class="search-suggest hidden"></div></div><button type="button" id="subtitleSearchBtn">${t('subtitle_search_btn')}</button></div>
+                  <div id="subtitleSearchResults" class="subtitle-items"></div>
+                </div>
+                <div class="subtitle-tools-layout">
+                  <div class="tool-grid tool-grid-subtitle">
+                    <label class="tool-field" for="subtitleLangInput"><span>${t('subtitle_lang')}</span><input id="subtitleLangInput" class="subtitle-lang-input" type="text" maxlength="12" value="${escapeHtml(asset.subtitleLang || currentLang || 'tr')}" /></label>
+                    <label class="tool-field" for="subtitleLabelInput"><span>${t('subtitle_name')}</span><input id="subtitleLabelInput" class="subtitle-name-input" type="text" maxlength="120" value="${escapeHtml(asset.subtitleLabel || '')}" /></label>
+                    <label class="tool-field" for="subtitleModelSelect"><span>${t('subtitle_model')}</span><select id="subtitleModelSelect" class="subtitle-lang-input"><option value="small" selected>${t('subtitle_model_small')}</option></select></label>
+                    <label class="tool-field" for="subtitleAudioStreamSelect"><span>${t('subtitle_audio_stream')}</span><select id="subtitleAudioStreamSelect" class="subtitle-lang-input"></select></label>
+                    <label class="tool-field" for="subtitleAudioChannelSelect"><span>${t('subtitle_audio_channel')}</span><select id="subtitleAudioChannelSelect" class="subtitle-lang-input"></select></label>
+                  </div>
+                  <div class="tool-actions">
+                    <label class="video-tools-check subtitle-backend-check tool-toggle-pill"><input id="subtitleZemberekCheck" type="checkbox" checked /> ${t('subtitle_use_zemberek')}</label>
+                    <button type="button" id="subtitleGenerateBtn">${t('subtitle_generate')}</button>
+                    <button type="button" id="subtitleTranslateBtn">${t('subtitle_translate_tr')}</button>
+                    <button type="button" id="subtitleRenameBtn">${t('subtitle_save_name')}</button>
+                    <div class="tool-file-wrap"><input id="subtitleFileInput" type="file" accept=".vtt,.srt,text/vtt,application/x-subrip" /><button type="button" id="subtitleUploadBtn">${t('subtitle_upload')}</button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="subtitle-tools audio-clips-tools collapsible-section" data-section="clips">
+              <div class="collapsible-head"><strong>${t('audio_clips')}</strong></div>
+              <div class="collapsible-body">
+                <div class="viewer-meta audio-mark-summary" id="markSummary"><span class="tc-in-label">${t('in_label')}</span>: --:--:--:-- | <span class="tc-out-label">${t('out_label')}</span>: --:--:--:-- | ${t('segment')}: --:--:--:--</div>
+                <div class="cut-label-row"><label>${t('clip_name')}</label><input id="cutLabelInput" type="text" placeholder="${escapeHtml(t('ph_clip_name'))}" /></div>
+                <div class="cut-actions"><button type="button" id="saveCutBtn">${t('save_cut')}</button><button type="button" id="clearMarksBtn">${t('delete_marks')}</button></div>
+                <div id="cutsList" class="cuts-list"></div>
+              </div>
             </div>
           </div>
         </div>
+      `;
+    }
+    return `
+      <div class="audio-detail-viewer" data-audio-viewer="1">
+        <div class="audio-subtitle-stage" data-audio-subtitle-stage="1"></div>
+        <audio id="assetMediaEl" data-asset-id="${escapeHtml(asset.id)}" class="asset-viewer audio-detail-media" controls preload="metadata" src="${playbackUrl}"${audioChannelsAttr}></audio>
       </div>
     `;
   }
@@ -392,7 +497,8 @@ function videoToolsPageMarkup(asset) {
             includeSectionHide: false,
             audioSideLayout: true,
             audioOverlayInViewer: false,
-            tcInControlBar: true
+            tcInControlBar: true,
+            audioToolsPage: isAudio(asset)
           })}
         </div>
       </div>

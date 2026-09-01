@@ -146,6 +146,133 @@
   display: none;
 }
 
+.audio-detail-viewer,
+.audio-tools-viewer-shell,
+.audio-tools-viewer-shell .viewer-extra,
+.audio-tools-viewer-shell .video-tools-sortable-host,
+.audio-clips-tools {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.audio-detail-viewer {
+  display: grid;
+  gap: 8px;
+  height: auto;
+  min-height: 0;
+  resize: none;
+  overflow: hidden;
+}
+
+.audio-subtitle-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 150px;
+  padding: 18px;
+  overflow: hidden;
+  box-sizing: border-box;
+  border: 1px solid #303747;
+  border-radius: 10px;
+  background: #050505;
+}
+
+.audio-detail-media {
+  display: block;
+  width: 100%;
+  height: 54px;
+}
+
+.audio-tools-media {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.audio-subtitle-stage .mam-subtitle-overlay {
+  top: 50% !important;
+  bottom: auto !important;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.audio-subtitle-stage .mam-subtitle-overlay.hidden {
+  display: none;
+}
+
+.audio-tools-top-layout {
+  grid-template-columns: minmax(0, 900px) 320px;
+}
+
+.audio-tools-viewer-shell .viewer-extra,
+.audio-tools-viewer-shell .collapsible-section,
+.audio-tools-viewer-shell .collapsible-body,
+.audio-tools-viewer-shell .cuts-list,
+.audio-tools-viewer-shell .cut-item,
+.audio-tools-viewer-shell .cut-item-meta {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.audio-clips-tools {
+  contain: inline-size;
+  overflow: hidden;
+}
+
+.audio-clips-tools .audio-mark-summary,
+.audio-clips-tools .cut-item-tc-row,
+.audio-clips-tools .cut-item-actions {
+  display: flex;
+  width: max-content;
+  max-width: 100%;
+  gap: 6px;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+
+.audio-clips-tools .audio-mark-summary > *,
+.audio-clips-tools .cut-item-tc-row > *,
+.audio-clips-tools .cut-item-actions > * {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+.subtitle-font-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.subtitle-font-controls button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.subtitle-font-controls output {
+  min-width: 42px;
+  color: #dfe8fb;
+  font: 12px/1 ui-monospace, monospace;
+  text-align: center;
+}
+
+@media (max-width: 1024px) {
+  .audio-tools-top-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 1024px) {
   .panel-splitter {
     display: none;

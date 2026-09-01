@@ -134,7 +134,7 @@
       const currentLang = currentLangRef?.get?.() || 'tr';
       const subtitleLang = String(asset?.subtitleLang || currentLang || 'tr').slice(0, 12);
       const subtitleLabel = String(asset?.subtitleLabel || t('subtitles'));
-      const players = Array.from(document.querySelectorAll('video[data-asset-id]'))
+      const players = Array.from(document.querySelectorAll('video[data-asset-id], audio[data-asset-id]'))
         .filter((el) => String(el.dataset.assetId || '').trim() === assetId);
 
       players.forEach((mediaEl) => {
@@ -685,6 +685,9 @@
       const mediaRect = mediaEl?.getBoundingClientRect?.();
       const hostRect = hostEl?.getBoundingClientRect?.();
       const width = Number(mediaRect?.width) || Number(hostRect?.width) || 900;
+      if (mediaEl instanceof HTMLAudioElement || hostEl?.matches?.('[data-audio-subtitle-stage]')) {
+        return Math.max(0.72, Math.min(1.35, width / 760));
+      }
       const height = Number(mediaRect?.height) || Number(hostRect?.height) || 506;
       const widthScale = width / 900;
       const heightScale = height / 506;
@@ -694,7 +697,9 @@
     function applyCustomSubtitleOverlayStyle(overlayEl, mediaEl) {
       const style = getSubtitleStyleSettings();
       const scale = getSubtitleRenderScale(mediaEl, overlayEl.parentElement);
-      const fontSize = Math.max(10, Math.round(style.fontSize * scale));
+      const storedFontSize = Number(mediaEl?.dataset?.subtitleFontSize || 0);
+      const baseFontSize = Number.isFinite(storedFontSize) && storedFontSize > 0 ? storedFontSize : style.fontSize;
+      const fontSize = Math.max(12, Math.min(64, Math.round(baseFontSize * scale)));
       const bottomOffset = Math.max(0, Math.round(style.bottomOffset * scale));
       const horizontalPadding = Math.max(0, Math.round(style.horizontalPadding * scale));
       const verticalPadding = Math.max(5, Math.round(10 * scale));
@@ -862,8 +867,19 @@
 
     function initCustomSubtitleOverlay(mediaEl, asset, root = document) {
       if (!(mediaEl instanceof HTMLMediaElement) || !asset?.id) return () => {};
-      const host = mediaEl.closest('.viewer-resizable') || mediaEl.parentElement || mediaEl.closest('.viewer-core') || root;
+      const audioViewer = mediaEl.closest('.audio-detail-viewer, .audio-tools-viewer-shell');
+      const host = audioViewer?.querySelector('[data-audio-subtitle-stage]')
+        || mediaEl.closest('.viewer-resizable')
+        || mediaEl.parentElement
+        || mediaEl.closest('.viewer-core')
+        || root;
       if (!(host instanceof HTMLElement)) return () => {};
+      try {
+        const storedFontSize = Number(localStorage.getItem(`mam:subtitle-font-size:${asset.id}`) || 0);
+        if (Number.isFinite(storedFontSize) && storedFontSize >= 12 && storedFontSize <= 64) {
+          mediaEl.dataset.subtitleFontSize = String(storedFontSize);
+        }
+      } catch (_error) {}
       let disposed = false;
       let cues = [];
       let loadedUrl = '';

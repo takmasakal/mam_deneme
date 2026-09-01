@@ -3,7 +3,7 @@
 @import url('/styles/main-03.css?v=20260722-volume-controls-1');
 @import url('/styles/main-04.css?v=20260722-volume-controls-1');
 @import url('/styles/main-05.css?v=20260425-refactor-1');
-@import url('/styles/main-06.css?v=20260425-refactor-1');
+@import url('/styles/main-06.css?v=20260901-audio-tools-1');
 
 .search-title-row { display: flex !important; align-items: center; gap: 8px; }
 .search-title-row .search-clear-btn { margin-left: auto; }

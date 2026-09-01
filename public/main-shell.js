@@ -24,7 +24,7 @@
       parseTimecodeInput
     } = deps || {};
 
-function openVideoToolsPage(assetId, startAtSeconds = 0) {
+function openVideoToolsPage(assetId, startAtSeconds = 0, toolsView = 'video-tools') {
   const id = String(assetId || '').trim();
   if (!id) return;
   try {
@@ -47,7 +47,7 @@ function openVideoToolsPage(assetId, startAtSeconds = 0) {
   }
   const next = new URL(window.location.href);
   const backPanels = `${isPanelVisible('panelIngest') ? '1' : '0'}${isPanelVisible('panelAssets') ? '1' : '0'}${isPanelVisible('panelDetail') ? '1' : '0'}`;
-  next.searchParams.set('view', 'video-tools');
+  next.searchParams.set('view', String(toolsView || '') === 'audio-tools' ? 'audio-tools' : 'video-tools');
   next.searchParams.set('assetId', id);
   next.searchParams.set('backPanels', backPanels);
   if (startAtSeconds > 0) next.searchParams.set('tc', String(startAtSeconds.toFixed(3)));
@@ -672,13 +672,14 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
   };
 }
 
-function setPanelVideoToolsButtonState(visible, onClick = null) {
+function setPanelVideoToolsButtonState(visible, onClick = null, toolsType = 'video') {
   if (!panelVideoToolsBtn) return;
   const show = Boolean(visible);
   panelVideoToolsBtn.classList.toggle('hidden', !show);
   panelVideoToolsBtn.removeAttribute('title');
-  panelVideoToolsBtn.setAttribute('aria-label', t('video_tools'));
-  panelVideoToolsBtn.dataset.tooltip = t('video_tools');
+  const label = t(toolsType === 'audio' ? 'audio_tools' : 'video_tools');
+  panelVideoToolsBtn.setAttribute('aria-label', label);
+  panelVideoToolsBtn.dataset.tooltip = label;
   panelVideoToolsBtn.onclick = show && typeof onClick === 'function' ? onClick : null;
 }
 

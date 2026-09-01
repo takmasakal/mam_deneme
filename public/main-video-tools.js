@@ -391,10 +391,35 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
   const searchBtn = byId('subtitleSearchBtn');
   const searchSuggestEl = byId('subtitleSearchSuggest');
   const searchResultsEl = byId('subtitleSearchResults');
+  const fontDecreaseBtn = byId('subtitleFontDecreaseBtn');
+  const fontIncreaseBtn = byId('subtitleFontIncreaseBtn');
+  const fontSizeValue = byId('subtitleFontSizeValue');
   if (!statusEl || !itemsEl || !langInput || !labelInput || !modelSelect || !audioStreamSelect || !audioChannelSelect || !zemberekCheck || !renameBtn || !fileInput || !uploadBtn || !generateBtn || !searchInput || !searchBtn || !searchResultsEl || !searchSuggestEl) return () => {};
   let subtitleSuggestItems = [];
   let subtitleSuggestActive = -1;
   let subtitleSuggestTimer = null;
+  let subtitleFontSize = 24;
+
+  try {
+    const stored = Number(localStorage.getItem(`mam:subtitle-font-size:${asset.id}`) || 24);
+    subtitleFontSize = Math.max(12, Math.min(64, Number.isFinite(stored) ? stored : 24));
+  } catch (_error) {}
+
+  const applySubtitleFontSize = (nextSize) => {
+    subtitleFontSize = Math.max(12, Math.min(64, Math.round(Number(nextSize) / 2) * 2));
+    if (fontSizeValue) fontSizeValue.textContent = `${subtitleFontSize}px`;
+    try { localStorage.setItem(`mam:subtitle-font-size:${asset.id}`, String(subtitleFontSize)); } catch (_error) {}
+    document.querySelectorAll('video[data-asset-id], audio[data-asset-id]').forEach((player) => {
+      if (String(player.dataset.assetId || '').trim() !== String(asset.id || '').trim()) return;
+      player.dataset.subtitleFontSize = String(subtitleFontSize);
+      player.dispatchEvent(new CustomEvent('mam:subtitle-overlay-sync', { detail: { asset, fontSize: subtitleFontSize } }));
+    });
+  };
+  const onFontDecrease = () => applySubtitleFontSize(subtitleFontSize - 2);
+  const onFontIncrease = () => applySubtitleFontSize(subtitleFontSize + 2);
+  fontDecreaseBtn?.addEventListener('click', onFontDecrease);
+  fontIncreaseBtn?.addEventListener('click', onFontIncrease);
+  applySubtitleFontSize(subtitleFontSize);
 
   const getLang = () => String(langInput.value || '').trim().toLowerCase().slice(0, 12) || 'tr';
   const getModel = () => 'small';
@@ -906,6 +931,8 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     generateBtn.removeEventListener('click', onGenerate);
     searchBtn.removeEventListener('click', onSubtitleSearch);
     searchInput.removeEventListener('keydown', onSubtitleSearchEnter);
+    fontDecreaseBtn?.removeEventListener('click', onFontDecrease);
+    fontIncreaseBtn?.removeEventListener('click', onFontIncrease);
     searchInput.removeEventListener('input', queueSubtitleSuggest);
     searchInput.removeEventListener('focus', queueSubtitleSuggest);
     overlayCheck?.removeEventListener('change', onOverlayChange);
@@ -1290,6 +1317,7 @@ function initCollapsibleSections(root = document) {
   if (!rows.length) return () => {};
   const cleanups = [];
   const isVideoToolsModal = Boolean(root.querySelector('.video-tools-modal-body'));
+  const isAudioToolsPage = Boolean(root.querySelector('.audio-tools-viewer-shell'));
   const defaultCollapsedInVideoTools = new Set(['subtitles', 'ocr', 'clips']);
   const defaultCollapsedInDetail = new Set(['subtitles', 'clips']);
   rows.forEach((section) => {
@@ -1301,6 +1329,7 @@ function initCollapsibleSections(root = document) {
       section.classList.toggle('collapsed', collapsed);
       if (check) check.checked = collapsed;
       if (sectionKey === 'clips') {
+        if (isAudioToolsPage) return;
         if (collapsed) {
           resetDetailPanelDynamicMinWidth();
         } else {
@@ -1360,10 +1389,12 @@ function initVideoToolsSorting(root = document) {
     viewerExtra.prepend(host);
   }
 
-  const defaultOrder = ['subtitles', 'ocr', 'audio', 'clips'];
+  const audioToolsPage = Boolean(root.querySelector('.audio-tools-viewer-shell'));
+  const defaultOrder = audioToolsPage ? ['subtitles', 'clips'] : ['subtitles', 'ocr', 'audio', 'clips'];
+  const storageKey = audioToolsPage ? 'mam.audio.tools.order' : LOCAL_VIDEO_TOOLS_ORDER;
   let savedOrder = [];
   try {
-    const raw = localStorage.getItem(LOCAL_VIDEO_TOOLS_ORDER);
+    const raw = localStorage.getItem(storageKey);
     const parsed = raw ? JSON.parse(raw) : [];
     if (Array.isArray(parsed)) savedOrder = parsed.map((x) => String(x || '').trim()).filter(Boolean);
   } catch (_error) {
@@ -1380,7 +1411,7 @@ function initVideoToolsSorting(root = document) {
     const order = Array.from(host.querySelectorAll('.collapsible-section[data-section]'))
       .map((el) => String(el.dataset.section || '').trim())
       .filter(Boolean);
-    localStorage.setItem(LOCAL_VIDEO_TOOLS_ORDER, JSON.stringify(order));
+    localStorage.setItem(storageKey, JSON.stringify(order));
   };
 
   const isInteractiveTarget = (target) => Boolean(target?.closest('input, button, a, select, textarea, label'));

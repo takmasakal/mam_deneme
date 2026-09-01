@@ -6,6 +6,7 @@
       PLAYER_FPS,
       useMpegDashPlayerUI,
       isVideo,
+      isAudio,
       cutMarksByAsset,
       currentUserCanDeleteAssetsRef,
       searchStateRef,
@@ -338,7 +339,9 @@
       const cutLabelInput = byId('cutLabelInput');
       const cutsList = byId('cutsList');
       const clipsSection = root.querySelector('.collapsible-section[data-section="clips"]');
-      const allowSurfaceToggle = isVideo(asset);
+      const videoAsset = isVideo(asset);
+      const audioAsset = typeof isAudio === 'function' && isAudio(asset);
+      const allowSurfaceToggle = videoAsset;
       const resolveFullscreenTarget = () =>
         mediaEl.closest('.viewer-core')
         || mediaEl.closest('.viewer-shell')
@@ -488,11 +491,11 @@
             `;
           })
           .join('');
-        if (activeCutId) {
+        if (activeCutId && !audioAsset) {
           const activeRow = cutsList.querySelector(`.cut-item[data-cut-id="${CSS.escape(activeCutId)}"]`);
           activeRow?.scrollIntoView({ block: 'center', behavior: 'smooth' });
         }
-        if (clipsSection && !clipsSection.classList.contains('collapsed')) {
+        if (!audioAsset && clipsSection && !clipsSection.classList.contains('collapsed')) {
           requestAnimationFrame(() => ensureDetailPanelMinWidth(measureClipsPanelRequiredWidth(root)));
         }
       };
@@ -516,6 +519,7 @@
       };
 
       const onClipsSectionPointerDown = () => {
+        if (audioAsset) return;
         if (!clipsSection || clipsSection.classList.contains('collapsed')) return;
         ensureDetailPanelMinWidth(measureClipsPanelRequiredWidth(root));
       };

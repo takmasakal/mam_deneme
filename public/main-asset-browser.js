@@ -148,7 +148,7 @@ function renderAssetHitList({ asset, type, hits, query, hitClass, label }) {
       if (!hitText) return '';
       const hitSec = Number(hit?.startSec || 0);
       const hitTc = secondsToTimecode(hitSec, PLAYER_FPS);
-      return `<button type="button" class="asset-meta dc-hit-row ocr-hit-jump" data-ocr-jump="1" data-id="${escapeHtml(asset.id)}" data-start-sec="${escapeHtml(String(hitSec))}"><strong>${escapeHtml(label)}</strong> <span class="dc-hit-tc">TC ${escapeHtml(hitTc)}</span>: ${highlightMatch(hitText, query, hitClass)}</button>`;
+      return `<button type="button" class="asset-meta dc-hit-row media-hit-jump" data-media-hit="1" data-hit-type="${escapeHtml(type)}" data-id="${escapeHtml(asset.id)}" data-start-sec="${escapeHtml(String(hitSec))}"><strong>${escapeHtml(label)}</strong> <span class="dc-hit-tc">TC ${escapeHtml(hitTc)}</span>: ${highlightMatch(hitText, query, hitClass)}</button>`;
     })
     .filter(Boolean)
     .join('')}</div>`;

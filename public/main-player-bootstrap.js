@@ -62,6 +62,30 @@
           cleanups.push(initCollapsibleSections(root));
           cleanups.push(initVideoToolsSorting(root));
         }
+        if (isAudio(asset)) {
+          cleanups.push(initFrameControls(mediaEl, asset, root, options));
+          cleanups.push(initCustomVideoControls(mediaEl, root));
+          cleanups.push(initVideoSubtitleTools(mediaEl, asset, root));
+          if (typeof initCustomSubtitleOverlay === 'function') {
+            cleanups.push(initCustomSubtitleOverlay(mediaEl, asset, root));
+          }
+          cleanups.push(initCollapsibleSections(root));
+          cleanups.push(initVideoToolsSorting(root));
+          if (!root.querySelector('#markSummary')) {
+            const onAudioSubtitleShortcut = (event) => {
+              if (event.key !== 'A' || !event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+              const target = event.target;
+              if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"]')) return;
+              const nextEnabled = !getSubtitleOverlayEnabled(asset.id, false);
+              setSubtitleOverlayEnabled(asset.id, nextEnabled);
+              syncSubtitleOverlayInOpenPlayers(asset);
+              event.preventDefault();
+              event.stopPropagation();
+            };
+            document.addEventListener('keydown', onAudioSubtitleShortcut);
+            cleanups.push(() => document.removeEventListener('keydown', onAudioSubtitleShortcut));
+          }
+        }
         if (isVideo(asset) || isAudio(asset)) {
           cleanups.push(initAudioTools(mediaEl, root));
         }

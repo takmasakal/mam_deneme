@@ -38,7 +38,9 @@ const splitters = Array.from(document.querySelectorAll('.panel-splitter'));
 const splitterDots = Array.from(document.querySelectorAll('.splitter-dot'));
 const splitterTabs = Array.from(document.querySelectorAll('.splitter-tab'));
 const pageParams = new URLSearchParams(window.location.search);
-const isVideoToolsPageMode = String(pageParams.get('view') || '').trim().toLowerCase() === 'video-tools';
+const requestedToolsView = String(pageParams.get('view') || '').trim().toLowerCase();
+const isAudioToolsPageMode = requestedToolsView === 'audio-tools';
+const isVideoToolsPageMode = requestedToolsView === 'video-tools' || isAudioToolsPageMode;
 const requestedVideoToolsAssetId = String(pageParams.get('assetId') || '').trim();
 const requestedVideoToolsStartSec = Math.max(0, Number(pageParams.get('tc') || 0) || 0);
 const requestedOpenAssetId = String(pageParams.get('openAsset') || '').trim();
@@ -265,8 +267,8 @@ const shellModule = window.createMainShellModule({
   parseTimecodeInput
 });
 
-function openVideoToolsPage(assetId, startAtSeconds = 0) {
-  return shellModule.openVideoToolsPage(assetId, startAtSeconds);
+function openVideoToolsPage(assetId, startAtSeconds = 0, toolsView = 'video-tools') {
+  return shellModule.openVideoToolsPage(assetId, startAtSeconds, toolsView);
 }
 
 function leaveVideoToolsPage(returnAssetId = '', returnStartAtSeconds = 0) {
@@ -301,8 +303,8 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
   return shellModule.initFullscreenOverlay(mediaEl, fullscreenTarget, asset);
 }
 
-function setPanelVideoToolsButtonState(visible, onClick = null) {
-  return shellModule.setPanelVideoToolsButtonState(visible, onClick);
+function setPanelVideoToolsButtonState(visible, onClick = null, toolsType = 'video') {
+  return shellModule.setPanelVideoToolsButtonState(visible, onClick, toolsType);
 }
 
 function syncOcrQueryInputs(source) {
@@ -675,6 +677,11 @@ let i18n = {
     ocr_segments_short: 'segments',
     hide_section: 'Hide',
     video_clips: 'Video Clips',
+    audio_clips: 'Audio Clips',
+    audio_tools: 'Audio Tools',
+    subtitle_font_size: 'Subtitle font size',
+    subtitle_font_decrease: 'Decrease subtitle font size',
+    subtitle_font_increase: 'Increase subtitle font size',
     move_up: 'Up',
     move_down: 'Down',
     subtitle_rename_success: 'Subtitle name saved.',
@@ -1065,6 +1072,11 @@ let i18n = {
     ocr_segments_short: 'segment',
     hide_section: 'Gizle',
     video_clips: 'Video Klipler',
+    audio_clips: 'Ses Klipleri',
+    audio_tools: 'Ses Araçları',
+    subtitle_font_size: 'Altyazı yazı boyutu',
+    subtitle_font_decrease: 'Altyazı yazı boyutunu küçült',
+    subtitle_font_increase: 'Altyazı yazı boyutunu büyüt',
     move_up: 'Yukari',
     move_down: 'Asagi',
     subtitle_rename_success: 'Altyazı adı kaydedildi.',
@@ -2186,6 +2198,7 @@ const playerRuntimeModule = window.createMainPlayerRuntimeModule({
   PLAYER_FPS,
   useMpegDashPlayerUI,
   isVideo,
+  isAudio,
   cutMarksByAsset,
   currentUserCanDeleteAssetsRef: {
     get: () => currentUserCanDeleteAssets
@@ -2585,7 +2598,7 @@ async function openAsset(id, workflow, options = {}) {
   clearDetailHeaderTimecode();
   resetDetailPanelDynamicMinWidth();
 
-  if (isVideoToolsPageMode && isVideo(asset)) {
+  if (isVideoToolsPageMode && (isVideo(asset) || isAudio(asset))) {
     panelDetail?.classList.add('panel-video-detail');
     assetDetail.innerHTML = videoToolsPageMarkup(asset);
     assetDetail.classList.remove('empty');
@@ -2614,7 +2627,10 @@ async function openAsset(id, workflow, options = {}) {
     : '';
   assetDetail.innerHTML = detailMarkup(asset, workflow, { imagePreviewUrl: selectedImagePreviewUrl });
   const hasPlayableVideoProxy = isVideo(asset) && Boolean(String(asset.proxyUrl || '').trim());
+  const hasPlayableAudio = isAudio(asset) && Boolean(String(asset.mediaUrl || '').trim());
+  const hasMediaTools = hasPlayableVideoProxy || hasPlayableAudio;
   assetDetail.classList.toggle('video-detail-mode', hasPlayableVideoProxy);
+  assetDetail.classList.toggle('audio-detail-mode', hasPlayableAudio);
   panelDetail?.classList.toggle('panel-video-detail', hasPlayableVideoProxy);
   assetDetail.classList.remove('video-tools-page-detail');
   if (hasPlayableVideoProxy) syncDetailHeaderTimecode(assetDetail);
@@ -2624,7 +2640,7 @@ async function openAsset(id, workflow, options = {}) {
     assetDetail.classList.remove('detail-video-pinned');
     resetDetailPanelDynamicMinWidth();
   }
-  setPanelVideoToolsButtonState(hasPlayableVideoProxy && !isVideoToolsPageMode, () => {
+  setPanelVideoToolsButtonState(hasMediaTools && !isVideoToolsPageMode, () => {
     const panelMedia = assetDetail.querySelector('#assetMediaEl');
     const panelSubtitleCheck = assetDetail.querySelector('#subtitleOverlayCheck');
     const panelTrackEnabled = panelMedia
@@ -2639,8 +2655,8 @@ async function openAsset(id, workflow, options = {}) {
       try { panelMedia.pause(); } catch (_error) {}
     }
     const startAtSeconds = panelMedia ? Number(panelMedia.currentTime || 0) : 0;
-    openVideoToolsPage(asset.id, startAtSeconds);
-  });
+    openVideoToolsPage(asset.id, startAtSeconds, hasPlayableAudio ? 'audio-tools' : 'video-tools');
+  }, hasPlayableAudio ? 'audio' : 'video');
   activePlayerCleanup = initAssetPlayer(asset, assetDetail, {
     startAtSeconds: Number(options.startAtSeconds) || 0,
     focusCutId: String(options.focusCutId || '').trim()
@@ -2708,12 +2724,12 @@ assetGrid.addEventListener('click', async (event) => {
     return;
   }
 
-  const ocrJumpBtn = event.target.closest('[data-ocr-jump]');
-  if (ocrJumpBtn) {
+  const mediaHitBtn = event.target.closest('[data-media-hit]');
+  if (mediaHitBtn) {
     event.preventDefault();
     event.stopPropagation();
-    const id = String(ocrJumpBtn.dataset.id || '').trim();
-    const startAtSeconds = Math.max(0, Number(ocrJumpBtn.dataset.startSec || 0));
+    const id = String(mediaHitBtn.dataset.id || '').trim();
+    const startAtSeconds = Math.max(0, Number(mediaHitBtn.dataset.startSec || 0));
     if (!id) return;
     if (seekOpenDetailMedia(id, startAtSeconds)) return;
     setSingleSelection(id);
@@ -3090,7 +3106,7 @@ async function openInitialView(workflow) {
     applyAssetViewModeUI();
     if (isVideoToolsPageMode) {
       const targetId = requestedVideoToolsAssetId
-        || String(currentAssets.find((item) => isVideo(item))?.id || '').trim();
+        || String(currentAssets.find((item) => isAudioToolsPageMode ? isAudio(item) : isVideo(item))?.id || '').trim();
       if (targetId) {
         await openAsset(targetId, workflow, { startAtSeconds: requestedVideoToolsStartSec });
       } else {

@@ -1025,6 +1025,15 @@ body {
   gap: 8px;
 }
 
+.subtitle-row.subtitle-row-audio {
+  border-color: #20b8a6;
+  box-shadow: inset 3px 0 0 #20b8a6;
+}
+
+.subtitle-row.subtitle-row-video {
+  border-color: #6078a8;
+}
+
 .subtitle-row-main {
   display: grid;
   gap: 2px;
