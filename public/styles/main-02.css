@@ -857,7 +857,8 @@ button:hover {
   border-radius: 999px;
 }
 
-.ocr-hit-jump {
+.ocr-hit-jump,
+.media-hit-jump {
   width: 100%;
   border: 1px solid #45506a;
   border-radius: 8px;
@@ -868,11 +869,13 @@ button:hover {
   cursor: pointer;
 }
 
-.ocr-hit-jump:hover {
+.ocr-hit-jump:hover,
+.media-hit-jump:hover {
   background: #353d52;
 }
 
 .ocr-hit-jump .dc-hit-tc,
+.media-hit-jump .dc-hit-tc,
 .subtitle-item-tc {
   color: var(--brand-gold, #e2a63b);
   font-weight: 700;
