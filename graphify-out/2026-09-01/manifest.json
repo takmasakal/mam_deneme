@@ -84,10 +84,10 @@
     "semantic_hash": "43f5374833875f4cf50ce596ff22329a"
   },
   "package.json": {
-    "mtime": 1788252996.580714,
-    "seen": 1788253018.684339,
-    "ast_hash": "c364dc153b26b1652300872157b8f3bd",
-    "semantic_hash": ""
+    "mtime": 1786623905.3156278,
+    "seen": 1788161600.634392,
+    "ast_hash": "6605adc9552692ac73260bddef786f61",
+    "semantic_hash": "6605adc9552692ac73260bddef786f61"
   },
   "public/admin-records.js": {
     "mtime": 1788179587.2555609,
@@ -102,10 +102,10 @@
     "semantic_hash": "f6e32181091712c2e209d5d70bd0876a"
   },
   "public/admin.js": {
-    "mtime": 1788252996.425737,
-    "seen": 1788253018.684342,
-    "ast_hash": "15a4ee6f32077e186bc786ba9c2ceafd",
-    "semantic_hash": ""
+    "mtime": 1786309412.7659883,
+    "seen": 1788161600.6343942,
+    "ast_hash": "747fc74d22a7ac2d1e5abbc9b68b38d1",
+    "semantic_hash": "747fc74d22a7ac2d1e5abbc9b68b38d1"
   },
   "public/i18n.json": {
     "mtime": 1788179470.206067,
@@ -1950,9 +1950,9 @@
     "semantic_hash": ""
   },
   "public/admin.html": {
-    "mtime": 1788252996.502754,
-    "seen": 1788253018.6845691,
-    "ast_hash": "0fed909c91d25a938ef164abcf0e8a00",
+    "mtime": 1786309409.3475564,
+    "seen": 1788165032.016105,
+    "ast_hash": "f7e6eca7da155f0706a992ed337b3f03",
     "semantic_hash": ""
   },
   "public/index.html": {
@@ -2067,12 +2067,6 @@
     "mtime": 1788182844.6746526,
     "seen": 1788183200.547429,
     "ast_hash": "644c4fbdf55f43b0548588213bd8a053",
-    "semantic_hash": ""
-  },
-  "scripts/test_admin_subtitle_editor.js": {
-    "mtime": 1788252996.652264,
-    "seen": 1788253018.684484,
-    "ast_hash": "a4016cb3b90bddded2b30841cb65f164",
     "semantic_hash": ""
   }
 }

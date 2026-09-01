@@ -1494,9 +1494,11 @@ function openTextEditorModal({
       }
       richArea.innerHTML = decorateEditorText(raw);
     };
+    const readRichEditorText = () => String(richArea?.innerText ?? richArea?.textContent ?? '')
+      .replace(/\r\n?/g, '\n');
     renderRichEditor(area?.value || '');
     richArea?.addEventListener('input', () => {
-      if (area) area.value = richArea.textContent || '';
+      if (area) area.value = readRichEditorText();
     });
     richArea?.addEventListener('click', (event) => {
       const button = event.target.closest('[data-editor-tc]');

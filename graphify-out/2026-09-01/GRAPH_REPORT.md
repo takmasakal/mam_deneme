@@ -1,16 +1,16 @@
-# Graph Report - mam_deneme  (2026-09-01)
+# Graph Report - mam_deneme  (2026-08-31)
 
 ## Corpus Check
-- 328 files · ~344,937 words
+- 327 files · ~344,804 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 4791 nodes · 9965 edges · 374 communities (197 shown, 71 thin omitted)
+- 4783 nodes · 9958 edges · 374 communities (194 shown, 74 thin omitted)
 - Extraction: 88% EXTRACTED · 12% INFERRED · 0% AMBIGUOUS · INFERRED: 1229 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `885e6696`
+- Built from commit: `590ef361`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -35,7 +35,7 @@
 - registerAdminRoutes
 - createMediaArtifactService
 - scripts
-- lh
+- registerMarqueeOnPage
 - queueSubtitleGenerationJob
 - createTextAssetIndexService
 - MAM Deneme Teknik Referans
@@ -46,13 +46,13 @@
 - report_orphan_uploads.js
 - fo
 - t
-- q
+- .acquirePage
 - bo
 - Me
 - registerSelectionOnPage
 - createKeycloakService
 - s
-- queryAssetSuggestions
+- J
 - getAdminSettings
 - createAdminRecordsModule
 - createAdminSystemHealthModule
@@ -60,7 +60,7 @@
 - createBackupService
 - migrate_upload_layout.py
 - createMainSearchSuggestModule
-- getAnnotationById
+- mh
 - kv
 - test_asset_version_service.js
 - MAM Yetkilendirme ve Keycloak İzin Referansı
@@ -79,7 +79,6 @@
 - mediaViewerModule
 - openAsset
 - embedpdf.js
-- .withWString
 - test_effective_permission_service.js
 - renderAssetRightsRows
 - test_main_assets_search_meta.js
@@ -101,6 +100,7 @@
 - MAM Deneme Şirket Server Kurulum Dokümanı
 - createMainDetailRequestCoordinator
 - createMainTechnicalInfoStore
+- advancedSearchService.js
 - EmbedPdfContainer
 - openPhotoOcrDialog
 - mam-rpi.sh
@@ -108,7 +108,7 @@
 - renderAssetRightsGroupSuggestions
 - main-access-scope.js
 - C
-- handleRequest
+- onDocumentLoadingStarted
 - transcribe_whisper.py
 - transcribe_whisperx.py
 - ocrtest_lab/package.json
@@ -143,7 +143,7 @@
 - createMainPlayerRuntimeModule
 - session-expiry.js
 - theme.d.ts
-- so
+- assets.js
 - zo
 - init.sh
 - init-rpi.sh
@@ -155,7 +155,7 @@
 - createMainDocumentPreviewModule
 - createMainMediaViewerModule
 - createMainPlayerBootstrapModule
-- test_media_artifact_service.js
+- m
 - exportPermissionBackup
 - useCustomLikeTimelineUI
 - app.d.ts
@@ -222,7 +222,6 @@
 - MAM Project
 - MetMAM Performance Refactor Log
 - MetMAM Donma Testi
-- nc
 - [src/server.js](/Users/erinc/OyunAlanım/mam_deneme/src/server.js)
 - 15. Diagnostik Komutları
 - compileLearnedTurkishCorrections
@@ -276,13 +275,14 @@
 - AGENTS.md
 - extraction-spec.md
 - Q: Ses klip oynat tıklamalarında sağa kayma, ses IN/OUT timeline işaretleri ve fazla siyah player boşluğu
-- test_admin_subtitle_editor.js
+- createAssetListQueryService
 - Q: Ses araçlarına sağ üst çarktan tam sayfa geçiş, detay player pause, üst siyah altyazı alanı, butonların kaldırılması ve sağ volume paneli
 - Q: MetMAM OCR tamamlandığında üçüncü kolonda OCR etiketi neden otomatik görünmüyor ve nasıl düzeltilir?
-- de
+- restoreOcrFramesFromCache
+- searchTokenService.js
 - adjustSubtitleFontSize
 - Q: Ses altyazısının siyah alana taşınması, araçlarda font ölçeği ve video tipi gerçek timeline IN/OUT
-- n
+- on
 
 ## God Nodes (most connected - your core abstractions)
 1. `me` - 208 edges
@@ -311,11 +311,11 @@
 ## Import Cycles
 - None detected.
 
-## Communities (374 total, 71 thin omitted)
+## Communities (374 total, 74 thin omitted)
 
 ### Community 0 - "embedpdf-xgzA9lZs.js"
-Cohesion: 0.02
-Nodes (171): ad(), Af(), ap, Ar, av, Be(), beginMarquee(), Bf (+163 more)
+Cohesion: 0.01
+Nodes (178): ad(), ap, Ar, Au(), av, Be(), Bf, Bg() (+170 more)
 
 ### Community 1 - "public/admin.js"
 Cohesion: 0.01
@@ -323,7 +323,7 @@ Nodes (156): accessScopeModule, activeUsersRows, activeUsersSectionTitle, addGro
 
 ### Community 2 - "src/server.js"
 Cohesion: 0.01
-Nodes (129): ACTIVE_USER_SKIP_PATH_PREFIXES, ACTIVE_USER_TRACK_PATH_PREFIXES, activeUserSessions, app, APP_BUILD_INFO, APP_INTERNAL_URL, applyTurkishWordFixToChunk(), ARCHIVE_EXTENSIONS (+121 more)
+Nodes (152): ACTIVE_USER_SKIP_PATH_PREFIXES, ACTIVE_USER_TRACK_PATH_PREFIXES, activeUserSessions, app, APP_BUILD_INFO, APP_INTERNAL_URL, applyTurkishConjunctionSpacingFix(), applyTurkishWordFixToChunk() (+144 more)
 
 ### Community 3 - "main.js"
 Cohesion: 0.01
@@ -331,11 +331,11 @@ Nodes (68): adminMenuLink, advancedSearchBtn, assetDetail, assetGrid, assetPagin
 
 ### Community 5 - "direct-engine-Bd0KtghI.js"
 Cohesion: 0.02
-Nodes (11): doStat(), forceLoadFile(), mmap(), Y, c(), En(), mt(), rn() (+3 more)
+Nodes (11): doStat(), mmap(), quit(), Y, c(), En(), mt(), rn() (+3 more)
 
 ### Community 6 - "buildCapability"
-Cohesion: 0.07
-Nodes (51): activate(), activateDefaultMode(), activeModeIsExclusive(), ao(), buildCapability(), claimPageActivity(), countTopicsOnPage(), createInteractionScope() (+43 more)
+Cohesion: 0.10
+Nodes (46): activate(), activateDefaultMode(), activeModeIsExclusive(), buildCapability(), claimPageActivity(), createInteractionScope(), createPanScope(), createSpreadScope() (+38 more)
 
 ### Community 7 - "createMainCommonModule"
 Cohesion: 0.06
@@ -343,15 +343,15 @@ Nodes (57): createMainCommonModule(), applyCustomSubtitleOverlayStyle(), applyNa
 
 ### Community 8 - "createAnnotationScope"
 Cohesion: 0.10
-Nodes (44): acquireCommitLock(), Bc(), buildPatch(), cd(), collectPendingChanges(), commit(), copyToClipboard(), createAnnotation() (+36 more)
+Nodes (46): acquireCommitLock(), addToSelectionMethod(), Bc(), buildPatch(), cd(), collectPendingChanges(), commit(), copyToClipboard() (+38 more)
 
 ### Community 9 - "He"
 Cohesion: 0.07
-Nodes (69): H(), ac(), as(), ba(), bh, bl(), ch(), da() (+61 more)
+Nodes (67): H(), ac(), as(), ba(), bh, ch(), da(), dh (+59 more)
 
 ### Community 10 - ".resolve"
-Cohesion: 0.11
-Nodes (21): checkDocumentLimit(), emitCommitEvents(), executeCommitBatch(), extractNameFromUrl(), generateDocumentId(), getPageAppearances(), handleLoadError(), handleLoadTask() (+13 more)
+Cohesion: 0.10
+Nodes (24): checkDocumentLimit(), closeAllDocuments(), closeDocument(), emitCommitEvents(), executeCommitBatch(), extractNameFromUrl(), generateDocumentId(), getPageAppearances() (+16 more)
 
 ### Community 11 - "app.js"
 Cohesion: 0.11
@@ -366,11 +366,8 @@ Cohesion: 0.12
 Nodes (54): ADMIN_SCOPE_GROUPS, ASSET_TYPE_GROUPS, buildAssetTypeGroupSql(), buildDocumentAssetSql(), createAssetAccessService(), appendAssetAccessWhere(), appendAssetTypeAccessWhere(), appendExplicitAssetViewConditions() (+46 more)
 
 ### Community 15 - "registerAssetRoutes"
-Cohesion: 0.05
-Nodes (42): assert, {
-  createAdvancedSearchService,
-  parseAdvancedSearchDefinition
-}, rows, run(), search(), assert, { createAssetListQueryService }, createService() (+34 more)
+Cohesion: 0.17
+Nodes (10): registerAssetRoutes(), ensureImageDerivativesForRow(), getUploadFileCategory(), loadVisibleAssetRow(), resolveAssetAccessContext(), resolveAssetFilePath(), resolveAssetFileSize(), resolveAssetSourcePath() (+2 more)
 
 ### Community 16 - "createMainAdvancedSearchModule"
 Cohesion: 0.13
@@ -381,26 +378,26 @@ Cohesion: 0.05
 Nodes (22): registerAdminRoutes(), applyOcrKindToDc(), cleanupReplacedUploadUrls(), collectDocumentEligibleUsers(), documentUserCandidates(), ensureImagePreviewAndThumbnailForRow(), getOcrItemsFromDc(), isImageAssetRow() (+14 more)
 
 ### Community 18 - "createMediaArtifactService"
-Cohesion: 0.06
-Nodes (54): buildDefaultDcMetadata(), cleanupReplacedUploadUrls(), createAssetRecord(), decodeXmlEntities(), ensureDocumentThumbnailForRow(), ensurePdfThumbnailForRow(), ensureVideoProxyAndThumbnail(), escapeHtmlText() (+46 more)
+Cohesion: 0.05
+Nodes (61): assert, { createMediaArtifactService }, fs, os, path, root, buildDefaultDcMetadata(), cleanupReplacedUploadUrls() (+53 more)
 
 ### Community 19 - "scripts"
 Cohesion: 0.04
-Nodes (47): busboy, @embedpdf/snippet, nanoid, dependencies, busboy, @embedpdf/snippet, express, nanoid (+39 more)
+Nodes (46): busboy, @embedpdf/snippet, nanoid, dependencies, busboy, @embedpdf/snippet, express, nanoid (+38 more)
 
-### Community 20 - "lh"
-Cohesion: 0.11
-Nodes (13): cg(), dy(), hn(), In(), is(), jv(), la(), lh (+5 more)
+### Community 20 - "registerMarqueeOnPage"
+Cohesion: 0.13
+Nodes (11): beginMarquee(), cancelMarquee(), endMarquee(), ia(), jm(), ma(), qv(), registerMarqueeOnPage() (+3 more)
 
 ### Community 21 - "queueSubtitleGenerationJob"
-Cohesion: 0.10
-Nodes (33): assert, { createMetadataEnrichmentService }, { EventEmitter }, {
+Cohesion: 0.07
+Nodes (49): assert, { createMetadataEnrichmentService }, { EventEmitter }, {
   trackMediaJobProcess,
   cancelMediaJobRuntime,
   clearMediaJobRuntime,
   isMediaJobCancelled,
   hasActiveMediaJobRuntime
-}, buildEmptySubtitleError(), buildSubtitleDbRequestPayload(), buildSubtitleDbResultPayload(), compactCommandOutput() (+25 more)
+}, buildEmptySubtitleError(), buildMediaJobProgress(), buildSubtitleDbRequestPayload(), buildSubtitleDbResultPayload() (+41 more)
 
 ### Community 22 - "createTextAssetIndexService"
 Cohesion: 0.08
@@ -411,8 +408,8 @@ Cohesion: 0.05
 Nodes (40): 10. Smoke Test Checklist, 12. Kısa Operasyon Özeti, 1. Sistem Özeti, 2. Yüksek Seviye Mimari, 4. Kod Haritası, 5.1 Login akışı, 5.2 Video upload akışı, 5.3 Subtitle akışı (+32 more)
 
 ### Community 24 - "extractVideoOcrToText"
-Cohesion: 0.09
-Nodes (50): buildDisplaySegments(), buildOcrFrameFilter(), buildOcrVisualEnhanceFilter(), buildOverlayTokenRegex(), cleanupOcrFrameCache(), collapseFrameEntriesToSegments(), collapseOverlaySegments(), extractPhotoOcrToText() (+42 more)
+Cohesion: 0.11
+Nodes (44): applyTurkishCorrectionToEntries(), applyTurkishOcrOfflineCorrection(), buildDisplaySegments(), buildOcrFrameFilter(), buildOcrVisualEnhanceFilter(), buildOverlayTokenRegex(), cleanupOcrFrameCache(), collapseFrameEntriesToSegments() (+36 more)
 
 ### Community 25 - "metadataEnrichmentService.js"
 Cohesion: 0.12
@@ -423,48 +420,44 @@ Cohesion: 0.09
 Nodes (33): assert, { createSubtitleIndexService }, cues, fs, normalizeText(), os, parseSubtitleCues(), parseSubtitleTextSearchQuery() (+25 more)
 
 ### Community 29 - "constructor"
-Cohesion: 0.08
-Nodes (31): calculatePageGrouping(), calculateVisibleTiles(), constructor(), disableCategoryImpl(), enableCategoryImpl(), evictGeometryIfNeeded(), getAllAnnotations(), getNewPageGeometryAndCache() (+23 more)
+Cohesion: 0.09
+Nodes (28): calculateVisibleTiles(), constructor(), disableCategoryImpl(), enableCategoryImpl(), evictGeometryIfNeeded(), getNewPageGeometryAndCache(), getOrLoadGeometry(), gr() (+20 more)
 
 ### Community 30 - "report_orphan_uploads.js"
 Cohesion: 0.10
 Nodes (33): buildAssetInitials(), buildOcrDisplayLabel(), formatLabelDateYmd(), main(), normalizeOcrEngine(), { pool }, sanitizeVideoOcrItems(), toAsciiUpperToken() (+25 more)
 
 ### Community 31 - "fo"
-Cohesion: 0.08
-Nodes (4): fo, gt, jn, lo
+Cohesion: 0.06
+Nodes (5): fo, gt, jn, lo, so
 
 ### Community 32 - "t"
 Cohesion: 0.11
 Nodes (34): api(), applyI18n(), auditActionLabel(), auditDetailLabel(), auditDetailValue(), buildAuditEventParams(), cleanupAuditEvents(), exportAuditEvents() (+26 more)
 
-### Community 33 - "q"
-Cohesion: 0.10
-Nodes (4): J, K, q(), z()
+### Community 33 - ".acquirePage"
+Cohesion: 0.09
+Nodes (3): K, q(), z()
 
 ### Community 34 - "bo"
-Cohesion: 0.08
-Nodes (5): bo, ho(), Jt, mo(), uo()
+Cohesion: 0.07
+Nodes (7): bo, getPageAnnotations(), ho(), Jt, mo(), renderAnnotation(), uo()
 
 ### Community 35 - "Me"
-Cohesion: 0.10
-Nodes (92): a(), ab(), ay(), b(), bb(), cb(), cy(), d() (+84 more)
+Cohesion: 0.09
+Nodes (96): a(), ab(), ay(), b(), bb(), cb(), Cc(), computeScrollForZoomChange() (+88 more)
 
 ### Community 36 - "registerSelectionOnPage"
-Cohesion: 0.13
-Nodes (27): al(), applyInstantSelection(), beginSelection(), clearSelection(), createSelectionScope(), dl(), emitMenuPlacement(), endSelection() (+19 more)
+Cohesion: 0.09
+Nodes (37): constructor(), al(), applyInstantSelection(), beginSelection(), bl(), clearSelection(), createSelectionScope(), dl() (+29 more)
 
 ### Community 37 - "createKeycloakService"
 Cohesion: 0.14
 Nodes (25): assert, calls, { createKeycloakService }, fakeFetch(), groups, jsonResponse(), users, createKeycloakService() (+17 more)
 
-### Community 39 - "queryAssetSuggestions"
-Cohesion: 0.11
-Nodes (23): assetTextMatchesParsedQuery(), buildAssetSearchText(), collectAssetSearchTexts(), exactNormalizedTextRegex(), fuzzySearchTextMatch(), fuzzySearchTokenMatch(), mapAssetSuggestionRow(), normalizedTextHasExactTerm() (+15 more)
-
 ### Community 40 - "getAdminSettings"
-Cohesion: 0.10
-Nodes (29): archiveExpiredAuditEvents(), auditArchiveDateStamp(), auditDetailsArchiveText(), clampNumber(), cleanupAuditEvents(), cleanupMediaProcessingJobs(), getAdminSettings(), getLatestMediaProcessingJobForAsset() (+21 more)
+Cohesion: 0.12
+Nodes (24): archiveExpiredAuditEvents(), auditArchiveDateStamp(), auditDetailsArchiveText(), clampNumber(), cleanupAuditEvents(), cleanupMediaProcessingJobs(), getAdminSettings(), getMediaJobConcurrencyLimit() (+16 more)
 
 ### Community 41 - "createAdminRecordsModule"
 Cohesion: 0.16
@@ -495,13 +488,13 @@ Nodes (23): Any, Namespace, Path, add_move(), connect(), fetch_all(), is_new_dat
 Cohesion: 0.21
 Nodes (23): createMainSearchSuggestModule(), applyOcrSuggestion(), applySearchSuggestion(), applySubtitleSuggestion(), getSelectedAssetTypesForRequest(), hideOcrSuggestions(), hideSearchSuggestions(), hideSubtitleSuggestions() (+15 more)
 
-### Community 47 - "getAnnotationById"
-Cohesion: 0.14
-Nodes (24): buildRotationParticipants(), cancelResize(), cloneRect(), commitDrag(), commitResize(), commitRotation(), computeCombinedConstraints(), computeDragPreviewPatches() (+16 more)
+### Community 47 - "mh"
+Cohesion: 0.12
+Nodes (29): Ah(), buildRotationParticipants(), cancelResize(), clampDelta(), cloneRect(), commitDrag(), commitResize(), commitRotation() (+21 more)
 
 ### Community 48 - "kv"
-Cohesion: 0.19
-Nodes (26): bv(), cv(), dv, ev(), fv(), gv(), hv(), ia() (+18 more)
+Cohesion: 0.14
+Nodes (32): Af(), bv(), cv(), dv, Ef(), ev(), f(), fv() (+24 more)
 
 ### Community 49 - "test_asset_version_service.js"
 Cohesion: 0.09
@@ -512,8 +505,8 @@ Cohesion: 0.05
 Nodes (38): 10. Doküman Yöneticisi Modeli, 11. Yeni Grup Eklediğimde Ne Yapmalıyım?, 12. Doğrulama Komutları, 13. Kritik Beklenen Davranış, 14.1 `x` kullanıcısının sahibi veya açıkça izinli olduğu varlıklar, 14.2 `y` grubunun görebildiği doküman adayları, 14.3 Tür bazlı görünürlük, yükleme ve indirme kuralları, 14.4 Belirli varlığın tüm izin kolonları (+30 more)
 
 ### Community 51 - "queueVideoOcrJob"
-Cohesion: 0.16
-Nodes (24): buildAssetInitials(), buildMediaJobProgress(), buildOcrDisplayLabel(), buildVideoOcrDbRequestPayload(), buildVideoOcrDbResultPayload(), formatLabelDateYmd(), mapSubtitleJobFromDbRow(), mapVideoOcrJobFromDbRow() (+16 more)
+Cohesion: 0.23
+Nodes (17): buildAssetInitials(), buildOcrDisplayLabel(), buildVideoOcrDbRequestPayload(), buildVideoOcrDbResultPayload(), formatLabelDateYmd(), mapVideoOcrJobFromDbRow(), normalizeOcrEngine(), normalizeOcrPreset() (+9 more)
 
 ### Community 52 - "loadSettingsSubtabData"
 Cohesion: 0.11
@@ -521,7 +514,7 @@ Nodes (23): applyAdminAccessMode(), applyAuditSuggestion(), applyProxySuggestion
 
 ### Community 53 - "fi"
 Cohesion: 0.13
-Nodes (5): fi, getPlacementMetrics(), vi, Xe(), yi
+Nodes (4): fi, vi, Xe(), yi
 
 ### Community 54 - "createAssetEditLockService"
 Cohesion: 0.23
@@ -536,13 +529,13 @@ Cohesion: 0.16
 Nodes (4): at(), jl, lt(), Tl()
 
 ### Community 57 - "createMediaToolService"
-Cohesion: 0.19
-Nodes (21): assert, {
+Cohesion: 0.21
+Nodes (20): assert, {
   buildProxyScaleFilter,
   buildVideoProxyArgs,
   parseFfprobeFraction,
   summarizeFfmpegError
-}, run(), generatePdfThumbnail(), generateVideoThumbnail(), buildProxyScaleFilter(), buildVideoProxyArgs(), createMediaToolService() (+13 more)
+}, run(), generateVideoThumbnail(), buildProxyScaleFilter(), buildVideoProxyArgs(), createMediaToolService(), generateVideoProxy() (+12 more)
 
 ### Community 58 - "routes/admin.js"
 Cohesion: 0.13
@@ -560,13 +553,9 @@ Nodes (15): assert, items, {
 Cohesion: 0.13
 Nodes (22): buildLogoutUrl(), buildRealmIssuerUrl(), buildRealmJwksUrl(), decodeJwt(), decodeJwtPart(), getApiKeyFromRequest(), getBearerFromRequest(), getExpectedIssuerPath() (+14 more)
 
-### Community 60 - "vt"
-Cohesion: 0.10
-Nodes (3): pt, vt, yt
-
 ### Community 61 - "createSearchService"
-Cohesion: 0.22
-Nodes (19): createSearchService(), backfillElasticIndex(), buildAssetSearchDoc(), elasticNdjsonRequest(), elasticRequest(), ensureElasticIndex(), escapeElasticId(), escapeElasticQueryTerm() (+11 more)
+Cohesion: 0.32
+Nodes (15): normalizeForSearch(), createSearchService(), backfillElasticIndex(), buildAssetSearchDoc(), elasticNdjsonRequest(), elasticRequest(), ensureElasticIndex(), escapeElasticId() (+7 more)
 
 ### Community 62 - "ie"
 Cohesion: 0.23
@@ -581,15 +570,11 @@ Cohesion: 0.11
 Nodes (19): clearDetailHeaderTimecode(), detailMarkup(), focusCutRowInDetail(), getSubtitleOverlayEnabled(), initAssetPlayer(), initDetailSubtitleLanguagePicker(), initDetailVideoPin(), leaveVideoToolsPage() (+11 more)
 
 ### Community 65 - "embedpdf.js"
-Cohesion: 0.11
-Nodes (22): u(), constructor(), ee(), aa, ae(), Ag(), Ah(), ai (+14 more)
-
-### Community 66 - ".withWString"
-Cohesion: 0.17
-Nodes (3): syncfs(), a(), o()
+Cohesion: 0.18
+Nodes (12): ee(), aa, Ag(), ai, Am, an(), ce(), oe() (+4 more)
 
 ### Community 67 - "test_effective_permission_service.js"
-Cohesion: 0.14
+Cohesion: 0.15
 Nodes (15): assert, { createEffectivePermissionService }, {
   PERMISSION_KEYS,
   normalizePermissionEntry,
@@ -609,8 +594,8 @@ Cohesion: 0.21
 Nodes (16): createMainIngestModule(), formatIngestWarningMessage(), hideUploadProgress(), initIngestHandlers(), localizeUploadError(), localizeUploadRetryHint(), localizeUploadWarning(), notifyUpload() (+8 more)
 
 ### Community 71 - "t"
-Cohesion: 0.21
-Nodes (8): I(), lt(), t(), n(), readdir(), T(), w(), x()
+Cohesion: 0.12
+Nodes (17): u(), createLazyFile(), F(), Ft(), get(), I(), lt(), t() (+9 more)
 
 ### Community 72 - "test_auth_context_service.js"
 Cohesion: 0.13
@@ -642,7 +627,7 @@ Nodes (14): createMainDetailVersionActions(), bind(), canEditPdf(), deleteVersio
 
 ### Community 79 - ".dispatch"
 Cohesion: 0.10
-Nodes (45): addToSelectionMethod(), clearModalForDocument(), closeAllMenusForDocument(), closeMenuForDocument(), closeModalForDocument(), closeSidebarForDocument(), closeToolbarForDocument(), cr() (+37 more)
+Nodes (44): calculatePageGrouping(), clearModalForDocument(), closeAllMenusForDocument(), closeMenuForDocument(), closeModalForDocument(), closeSidebarForDocument(), closeToolbarForDocument(), cr() (+36 more)
 
 ### Community 80 - "video_ocr_paddle.py"
 Cohesion: 0.30
@@ -676,6 +661,13 @@ Nodes (8): createMainDetailRequestCoordinator(), abortActive(), begin(), invalid
 Cohesion: 0.26
 Nodes (10): createMainTechnicalInfoStore(), assetIdOf(), cacheKey(), get(), invalidate(), peek(), touch(), assert (+2 more)
 
+### Community 88 - "advancedSearchService.js"
+Cohesion: 0.22
+Nodes (13): assert, {
+  createAdvancedSearchService,
+  parseAdvancedSearchDefinition
+}, rows, run(), search(), ADVANCED_SEARCH_FIELD_SET, ADVANCED_SEARCH_FIELDS, assetId() (+5 more)
+
 ### Community 90 - "openPhotoOcrDialog"
 Cohesion: 0.14
 Nodes (15): api(), applyStaticI18n(), currentUserCanDeleteAssetInUi(), currentUserOwnsAsset(), isImage(), latestPhotoOcrText(), loadCurrentUser(), normalizeIdentity() (+7 more)
@@ -697,12 +689,12 @@ Cohesion: 0.30
 Nodes (10): applyAdminAccessMode(), applyAssetTypeScope(), canShowAdminMenu(), getAdminAccessMode(), getDefaultIngestType(), normalizeAllowedAssetTypes(), normalizeAssetTypeGroup(), setElementHidden() (+2 more)
 
 ### Community 95 - "C"
-Cohesion: 0.17
-Nodes (12): C(), createLazyFile(), F(), createNode(), createStandardStreams(), Ft(), get(), init() (+4 more)
+Cohesion: 0.15
+Nodes (13): C(), close(), createNode(), createStandardStreams(), fsync(), init(), Pe(), put_char() (+5 more)
 
-### Community 96 - "handleRequest"
-Cohesion: 0.20
-Nodes (15): computeScrollForZoomChange(), computeZoomForMode(), createZoomScope(), enableMarqueeZoom(), handleRequest(), handleZoomToArea(), ko(), ld() (+7 more)
+### Community 96 - "onDocumentLoadingStarted"
+Cohesion: 0.29
+Nodes (10): ao(), createRotateScope(), getRotationForDocument(), makePanDefault(), mm, onDocumentLoadingStarted(), rotateBackward(), rotateForward() (+2 more)
 
 ### Community 97 - "transcribe_whisper.py"
 Cohesion: 0.38
@@ -717,8 +709,8 @@ Cohesion: 0.20
 Nodes (9): dependencies, express, express, name, private, scripts, start, type (+1 more)
 
 ### Community 100 - "t"
-Cohesion: 0.07
-Nodes (25): closeAllDocuments(), closeDocument(), ct(), t(), destroy(), Do(), io(), iu() (+17 more)
+Cohesion: 0.05
+Nodes (34): g, l(), p(), ae(), bd(), ct(), t(), destroy() (+26 more)
 
 ### Community 101 - "createImageDerivativeService"
 Cohesion: 0.36
@@ -733,7 +725,7 @@ Cohesion: 0.31
 Nodes (4): createMainWorkflowStore(), assert, { createMainWorkflowStore }, run()
 
 ### Community 104 - "resolveEffectivePermissions"
-Cohesion: 0.28
+Cohesion: 0.24
 Nodes (8): requireAssetRightsAdminRequest(), requireDocumentRightsAdminRequest(), requireTextAdminRequest(), loadVisibleAssetRowForRequest(), createEffectivePermissionService(), getPermissionOverrideForUser(), getPermissionOverridesForGroups(), resolveEffectivePermissions()
 
 ### Community 105 - "registerPdfRoutes"
@@ -761,7 +753,7 @@ Cohesion: 0.36
 Nodes (5): createMainBootstrapModule(), assert, { createMainBootstrapModule }, deferred(), run()
 
 ### Community 111 - "re"
-Cohesion: 0.28
+Cohesion: 0.32
 Nodes (3): ne(), re(), te()
 
 ### Community 113 - "test_auth_middleware_service.js"
@@ -824,6 +816,10 @@ Nodes (5): handle(), isSessionFailure(), redirect(), start(), stop()
 Cohesion: 0.33
 Nodes (5): DeepPartial, Theme, ThemeColors, ThemeConfig, ThemePreference
 
+### Community 131 - "assets.js"
+Cohesion: 0.16
+Nodes (12): advancedSearchService, { createAdvancedSearchService }, { createAssetListQueryService }, fs, { parseMultipartUpload }, path, Busboy, crypto (+4 more)
+
 ### Community 133 - "init.sh"
 Cohesion: 0.60
 Nodes (3): detect_host(), rand_hex(), init.sh script
@@ -860,10 +856,6 @@ Nodes (3): createMainMediaViewerModule(), mediaViewer(), videoToolsPageMarkup()
 Cohesion: 0.67
 Nodes (3): createMainPlayerBootstrapModule(), initAssetPlayer(), openVideoToolsDialog()
 
-### Community 143 - "test_media_artifact_service.js"
-Cohesion: 0.20
-Nodes (8): assert, { createMediaArtifactService }, fs, os, path, root, fs, path
-
 ### Community 144 - "exportPermissionBackup"
 Cohesion: 0.67
 Nodes (3): exportPermissionBackup(), getAttachmentFileName(), triggerDownload()
@@ -881,8 +873,8 @@ Cohesion: 0.09
 Nodes (21): 10. Değiştirilen Kod, 11. Doğrulama Komutları, 1. Sorun, 2. Uygulanan Kural, 3.1 Doküman listesinin yüklenmesi, 3.2 Doğrudan yetki güncelleme, 3.3 Doğrudan kilit açma, 3. Uygulanan Güvenlik Katmanları (+13 more)
 
 ### Community 305 - "createSubtitleService"
-Cohesion: 0.13
-Nodes (19): applyLearnedCorrectionsToVttContent(), applyLearnedTurkishCorrections(), applyTurkishConjunctionSpacingFix(), applyTurkishCorrectionToEntries(), applyTurkishCorrectionToVttContent(), applyTurkishOcrOfflineCorrection(), countGeneratedSubtitleCues(), hasTurkishWordInSet() (+11 more)
+Cohesion: 0.17
+Nodes (14): applyLearnedCorrectionsToVttContent(), applyLearnedTurkishCorrections(), applyTurkishCorrectionToVttContent(), parseTimedOcrSegments(), createSubtitleService(), convertSrtToVtt(), findSubtitleMatchesInText(), normalizeSubtitleTime() (+6 more)
 
 ### Community 306 - "2) Ground Truth Set Nasıl Hazırlanır?"
 Cohesion: 0.10
@@ -903,10 +895,6 @@ Nodes (16): MetMAM Performance Refactor Log, Rules, Step 10 - Admin system-healt
 ### Community 310 - "MetMAM Donma Testi"
 Cohesion: 0.12
 Nodes (15): Canlı Log İzleme, `Failed to fetch` ve Network'te `canceled`, `pending` veya `opaqueredirect`, `GET /api/assets` 4xx veya 5xx, `GET /api/assets/<id>` 401 veya 403, `GET /api/workflow` başarısız, İstekler 200, fakat 3. kolon değişmiyor, MetMAM Donma Testi, Ortam Kontrolü (+7 more)
-
-### Community 311 - "nc"
-Cohesion: 0.38
-Nodes (7): quit(), Ke(), nc(), nt(), ot(), tt(), Ve()
 
 ### Community 312 - "[src/server.js](/Users/erinc/OyunAlanım/mam_deneme/src/server.js)"
 Cohesion: 0.14
@@ -1021,8 +1009,8 @@ Cohesion: 0.25
 Nodes (8): 5.1 `src/`, `src/db.js`, `src/permissions.js`, `src/server.js`, `src/transcribe_whisper.py`, `src/transcribe_whisperx.py`, `src/video_ocr_frame_prep.py`, `src/video_ocr_paddle.py`
 
 ### Community 340 - "test_asset_mapper_service.js"
-Cohesion: 0.25
-Nodes (6): assert, { createAssetMapperService }, mapped, service, createAssetMapperService(), mapAssetRow()
+Cohesion: 0.29
+Nodes (5): assert, { createAssetMapperService }, mapped, service, createAssetMapperService()
 
 ### Community 341 - "9.4 FFmpeg / FFprobe kontrolü"
 Cohesion: 0.29
@@ -1104,9 +1092,9 @@ Nodes (3): 9.2 PostgreSQL sorguları, Host üzerinden doğrudan PostgreSQL'e ba�
 Cohesion: 0.40
 Nodes (4): Answer, Outcome, Q: Ses klip oynat tıklamalarında sağa kayma, ses IN/OUT timeline işaretleri ve fazla siyah player boşluğu, Source Nodes
 
-### Community 365 - "test_admin_subtitle_editor.js"
-Cohesion: 0.29
-Nodes (5): adminHtml, adminSource, assert, fs, path
+### Community 365 - "createAssetListQueryService"
+Cohesion: 0.33
+Nodes (7): assert, { createAssetListQueryService }, createService(), run(), createAssetListQueryService(), normalizeNumberRange(), parseRequest()
 
 ### Community 366 - "Q: Ses araçlarına sağ üst çarktan tam sayfa geçiş, detay player pause, üst siyah altyazı alanı, butonların kaldırılması ve sağ volume paneli"
 Cohesion: 0.40
@@ -1116,9 +1104,16 @@ Nodes (4): Answer, Outcome, Q: Ses araçlarına sağ üst çarktan tam sayfa ge�
 Cohesion: 0.40
 Nodes (4): Answer, Outcome, Q: MetMAM OCR tamamlandığında üçüncü kolonda OCR etiketi neden otomatik görünmüyor ve nasıl düzeltilir?, Source Nodes
 
-### Community 368 - "de"
-Cohesion: 0.33
-Nodes (6): close(), fsync(), put_char(), readFile(), write(), de()
+### Community 368 - "restoreOcrFramesFromCache"
+Cohesion: 0.31
+Nodes (9): getOcrFrameCacheDir(), getOcrFrameCacheMetaPath(), listRawOcrFrames(), normalizeFrameCacheKeyPart(), readOcrFrameCacheMeta(), restoreOcrFramesFromCache(), touchOcrFrameCache(), updateOcrFrameCacheFromWorkDir() (+1 more)
+
+### Community 371 - "searchTokenService.js"
+Cohesion: 0.52
+Nodes (5): {
+  reverseSearchToken,
+  reverseSearchTokens
+}, normalizedSearchTokens(), normalizedTextHasLongSuffixTerm(), reverseSearchToken(), reverseSearchTokens()
 
 ### Community 372 - "adjustSubtitleFontSize"
 Cohesion: 0.53
@@ -1128,14 +1123,10 @@ Nodes (6): adjustSubtitleFontSize(), applySubtitleStyleSettings(), getSubtitleFo
 Cohesion: 0.40
 Nodes (4): Answer, Outcome, Q: Ses altyazısının siyah alana taşınması, araçlarda font ölçeği ve video tipi gerçek timeline IN/OUT, Source Nodes
 
-### Community 375 - "n"
-Cohesion: 0.10
-Nodes (15): g, l(), p(), bd(), Cc(), ee(), kc(), le() (+7 more)
-
 ## Knowledge Gaps
-- **1304 isolated node(s):** `build-runtime.sh script`, `name`, `version`, `private`, `type` (+1299 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 2046 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **71 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **1298 isolated node(s):** `build-runtime.sh script`, `name`, `version`, `private`, `type` (+1293 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 2039 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **74 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Work-memory lessons
 
@@ -1145,17 +1136,17 @@ Nodes (15): g, l(), p(), bd(), Cc(), ee(), kc(), le() (+7 more)
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
+- **Why does `me` connect `me` to `.acquirePage`, `.withWString`, `direct-engine-Bd0KtghI.js`, `J`, `t`, `.applyBaseAnnotationProperties`, `.readBaseAnnotationProperties`, `ie`?**
+  _High betweenness centrality (0.027) - this node is a cross-community bridge._
 - **Why does `tf()` connect `openPhotoOcrDialog` to `embedpdf-xgzA9lZs.js`, `main.js`?**
   _High betweenness centrality (0.025) - this node is a cross-community bridge._
-- **Why does `me` connect `me` to `q`, `.withWString`, `direct-engine-Bd0KtghI.js`, `t`, `re`, `.acquirePage`, `.applyBaseAnnotationProperties`, `.readBaseAnnotationProperties`, `ie`?**
-  _High betweenness centrality (0.024) - this node is a cross-community bridge._
-- **Why does `h` connect `h` to `Me`, `direct-engine-Bd0KtghI.js`, `worker-engine-CW9-K7eD.js`, `.renderWithEncoding`, `n`, `.openDocumentUrl`?**
-  _High betweenness centrality (0.011) - this node is a cross-community bridge._
+- **Why does `h` connect `h` to `Me`, `t`, `direct-engine-Bd0KtghI.js`, `worker-engine-CW9-K7eD.js`, `.renderWithEncoding`, `.openDocumentUrl`?**
+  _High betweenness centrality (0.010) - this node is a cross-community bridge._
 - **Are the 54 inferred relationships involving `createMainCommonModule()` (e.g. with `applyNativeSubtitleCuePosition()` and `assetTagChipStyle()`) actually correct?**
   _`createMainCommonModule()` has 54 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `build-runtime.sh script`, `name`, `version` to the rest of the system?**
-  _1304 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _1298 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `embedpdf-xgzA9lZs.js` be split into smaller, more focused modules?**
-  _Cohesion score 0.015383818502020098 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.014343668501883513 - nodes in this community are weakly interconnected._
 - **Should `public/admin.js` be split into smaller, more focused modules?**
   _Cohesion score 0.011494252873563218 - nodes in this community are weakly interconnected._

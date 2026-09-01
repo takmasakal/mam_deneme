@@ -20,6 +20,7 @@
     "test:main-detail-request-coordinator": "node scripts/test_main_detail_request_coordinator.js",
     "test:main-technical-info-store": "node scripts/test_main_technical_info_store.js",
     "test:admin-system-health": "node scripts/test_admin_system_health.js",
+    "test:admin-subtitle-editor": "node scripts/test_admin_subtitle_editor.js",
     "test:auth-context": "node scripts/test_auth_context_service.js",
     "test:auth-middleware": "node scripts/test_auth_middleware_service.js",
     "test:asset-mapper": "node scripts/test_asset_mapper_service.js",
