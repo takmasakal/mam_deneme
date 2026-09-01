@@ -1474,9 +1474,11 @@ function openTextEditorModal({
       const escaped = escapeHtml(String(value || ''));
       richArea.innerHTML = escaped.replace(/\b\d{2}:\d{2}:\d{2}(?:[.,:]\d{2,3})?\b/g, (token) => `<span class="content-editor-inline-tc" data-editor-tc="${escapeHtml(token)}">${escapeHtml(token)}</span>`);
     };
+    const readRichEditorText = () => String(richArea?.innerText ?? richArea?.textContent ?? '')
+      .replace(/\r\n?/g, '\n');
     renderRichEditor(area?.value || '');
     richArea?.addEventListener('input', () => {
-      if (area) area.value = richArea.textContent || '';
+      if (area) area.value = readRichEditorText();
     });
     richArea?.addEventListener('click', (event) => {
       const button = event.target.closest('[data-editor-tc]');
