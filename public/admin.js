@@ -1474,11 +1474,49 @@ function openTextEditorModal({
       const escaped = escapeHtml(String(value || ''));
       richArea.innerHTML = escaped.replace(/\b\d{2}:\d{2}:\d{2}(?:[.,:]\d{2,3})?\b/g, (token) => `<span class="content-editor-inline-tc" data-editor-tc="${escapeHtml(token)}">${escapeHtml(token)}</span>`);
     };
-    const readRichEditorText = () => String(richArea?.innerText ?? richArea?.textContent ?? '')
+    let lastFindPos = 0;
+    let lastFindQuery = '';
+    const readRichEditorText = () => String(richArea?.textContent ?? '')
       .replace(/\r\n?/g, '\n');
-    renderRichEditor(area?.value || '');
-    richArea?.addEventListener('input', () => {
+    const syncRichEditorSource = () => {
       if (area) area.value = readRichEditorText();
+      lastFindPos = 0;
+      lastFindQuery = '';
+    };
+    const insertTextAtRichSelection = (text) => {
+      if (!richArea || !document.createRange) return false;
+      const selection = window.getSelection?.();
+      const safeText = String(text || '');
+      if (!selection) return false;
+      let range = selection.rangeCount ? selection.getRangeAt(0) : null;
+      if (!range || !richArea.contains(range.commonAncestorContainer)) {
+        range = document.createRange();
+        range.selectNodeContents(richArea);
+        range.collapse(false);
+      }
+      range.deleteContents();
+      const node = document.createTextNode(safeText);
+      range.insertNode(node);
+      range.setStartAfter(node);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return true;
+    };
+    renderRichEditor(area?.value || '');
+    richArea?.addEventListener('beforeinput', (event) => {
+      if (event.inputType !== 'insertParagraph' && event.inputType !== 'insertLineBreak') return;
+      event.preventDefault();
+      if (insertTextAtRichSelection('\n')) syncRichEditorSource();
+    });
+    richArea?.addEventListener('paste', (event) => {
+      const text = event.clipboardData?.getData('text/plain');
+      if (typeof text !== 'string') return;
+      event.preventDefault();
+      if (insertTextAtRichSelection(text)) syncRichEditorSource();
+    });
+    richArea?.addEventListener('input', () => {
+      syncRichEditorSource();
     });
     richArea?.addEventListener('click', (event) => {
       const button = event.target.closest('[data-editor-tc]');
@@ -1495,8 +1533,6 @@ function openTextEditorModal({
       }
       button.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     });
-    let lastFindPos = 0;
-    let lastFindQuery = '';
     // Keep folded text length stable so match indexes map to original text positions.
     const foldForFind = (value) => String(value || '')
       .normalize('NFC')
