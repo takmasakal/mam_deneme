@@ -14,6 +14,7 @@ uploads/
 data/
 deploy/keycloak/mam-realm.json
 deploy/keycloak/mam-rpi-realm.json
+deploy/reports/
 docker-compose.override.yml
 public/_pgbackup/
 public/_pginfo/
