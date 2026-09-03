@@ -125,6 +125,7 @@ services:
       - /bin/bash
       - -lc
       - |
+        export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
         python3 - <<'PY'
         import json
         path = '/etc/onlyoffice/documentserver/default.json'
