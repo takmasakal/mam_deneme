@@ -39,8 +39,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      cache_from:
-        - kaisha-app:latest
       args:
         INSTALL_LIBREOFFICE: ${INSTALL_LIBREOFFICE:-true}
         PRELOAD_ML_MODELS: ${PRELOAD_ML_MODELS:-true}
