@@ -14,6 +14,7 @@ docker build \
   --build-arg PRELOAD_PADDLE_OCR="${PRELOAD_PADDLE_OCR:-true}" \
   --build-arg PRELOAD_MARIAN_TRANSLATION="${PRELOAD_MARIAN_TRANSLATION:-false}" \
   --build-arg WHISPER_MODEL="${WHISPER_MODEL:-small}" \
+  --build-arg TORCH_WHEEL_INDEX_URL="${TORCH_WHEEL_INDEX_URL:-https://download.pytorch.org/whl/cpu}" \
   .
 
 echo "Runtime image ready: ${RUNTIME_IMAGE}"

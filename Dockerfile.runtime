@@ -6,6 +6,7 @@ ARG PRELOAD_ML_MODELS=false
 ARG PRELOAD_PADDLE_OCR=false
 ARG PRELOAD_MARIAN_TRANSLATION=false
 ARG WHISPER_MODEL=small
+ARG TORCH_WHEEL_INDEX_URL=https://download.pytorch.org/whl/cpu
 
 ENV NODE_ENV=production \
   PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -29,7 +30,12 @@ RUN apt-get update \
       apt-get install -y --no-install-recommends libreoffice-core libreoffice-writer libreoffice-calc libreoffice-impress fonts-dejavu fonts-liberation; \
     fi \
   && pip3 install --no-cache-dir --break-system-packages --retries 5 --default-timeout=300 requests faster-whisper==1.1.1 opencv-python-headless==4.10.0.84 numpy==1.26.4 \
-  && pip3 install --no-cache-dir --break-system-packages --retries 5 --default-timeout=300 torch==2.6.0 torchaudio==2.6.0 whisperx==3.3.1 \
+  && if [ -n "$TORCH_WHEEL_INDEX_URL" ]; then \
+      pip3 install --no-cache-dir --break-system-packages --retries 5 --default-timeout=300 --index-url "$TORCH_WHEEL_INDEX_URL" torch==2.6.0 torchaudio==2.6.0; \
+    else \
+      pip3 install --no-cache-dir --break-system-packages --retries 5 --default-timeout=300 torch==2.6.0 torchaudio==2.6.0; \
+    fi \
+  && pip3 install --no-cache-dir --break-system-packages --retries 5 --default-timeout=300 whisperx==3.3.1 \
   && arch="${TARGETARCH}" \
   && if [ -z "$arch" ]; then arch="$(dpkg --print-architecture 2>/dev/null || true)"; fi \
   && if [ -z "$arch" ]; then arch="$(uname -m)"; fi \
