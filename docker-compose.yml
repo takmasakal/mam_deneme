@@ -125,6 +125,11 @@ services:
       - /bin/bash
       - -lc
       - |
+        for dir in /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin; do
+          if [ -d "$$dir" ]; then
+            chmod go-w "$$dir" || true
+          fi
+        done
         export PATH=/usr/sbin:/usr/bin:/sbin:/bin
         python3 - <<'PY'
         import json
