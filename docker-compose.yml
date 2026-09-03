@@ -130,6 +130,10 @@ services:
             chmod go-w "$$dir" || true
           fi
         done
+        if [ -f /etc/ssl/private/ssl-cert-snakeoil.key ]; then
+          chown root:ssl-cert /etc/ssl/private/ssl-cert-snakeoil.key || true
+          chmod 0640 /etc/ssl/private/ssl-cert-snakeoil.key || true
+        fi
         export PATH=/usr/sbin:/usr/bin:/sbin:/bin
         python3 - <<'PY'
         import json
