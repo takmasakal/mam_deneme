@@ -34,12 +34,18 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 FROM os-base AS ml-deps
 
 ARG TARGETARCH
+ARG TORCH_WHEEL_INDEX_URL=https://download.pytorch.org/whl/cpu
 
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
   pip3 install --break-system-packages --retries 5 --default-timeout=300 requests faster-whisper==1.1.1 opencv-python-headless==4.10.0.84 numpy==1.26.4
 
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
-  pip3 install --break-system-packages --retries 5 --default-timeout=300 torch==2.6.0 torchaudio==2.6.0 whisperx==3.3.1
+  if [ -n "$TORCH_WHEEL_INDEX_URL" ]; then \
+      pip3 install --break-system-packages --retries 5 --default-timeout=300 --index-url "$TORCH_WHEEL_INDEX_URL" torch==2.6.0 torchaudio==2.6.0; \
+    else \
+      pip3 install --break-system-packages --retries 5 --default-timeout=300 torch==2.6.0 torchaudio==2.6.0; \
+    fi \
+  && pip3 install --break-system-packages --retries 5 --default-timeout=300 whisperx==3.3.1
 
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
   arch="${TARGETARCH}" \
