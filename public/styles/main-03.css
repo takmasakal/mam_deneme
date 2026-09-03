@@ -504,6 +504,10 @@ video::-webkit-media-text-track-display * {
   padding: 14px 18px;
 }
 
+.audio-subtitle-stage-clickable {
+  cursor: pointer;
+}
+
 .audio-viewer-resizable > audio.asset-viewer {
   display: block;
   width: 100%;
