@@ -874,6 +874,8 @@
         || mediaEl.closest('.viewer-core')
         || root;
       if (!(host instanceof HTMLElement)) return () => {};
+      const isAudioOverlayHost = mediaEl instanceof HTMLAudioElement || host.matches('[data-audio-subtitle-stage]');
+      if (isAudioOverlayHost) host.classList.add('audio-subtitle-stage-clickable');
       try {
         const storedFontSize = Number(localStorage.getItem(`mam:subtitle-font-size:${asset.id}`) || 0);
         if (Number.isFinite(storedFontSize) && storedFontSize >= 12 && storedFontSize <= 64) {
@@ -966,6 +968,14 @@
         if (customSubtitleOverlayEnabled()) render();
         else scheduleNativeSubtitleCuePosition(mediaEl);
       };
+      const onAudioOverlayClick = (event) => {
+        if (!isAudioOverlayHost || disposed) return;
+        const target = event.target;
+        if (target instanceof Element && target.closest('button, input, select, textarea, a, [contenteditable="true"]')) return;
+        if (mediaEl.paused) mediaEl.play().catch(() => {});
+        else mediaEl.pause();
+        event.preventDefault();
+      };
       let resizeObserver = null;
       if (typeof ResizeObserver !== 'undefined') {
         resizeObserver = new ResizeObserver(onResize);
@@ -976,6 +986,7 @@
       mediaEl.addEventListener('seeked', onTimeUpdate);
       mediaEl.addEventListener('loadedmetadata', onLoadedMetadata);
       mediaEl.addEventListener('mam:subtitle-overlay-sync', onSync);
+      if (isAudioOverlayHost) host.addEventListener('click', onAudioOverlayClick);
       window.addEventListener('resize', onResize);
       document.addEventListener('fullscreenchange', onResize);
       document.addEventListener('webkitfullscreenchange', onResize);
@@ -987,10 +998,12 @@
         mediaEl.removeEventListener('seeked', onTimeUpdate);
         mediaEl.removeEventListener('loadedmetadata', onLoadedMetadata);
         mediaEl.removeEventListener('mam:subtitle-overlay-sync', onSync);
+        if (isAudioOverlayHost) host.removeEventListener('click', onAudioOverlayClick);
         window.removeEventListener('resize', onResize);
         document.removeEventListener('fullscreenchange', onResize);
         document.removeEventListener('webkitfullscreenchange', onResize);
         resizeObserver?.disconnect?.();
+        if (isAudioOverlayHost) host.classList.remove('audio-subtitle-stage-clickable');
         overlay.remove();
       };
     }

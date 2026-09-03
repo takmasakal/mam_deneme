@@ -181,6 +181,10 @@
   background: #050505;
 }
 
+.audio-subtitle-stage-clickable {
+  cursor: pointer;
+}
+
 .audio-detail-media {
   display: block;
   width: 100%;
