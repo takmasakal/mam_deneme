@@ -39,6 +39,12 @@ function mediaViewer(asset, options = {}) {
   const playbackUrl = escapeHtml(playbackSource);
   const proxyStatus = escapeHtml(asset.proxyStatus || 'not_applicable');
   const audioChannelsAttr = Number(asset.audioChannels) > 0 ? ` data-audio-channels="${Number(asset.audioChannels)}"` : '';
+  const loadingOverlay = (labelKey = 'preview_loading') => `
+    <div class="viewer-loading-overlay" data-viewer-loading-overlay="1" aria-live="polite">
+      <span class="viewer-loading-spinner" aria-hidden="true"></span>
+      <span class="viewer-loading-text">${escapeHtml(t(labelKey))}</span>
+    </div>
+  `;
 
   if (isVideo(asset)) {
     const customMode = useCustomLikeTimelineUI();
@@ -85,10 +91,11 @@ function mediaViewer(asset, options = {}) {
         </div>
         <div class="video-top-layout${audioSideLayout ? '' : ' no-audio-side'}">
           <div class="video-main-col">
-            <div class="viewer-resizable video-resizable${audioOverlayInViewer ? ' video-resizable-audio-overlay' : ''}">
+            <div class="viewer-resizable video-resizable${audioOverlayInViewer ? ' video-resizable-audio-overlay' : ''}" data-viewer-loading="video">
               <video id="assetMediaEl" data-asset-id="${escapeHtml(asset.id)}" class="asset-viewer"${nativeControlsAttr} preload="metadata"${srcAttr}${dashManifestAttr} poster="${escapeHtml(asset.thumbnailUrl || '')}"${audioChannelsAttr}>
                 ${subtitleTrackMarkup(asset)}
               </video>
+              ${loadingOverlay()}
               ${audioOverlayInViewer ? `<div class="video-audio-overlay-panel">${audioToolsMarkup}</div>` : ''}
             </div>
             ${customMode ? `
@@ -311,11 +318,12 @@ function mediaViewer(asset, options = {}) {
     const audioToolsMode = options.audioToolsMode === true;
     return `
       ${audioToolsMode ? '<div class="video-top-layout audio-tools-top-layout"><div class="video-main-col">' : ''}
-      <div class="viewer-resizable audio-viewer-resizable">
+      <div class="viewer-resizable audio-viewer-resizable" data-viewer-loading="audio">
         <div class="audio-subtitle-stage" data-subtitle-overlay-host="audio" data-subtitle-overlay-scale="width" aria-live="polite"></div>
         <audio id="assetMediaEl" data-asset-id="${escapeHtml(asset.id)}" class="asset-viewer${audioToolsMode ? ' audio-tools-media' : ''}"${audioToolsMode ? '' : ' controls'} src="${playbackUrl}"${audioChannelsAttr}>
           ${subtitleTrackMarkup(asset)}
         </audio>
+        ${loadingOverlay()}
       </div>
       ${audioToolsMode ? `
       <div class="custom-player-bar audio-custom-player-bar" id="customPlayerBar">
@@ -439,10 +447,11 @@ function mediaViewer(asset, options = {}) {
 
   if (isImage(asset)) {
     return `
-      <div class="viewer-resizable image-viewer-resizable mam-fs-root" id="imageViewerFullscreenTarget">
+      <div class="viewer-resizable image-viewer-resizable mam-fs-root" id="imageViewerFullscreenTarget" data-viewer-loading="image">
         <button type="button" id="imageOcrSettingsBtn" class="image-ocr-settings-btn" aria-label="${escapeHtml(t('photo_ocr_settings'))}" title="${escapeHtml(t('photo_ocr_settings'))}">⚙</button>
         <button type="button" id="imageFullscreenBtn" class="image-fullscreen-btn" aria-label="${escapeHtml(t('fullscreen_image'))}" title="${escapeHtml(t('fullscreen_image'))}">⛶</button>
         <img class="asset-viewer image-asset-viewer" src="${playbackUrl}" alt="${escapeHtml(asset.title)}" />
+        ${loadingOverlay()}
       </div>
     `;
   }
@@ -451,8 +460,9 @@ function mediaViewer(asset, options = {}) {
     const canEditPdfAsset = Boolean(currentUserCanUsePdfAdvancedTools || (asset.canEditAssetPdf ?? asset.canEditAsset));
     const viewerSrc = `/pdf-viewer.html?file=${encodeURIComponent(String(asset.mediaUrl || '').split('#')[0])}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&pdfAdvanced=${canEditPdfAsset ? '1' : '0'}`;
     return `
-      <div class="viewer-resizable pdf-viewer-resizable">
+      <div class="viewer-resizable pdf-viewer-resizable" data-viewer-loading="document">
         <iframe id="pdfViewerFrame" class="asset-viewer pdf-viewer-frame" src="${escapeHtml(viewerSrc)}" title="PDF Viewer" loading="lazy"></iframe>
+        ${loadingOverlay()}
       </div>
     `;
   }
@@ -474,13 +484,65 @@ function mediaViewer(asset, options = {}) {
         : `/office-viewer.html?assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&v=oo-save-v9`)
       : `/pdf-viewer.html?file=${encodeURIComponent(String(asset.mediaUrl || '').split('#')[0])}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang)}&pdfAdvanced=${(currentUserCanUsePdfAdvancedTools || (asset.canEditAssetPdf ?? asset.canEditAsset)) ? '1' : '0'}`;
     return `
-      <div class="viewer-resizable">
+      <div class="viewer-resizable" data-viewer-loading="document">
         <iframe id="docViewerFrame" class="asset-viewer pdf-viewer-frame" src="${escapeHtml(viewerSrc)}" title="Document Viewer" loading="lazy"></iframe>
+        ${loadingOverlay()}
       </div>
     `;
   }
 
   return `<a href="${playbackUrl}" target="_blank" rel="noreferrer">${t('open_attached')}</a>`;
+}
+
+function initMediaViewerLoadingStates(root = document) {
+  const hosts = Array.from(root.querySelectorAll?.('[data-viewer-loading]') || []);
+  const cleanups = [];
+  hosts.forEach((host) => {
+    const target = host.querySelector('video, audio, img, iframe');
+    const overlayText = host.querySelector('[data-viewer-loading-overlay="1"] .viewer-loading-text');
+    if (!target) return;
+    const markReady = () => {
+      host.classList.remove('viewer-is-loading', 'viewer-load-failed');
+      host.classList.add('viewer-is-ready');
+      host.setAttribute('aria-busy', 'false');
+    };
+    const markError = () => {
+      host.classList.remove('viewer-is-loading', 'viewer-is-ready');
+      host.classList.add('viewer-load-failed');
+      host.setAttribute('aria-busy', 'false');
+      if (overlayText) overlayText.textContent = t('preview_not_available');
+    };
+    host.classList.add('viewer-is-loading');
+    host.classList.remove('viewer-is-ready', 'viewer-load-failed');
+    host.setAttribute('aria-busy', 'true');
+
+    const tagName = String(target.tagName || '').toLowerCase();
+    if (tagName === 'img' && target.complete && target.naturalWidth > 0) {
+      markReady();
+      return;
+    }
+    if (tagName === 'img' && target.complete && target.naturalWidth <= 0) {
+      markError();
+      return;
+    }
+    if ((tagName === 'video' || tagName === 'audio') && Number(target.readyState || 0) >= 1) {
+      markReady();
+      return;
+    }
+
+    const readyEvents = tagName === 'iframe'
+      ? ['load']
+      : tagName === 'img'
+        ? ['load']
+        : ['loadedmetadata', 'loadeddata', 'canplay'];
+    readyEvents.forEach((eventName) => target.addEventListener(eventName, markReady, { once: true }));
+    target.addEventListener('error', markError, { once: true });
+    cleanups.push(() => {
+      readyEvents.forEach((eventName) => target.removeEventListener(eventName, markReady));
+      target.removeEventListener('error', markError);
+    });
+  });
+  return () => cleanups.forEach((cleanup) => cleanup());
 }
 
 function videoToolsPageMarkup(asset) {
@@ -508,6 +570,7 @@ function videoToolsPageMarkup(asset) {
 
     return {
       mediaViewer,
+      initMediaViewerLoadingStates,
       videoToolsPageMarkup
     };
   }

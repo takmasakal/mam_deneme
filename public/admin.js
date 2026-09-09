@@ -188,6 +188,37 @@ let auditEventsPagination = { page: 1, limit: 50, total: 0, totalPages: 1 };
 let editingGroupAdminId = '';
 let currentAdminProfile = null;
 
+function continuePageScrollAtContainerEdge(container, event) {
+  if (!container || !event || event.defaultPrevented) return;
+  if (Math.abs(Number(event.deltaY || 0)) <= Math.abs(Number(event.deltaX || 0))) return;
+  const page = document.scrollingElement || document.documentElement;
+  if (!page || page.scrollHeight <= page.clientHeight) return;
+  const maxScrollTop = container.scrollHeight - container.clientHeight;
+  if (maxScrollTop <= 0) return;
+  const deltaY = Number(event.deltaY || 0);
+  const atTop = container.scrollTop <= 0;
+  const atBottom = container.scrollTop >= maxScrollTop - 1;
+  if ((deltaY < 0 && atTop) || (deltaY > 0 && atBottom)) {
+    event.preventDefault();
+    page.scrollTop += deltaY;
+  }
+}
+
+function installAdminScrollChain(container) {
+  if (!container || container.dataset.adminScrollChain === '1') return;
+  container.dataset.adminScrollChain = '1';
+  container.addEventListener('wheel', (event) => {
+    continuePageScrollAtContainerEdge(container, event);
+  }, { passive: false });
+}
+
+[
+  systemHealthRows,
+  auditEventsRows,
+  assetRightsRows,
+  documentRightsRows
+].forEach(installAdminScrollChain);
+
 let i18n = {
   en: {
     admin_title: 'Admin Settings',
@@ -1978,6 +2009,12 @@ const adminSystemHealthModule = window.createAdminSystemHealthModule({
     overviewOpenErrorsSub
   }
 });
+
+systemJobStatusEl?.addEventListener('wheel', (event) => {
+  const tableWrap = event.target?.closest?.('.media-jobs-table-wrap');
+  if (!tableWrap) return;
+  continuePageScrollAtContainerEdge(tableWrap, event);
+}, { passive: false });
 
 function renderProxyJob(job) {
   if (!job) {

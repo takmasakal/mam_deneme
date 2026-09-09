@@ -23,7 +23,8 @@
       syncSubtitleOverlayInOpenPlayers,
       showShortcutToast,
       adjustSubtitleFontSize,
-      getSubtitleFontSize
+      getSubtitleFontSize,
+      initMediaViewerLoadingStates
     } = deps || {};
 
     function initAssetPlayer(asset, root = document, options = {}) {
@@ -164,6 +165,9 @@
       `;
 
       document.body.appendChild(overlay);
+      const cleanupViewerLoading = typeof initMediaViewerLoadingStates === 'function'
+        ? initMediaViewerLoadingStates(overlay)
+        : null;
       const cleanup = initAssetPlayer(asset, overlay, {
         startAtSeconds: Number(options.startAtSeconds) || 0
       });
@@ -171,6 +175,7 @@
       if (overlayCheck && asset?.id) overlayCheck.checked = Boolean(getSubtitleOverlayEnabled?.(asset.id, false));
       syncSubtitleOverlayInOpenPlayers?.(asset);
       const close = () => {
+        cleanupViewerLoading?.();
         cleanup?.();
         overlay.remove();
       };

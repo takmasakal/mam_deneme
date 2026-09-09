@@ -1,0 +1,78 @@
+html {
+  color-scheme: dark;
+}
+
+:root {
+  --mam-radius-xs: 5px;
+  --mam-radius-sm: 8px;
+  --mam-radius-md: 10px;
+  --mam-radius-ml: 12px;
+  --mam-radius-lg: 14px;
+  --mam-radius-pill: 999px;
+  --mam-control-height-sm: 30px;
+  --mam-control-height-md: 36px;
+  --mam-space-1: 4px;
+  --mam-space-2: 6px;
+  --mam-space-3: 8px;
+  --mam-space-4: 10px;
+  --mam-space-5: 12px;
+  --mam-space-6: 14px;
+  --mam-space-7: 16px;
+  --mam-color-bg: #0f1117;
+  --mam-color-surface: #1d2431;
+  --mam-color-surface-raised: #202838;
+  --mam-color-surface-strong: #15223b;
+  --mam-color-line: #4f5668;
+  --mam-color-line-soft: rgba(122, 154, 216, 0.35);
+  --mam-color-line-strong: rgba(122, 154, 216, 0.55);
+  --mam-color-text: #e7edf8;
+  --mam-color-text-strong: #f2f6ff;
+  --mam-color-muted: #aab1c1;
+  --mam-color-muted-strong: #cfd8ed;
+  --mam-color-accent: #e9ad37;
+  --mam-color-accent-soft: rgba(244, 191, 99, 0.28);
+  --mam-color-success: #16845f;
+  --mam-color-success-hover: #116b4d;
+  --mam-color-success-bright: #39d38f;
+  --mam-color-danger: #c93646;
+  --mam-color-danger-hover: #a92b39;
+  --mam-color-danger-bright: #e25b5b;
+  --mam-focus-ring: #75b8ff;
+  --mam-focus-ring-soft: rgba(117, 184, 255, 0.28);
+  --mam-shadow-sm: 0 8px 18px rgba(0, 0, 0, 0.24);
+  --mam-shadow-direct: 0 8px 20px rgba(0, 0, 0, 0.24);
+  --mam-shadow-md: 0 10px 24px rgba(0, 0, 0, 0.28);
+  --mam-shadow-lg: 0 14px 40px rgba(0, 0, 0, 0.28);
+  --mam-shadow-xl: 0 22px 70px rgba(0, 0, 0, 0.44);
+  --mam-shadow-layered: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 14px 34px rgba(0, 0, 0, 0.28);
+  --mam-shadow-inset-hairline: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+:where(button, input, select, textarea, summary, a[href], [tabindex]:not([tabindex="-1"])) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:where(button, input, select, textarea, summary, a[href], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--mam-focus-ring);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--mam-focus-ring-soft);
+}
+
+:where(button, input, select, textarea) {
+  touch-action: manipulation;
+}
+
+:where(input, textarea, select)::placeholder {
+  color: color-mix(in srgb, var(--muted, #aab1c1) 82%, transparent);
+}
+
+@supports (content-visibility: auto) {
+  .asset-card {
+    content-visibility: auto;
+    contain-intrinsic-size: 260px;
+  }
+
+  .asset-grid.list-view .asset-card {
+    contain-intrinsic-size: 132px;
+  }
+}

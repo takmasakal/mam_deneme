@@ -10,10 +10,17 @@
   --admin-line: rgba(142, 202, 230, 0.32);
   --admin-text: #f4fbffff;
   --admin-muted: rgba(244, 251, 255, 0.68);
+  --admin-muted-solid: var(--mam-color-muted, #aab1c1);
+  --admin-table-surface: var(--mam-color-surface-strong, #15223b);
+  --admin-table-text: var(--mam-color-text-strong, #eaf1ff);
+  --admin-table-muted: #b8caf0;
+  --admin-floating-z: 10040;
+  --admin-floating-z-raised: 10050;
   --admin-accent: var(--blue-green);
   --admin-accent-soft: rgba(33, 158, 188, 0.18);
   --admin-warn: var(--amber-flame);
   --admin-action: var(--princeton-orange);
+  --admin-action-alt: var(--mam-color-accent, #e9ad37);
 }
 
 body {
@@ -417,6 +424,9 @@ body {
   max-height: 54vh;
   overflow-y: auto;
   padding-right: 4px;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
+  scrollbar-gutter: stable both-edges;
 }
 
 #systemHealthRows {
@@ -539,9 +549,9 @@ body {
   box-sizing: border-box;
   padding: 5px 25px 4px 8px;
   border: 1px solid rgba(122, 154, 216, 0.45);
-  border-radius: 5px;
-  color: #eaf1ff;
-  background-color: #15223b;
+  border-radius: var(--mam-radius-xs, 5px);
+  color: var(--admin-table-text);
+  background-color: var(--admin-table-surface);
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
@@ -557,21 +567,24 @@ body {
   top: 8px;
   right: 8px;
   content: '\25BE';
-  color: #b8caf0;
+  color: var(--admin-table-muted);
 }
 
 .media-job-filter-options {
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 10000;
+  z-index: var(--admin-floating-z-raised);
   display: grid;
   min-width: 174px;
+  max-height: min(280px, calc(100vh - 24px));
+  overflow-y: auto;
   padding: 4px;
   border: 1px solid rgba(122, 154, 216, 0.55);
-  border-radius: 6px;
-  background: #15223b;
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
+  border-radius: var(--mam-radius-xs, 6px);
+  background: var(--admin-table-surface);
+  box-shadow: var(--mam-shadow-md, 0 10px 22px rgba(0, 0, 0, 0.35));
+  scrollbar-gutter: stable;
 }
 
 .media-job-filter-options button {
@@ -579,8 +592,8 @@ body {
   min-height: 30px;
   padding: 5px 8px;
   border: 0;
-  border-radius: 4px;
-  color: #eaf1ff;
+  border-radius: var(--mam-space-1, 4px);
+  color: var(--admin-table-text);
   background: transparent;
   text-align: left;
   font-size: 11px;
@@ -589,7 +602,7 @@ body {
 .media-job-filter-options button:hover,
 .media-job-filter-options button.is-selected {
   color: #101827;
-  background: #e9ad37;
+  background: var(--admin-action-alt);
 }
 
 @media (max-width: 760px) {
@@ -614,14 +627,17 @@ body {
   max-height: 460px;
   overflow: auto;
   border: 1px solid rgba(122, 154, 216, 0.35);
-  border-radius: 8px;
+  border-radius: var(--mam-radius-sm, 8px);
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
+  scrollbar-gutter: stable both-edges;
 }
 
 .media-jobs-table {
   width: 100%;
   min-width: 1080px;
   border-collapse: collapse;
-  color: #eaf1ff;
+  color: var(--admin-table-text);
   background: rgba(8, 14, 27, 0.5);
 }
 
@@ -637,10 +653,14 @@ body {
 .media-jobs-table th {
   position: sticky;
   top: 0;
-  z-index: 1;
-  background: #15223b;
-  color: #b8caf0;
+  z-index: 5;
+  background: var(--admin-table-surface);
+  color: var(--admin-table-muted);
   white-space: nowrap;
+}
+
+.media-jobs-table th:has(.media-job-filter-menu[open]) {
+  z-index: 10060;
 }
 
 .media-jobs-table td:nth-child(2) {
@@ -1776,14 +1796,15 @@ body {
   left: 0;
   right: 0;
   top: calc(100% + 4px);
-  z-index: 40;
+  z-index: var(--admin-floating-z);
   border: 1px solid #d7c9b5;
-  border-radius: 10px;
+  border-radius: var(--mam-radius-md, 10px);
   background: #fff;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
-  max-height: 240px;
+  box-shadow: var(--mam-shadow-md, 0 10px 24px rgba(0, 0, 0, 0.18));
+  max-height: min(260px, calc(100vh - 24px));
   overflow-y: auto;
   padding: 4px;
+  scrollbar-gutter: stable;
 }
 
 #proxyToolSuggestList.proxy-suggest .proxy-suggest-item,
@@ -1892,7 +1913,7 @@ body {
   left: auto;
   right: auto;
   top: auto;
-  z-index: 1000;
+  z-index: var(--admin-floating-z);
 }
 
 .proxy-tool-actions {

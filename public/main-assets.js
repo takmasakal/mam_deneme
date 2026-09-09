@@ -22,28 +22,79 @@
       assetPaginationRef
     } = deps || {};
     let loadRequestSeq = 0;
+    let loadingShowTimer = null;
+    let loadingHideTimer = null;
+    let loadingVisibleAt = 0;
+
+    function assetGridHasCards() {
+      return Boolean(assetGrid?.querySelector?.('.asset-card'));
+    }
+
+    function assetSearchSkeletonMarkup(count = 6) {
+      return `
+        <div class="asset-search-skeletons" aria-hidden="true">
+          ${Array.from({ length: count }).map(() => `
+            <article class="asset-card asset-card-skeleton card-art-glass">
+              <div class="asset-thumb asset-skeleton-block"></div>
+              <div class="asset-card-body">
+                <div class="asset-skeleton-line asset-skeleton-title"></div>
+                <div class="asset-skeleton-line asset-skeleton-meta"></div>
+                <div class="asset-skeleton-line asset-skeleton-meta short"></div>
+                <div class="asset-skeleton-chip-row">
+                  <span class="asset-skeleton-chip"></span>
+                  <span class="asset-skeleton-chip"></span>
+                </div>
+              </div>
+            </article>
+          `).join('')}
+        </div>
+      `;
+    }
 
     function setAssetSearchLoading(visible) {
       if (!assetGrid) return;
+      clearTimeout(loadingHideTimer);
       const existing = assetGrid.querySelector('.asset-search-loading-overlay');
+      const existingSkeletons = assetGrid.querySelector('.asset-search-skeletons');
       if (!visible) {
-        assetGrid.classList.remove('is-search-loading');
-        existing?.remove();
+        clearTimeout(loadingShowTimer);
+        loadingShowTimer = null;
+        const hide = () => {
+          assetGrid.classList.remove('is-search-loading');
+          assetGrid.removeAttribute('aria-busy');
+          existing?.remove();
+          existingSkeletons?.remove();
+        };
+        const elapsed = loadingVisibleAt ? Date.now() - loadingVisibleAt : 0;
+        if (existing && elapsed > 0 && elapsed < 320) {
+          loadingHideTimer = setTimeout(hide, 320 - elapsed);
+        } else {
+          hide();
+        }
         return;
       }
-      assetGrid.classList.add('is-search-loading');
-      if (existing) return;
-      const overlay = document.createElement('div');
-      overlay.className = 'asset-search-loading-overlay';
-      overlay.setAttribute('role', 'status');
-      overlay.setAttribute('aria-live', 'polite');
-      overlay.innerHTML = `
-        <div class="asset-search-loading-card">
-          <span class="asset-search-loading-spinner" aria-hidden="true"></span>
-          <span>${escapeHtml(t('search_loading') || 'Searching...')}</span>
-        </div>
-      `;
-      assetGrid.appendChild(overlay);
+      if (loadingShowTimer || existing) return;
+      loadingShowTimer = setTimeout(() => {
+        loadingShowTimer = null;
+        assetGrid.classList.add('is-search-loading');
+        assetGrid.setAttribute('aria-busy', 'true');
+        loadingVisibleAt = Date.now();
+        if (!assetGridHasCards() && !assetGrid.querySelector('.asset-search-skeletons')) {
+          assetGrid.innerHTML = assetSearchSkeletonMarkup(assetPaginationRef?.pageSize >= 50 ? 9 : 6);
+        }
+        if (assetGrid.querySelector('.asset-search-loading-overlay')) return;
+        const overlay = document.createElement('div');
+        overlay.className = 'asset-search-loading-overlay';
+        overlay.setAttribute('role', 'status');
+        overlay.setAttribute('aria-live', 'polite');
+        overlay.innerHTML = `
+          <div class="asset-search-loading-card">
+            <span class="asset-search-loading-spinner" aria-hidden="true"></span>
+            <span>${escapeHtml(t('search_loading') || 'Searching...')}</span>
+          </div>
+        `;
+        assetGrid.appendChild(overlay);
+      }, 180);
     }
 
     function getSelectedAssetTypesForRequest() {

@@ -74,6 +74,7 @@ const assetPaginationState = {
 };
 let activePlayerCleanup = null;
 let activeDetailPinCleanup = null;
+let activeViewerLoadingCleanup = null;
 let playerUiMode = 'vidstack';
 let allowFilelessAssetCreation = false;
 let subtitleStyleSettings = {
@@ -1988,6 +1989,10 @@ function videoToolsPageMarkup(asset) {
   return mediaViewerModule.videoToolsPageMarkup(asset);
 }
 
+function initMediaViewerLoadingStates(root = document) {
+  return mediaViewerModule.initMediaViewerLoadingStates(root);
+}
+
 detailModule = window.createMainDetailModule({
   t,
   tf,
@@ -2225,7 +2230,8 @@ const playerBootstrapModule = window.createMainPlayerBootstrapModule({
   syncSubtitleOverlayInOpenPlayers,
   showShortcutToast,
   adjustSubtitleFontSize,
-  getSubtitleFontSize
+  getSubtitleFontSize,
+  initMediaViewerLoadingStates
 });
 
 function openVideoToolsDialog(asset, options = {}) {
@@ -2480,6 +2486,10 @@ async function openAsset(id, workflow, options = {}) {
     activePlayerCleanup();
     activePlayerCleanup = null;
   }
+  if (activeViewerLoadingCleanup) {
+    activeViewerLoadingCleanup();
+    activeViewerLoadingCleanup = null;
+  }
   if (activeDetailPinCleanup) {
     activeDetailPinCleanup();
     activeDetailPinCleanup = null;
@@ -2492,6 +2502,7 @@ async function openAsset(id, workflow, options = {}) {
     assetDetail.innerHTML = videoToolsPageMarkup(asset);
     assetDetail.classList.remove('empty');
     assetDetail.classList.add('video-tools-page-detail');
+    activeViewerLoadingCleanup = initMediaViewerLoadingStates(assetDetail);
     activePlayerCleanup = initAssetPlayer(asset, assetDetail, {
       startAtSeconds: Number(options.startAtSeconds) || 0,
       focusCutId: String(options.focusCutId || '').trim()
@@ -2515,6 +2526,7 @@ async function openAsset(id, workflow, options = {}) {
     ? `/api/assets/${encodeURIComponent(id)}/versions/${encodeURIComponent(selectedImageVersionId)}/preview`
     : '';
   assetDetail.innerHTML = detailMarkup(asset, workflow, { imagePreviewUrl: selectedImagePreviewUrl });
+  activeViewerLoadingCleanup = initMediaViewerLoadingStates(assetDetail);
   const hasPlayableVideoProxy = isVideo(asset) && Boolean(String(asset.proxyUrl || '').trim());
   const hasPlayableAudio = isAudio(asset) && Boolean(String(asset.mediaUrl || '').trim());
   assetDetail.classList.toggle('video-detail-mode', hasPlayableVideoProxy);
@@ -2713,6 +2725,10 @@ assetGrid.addEventListener('click', async (event) => {
       activePlayerCleanup();
       activePlayerCleanup = null;
     }
+    if (activeViewerLoadingCleanup) {
+      activeViewerLoadingCleanup();
+      activeViewerLoadingCleanup = null;
+    }
     assetDetail.classList.remove('detail-video-pinned');
     assetDetail.classList.remove('video-detail-mode');
     assetDetail.textContent = t('select_asset');
@@ -2855,6 +2871,10 @@ languageSelect?.addEventListener('change', async (event) => {
     if (activeDetailPinCleanup) {
       activeDetailPinCleanup();
       activeDetailPinCleanup = null;
+    }
+    if (activeViewerLoadingCleanup) {
+      activeViewerLoadingCleanup();
+      activeViewerLoadingCleanup = null;
     }
     assetDetail.textContent = t('select_asset');
     assetDetail.classList.remove('video-detail-mode');
