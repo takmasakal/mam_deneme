@@ -42,6 +42,8 @@
     } = deps || {};
     const assetHitPageSize = 10;
     const assetPageSizes = [20, 50, 100];
+    const assetCardHtmlCache = new Map();
+    const assetCardHtmlCacheLimit = 400;
     let assetPageSize = 20;
     let assetPage = 1;
     let assetTotal = 0;
@@ -172,6 +174,63 @@ function renderAssetHitPager({ asset, type, requestQuery }) {
       </span>
     </div>
   `;
+}
+
+function compactAssetHit(hit) {
+  return [
+    hit?.query || '',
+    hit?.text || hit?.line || '',
+    Number(hit?.startSec || 0),
+    Number(hit?.endSec || 0)
+  ];
+}
+
+function assetRenderKey(asset, searchState, searchHighlightClass) {
+  const selectedIds = selectedAssetIdsRef.get();
+  return JSON.stringify({
+    id: asset?.id || '',
+    selected: selectedIds.has(asset?.id),
+    deleteAllowed: currentUserCanDeleteAssetInUi(asset),
+    title: asset?.title || '',
+    type: asset?.type || '',
+    owner: asset?.owner || '',
+    status: asset?.status || '',
+    inTrash: Boolean(asset?.inTrash),
+    updatedAt: asset?.updatedAt || '',
+    createdAt: asset?.createdAt || '',
+    thumbnailUrl: asset?.thumbnailUrl || '',
+    proxyUrl: asset?.proxyUrl || '',
+    mediaUrl: asset?.mediaUrl || '',
+    durationSeconds: asset?.durationSeconds || '',
+    fileSizeBytes: asset?.fileSizeBytes || '',
+    tags: asset?.tags || [],
+    metadata: asset?.metadata || {},
+    dc: asset?.dc || {},
+    ocrHits: (asset?.ocrSearchHits || []).map(compactAssetHit),
+    subtitleHits: (asset?.subtitleSearchHits || []).map(compactAssetHit),
+    ocrPage: asset?.ocrSearchPage || null,
+    subtitlePage: asset?.subtitleSearchPage || null,
+    searchState,
+    searchHighlightClass,
+    uiLang: global.document?.documentElement?.lang || ''
+  });
+}
+
+function renderAssetCardCached(asset, searchState, searchHighlightClass) {
+  const key = assetRenderKey(asset, searchState, searchHighlightClass);
+  const cached = assetCardHtmlCache.get(key);
+  if (cached) {
+    assetCardHtmlCache.delete(key);
+    assetCardHtmlCache.set(key, cached);
+    return cached;
+  }
+  const html = assetCardRenderer.render(asset, searchState, searchHighlightClass);
+  assetCardHtmlCache.set(key, html);
+  while (assetCardHtmlCache.size > assetCardHtmlCacheLimit) {
+    const oldest = assetCardHtmlCache.keys().next().value;
+    assetCardHtmlCache.delete(oldest);
+  }
+  return html;
 }
 
 const assetCardRenderer = global.createMainAssetCardRenderer({
@@ -417,7 +476,7 @@ function renderAssets(assets, options = {}) {
     )
   );
   assetGrid.innerHTML = `${searchNoticeHtml}${pagerHtml}${visibleAssets
-    .map((asset) => assetCardRenderer.render(asset, searchState, searchHighlightClass))
+    .map((asset) => renderAssetCardCached(asset, searchState, searchHighlightClass))
     .join('')}${pagerHtml}`;
 }
 

@@ -186,15 +186,19 @@
       const viewportWidth = Math.max(320, Number(global.innerWidth) || 0);
       const viewportHeight = Math.max(320, Number(global.innerHeight) || 0);
       const menuWidth = Math.max(174, Math.round(rect.width));
+      const maxMenuHeight = Math.max(120, viewportHeight - 24);
       const left = Math.max(8, Math.min(rect.left, viewportWidth - menuWidth - 8));
       options.style.left = `${Math.round(left)}px`;
       options.style.top = `${Math.round(rect.bottom + 4)}px`;
       options.style.minWidth = `${menuWidth}px`;
+      options.style.maxHeight = `${Math.round(maxMenuHeight)}px`;
       global.requestAnimationFrame?.(() => {
         const menuRect = options.getBoundingClientRect?.();
-        if (!menuRect || menuRect.bottom <= viewportHeight - 8) return;
-        const aboveTop = rect.top - menuRect.height - 4;
-        if (aboveTop >= 8) options.style.top = `${Math.round(aboveTop)}px`;
+        if (!menuRect) return;
+        if (menuRect.bottom > viewportHeight - 8) {
+          const aboveTop = rect.top - menuRect.height - 4;
+          options.style.top = `${Math.round(Math.max(8, aboveTop))}px`;
+        }
       });
     }
 

@@ -38,6 +38,7 @@
     let savedItems = [];
     let savedLoaded = false;
     let enabled = false;
+    let previouslyFocusedElement = null;
 
     function getStorageKey(identity) {
       const normalized = String(identity || '').trim().toLowerCase() || 'anonymous';
@@ -511,8 +512,70 @@
       if (deleteButton) deleteButton.disabled = !hasSelection;
     }
 
+    function isOpen() {
+      return Boolean(modal && !modal.classList.contains('hidden'));
+    }
+
+    function focusableElements() {
+      const selector = [
+        'a[href]',
+        'button:not([disabled])',
+        'input:not([disabled]):not([type="hidden"])',
+        'select:not([disabled])',
+        'textarea:not([disabled])',
+        'summary',
+        '[tabindex]:not([tabindex="-1"])'
+      ].join(',');
+      const roots = [modal];
+      if (datePicker.element?.classList.contains('is-open')) roots.push(datePicker.element);
+      return roots
+        .filter(Boolean)
+        .flatMap((root) => Array.from(root.querySelectorAll(selector)))
+        .filter((element) => {
+          if (element.closest?.('.hidden')) return false;
+          const rect = element.getBoundingClientRect();
+          return Boolean(rect.width || rect.height || element.getClientRects().length);
+        });
+    }
+
+    function focusFirstControl() {
+      const preferred = modal?.querySelector('.advanced-search-field input')
+        || modal?.querySelector('input:not([type="hidden"]), select, button:not([disabled])');
+      (preferred || modal)?.focus?.({ preventScroll: true });
+    }
+
+    function handleModalKeydown(event) {
+      if (!isOpen()) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        datePicker.element?.classList.remove('is-open');
+        close();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusables = focusableElements();
+      if (!focusables.length) {
+        event.preventDefault();
+        modal?.focus?.({ preventScroll: true });
+        return;
+      }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus({ preventScroll: true });
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus({ preventScroll: true });
+      }
+    }
+
     function open() {
       if (!canUseAdvancedSearch()) return;
+      previouslyFocusedElement = (typeof HTMLElement !== 'undefined' && document.activeElement instanceof HTMLElement)
+        ? document.activeElement
+        : document.getElementById('advancedSearchBtn');
       enabled = true;
       if (!savedLoaded) loadSavedFromServer().catch(() => {});
       let savedValues = {};
@@ -535,10 +598,18 @@
       render();
       refreshSavedOptions();
       modal?.classList.remove('hidden');
-      modal?.querySelector('.advanced-search-field input')?.focus();
+      const scheduleFocus = global.requestAnimationFrame || ((callback) => setTimeout(callback, 0));
+      scheduleFocus(focusFirstControl);
     }
 
-    function close() { modal?.classList.add('hidden'); }
+    function close({ restoreFocus = true } = {}) {
+      modal?.classList.add('hidden');
+      datePicker.element?.classList.remove('is-open');
+      if (!restoreFocus) return;
+      const fallback = document.getElementById('advancedSearchBtn');
+      const target = previouslyFocusedElement?.isConnected ? previouslyFocusedElement : fallback;
+      target?.focus?.({ preventScroll: true });
+    }
 
     // A direct edit in the first-column search form starts a normal search.
     // Keep the last advanced layout available for reopening, but remove it
@@ -659,6 +730,8 @@
     function init() {
       document.getElementById('advancedSearchBtn')?.addEventListener('click', open);
       document.getElementById('advancedSearchCloseBtn')?.addEventListener('click', close);
+      modal?.setAttribute('tabindex', '-1');
+      modal?.addEventListener('keydown', handleModalKeydown);
       document.getElementById('advancedSearchHelpBtn')?.addEventListener('click', () => {
         const button = document.getElementById('advancedSearchHelpBtn');
         const help = document.getElementById('advancedSearchHelpText');
