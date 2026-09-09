@@ -215,6 +215,10 @@ services:
       OAUTH2_PROXY_REVERSE_PROXY: "true"
       OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
       OAUTH2_PROXY_PASS_ACCESS_TOKEN: "true"
+      # Mobile clients send the Keycloak access token as a Bearer token.
+      OAUTH2_PROXY_SKIP_JWT_BEARER_TOKENS: "true"
+      OAUTH2_PROXY_OIDC_EXTRA_AUDIENCES: ${OAUTH2_PROXY_OIDC_EXTRA_AUDIENCES:-account,metmam-mobile}
+      OAUTH2_PROXY_PASS_AUTHORIZATION_HEADER: "true"
       OAUTH2_PROXY_PASS_USER_HEADERS: "true"
       OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
       OAUTH2_PROXY_COOKIE_CSRF_PER_REQUEST: "true"
