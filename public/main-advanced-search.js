@@ -575,7 +575,7 @@
       if (!canUseAdvancedSearch()) return;
       previouslyFocusedElement = (typeof HTMLElement !== 'undefined' && document.activeElement instanceof HTMLElement)
         ? document.activeElement
-        : document.getElementById('advancedSearchBtn');
+        : null;
       enabled = true;
       if (!savedLoaded) loadSavedFromServer().catch(() => {});
       let savedValues = {};
@@ -603,11 +603,14 @@
     }
 
     function close({ restoreFocus = true } = {}) {
+      const wasOpen = modal && !modal.classList.contains('hidden');
       modal?.classList.add('hidden');
       datePicker.element?.classList.remove('is-open');
-      if (!restoreFocus) return;
-      const fallback = document.getElementById('advancedSearchBtn');
-      const target = previouslyFocusedElement?.isConnected ? previouslyFocusedElement : fallback;
+      if (!restoreFocus || !wasOpen) return;
+      const trigger = document.getElementById('advancedSearchBtn');
+      const target = previouslyFocusedElement?.isConnected && previouslyFocusedElement !== trigger
+        ? previouslyFocusedElement
+        : null;
       target?.focus?.({ preventScroll: true });
     }
 
@@ -618,7 +621,7 @@
       enabled = false;
       const input = searchForm?.querySelector('[name="advancedSearch"]');
       if (input) input.value = '';
-      close();
+      close({ restoreFocus: false });
     }
 
     function clear() {
