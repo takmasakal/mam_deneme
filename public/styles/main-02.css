@@ -991,7 +991,12 @@ button:hover {
 }
 
 .dc-hit {
-  display: inline-flex;
+  display: inline-block;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
   gap: 4px;
   align-items: baseline;
   padding: 1px 4px;
