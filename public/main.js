@@ -2060,24 +2060,37 @@ function initDetailSubtitleLanguagePicker(asset, root = assetDetail) {
   if (!asset?.id || !(root instanceof Element)) return;
   const picker = root.querySelector('.detail-subtitle-language-picker');
   if (!picker) return;
+  const applyVisibility = (enabled) => {
+    setSubtitleOverlayEnabled(asset.id, enabled);
+    syncSubtitleOverlayInOpenPlayers(asset);
+  };
+  picker.querySelector('[data-subtitle-toggle]')?.addEventListener('click', () => {
+    if (!String(asset.subtitleUrl || '').trim()) {
+      const fallback = (asset.subtitleItems || []).find((item) => String(item?.subtitleUrl || '').trim());
+      asset.subtitleUrl = String(asset.dcMetadata?.subtitleUrl || fallback?.subtitleUrl || '').trim();
+      asset.subtitleLang = asset.subtitleLang || fallback?.subtitleLang || '';
+      asset.subtitleLabel = asset.subtitleLabel || fallback?.subtitleLabel || '';
+    }
+    if (!asset.subtitleUrl) return;
+    applyVisibility(!getSubtitleOverlayEnabled(asset.id, false));
+  });
   picker.querySelectorAll('[data-subtitle-language-choice]').forEach((button) => {
     button.addEventListener('click', () => {
       const subtitleUrl = String(button.dataset.subtitleUrl || '').trim();
       if (!subtitleUrl) return;
+      const enabled = subtitleUrl !== String(asset.subtitleUrl || '').trim()
+        || !getSubtitleOverlayEnabled(asset.id, false);
       asset.subtitleUrl = subtitleUrl;
       asset.subtitleLang = String(button.dataset.subtitleLang || '').trim();
       asset.subtitleLabel = String(button.dataset.subtitleLabel || '').trim();
-      picker.querySelectorAll('[data-subtitle-language-choice]').forEach((item) => {
-        item.classList.toggle('active', item === button);
-      });
       const currentEl = root.querySelector('#videoSubtitleCurrent');
       if (currentEl) currentEl.textContent = asset.subtitleLabel || asset.subtitleLang || '-';
       const statusEl = root.querySelector('#subtitleStatus');
-      if (statusEl) statusEl.textContent = `${t('subtitle_loaded')}: ${asset.subtitleLabel || asset.subtitleLang || ''}`;
-      picker.open = false;
-      syncSubtitleOverlayInOpenPlayers(asset);
+      if (statusEl) statusEl.textContent = t(enabled ? 'subtitle_shortcut_on' : 'subtitle_shortcut_off');
+      applyVisibility(enabled);
     });
   });
+  syncSubtitleOverlayInOpenPlayers(asset);
 }
 async function openMultiSelectionDetail() {
   detailRequestCoordinator.invalidate();
