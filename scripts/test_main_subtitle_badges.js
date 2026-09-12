@@ -97,5 +97,7 @@ assert.match(single, /<button[^>]+data-subtitle-toggle/);
 assert.doesNotMatch(single, /data-subtitle-language-choice/);
 const multi = context.detailArtifactBadges({ ...asset, subtitleItems: [tur.dataset, eng.dataset] });
 assert.strictEqual((multi.match(/data-subtitle-language-choice/g) || []).length, 2);
-assert.doesNotMatch(multi, /<details|<summary/, 'language buttons stay available for repeated clicks');
+assert.match(multi, /<details[^>]+detail-subtitle-language-picker/, 'original popup structure is preserved');
+assert.match(multi, /<summary[^>]+data-subtitle-toggle/, 'original badge also toggles subtitles');
+assert.match(multi, /detail-subtitle-language-menu/, 'languages remain inside the original popup');
 console.log('Subtitle badge tests passed (toggle, languages, video/audio, external sync, markup).');
