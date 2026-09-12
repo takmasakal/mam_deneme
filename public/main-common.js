@@ -134,6 +134,15 @@
       const currentLang = currentLangRef?.get?.() || 'tr';
       const subtitleLang = String(asset?.subtitleLang || currentLang || 'tr').slice(0, 12);
       const subtitleLabel = String(asset?.subtitleLabel || t('subtitles'));
+      document.querySelectorAll('[data-subtitle-asset-id]').forEach((picker) => {
+        if (String(picker.dataset.subtitleAssetId || '').trim() !== assetId) return;
+        picker.querySelectorAll('[data-subtitle-toggle], [data-subtitle-language-choice]').forEach((button) => {
+          const active = enabled && (!button.hasAttribute('data-subtitle-language-choice')
+            || String(button.dataset.subtitleUrl || '').trim() === subtitleUrl);
+          button.classList.toggle('active', active);
+          button.setAttribute('aria-pressed', String(active));
+        });
+      });
       const players = Array.from(document.querySelectorAll('video[data-asset-id], audio[data-asset-id]'))
         .filter((el) => String(el.dataset.assetId || '').trim() === assetId);
 
@@ -145,7 +154,7 @@
           });
         };
 
-        if (!enabled || useCustomOverlay) {
+        if (!enabled || useCustomOverlay || mediaEl.tagName === 'AUDIO') {
           if (existing) existing.remove();
           hideAll();
           mediaEl.dispatchEvent(new CustomEvent('mam:subtitle-overlay-sync', { detail: { enabled, asset } }));

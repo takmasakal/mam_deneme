@@ -164,14 +164,10 @@
         if (lang === 'en') return uiLang === 'tr' ? t('subtitle_lang_english_short') : 'eng';
         return lang.slice(0, 3);
       };
-      const subtitleBadge = languageChoices.length > 1
-        ? `<details class="detail-subtitle-language-picker">
-            <summary class="detail-artifact-badge detail-artifact-badge-button" title="${escapeHtml(t('subtitle_choose_language'))}">${escapeHtml(t('subtitle_badge'))}</summary>
-            <div class="detail-subtitle-language-menu" role="menu" aria-label="${escapeHtml(t('subtitle_choose_language'))}">
-              ${languageChoices.map(({ lang, item }) => `<button type="button" role="menuitem" class="detail-subtitle-language-choice detail-subtitle-language-${escapeHtml(lang)} ${String(item.subtitleUrl || '').trim() === String(asset.subtitleUrl || '').trim() ? 'active' : ''}" data-subtitle-language-choice="1" data-subtitle-language-key="${escapeHtml(lang)}" data-subtitle-url="${escapeHtml(item.subtitleUrl || '')}" data-subtitle-lang="${escapeHtml(item.subtitleLang || lang)}" data-subtitle-label="${escapeHtml(item.subtitleLabel || lang)}">${escapeHtml(languageLabel(lang))}</button>`).join('')}
-            </div>
-          </details>`
-        : `<span class="detail-artifact-badge">${escapeHtml(t('subtitle_badge'))}</span>`;
+      const subtitleBadge = `<div class="detail-subtitle-language-picker" data-subtitle-asset-id="${escapeHtml(asset.id)}">
+        <button type="button" class="detail-artifact-badge detail-artifact-badge-button" data-subtitle-toggle="1" aria-pressed="false" aria-label="${escapeHtml(t('subtitle_overlay_enabled'))}">${escapeHtml(t('subtitle_badge'))}</button>
+        ${languageChoices.length > 1 ? languageChoices.map(({ lang, item }) => `<button type="button" class="detail-subtitle-language-choice detail-subtitle-language-${escapeHtml(lang)}" aria-pressed="false" data-subtitle-language-choice="1" data-subtitle-language-key="${escapeHtml(lang)}" data-subtitle-url="${escapeHtml(item.subtitleUrl || '')}" data-subtitle-lang="${escapeHtml(item.subtitleLang || lang)}" data-subtitle-label="${escapeHtml(item.subtitleLabel || lang)}">${escapeHtml(languageLabel(lang))}</button>`).join('') : ''}
+      </div>`;
       return `<div class="detail-artifact-badges" aria-label="${escapeHtml(t('asset_artifacts'))}">
         ${hasOcr ? `<span class="detail-artifact-badge">${escapeHtml(t('ocr_badge'))}</span>` : ''}
         ${hasSubtitle ? subtitleBadge : ''}
