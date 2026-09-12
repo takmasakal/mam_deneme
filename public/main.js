@@ -2060,6 +2060,11 @@ function initDetailSubtitleLanguagePicker(asset, root = assetDetail) {
   if (!asset?.id || !(root instanceof Element)) return;
   const picker = root.querySelector('.detail-subtitle-language-picker');
   if (!picker) return;
+  if (picker.__outsideCloseHandler) document.removeEventListener('click', picker.__outsideCloseHandler, true);
+  picker.__outsideCloseHandler = (event) => {
+    if (picker.open && !picker.contains(event.target)) picker.open = false;
+  };
+  document.addEventListener('click', picker.__outsideCloseHandler, true);
   const applyVisibility = (enabled) => {
     setSubtitleOverlayEnabled(asset.id, enabled);
     syncSubtitleOverlayInOpenPlayers(asset);

@@ -585,10 +585,15 @@ button:hover {
 }
 
 .detail-subtitle-language-picker {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-wrap: wrap;
+  position: relative;
+}
+
+.detail-subtitle-language-picker > summary {
+  list-style: none;
+}
+
+.detail-subtitle-language-picker > summary::-webkit-details-marker {
+  display: none;
 }
 
 .detail-artifact-badge-button {
@@ -597,10 +602,26 @@ button:hover {
 }
 
 .detail-artifact-badge-button:hover,
-.detail-artifact-badge-button.active {
+.detail-subtitle-language-picker[open] .detail-artifact-badge-button {
   background: #e9a936;
   border-color: #e9a936;
   color: #13203a;
+}
+
+.detail-subtitle-language-menu {
+  position: absolute;
+  z-index: 30;
+  top: 0;
+  left: calc(100% + 5px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: max-content;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
 }
 
 .detail-subtitle-language-choice {
