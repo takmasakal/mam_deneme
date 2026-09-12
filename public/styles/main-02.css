@@ -502,7 +502,7 @@ button:hover {
   top: 0;
   left: calc(100% + 5px);
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 4px;
   min-width: max-content;
   padding: 5px;
