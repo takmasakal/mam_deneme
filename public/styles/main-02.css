@@ -499,7 +499,8 @@ button:hover {
 .detail-subtitle-language-menu {
   position: absolute;
   z-index: 30;
-  top: 0;
+  top: 50%;
+  transform: translateY(-50%);
   left: calc(100% + 5px);
   display: flex;
   flex-direction: row;
