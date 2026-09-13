@@ -371,6 +371,10 @@ body.video-tools-page-mode #assetDetail {
 }
 
 .top-row .app-brand span:last-child {
+  color: #ffffff;
+}
+
+.top-row .app-brand .belgelik-prefix {
   color: var(--brand-gold);
 }
 
