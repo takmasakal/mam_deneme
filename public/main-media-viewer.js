@@ -505,16 +505,21 @@ function initMediaViewerLoadingStates(root = document) {
     const overlayText = host.querySelector('[data-viewer-loading-overlay="1"] .viewer-loading-text');
     if (!target) return;
     const markReady = () => {
+      clearTimeout(showLoadingTimer);
       host.classList.remove('viewer-is-loading', 'viewer-load-failed');
+      host.classList.remove('viewer-show-loading');
       host.classList.add('viewer-is-ready');
       host.setAttribute('aria-busy', 'false');
     };
     const markError = () => {
+      clearTimeout(showLoadingTimer);
       host.classList.remove('viewer-is-loading', 'viewer-is-ready');
+      host.classList.remove('viewer-show-loading');
       host.classList.add('viewer-load-failed');
       host.setAttribute('aria-busy', 'false');
       if (overlayText) overlayText.textContent = t('preview_not_available');
     };
+    let showLoadingTimer = setTimeout(() => host.classList.add('viewer-show-loading'), 3000);
     host.classList.add('viewer-is-loading');
     host.classList.remove('viewer-is-ready', 'viewer-load-failed');
     host.setAttribute('aria-busy', 'true');
@@ -541,6 +546,7 @@ function initMediaViewerLoadingStates(root = document) {
     readyEvents.forEach((eventName) => target.addEventListener(eventName, markReady, { once: true }));
     target.addEventListener('error', markError, { once: true });
     cleanups.push(() => {
+      clearTimeout(showLoadingTimer);
       readyEvents.forEach((eventName) => target.removeEventListener(eventName, markReady));
       target.removeEventListener('error', markError);
     });

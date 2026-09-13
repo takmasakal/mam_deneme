@@ -362,7 +362,7 @@ audio.asset-viewer {
   transition: opacity 160ms ease;
 }
 
-.viewer-is-loading .viewer-loading-overlay,
+.viewer-is-loading.viewer-show-loading .viewer-loading-overlay,
 .viewer-load-failed .viewer-loading-overlay {
   opacity: 1;
 }
