@@ -295,6 +295,12 @@ function registerAssetRoutes(app, deps) {
       if (!assetAccessService.canEditAssetMetadata(loaded.row, loaded.accessContext)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
+      const canEditUploader = Boolean(loaded.accessContext?.isSuperAdmin || loaded.accessContext?.isAdmin);
+      if (!canEditUploader && (Object.prototype.hasOwnProperty.call(body, 'owner')
+        || Object.prototype.hasOwnProperty.call(body, 'uploadedBy')
+        || Object.prototype.hasOwnProperty.call(body.dcMetadata || {}, 'creator'))) {
+        return res.status(403).json({ error: 'Only administrators can change uploader' });
+      }
       req.userPermissions = loaded.accessContext;
       const result = await assetEditLockService.acquire(req, req.params.id, req.body?.purpose || 'edit');
       if (!result.ok) return assetEditLockService.sendLocked(res, result);
