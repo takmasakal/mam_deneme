@@ -2077,7 +2077,9 @@ function initDetailSubtitleLanguagePicker(asset, root = assetDetail) {
       asset.subtitleLabel = asset.subtitleLabel || fallback?.subtitleLabel || '';
     }
     if (!asset.subtitleUrl) return;
-    applyVisibility(!getSubtitleOverlayEnabled(asset.id, false));
+    const next = !getSubtitleOverlayEnabled(asset.id, false);
+    applyVisibility(next);
+    showShortcutToast(next ? t('subtitle_shortcut_on') : t('subtitle_shortcut_off'), { type: next ? 'success' : 'error' });
   });
   picker.querySelectorAll('[data-subtitle-language-choice]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -2093,6 +2095,7 @@ function initDetailSubtitleLanguagePicker(asset, root = assetDetail) {
       const statusEl = root.querySelector('#subtitleStatus');
       if (statusEl) statusEl.textContent = t(enabled ? 'subtitle_shortcut_on' : 'subtitle_shortcut_off');
       applyVisibility(enabled);
+      showShortcutToast(enabled ? t('subtitle_shortcut_on') : t('subtitle_shortcut_off'), { type: enabled ? 'success' : 'error' });
     });
   });
   syncSubtitleOverlayInOpenPlayers(asset);
