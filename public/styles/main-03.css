@@ -408,11 +408,9 @@ audio.asset-viewer {
   align-content: center;
   gap: 10px;
   border-radius: var(--mam-radius-md, 10px);
-  border: 1px solid rgba(122, 154, 216, 0.22);
+  border: 0;
   color: var(--mam-color-text-strong, #eaf1ff);
-  background:
-    linear-gradient(180deg, rgba(13, 18, 29, 0.88), rgba(7, 10, 17, 0.78)),
-    rgba(0, 0, 0, 0.72);
+  background: transparent;
   opacity: 0;
   pointer-events: none;
   transition: opacity 160ms ease;
