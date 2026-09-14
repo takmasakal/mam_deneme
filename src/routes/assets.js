@@ -44,6 +44,7 @@ function registerAssetRoutes(app, deps) {
     ensureDocumentThumbnailForRow,
     queryAssetSuggestions,
     findOcrMatchForAssetRow,
+    buildSubtitleCueSearchWhereSql,
     formatTimecode,
     buildUserContextFromRequest,
     getAdminSettings,
@@ -80,6 +81,7 @@ function registerAssetRoutes(app, deps) {
     canManageVersionRow,
     assetAccessService,
     assetEditLockService,
+    metadataEnrichmentService,
     recordAuditEvent,
     nanoid
   } = deps;
@@ -150,13 +152,11 @@ function registerAssetRoutes(app, deps) {
 
   function resolveDerivativeUrl(value, subdir) {
     const url = resolveStoredUrl(value, subdir);
-    const normalizedUrl = String(url || '').toLowerCase();
     const normalizedSubdir = String(subdir || '').trim().replace(/^\/+|\/+$/g, '').toLowerCase();
-    const derivativeDirs = normalizedSubdir === 'proxies'
-      ? ['proxies', 'previews']
-      : [normalizedSubdir];
-    const isStoredUpload = normalizedUrl.includes('/uploads/');
-    return isStoredUpload && derivativeDirs.some((dir) => normalizedUrl.includes(`/${dir}/`)) ? url : '';
+    const markers = normalizedSubdir === 'proxies'
+      ? ['/uploads/proxies/', '/uploads/previews/']
+      : [`/uploads/${normalizedSubdir}/`];
+    return url && markers.some((marker) => url.toLowerCase().includes(marker)) ? url : '';
   }
 
   function sendStoredAssetFile(res, filePath, row = {}) {
@@ -236,7 +236,7 @@ function registerAssetRoutes(app, deps) {
 
   function mapAssetRowForUser(row, accessContext) {
     const mapped = mapAssetRow(row);
-    mapped.canManageVisibility = Boolean(accessContext?.isSuperAdmin && assetAccessService.canManageAssetVisibility(row, accessContext));
+    mapped.canManageVisibility = assetAccessService.canManageAssetVisibility(row, accessContext);
     mapped.canEditAsset = assetAccessService.canEditAsset(row, accessContext);
     mapped.canEditAssetMetadata = assetAccessService.canEditAssetMetadata(row, accessContext);
     mapped.canEditAssetOffice = assetAccessService.canEditAssetOffice(row, accessContext);
@@ -690,10 +690,11 @@ function registerAssetRoutes(app, deps) {
                 const visibleHits = hits.slice(0, assetCardMatchPageSize);
                 const mapped = visibleHits.map((item) => ({
                   query: String(item.query || hitQuery).trim() || hitQuery,
+                  subtitleUrl: String(item.subtitleUrl || '').trim(),
                   text: String(item.line || item.text || ''),
                   startSec: Number(item.startSec || 0),
                   endSec: Number(item.endSec || 0),
-                  startTc: String(item.startTc || formatTimecode(Number(item.startSec || 0)))
+                  startTc: formatTimecode(Number(item.startSec || 0))
                 }));
                 const prefix = hitType === 'ocr' ? '_ocr' : '_subtitle';
                 row[`${prefix}_search_hit`] = mapped[0];
@@ -816,6 +817,7 @@ function registerAssetRoutes(app, deps) {
             const match = hits[0];
             row._subtitle_search_hit = {
               query: hitQuery,
+              subtitleUrl: String(match.subtitleUrl || '').trim(),
               text: String(match.text || ''),
               startSec: Number(match.startSec || 0),
               endSec: Number(match.endSec || 0),
@@ -823,6 +825,7 @@ function registerAssetRoutes(app, deps) {
             };
             row._subtitle_search_hits = visibleHits.map((item) => ({
               query: String(item.query || hitQuery).trim() || hitQuery,
+              subtitleUrl: String(item.subtitleUrl || '').trim(),
               text: String(item.text || ''),
               startSec: Number(item.startSec || 0),
               endSec: Number(item.endSec || 0),
@@ -871,14 +874,18 @@ function registerAssetRoutes(app, deps) {
       const hydratedRows = [];
       for (const row of pagedRows) {
         let nextRow = row;
-        try {
-          nextRow = await ensureImageDerivativesForRow(nextRow);
-        } catch (error) {
-          console.warn('Image derivative repair failed', {
-            assetId: nextRow?.id,
-            fileName: nextRow?.file_name,
-            error: String(error?.message || error || '')
-          });
+        // Listing must stay cheap. Missing image derivatives are repaired on
+        // upload/detail/admin repair flows instead of blocking every refresh.
+        if (ensurePreview) {
+          try {
+            nextRow = await ensureImageDerivativesForRow(nextRow);
+          } catch (error) {
+            console.warn('Image derivative repair failed', {
+              assetId: nextRow?.id,
+              fileName: nextRow?.file_name,
+              error: String(error?.message || error || '')
+            });
+          }
         }
         if (!ensurePreview) {
           hydratedRows.push(nextRow);
@@ -909,6 +916,7 @@ function registerAssetRoutes(app, deps) {
         }
       });
     } catch (error) {
+      console.error('assets-list-error', error);
       res.status(500).json({ error: 'Failed to load assets' });
     }
   });
@@ -1016,9 +1024,23 @@ function registerAssetRoutes(app, deps) {
         values
       );
   
+      const batchSearch = await searchOcrMatchesForAssetRows(result.rows, q, 1);
       const out = [];
       for (const row of result.rows) {
-        const hit = await findOcrMatchForAssetRow(row, q);
+        const assetId = String(row.id || '').trim();
+        const managedHits = batchSearch.byAssetId.get(assetId) || [];
+        let hit = managedHits[0] || null;
+        if (!hit) {
+          const dc = row.dc_metadata && typeof row.dc_metadata === 'object'
+            ? row.dc_metadata
+            : {};
+          const hasManagedOcr = Boolean(
+            String(dc.videoOcrUrl || dc.photoOcrUrl || '').trim()
+            || (Array.isArray(dc.videoOcrItems) && dc.videoOcrItems.length)
+            || (Array.isArray(dc.photoOcrItems) && dc.photoOcrItems.length)
+          );
+          if (!hasManagedOcr) hit = await findOcrMatchForAssetRow(row, q);
+        }
         if (!hit) continue;
         out.push({
           id: row.id,
@@ -1175,10 +1197,16 @@ function registerAssetRoutes(app, deps) {
   });
   
   app.post('/api/assets/upload', parseMultipartUpload, async (req, res) => {
-    const { fileName, mimeType, fileData, ...metadata } = req.body || {};
+    const {
+      fileName: bodyFileName,
+      mimeType: bodyMimeType,
+      fileData,
+      generateMetadata: generateMetadataRaw,
+      ...metadata
+    } = req.body || {};
     const multipartUpload = req.multipartUpload || null;
-    const effectiveFileName = String(fileName || multipartUpload?.fileName || '').trim();
-    const effectiveMimeType = String(mimeType || multipartUpload?.mimeType || '').trim();
+    const fileName = String(bodyFileName || multipartUpload?.fileName || '').trim();
+    const mimeType = String(bodyMimeType || multipartUpload?.mimeType || '').trim();
     const cleanupMultipartUpload = () => {
       const tempPath = String(multipartUpload?.path || '').trim();
       if (tempPath && fs.existsSync(tempPath)) {
@@ -1186,24 +1214,29 @@ function registerAssetRoutes(app, deps) {
       }
     };
     res.on('finish', cleanupMultipartUpload);
-    const inputFileName = effectiveFileName;
-    const inputMimeType = effectiveMimeType;
+    const requestedMetadataGeneration = generateMetadataRaw === true
+      || String(generateMetadataRaw || '').trim().toLowerCase() === 'true';
     const allowSilentProxyFallback = Boolean(req.body?.allowSilentProxyFallback);
     const skipProxyGeneration = Boolean(req.body?.skipProxyGeneration);
-    const isVideoUpload = isVideoCandidate({ mimeType: inputMimeType, fileName: inputFileName, declaredType: metadata.type });
+    const isVideoUpload = isVideoCandidate({ mimeType, fileName, declaredType: metadata.type });
     if (!fileData && !multipartUpload?.path) {
       return res.status(400).json({ error: 'fileData (base64) is required' });
     }
   
-    const safeName = sanitizeFileName(inputFileName);
+    const safeName = sanitizeFileName(fileName);
     const typeValidation = validateDeclaredUploadType({
       declaredType: metadata.type,
-      mimeType: inputMimeType,
+      mimeType,
       fileName: safeName
     });
     if (!typeValidation.ok) {
       return res.status(400).json(typeValidation);
     }
+    const generateMetadata = requestedMetadataGeneration && isDocumentCandidate({
+      mimeType,
+      fileName: safeName,
+      declaredType: metadata.type
+    });
     let buffer = null;
     let fileHash = '';
   
@@ -1239,7 +1272,7 @@ function registerAssetRoutes(app, deps) {
     });
     const typeAllowed = assetAccessService.canUploadAssetType({
       type: metadata.type,
-      mimeType: inputMimeType,
+      mimeType,
       fileName: safeName
     }, context);
     if (!typeAllowed) {
@@ -1385,31 +1418,26 @@ function registerAssetRoutes(app, deps) {
       } catch (_error) {
         thumbnailUrl = '';
       }
-    } else if (
-      String(mimeType || '').toLowerCase().startsWith('image/') ||
-      imageDerivativeService?.isImageCandidate({ mimeType, fileName: safeName })
-    ) {
-      if (imageDerivativeService?.isImageCandidate({ mimeType, fileName: safeName })) {
-        try {
-          const derivatives = await imageDerivativeService.ensureImageDerivativesForUpload({
-            mimeType,
-            fileName: safeName,
-            inputPath: absolutePath,
-            createdAt: new Date()
-          });
-          proxyUrl = String(derivatives.proxyUrl || '').trim();
-          thumbnailUrl = String(derivatives.thumbnailUrl || '').trim();
-          proxyStatus = proxyUrl ? 'ready' : 'failed';
-        } catch (error) {
-          proxyUrl = '';
-          thumbnailUrl = mediaUrl;
-          proxyStatus = 'failed';
-          ingestWarnings.push({
-            code: 'image_derivative_generation_failed',
-            message: `Image preview generation failed: ${String(error?.message || error || '').slice(0, 240)}`,
-            retryHint: 'The original file was kept. You can regenerate image derivatives later from admin tools.'
-          });
-        }
+    } else if (imageDerivativeService?.isImageCandidate({ mimeType, fileName: safeName })) {
+      try {
+        const derivatives = await imageDerivativeService.ensureImageDerivativesForUpload({
+          mimeType,
+          fileName: safeName,
+          inputPath: absolutePath,
+          createdAt: new Date()
+        });
+        proxyUrl = String(derivatives.proxyUrl || '').trim();
+        thumbnailUrl = String(derivatives.thumbnailUrl || '').trim();
+        proxyStatus = proxyUrl ? 'ready' : 'failed';
+      } catch (error) {
+        proxyUrl = '';
+        thumbnailUrl = mediaUrl;
+        proxyStatus = 'failed';
+        ingestWarnings.push({
+          code: 'image_derivative_generation_failed',
+          message: `Image preview generation failed: ${String(error?.message || error || '').slice(0, 240)}`,
+          retryHint: 'The original file was kept. You can regenerate image derivatives later from admin tools.'
+        });
       }
     }
   
@@ -1453,6 +1481,9 @@ function registerAssetRoutes(app, deps) {
   
     try {
       const created = await createAssetRecord(payload);
+      const metadataJob = generateMetadata
+        ? metadataEnrichmentService?.queueAsset?.(created)
+        : null;
       await recordAuditEvent?.(req, {
         action: 'asset.uploaded',
         targetType: 'asset',
@@ -1463,13 +1494,16 @@ function registerAssetRoutes(app, deps) {
           mimeType: created.mimeType || String(mimeType || ''),
           type: created.type,
           proxyStatus: created.proxyStatus,
+          metadataGenerationRequested: generateMetadata,
+          metadataJobId: String(metadataJob?.jobId || ''),
           warnings: ingestWarnings.map((item) => item.code).filter(Boolean)
         }
       });
       return res.status(201).json({
         ...created,
         ingestWarnings,
-        ingestSucceededWithWarnings: ingestWarnings.length > 0
+        ingestSucceededWithWarnings: ingestWarnings.length > 0,
+        metadataJob
       });
     } catch (_error) {
       console.warn(JSON.stringify({
@@ -1661,9 +1695,6 @@ function registerAssetRoutes(app, deps) {
   app.patch('/api/assets/:id/visibility', async (req, res) => {
     try {
       const accessContext = await resolveAssetAccessContext(req);
-      if (!accessContext?.isSuperAdmin) {
-        return res.status(403).json({ error: 'Super admin permission is required' });
-      }
       const result = await assetAccessService.updateAssetVisibility(req.params.id, req.body || {}, accessContext);
       if (result.status !== 200) {
         return res.status(result.status).json({ error: result.error });
@@ -2060,14 +2091,16 @@ function registerAssetRoutes(app, deps) {
         const replacementMediaUrl = `/uploads/${ingestStorage.relativeDir.replace(/\\/g, '/')}/${storedName}`;
         fs.writeFileSync(replacementPath, replacementBuffer);
 
+        let replacementProxyUrl = '';
+        let replacementThumbnailUrl = replacementMediaUrl;
         const derivatives = await imageDerivativeService.ensureImageDerivativesForUpload({
           mimeType: replacementMimeType,
           fileName: replacementFileName,
           inputPath: replacementPath,
           createdAt: new Date()
         });
-        const replacementProxyUrl = String(derivatives.proxyUrl || '').trim();
-        const replacementThumbnailUrl = String(derivatives.thumbnailUrl || replacementProxyUrl || '').trim();
+        replacementProxyUrl = String(derivatives.proxyUrl || '').trim();
+        replacementThumbnailUrl = String(derivatives.thumbnailUrl || replacementProxyUrl || '').trim();
         if (replacementProxyUrl) replacementArtifactPaths.push(publicUploadUrlToAbsolutePath(replacementProxyUrl));
         if (replacementThumbnailUrl) replacementArtifactPaths.push(publicUploadUrlToAbsolutePath(replacementThumbnailUrl));
 
@@ -2113,11 +2146,12 @@ function registerAssetRoutes(app, deps) {
             ]
           );
           if (count === 0) {
+            const original = buildVersionSnapshotFromRow(row);
             await insertVersion({
               versionId: nanoid(),
               label: 'v1',
               note: 'Original version',
-              snapshot: buildVersionSnapshotFromRow(row),
+              snapshot: original,
               actorUsername,
               actionType: 'manual',
               createdAt
@@ -2142,7 +2176,7 @@ function registerAssetRoutes(app, deps) {
             [
               req.params.id, replacementFileName, replacementMimeType, replacementMediaUrl, replacementPath,
               replacementHash, replacementProxyUrl, replacementProxyUrl ? 'ready' : 'not_applicable', replacementThumbnailUrl,
-              JSON.stringify(dcMetadata), createdAt
+              JSON.stringify(dcMetadata), version.createdAt
             ]
           );
           await dbClient.query('COMMIT');
@@ -2273,14 +2307,22 @@ function registerAssetRoutes(app, deps) {
       if (!versionRow) return res.status(404).json({ error: 'Version not found' });
 
       const mimeType = String(versionRow.snapshot_mime_type || '').trim().toLowerCase();
-      if (!mimeType.startsWith('image/') && mimeType !== 'application/pdf') return res.status(400).json({ error: 'This version type cannot be previewed' });
-      let sourcePath = publicUploadUrlToAbsolutePath(String(versionRow.snapshot_thumbnail_url || '').trim());
-      if (!sourcePath || !fs.existsSync(sourcePath)) sourcePath = String(versionRow.snapshot_source_path || '').trim();
+      if (!mimeType.startsWith('image/') && mimeType !== 'application/pdf') {
+        return res.status(400).json({ error: 'This version type cannot be previewed' });
+      }
+      let sourcePath = mimeType.startsWith('image/')
+        ? publicUploadUrlToAbsolutePath(String(versionRow.snapshot_thumbnail_url || '').trim())
+        : '';
+      if (!sourcePath || !fs.existsSync(sourcePath)) {
+        sourcePath = String(versionRow.snapshot_source_path || '').trim();
+      }
       if (!sourcePath || !fs.existsSync(sourcePath)) {
         const resolved = publicUploadUrlToAbsolutePath(String(versionRow.snapshot_media_url || '').trim());
         sourcePath = resolved && fs.existsSync(resolved) ? resolved : '';
       }
-      if (!sourcePath || !fs.existsSync(sourcePath)) return res.status(404).json({ error: 'Version snapshot file is missing on disk' });
+      if (!sourcePath || !fs.existsSync(sourcePath)) {
+        return res.status(404).json({ error: 'Version snapshot file is missing on disk' });
+      }
 
       res.type(mimeType);
       res.set('Accept-Ranges', 'bytes');
