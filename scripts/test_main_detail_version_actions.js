@@ -36,6 +36,8 @@ async function run() {
     }
   };
   const image = { src: '', dataset: {} };
+  const frame = { src: '', dataset: {} };
+  let showImageViewer = true;
   const selected = new Map();
   const apiCalls = [];
   let refreshCalls = 0;
@@ -55,7 +57,13 @@ async function run() {
     currentLang: () => 'tr',
     canUsePdfAdvancedTools: () => true,
     selectedImageVersionIds: selected,
-    assetDetail: { querySelector: () => image },
+    assetDetail: {
+      querySelector(selector) {
+        if (selector === '.image-asset-viewer') return showImageViewer ? image : null;
+        if (selector === '#pdfViewerFrame, #docViewerFrame') return showImageViewer ? null : frame;
+        return null;
+      }
+    },
     documentRef: {
       body: { appendChild() {} },
       createElement: () => ({ setAttribute() {}, click() {}, remove() {} })
@@ -87,6 +95,19 @@ async function run() {
   assert.strictEqual(selected.get('asset-1'), 'version-1');
   assert.strictEqual(image.dataset.versionId, 'version-1');
   assert.strictEqual(image.src, '/api/assets/asset-1/versions/version-1/preview');
+
+  showImageViewer = false;
+  module.bind(root, {
+    asset: {
+      id: 'asset-1',
+      versions: [{ versionId: 'version-pdf', snapshotMimeType: 'application/pdf', snapshotMediaUrl: '/uploads/versions/document.pdf' }],
+      canDownloadAsset: true
+    },
+    workflow: ['draft']
+  });
+  const pdfPreview = makeButton('previewVersionBtn', 'version-pdf');
+  await listener({ target: pdfPreview, preventDefault() {}, stopPropagation() {} });
+  assert.match(frame.src, /file=%2Fuploads%2Fversions%2Fdocument\.pdf/);
 
   const restore = makeButton('restorePdfVersionBtn', 'version-2');
   await listener({
