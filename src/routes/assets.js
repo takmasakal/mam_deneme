@@ -562,6 +562,8 @@ function registerAssetRoutes(app, deps) {
         const sql = `
           SELECT
             assets.*,
+            (SELECT snapshot_media_url FROM asset_versions v WHERE v.asset_id = assets.id AND v.version_id = assets.default_version_id LIMIT 1) AS default_version_media_url,
+            (SELECT snapshot_thumbnail_url FROM asset_versions v WHERE v.asset_id = assets.id AND v.version_id = assets.default_version_id LIMIT 1) AS default_version_thumbnail_url,
             (
               SELECT COALESCE(
                 json_agg(
@@ -895,6 +897,8 @@ function registerAssetRoutes(app, deps) {
       const includeFileSize = fileSizeRange.active || isFileSizeSort;
       const responseAssets = await Promise.all(hydratedRows.map(async (row) => {
         const asset = mapAssetRowForUser(row, accessContext);
+        if (row.default_version_media_url) asset.mediaUrl = row.default_version_media_url;
+        if (row.default_version_thumbnail_url) asset.thumbnailUrl = row.default_version_thumbnail_url;
         if (includeFileSize) {
           const fileSize = await getAssetFileSize(row);
           if (Number.isFinite(fileSize) && fileSize > 0) asset.fileSizeBytes = fileSize;
@@ -1554,10 +1558,33 @@ function registerAssetRoutes(app, deps) {
         asset.audioStreamOptions = await getMediaAudioStreamOptions(playbackPath);
       }
       asset.versions = versionsResult.rows.map(mapVersionRow);
+      const preferredVersion = asset.versions.find((version) => String(version.versionId || '') === String(row.default_version_id || ''));
+      if (preferredVersion) {
+        asset.defaultVersionId = preferredVersion.versionId;
+        asset.mediaUrl = preferredVersion.snapshotMediaUrl || asset.mediaUrl;
+        asset.thumbnailUrl = preferredVersion.snapshotThumbnailUrl || asset.thumbnailUrl;
+      } else {
+        asset.defaultVersionId = '';
+      }
       asset.cuts = cutsResult.rows.map(mapCutRow);
       res.json(asset);
     } catch (_error) {
       res.status(500).json({ error: 'Failed to load asset' });
+    }
+  });
+
+  app.patch('/api/assets/:id/default-version', async (req, res) => {
+    try {
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      const versionId = String(req.body?.versionId || '').trim();
+      if (!versionId) return res.status(400).json({ error: 'versionId is required' });
+      const version = await pool.query('SELECT version_id, snapshot_media_url, snapshot_thumbnail_url FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [req.params.id, versionId]);
+      if (!version.rowCount) return res.status(404).json({ error: 'Version not found' });
+      await pool.query('UPDATE assets SET default_version_id = $1, updated_at = NOW() WHERE id = $2', [versionId, req.params.id]);
+      res.json({ saved: true, defaultVersionId: versionId });
+    } catch (_error) {
+      res.status(500).json({ error: 'Failed to save default version' });
     }
   });
 
