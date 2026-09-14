@@ -56,6 +56,13 @@ const LOCAL_ASSET_VIEW_MODE = 'mam.assets.view.mode';
 const LOCAL_DETAIL_VIDEO_PIN = 'mam.detail.video.pin';
 const SESSION_VIDEO_TOOLS_RETURN_SEARCH = 'mam.videoTools.returnSearch';
 const selectedImageVersionIds = new Map();
+document.addEventListener('mam:version-order-changed', (event) => {
+  const asset = currentAssets.find((item) => String(item.id) === String(event.detail?.assetId));
+  if (asset?.versions?.length) {
+    try { const order = JSON.parse(localStorage.getItem(`mam:version-order:${asset.id}`) || '[]'); const top = [...asset.versions].sort((a,b) => (order.indexOf(a.versionId) < 0 ? 9999 : order.indexOf(a.versionId)) - (order.indexOf(b.versionId) < 0 ? 9999 : order.indexOf(b.versionId)))[0]; if (top?.snapshotThumbnailUrl) asset.thumbnailUrl = top.snapshotThumbnailUrl; } catch (_error) {}
+  }
+  renderAssets(currentAssets);
+});
 const SESSION_CURRENT_USER_LABEL = 'mam.current.user.label';
 const LOCAL_PERMISSION_REFRESH = 'mam.permissions.updated';
 const I18N_PATH = '/i18n.json';
