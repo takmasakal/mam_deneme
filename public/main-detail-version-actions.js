@@ -157,7 +157,7 @@
       rows.forEach((row) => {
         row.addEventListener('dragstart', () => { dragging = row; });
         row.addEventListener('dragover', (event) => { event.preventDefault(); if (dragging && dragging !== row) root.insertBefore(dragging, row); });
-        row.addEventListener('dragend', () => { dragging = null; const ids = Array.from(root.querySelectorAll('.version[data-version-id]')).map((item) => item.dataset.versionId); localStorage.setItem(`mam:version-order:${asset.id}`, JSON.stringify(ids)); const top = (asset.versions || []).find((item) => String(item.versionId || '') === ids[0]); document.dispatchEvent(new CustomEvent('mam:version-order-changed', { detail: { assetId: asset.id, thumbnailUrl: top?.snapshotThumbnailUrl || '' } })); });
+        row.addEventListener('dragend', async () => { dragging = null; const ids = Array.from(root.querySelectorAll('.version[data-version-id]')).map((item) => item.dataset.versionId); localStorage.setItem(`mam:version-order:${asset.id}`, JSON.stringify(ids)); const top = (asset.versions || []).find((item) => String(item.versionId || '') === ids[0]); if (top?.versionId) { try { await fetch(`/api/assets/${encodeURIComponent(asset.id)}/default-version`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ versionId: top.versionId }) }); } catch (_error) {} } document.dispatchEvent(new CustomEvent('mam:version-order-changed', { detail: { assetId: asset.id, thumbnailUrl: top?.snapshotThumbnailUrl || '' } })); });
       });
 
       const onClick = async (event) => {

@@ -75,6 +75,7 @@ async function initDb() {
       deleted_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL
+      ,default_version_id TEXT NOT NULL DEFAULT ''
     );
 
     ALTER TABLE assets
@@ -88,6 +89,9 @@ async function initDb() {
 
     ALTER TABLE assets
     ADD COLUMN IF NOT EXISTS file_hash TEXT NOT NULL DEFAULT '';
+
+    ALTER TABLE assets
+    ADD COLUMN IF NOT EXISTS default_version_id TEXT NOT NULL DEFAULT '';
 
     ALTER TABLE assets
     ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'public';
