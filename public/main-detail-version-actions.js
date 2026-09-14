@@ -4,6 +4,7 @@
       api,
       fetchImpl = global.fetch?.bind(global),
       t,
+      showShortcutToast,
       cleanVersionNoteText,
       openVersionDeleteDialog,
       openVersionEditDialog,
@@ -42,6 +43,8 @@
     function previewVersion(asset, versionId) {
       if (!versionId) return;
       const office = Boolean(asset?.isOffice || asset?.office || /office|word|excel|powerpoint|spreadsheet|presentation/i.test(String(asset?.type || asset?.mimeType || asset?.fileName || '')));
+      const version = (asset?.versions || []).find((item) => String(item?.versionId || item?.version_id) === versionId);
+      showShortcutToast?.(`${version?.label || version?.versionLabel || versionId} önizlemesi yüklendi`, { type: 'success' });
       const previewUrl = office
         ? `/api/assets/${encodeURIComponent(asset.id)}/libreoffice-preview.pdf?versionId=${encodeURIComponent(versionId)}`
         : `/api/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(versionId)}/preview`;

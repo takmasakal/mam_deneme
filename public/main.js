@@ -253,6 +253,7 @@ const shellModule = window.createMainShellModule({
   isPanelVisible,
   escapeHtml,
   t,
+  showShortcutToast,
   currentLangRef: {
     get: () => currentLang
   },
@@ -2349,6 +2350,7 @@ advancedSearchModule?.init?.();
 const detailVersionActionsModule = window.createMainDetailVersionActions({
   api,
   t,
+  showShortcutToast,
   cleanVersionNoteText,
   openVersionDeleteDialog,
   openVersionEditDialog,
