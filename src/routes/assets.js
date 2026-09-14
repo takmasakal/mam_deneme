@@ -2274,7 +2274,9 @@ function registerAssetRoutes(app, deps) {
 
       const mimeType = String(versionRow.snapshot_mime_type || '').trim().toLowerCase();
       if (!mimeType.startsWith('image/') && mimeType !== 'application/pdf') return res.status(400).json({ error: 'This version type cannot be previewed' });
-      let sourcePath = publicUploadUrlToAbsolutePath(String(versionRow.snapshot_thumbnail_url || '').trim());
+      let sourcePath = mimeType.startsWith('image/')
+        ? publicUploadUrlToAbsolutePath(String(versionRow.snapshot_thumbnail_url || '').trim())
+        : '';
       if (!sourcePath || !fs.existsSync(sourcePath)) sourcePath = String(versionRow.snapshot_source_path || '').trim();
       if (!sourcePath || !fs.existsSync(sourcePath)) {
         const resolved = publicUploadUrlToAbsolutePath(String(versionRow.snapshot_media_url || '').trim());
