@@ -907,7 +907,9 @@ function registerAssetRoutes(app, deps) {
           asset.mimeType = row.default_version_mime_type;
           asset.type = inferAssetType('', asset.mimeType, asset.fileName);
         }
-        if (row.default_version_media_url && /^(image|video)\//i.test(String(asset.mimeType || ''))) {
+        if (row.default_version_media_url && String(asset.mimeType || '').toLowerCase().startsWith('image/')) {
+          asset.proxyUrl = row.default_version_thumbnail_url || row.default_version_media_url;
+        } else if (row.default_version_media_url && String(asset.mimeType || '').toLowerCase().startsWith('video/')) {
           asset.proxyUrl = row.default_version_media_url;
         }
         if (includeFileSize) {
@@ -1577,7 +1579,9 @@ function registerAssetRoutes(app, deps) {
         asset.fileName = preferredVersion.snapshotFileName || asset.fileName;
         asset.mimeType = preferredVersion.snapshotMimeType || asset.mimeType;
         asset.type = inferAssetType('', asset.mimeType, asset.fileName);
-        if (preferredVersion.snapshotMediaUrl && /^(image|video)\//i.test(String(asset.mimeType || ''))) {
+        if (preferredVersion.snapshotMediaUrl && String(asset.mimeType || '').toLowerCase().startsWith('image/')) {
+          asset.proxyUrl = preferredVersion.snapshotThumbnailUrl || preferredVersion.snapshotMediaUrl;
+        } else if (preferredVersion.snapshotMediaUrl && String(asset.mimeType || '').toLowerCase().startsWith('video/')) {
           asset.proxyUrl = preferredVersion.snapshotMediaUrl;
         }
       } else {
