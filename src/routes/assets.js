@@ -2310,7 +2310,9 @@ function registerAssetRoutes(app, deps) {
       if (!mimeType.startsWith('image/') && mimeType !== 'application/pdf') {
         return res.status(400).json({ error: 'This version type cannot be previewed' });
       }
-      let sourcePath = publicUploadUrlToAbsolutePath(String(versionRow.snapshot_thumbnail_url || '').trim());
+      let sourcePath = mimeType.startsWith('image/')
+        ? publicUploadUrlToAbsolutePath(String(versionRow.snapshot_thumbnail_url || '').trim())
+        : '';
       if (!sourcePath || !fs.existsSync(sourcePath)) {
         sourcePath = String(versionRow.snapshot_source_path || '').trim();
       }
