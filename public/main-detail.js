@@ -99,7 +99,7 @@
         actionType,
         canRestorePdf: Boolean(access.canManageVersions && access.assetIsPdf && hasSnapshot),
         canRestoreOffice: Boolean(access.canManageVersions && access.assetIsOffice && hasSnapshot),
-        canPreviewVersion: Boolean(hasSnapshot && (snapshotMime.startsWith('image/') || snapshotMime === 'application/pdf')),
+        canPreviewVersion: Boolean(hasSnapshot && (snapshotMime.startsWith('image/') || snapshotMime === 'application/pdf' || snapshotMime.includes('word') || snapshotMime.includes('officedocument'))),
         canDownloadVersion: Boolean(hasSnapshot && access.canDownloadAsset),
         canEditVersion: canEditOrDelete,
         canDeleteVersion: canEditOrDelete
