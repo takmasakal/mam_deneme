@@ -84,6 +84,7 @@
     function getVersionRowState(version, access) {
       const actionType = String(version?.actionType || 'manual').toLowerCase();
       const hasSnapshot = String(version?.snapshotMediaUrl || '').startsWith('/uploads/');
+      const snapshotMime = String(version?.snapshotMimeType || '').toLowerCase();
       const actorUsername = String(version?.actorUsername || '').trim().toLowerCase();
       const username = String(currentUsername() || '').trim().toLowerCase();
       const isOwnVersion = Boolean(username && actorUsername && username === actorUsername);
@@ -98,7 +99,7 @@
         actionType,
         canRestorePdf: Boolean(access.canManageVersions && access.assetIsPdf && hasSnapshot),
         canRestoreOffice: Boolean(access.canManageVersions && access.assetIsOffice && hasSnapshot),
-        canPreviewVersion: Boolean(access.assetIsImage && hasSnapshot),
+        canPreviewVersion: Boolean(hasSnapshot && (snapshotMime.startsWith('image/') || snapshotMime === 'application/pdf')),
         canDownloadVersion: Boolean(hasSnapshot && access.canDownloadAsset),
         canEditVersion: canEditOrDelete,
         canDeleteVersion: canEditOrDelete

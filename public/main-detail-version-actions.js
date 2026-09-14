@@ -44,7 +44,10 @@
       const previewUrl = `/api/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(versionId)}/preview`;
       selectedImageVersionIds.set(String(asset.id), versionId);
       const image = assetDetail.querySelector('.image-asset-viewer');
-      if (!image) return;
+      if (!image) {
+        global.open?.(previewUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
       image.src = previewUrl;
       image.dataset.versionId = versionId;
     }

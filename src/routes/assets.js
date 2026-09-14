@@ -2234,7 +2234,7 @@ function registerAssetRoutes(app, deps) {
       if (!versionRow) return res.status(404).json({ error: 'Version not found' });
 
       const mimeType = String(versionRow.snapshot_mime_type || '').trim().toLowerCase();
-      if (!mimeType.startsWith('image/')) return res.status(400).json({ error: 'Only image versions can be previewed' });
+      if (!mimeType.startsWith('image/') && mimeType !== 'application/pdf') return res.status(400).json({ error: 'This version type cannot be previewed' });
       let sourcePath = publicUploadUrlToAbsolutePath(String(versionRow.snapshot_thumbnail_url || '').trim());
       if (!sourcePath || !fs.existsSync(sourcePath)) sourcePath = String(versionRow.snapshot_source_path || '').trim();
       if (!sourcePath || !fs.existsSync(sourcePath)) {
