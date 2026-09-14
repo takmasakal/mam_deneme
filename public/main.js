@@ -2556,9 +2556,7 @@ async function openAsset(id, workflow, options = {}) {
   let selectedImageVersionId = isImage(asset) ? String(selectedImageVersionIds.get(String(id)) || '').trim() : '';
   if (isImage(asset) && !selectedImageVersionId && Array.isArray(asset.versions) && asset.versions.length) {
     try {
-      const order = JSON.parse(localStorage.getItem(`mam:version-order:${id}`) || '[]');
-      const ordered = [...asset.versions].sort((a, b) => (order.indexOf(a.versionId) < 0 ? 9999 : order.indexOf(a.versionId)) - (order.indexOf(b.versionId) < 0 ? 9999 : order.indexOf(b.versionId)));
-      const top = ordered[0];
+      const top = asset.versions.find((version) => version.versionId === asset.defaultVersionId);
       selectedImageVersionId = String(top?.versionId || '').trim();
       if (top?.snapshotThumbnailUrl) asset.thumbnailUrl = top.snapshotThumbnailUrl;
       if (selectedImageVersionId) selectedImageVersionIds.set(String(id), selectedImageVersionId);

@@ -182,11 +182,10 @@
 
     function renderVersionRow(asset, version, access, interactive) {
       const rowState = getVersionRowState(version, access);
-      if (rowState.actionType === 'pdf_original') return '';
       const changeKindLabel = rowState.actionType === 'pdf_save' ? renderPdfChangeKindLabel(version) : '';
       const cleanNote = cleanVersionNoteText(version.note);
-      const rowClass = rowState.canRestorePdf ? 'version version-restorable' : 'version';
-      const restoreAttr = rowState.canRestorePdf ? ` data-restore-version-id="${escapeHtml(version.versionId)}"` : '';
+      const rowClass = 'version';
+      const restoreAttr = '';
       const downloadButton = rowState.canDownloadVersion
         ? `<button type="button" class="downloadVersionBtn" data-version-id="${escapeHtml(version.versionId)}">${escapeHtml(t('download_version'))}</button>`
         : '';
@@ -195,8 +194,7 @@
         : '';
       const actionBar = (interactive || downloadButton || previewButton) ? `
         <div class="timecode-bar" style="margin-top:8px;">
-          ${access.assetIsPdf ? `<button type="button" class="restorePdfVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canRestorePdf ? '' : 'disabled'}>${escapeHtml(rowState.canRestorePdf ? t('restore_pdf_version') : t('restore_pdf_unavailable'))}</button>` : ''}
-          ${access.assetIsOffice ? `<button type="button" class="restoreOfficeVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canRestoreOffice ? '' : 'disabled'}>${escapeHtml(rowState.canRestoreOffice ? t('restore_office_version') : t('restore_pdf_unavailable'))}</button>` : ''}
+          ${interactive ? `<button type="button" class="defaultVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${asset.defaultVersionId === version.versionId ? 'disabled' : ''}>${asset.defaultVersionId === version.versionId ? 'Varsayılan' : 'Varsayılan yap'}</button>` : ''}
           ${previewButton}
           ${downloadButton}
           ${interactive ? `<button type="button" class="editVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canEditVersion ? '' : 'disabled'}>${escapeHtml(t('edit_version_name'))}</button>` : ''}
@@ -205,7 +203,7 @@
       ` : '';
       return `
         <div class="${rowClass}" draggable="true" data-version-id="${escapeHtml(version.versionId)}"${restoreAttr}>
-          <strong>${escapeHtml(version.label)}</strong> - ${escapeHtml(cleanNote)}<br />
+          <strong>${escapeHtml(version.label)}</strong> <span class="asset-meta">${version.fileRole === 'attachment' || version.actionType === 'attachment' ? 'Ek dosya' : 'Versiyon'}</span> - ${escapeHtml(cleanNote)}<br />
           <span class="asset-meta">${escapeHtml(formatDate(version.createdAt))}</span><br />
           <span class="asset-meta">${escapeHtml(t('version_action'))}: ${escapeHtml(t(`action_${rowState.actionType}`) || String(version.actionType || 'manual'))} | ${escapeHtml(t('version_actor'))}: ${escapeHtml(version.actorUsername || '-')}</span>
           ${changeKindLabel ? `<br /><span class="asset-meta">${escapeHtml(t('version_change_type'))}: ${escapeHtml(changeKindLabel)}</span>` : ''}
@@ -330,21 +328,21 @@
       const { assetIsPdf, assetIsOffice, canViewVersions, canManageVersions } = versionAccess;
       const versionSection = canManageVersions ? `
         <form id="versionForm" class="inline-grid">
-          <h4>${t('add_version')}</h4>
+          <h4>Dosya ekle</h4>
+          <select name="fileRole" aria-label="Dosya rolü"><option value="version">Yeni versiyon (${escapeHtml(asset.versionMimeType || asset.mimeType || '')})</option><option value="attachment">Ek dosya</option></select>
           <input name="label" placeholder="${escapeHtml(t('ph_version_label'))}" />
           <input name="note" placeholder="${t('what_changed')}" />
-          <input name="versionFile" type="file" accept="image/*,.heic,.heif" />
-          <button type="submit">${t('create_version')}</button>
+          <input name="versionFile" type="file" required />
+          <button type="submit">Dosya ekle</button>
         </form>
 
-        <h4>${t('versions')}</h4>
+        <h4>Dosyalar</h4>
         ${(
           (currentUserCanUsePdfAdvancedTools() || (asset.canEditAssetPdf ?? asset.canEditAsset))
           && asset.canDownloadAsset !== false
           && assetIsPdf
         ) ? `
           <div class="timecode-bar" style="margin: 0 0 8px 0;">
-            <button type="button" id="restorePdfOriginalBtn">${escapeHtml(t('restore_pdf_original'))}</button>
             <button type="button" id="downloadPdfOriginalBtn">${escapeHtml(t('download_pdf_original'))}</button>
           </div>
         ` : ''}
@@ -354,7 +352,6 @@
           && assetIsOffice
         ) ? `
           <div class="timecode-bar" style="margin: 0 0 8px 0;">
-            <button type="button" id="restoreOfficeOriginalBtn">${escapeHtml(t('restore_office_original'))}</button>
             <button type="button" id="downloadOfficeOriginalBtn">${escapeHtml(t('download_office_original'))}</button>
           </div>
         ` : ''}
@@ -362,7 +359,7 @@
         ${asset.versions.map((v) => renderVersionRow(asset, v, versionAccess, true)).join('')}
         </div>
       ` : (canViewVersions ? `
-        <h4>${t('versions')}</h4>
+        <h4>Dosyalar</h4>
         <div id="assetVersionsList">
         ${asset.versions.map((v) => renderVersionRow(asset, v, versionAccess, false)).join('')}
         </div>

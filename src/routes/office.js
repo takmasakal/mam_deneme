@@ -146,11 +146,8 @@ function registerOfficeRoutes(app, deps) {
       const loaded = await loadVisibleAssetRow(req, assetId);
       if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
       const row = loaded.row;
-      if (!isOfficeDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name })) {
-        return res.status(400).json({ error: 'LibreOffice preview is supported only for Office assets' });
-      }
 
-      const versionId = String(req.query?.versionId || '').trim();
+      const versionId = String(req.query?.versionId || row.default_version_id || '').trim();
       let previewRow = row;
       if (versionId) {
         const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
@@ -158,6 +155,7 @@ function registerOfficeRoutes(app, deps) {
         if (!version) return res.status(404).json({ error: 'Version not found' });
         previewRow = { ...row, file_name: version.snapshot_file_name, mime_type: version.snapshot_mime_type, source_path: version.snapshot_source_path, media_url: version.snapshot_media_url };
       }
+      if (!isOfficeDocumentCandidate({ mimeType: previewRow.mime_type, fileName: previewRow.file_name })) return res.status(400).json({ error: 'Selected file is not an Office document' });
       const pdfPath = await officeService.ensureOfficePreviewPdf(previewRow);
       res.set('Cache-Control', 'private, max-age=60');
       return res.sendFile(pdfPath);

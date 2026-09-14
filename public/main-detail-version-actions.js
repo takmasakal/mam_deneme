@@ -186,7 +186,11 @@
       rows.forEach((row) => {
         row.addEventListener('dragstart', () => { dragging = row; });
         row.addEventListener('dragover', (event) => { event.preventDefault(); if (dragging && dragging !== row) root.insertBefore(dragging, row); });
-        row.addEventListener('dragend', async () => { dragging = null; const ids = Array.from(root.querySelectorAll('.version[data-version-id]')).map((item) => item.dataset.versionId); localStorage.setItem(`mam:version-order:${asset.id}`, JSON.stringify(ids)); const top = (asset.versions || []).find((item) => String(item.versionId || '') === ids[0]); if (top?.versionId) { try { await fetch(`/api/assets/${encodeURIComponent(asset.id)}/default-version`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ versionId: top.versionId }) }); } catch (_error) {} } document.dispatchEvent(new CustomEvent('mam:version-order-changed', { detail: { assetId: asset.id, thumbnailUrl: top?.snapshotThumbnailUrl || '' } })); });
+        row.addEventListener('dragend', () => {
+          dragging = null;
+          const ids = Array.from(root.querySelectorAll('.version[data-version-id]')).map((item) => item.dataset.versionId);
+          localStorage.setItem(`mam:version-order:${asset.id}`, JSON.stringify(ids));
+        });
       });
 
       const onClick = async (event) => {
@@ -195,13 +199,24 @@
 
         const actionButton = target.closest(
           '.restorePdfVersionBtn, .restoreOfficeVersionBtn, .deleteVersionBtn, '
-          + '.downloadVersionBtn, .previewVersionBtn, .editVersionBtn'
+          + '.downloadVersionBtn, .previewVersionBtn, .editVersionBtn, .defaultVersionBtn'
         );
         if (actionButton) {
           event.preventDefault();
           event.stopPropagation();
           const versionId = getVersionId(actionButton);
-          if (actionButton.matches('.restorePdfVersionBtn')) {
+          if (actionButton.matches('.defaultVersionBtn')) {
+            actionButton.disabled = true;
+            try {
+              await api(`/api/assets/${encodeURIComponent(asset.id)}/default-version`, { method: 'PATCH', body: JSON.stringify({ versionId }) });
+              selectedImageVersionIds.delete(String(asset.id));
+              localStorage.removeItem(`mam:version-thumbnail:${asset.id}`);
+              await refreshAssetDetail(asset.id, workflow);
+            } catch (error) {
+              actionButton.disabled = false;
+              alertError(String(error?.message || error));
+            }
+          } else if (actionButton.matches('.restorePdfVersionBtn')) {
             await restorePdfVersion(asset, workflow, versionId);
           } else if (actionButton.matches('.restoreOfficeVersionBtn')) {
             await restoreOfficeVersion(asset, workflow, versionId);

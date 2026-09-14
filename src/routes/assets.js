@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { validateFileRole } = require('../services/assetFileRoleService');
 const { parseMultipartUpload } = require('../services/multipartUploadParser');
 const { createAdvancedSearchService } = require('../services/advancedSearchService');
 const { createAssetListQueryService } = require('../services/assetListQueryService');
@@ -911,6 +912,8 @@ function registerAssetRoutes(app, deps) {
           asset.proxyUrl = row.default_version_thumbnail_url || row.default_version_media_url;
         } else if (row.default_version_media_url && String(asset.mimeType || '').toLowerCase().startsWith('video/')) {
           asset.proxyUrl = row.default_version_media_url;
+        } else if (row.default_version_media_url) {
+          asset.proxyUrl = '';
         }
         if (includeFileSize) {
           const fileSize = await getAssetFileSize(row);
@@ -1547,7 +1550,7 @@ function registerAssetRoutes(app, deps) {
       }
   
       const versionsResult = await pool.query(
-        'SELECT * FROM asset_versions WHERE asset_id = $1 ORDER BY created_at DESC',
+        "SELECT * FROM asset_versions WHERE asset_id = $1 ORDER BY created_at DESC, CASE WHEN label = 'v1' THEN 1 ELSE 0 END, version_id DESC",
         [req.params.id]
       );
       const cutsResult = await pool.query(
@@ -1556,6 +1559,7 @@ function registerAssetRoutes(app, deps) {
       );
   
       const asset = mapAssetRowForUser(row, loaded.accessContext);
+      asset.versionMimeType = versionsResult.rows[versionsResult.rows.length - 1]?.snapshot_mime_type || row.mime_type;
       asset.fileSizeBytes = await resolveAssetFileSize(row);
       const audioCandidate = isVideoCandidate({
         mimeType: row.mime_type,
@@ -1571,6 +1575,9 @@ function registerAssetRoutes(app, deps) {
         asset.audioStreamOptions = await getMediaAudioStreamOptions(playbackPath);
       }
       asset.versions = versionsResult.rows.map(mapVersionRow);
+      asset.versions.forEach((version) => {
+        version.fileRole = version.actionType === 'attachment' || String(version.snapshotMimeType || '').toLowerCase() !== String(asset.versionMimeType || '').toLowerCase() ? 'attachment' : 'version';
+      });
       const preferredVersion = asset.versions.find((version) => String(version.versionId || '') === String(row.default_version_id || ''));
       if (preferredVersion) {
         asset.defaultVersionId = preferredVersion.versionId;
@@ -1583,6 +1590,8 @@ function registerAssetRoutes(app, deps) {
           asset.proxyUrl = preferredVersion.snapshotThumbnailUrl || preferredVersion.snapshotMediaUrl;
         } else if (preferredVersion.snapshotMediaUrl && String(asset.mimeType || '').toLowerCase().startsWith('video/')) {
           asset.proxyUrl = preferredVersion.snapshotMediaUrl;
+        } else if (preferredVersion.snapshotMediaUrl) {
+          asset.proxyUrl = '';
         }
       } else {
         asset.defaultVersionId = '';
@@ -1596,13 +1605,17 @@ function registerAssetRoutes(app, deps) {
 
   app.patch('/api/assets/:id/default-version', async (req, res) => {
     try {
+      const effective = await resolveEffectivePermissions(req);
       const loaded = await loadVisibleAssetRow(req, req.params.id);
       if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      if (loaded.row.deleted_at || (!assetAccessService.canEditAssetMetadata(loaded.row, loaded.accessContext) && !canCreateVersionForAsset(effective, loaded.row))) return res.status(403).json({ error: 'Forbidden' });
+      if (await rejectIfForeignEditLock(req, res, req.params.id)) return undefined;
       const versionId = String(req.body?.versionId || '').trim();
       if (!versionId) return res.status(400).json({ error: 'versionId is required' });
       const version = await pool.query('SELECT version_id, snapshot_media_url, snapshot_thumbnail_url FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [req.params.id, versionId]);
       if (!version.rowCount) return res.status(404).json({ error: 'Version not found' });
       await pool.query('UPDATE assets SET default_version_id = $1, updated_at = NOW() WHERE id = $2', [versionId, req.params.id]);
+      await recordAuditEvent?.(req, { action: 'asset.default_file_changed', targetType: 'asset', targetId: req.params.id, details: { versionId, previousVersionId: loaded.row.default_version_id || '' } });
       res.json({ saved: true, defaultVersionId: versionId });
     } catch (_error) {
       res.status(500).json({ error: 'Failed to save default version' });
@@ -2071,6 +2084,9 @@ function registerAssetRoutes(app, deps) {
       const replacementFileData = String(req.body?.fileData || '').trim();
       const replacementFileName = sanitizeFileName(String(req.body?.fileName || '').trim());
       const replacementMimeType = String(req.body?.mimeType || row.mime_type || '').trim().toLowerCase();
+      const fileRole = String(req.body?.fileRole || 'version');
+      if (!['version', 'attachment'].includes(fileRole)) return res.status(400).json({ error: 'Invalid file role' });
+      if (!replacementFileData) return res.status(400).json({ error: 'Select a file' });
 
       if (replacementFileData) {
         const isImageReplacement = replacementMimeType.startsWith('image/')
@@ -2078,9 +2094,11 @@ function registerAssetRoutes(app, deps) {
             mimeType: replacementMimeType,
             fileName: replacementFileName
           });
-        if (!replacementFileName || !isImageReplacement) {
-          return res.status(400).json({ error: 'Only image files can replace this asset version' });
-        }
+        if (!replacementFileName) return res.status(400).json({ error: 'File name is required' });
+        const original = await pool.query("SELECT snapshot_mime_type FROM asset_versions WHERE asset_id = $1 ORDER BY created_at ASC, CASE WHEN label = 'v1' THEN 0 ELSE 1 END, version_id ASC LIMIT 1", [row.id]);
+        const versionMimeType = String(original.rows[0]?.snapshot_mime_type || row.mime_type || '').toLowerCase();
+        const roleError = validateFileRole(fileRole, replacementMimeType, versionMimeType);
+        if (roleError) return res.status(400).json({ error: roleError });
 
         let replacementBuffer;
         try {
@@ -2110,16 +2128,22 @@ function registerAssetRoutes(app, deps) {
         const replacementMediaUrl = `/uploads/${ingestStorage.relativeDir.replace(/\\/g, '/')}/${storedName}`;
         fs.writeFileSync(replacementPath, replacementBuffer);
 
-        let replacementProxyUrl = '';
-        let replacementThumbnailUrl = replacementMediaUrl;
-        const derivatives = await imageDerivativeService.ensureImageDerivativesForUpload({
+        const derivatives = isImageReplacement ? await imageDerivativeService.ensureImageDerivativesForUpload({
           mimeType: replacementMimeType,
           fileName: replacementFileName,
           inputPath: replacementPath,
           createdAt: new Date()
-        });
-        replacementProxyUrl = String(derivatives.proxyUrl || '').trim();
-        replacementThumbnailUrl = String(derivatives.thumbnailUrl || replacementProxyUrl || '').trim();
+        }) : {};
+        const replacementProxyUrl = String(derivatives.proxyUrl || '').trim();
+        let replacementThumbnailUrl = String(derivatives.thumbnailUrl || replacementProxyUrl || '').trim();
+        if (!isImageReplacement) {
+          const pdf = isPdfCandidate({ mimeType: replacementMimeType, fileName: replacementFileName });
+          const thumb = buildArtifactPath('thumbnails', `${Date.now()}-${nanoid()}${pdf ? '.jpg' : '.svg'}`, new Date());
+          replacementArtifactPaths.push(thumb.absolutePath);
+          if (pdf) await generatePdfThumbnail(replacementPath, thumb.absolutePath);
+          else await generateDocumentThumbnail(replacementPath, thumb.absolutePath, { fileName: replacementFileName, title: replacementFileName, extLabel: getFileExtension(replacementFileName).toUpperCase(), includeContent: isTextDocumentCandidate({ mimeType: replacementMimeType, fileName: replacementFileName }) });
+          replacementThumbnailUrl = thumb.publicUrl;
+        }
         if (replacementProxyUrl) replacementArtifactPaths.push(publicUploadUrlToAbsolutePath(replacementProxyUrl));
         if (replacementThumbnailUrl) replacementArtifactPaths.push(publicUploadUrlToAbsolutePath(replacementThumbnailUrl));
 
@@ -2137,13 +2161,8 @@ function registerAssetRoutes(app, deps) {
             snapshotThumbnailUrl: replacementThumbnailUrl
           },
           actorUsername,
-          actionType: 'manual',
+          actionType: fileRole === 'attachment' ? 'attachment' : 'manual',
           createdAt
-        };
-        const dcMetadata = {
-          ...(row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {}),
-          identifier: replacementFileName,
-          format: replacementMimeType
         };
         const dbClient = await pool.connect();
         try {
@@ -2173,31 +2192,11 @@ function registerAssetRoutes(app, deps) {
               snapshot: original,
               actorUsername,
               actionType: 'manual',
-              createdAt
+              createdAt: new Date(Date.parse(createdAt) - 1).toISOString()
             });
           }
           await insertVersion(version);
-          await dbClient.query(
-            `
-              UPDATE assets
-              SET file_name = $2,
-                  mime_type = $3,
-                  media_url = $4,
-                  source_path = $5,
-                  file_hash = $6,
-                  proxy_url = $7,
-                  proxy_status = $8,
-                  thumbnail_url = $9,
-                  dc_metadata = $10::jsonb,
-                  updated_at = $11
-              WHERE id = $1
-            `,
-            [
-              req.params.id, replacementFileName, replacementMimeType, replacementMediaUrl, replacementPath,
-              replacementHash, replacementProxyUrl, replacementProxyUrl ? 'ready' : 'not_applicable', replacementThumbnailUrl,
-              JSON.stringify(dcMetadata), version.createdAt
-            ]
-          );
+          await dbClient.query('UPDATE assets SET updated_at = $2 WHERE id = $1', [req.params.id, createdAt]);
           await dbClient.query('COMMIT');
         } catch (error) {
           await dbClient.query('ROLLBACK').catch(() => {});
