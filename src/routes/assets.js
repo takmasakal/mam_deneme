@@ -899,6 +899,7 @@ function registerAssetRoutes(app, deps) {
         const asset = mapAssetRowForUser(row, accessContext);
         if (row.default_version_media_url) asset.mediaUrl = row.default_version_media_url;
         if (row.default_version_thumbnail_url) asset.thumbnailUrl = row.default_version_thumbnail_url;
+        if (row.default_version_media_url) asset.proxyUrl = `/api/assets/${encodeURIComponent(row.id)}/versions/${encodeURIComponent(row.default_version_id)}/preview`;
         if (includeFileSize) {
           const fileSize = await getAssetFileSize(row);
           if (Number.isFinite(fileSize) && fileSize > 0) asset.fileSizeBytes = fileSize;
@@ -1563,6 +1564,7 @@ function registerAssetRoutes(app, deps) {
         asset.defaultVersionId = preferredVersion.versionId;
         asset.mediaUrl = preferredVersion.snapshotMediaUrl || asset.mediaUrl;
         asset.thumbnailUrl = preferredVersion.snapshotThumbnailUrl || asset.thumbnailUrl;
+        if (preferredVersion.snapshotMediaUrl) asset.proxyUrl = `/api/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(preferredVersion.versionId)}/preview`;
       } else {
         asset.defaultVersionId = '';
       }
