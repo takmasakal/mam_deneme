@@ -41,7 +41,10 @@
 
     function previewVersion(asset, versionId) {
       if (!versionId) return;
-      const previewUrl = `/api/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(versionId)}/preview`;
+      const office = Boolean(asset?.isOffice || asset?.office || /office|word|excel|powerpoint|spreadsheet|presentation/i.test(String(asset?.type || asset?.mimeType || asset?.fileName || '')));
+      const previewUrl = office
+        ? `/api/assets/${encodeURIComponent(asset.id)}/libreoffice-preview.pdf?versionId=${encodeURIComponent(versionId)}`
+        : `/api/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(versionId)}/preview`;
       selectedImageVersionIds.set(String(asset.id), versionId);
       const image = assetDetail.querySelector('.image-asset-viewer');
       if (!image) {

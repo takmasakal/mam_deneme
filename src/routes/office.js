@@ -150,7 +150,15 @@ function registerOfficeRoutes(app, deps) {
         return res.status(400).json({ error: 'LibreOffice preview is supported only for Office assets' });
       }
 
-      const pdfPath = await officeService.ensureOfficePreviewPdf(row);
+      const versionId = String(req.query?.versionId || '').trim();
+      let previewRow = row;
+      if (versionId) {
+        const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
+        const version = versionResult.rows[0];
+        if (!version) return res.status(404).json({ error: 'Version not found' });
+        previewRow = { ...row, file_name: version.snapshot_file_name, mime_type: version.snapshot_mime_type, source_path: version.snapshot_source_path, media_url: version.snapshot_media_url };
+      }
+      const pdfPath = await officeService.ensureOfficePreviewPdf(previewRow);
       res.set('Cache-Control', 'private, max-age=60');
       return res.sendFile(pdfPath);
     } catch (error) {
