@@ -49,6 +49,7 @@ function registerAssetRoutes(app, deps) {
     getAdminSettings,
     createAssetRecord,
     isVideoCandidate,
+    inferAssetType,
     computeBufferSha256,
     computeFileSha256,
     computeFileSha256Stream,
@@ -564,6 +565,8 @@ function registerAssetRoutes(app, deps) {
             assets.*,
             (SELECT snapshot_media_url FROM asset_versions v WHERE v.asset_id = assets.id AND v.version_id = assets.default_version_id LIMIT 1) AS default_version_media_url,
             (SELECT snapshot_thumbnail_url FROM asset_versions v WHERE v.asset_id = assets.id AND v.version_id = assets.default_version_id LIMIT 1) AS default_version_thumbnail_url,
+            (SELECT snapshot_file_name FROM asset_versions v WHERE v.asset_id = assets.id AND v.version_id = assets.default_version_id LIMIT 1) AS default_version_file_name,
+            (SELECT snapshot_mime_type FROM asset_versions v WHERE v.asset_id = assets.id AND v.version_id = assets.default_version_id LIMIT 1) AS default_version_mime_type,
             (
               SELECT COALESCE(
                 json_agg(
@@ -892,7 +895,16 @@ function registerAssetRoutes(app, deps) {
         const asset = mapAssetRowForUser(row, accessContext);
         if (row.default_version_media_url) asset.mediaUrl = row.default_version_media_url;
         if (row.default_version_thumbnail_url) asset.thumbnailUrl = row.default_version_thumbnail_url;
-        if (row.default_version_media_url) asset.proxyUrl = `/api/assets/${encodeURIComponent(row.id)}/versions/${encodeURIComponent(row.default_version_id)}/preview`;
+        if (row.default_version_file_name) asset.fileName = row.default_version_file_name;
+        if (row.default_version_mime_type) {
+          asset.mimeType = row.default_version_mime_type;
+          asset.type = inferAssetType('', asset.mimeType, asset.fileName);
+        }
+        if (row.default_version_media_url && String(asset.mimeType || '').toLowerCase().startsWith('image/')) {
+          asset.proxyUrl = `/api/assets/${encodeURIComponent(row.id)}/versions/${encodeURIComponent(row.default_version_id)}/preview`;
+        } else if (row.default_version_media_url && String(asset.mimeType || '').toLowerCase().startsWith('video/')) {
+          asset.proxyUrl = row.default_version_media_url;
+        }
         if (includeFileSize) {
           const fileSize = await getAssetFileSize(row);
           if (Number.isFinite(fileSize) && fileSize > 0) asset.fileSizeBytes = fileSize;
@@ -1530,7 +1542,14 @@ function registerAssetRoutes(app, deps) {
         asset.defaultVersionId = preferredVersion.versionId;
         asset.mediaUrl = preferredVersion.snapshotMediaUrl || asset.mediaUrl;
         asset.thumbnailUrl = preferredVersion.snapshotThumbnailUrl || asset.thumbnailUrl;
-        if (preferredVersion.snapshotMediaUrl) asset.proxyUrl = `/api/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(preferredVersion.versionId)}/preview`;
+        asset.fileName = preferredVersion.snapshotFileName || asset.fileName;
+        asset.mimeType = preferredVersion.snapshotMimeType || asset.mimeType;
+        asset.type = inferAssetType('', asset.mimeType, asset.fileName);
+        if (preferredVersion.snapshotMediaUrl && String(asset.mimeType || '').toLowerCase().startsWith('image/')) {
+          asset.proxyUrl = `/api/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(preferredVersion.versionId)}/preview`;
+        } else if (preferredVersion.snapshotMediaUrl && String(asset.mimeType || '').toLowerCase().startsWith('video/')) {
+          asset.proxyUrl = preferredVersion.snapshotMediaUrl;
+        }
       } else {
         asset.defaultVersionId = '';
       }
@@ -2284,7 +2303,7 @@ function registerAssetRoutes(app, deps) {
       }
       if (!sourcePath || !fs.existsSync(sourcePath)) return res.status(404).json({ error: 'Version snapshot file is missing on disk' });
 
-      res.type(mimeType);
+      res.type(path.extname(sourcePath) || mimeType);
       res.set('Accept-Ranges', 'bytes');
       res.set('Cache-Control', 'private, no-store');
       res.set('Content-Disposition', 'inline');
