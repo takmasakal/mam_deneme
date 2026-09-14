@@ -1529,7 +1529,6 @@ function registerAssetRoutes(app, deps) {
         asset.defaultVersionId = preferredVersion.versionId;
         asset.mediaUrl = preferredVersion.snapshotMediaUrl || asset.mediaUrl;
         asset.thumbnailUrl = preferredVersion.snapshotThumbnailUrl || asset.thumbnailUrl;
-        if (preferredVersion.snapshotMediaUrl) asset.proxyUrl = preferredVersion.snapshotMediaUrl;
       } else {
         asset.defaultVersionId = '';
       }
