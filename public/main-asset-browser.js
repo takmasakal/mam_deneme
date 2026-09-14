@@ -69,6 +69,7 @@
     }
 
 function thumbnailMarkup(asset) {
+  try { const saved = localStorage.getItem(`mam:version-thumbnail:${asset?.id}`); if (saved) asset = { ...asset, thumbnailUrl: saved }; } catch (_error) {}
   const isSelected = String(asset?.id || '') === String(selectedAssetIdRef?.get?.() || '');
   const imageLoading = isSelected ? 'eager' : 'lazy';
   const imagePriority = isSelected ? ' fetchpriority="high"' : '';

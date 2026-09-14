@@ -58,6 +58,8 @@ const SESSION_VIDEO_TOOLS_RETURN_SEARCH = 'mam.videoTools.returnSearch';
 const selectedImageVersionIds = new Map();
 document.addEventListener('mam:version-order-changed', (event) => {
   const asset = currentAssets.find((item) => String(item.id) === String(event.detail?.assetId));
+  if (asset && event.detail?.thumbnailUrl) asset.thumbnailUrl = event.detail.thumbnailUrl;
+  if (event.detail?.thumbnailUrl) localStorage.setItem(`mam:version-thumbnail:${event.detail.assetId}`, event.detail.thumbnailUrl);
   if (asset?.versions?.length) {
     try { const order = JSON.parse(localStorage.getItem(`mam:version-order:${asset.id}`) || '[]'); const top = [...asset.versions].sort((a,b) => (order.indexOf(a.versionId) < 0 ? 9999 : order.indexOf(a.versionId)) - (order.indexOf(b.versionId) < 0 ? 9999 : order.indexOf(b.versionId)))[0]; if (top?.snapshotThumbnailUrl) asset.thumbnailUrl = top.snapshotThumbnailUrl; } catch (_error) {}
   }
