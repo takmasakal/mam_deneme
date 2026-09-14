@@ -120,6 +120,16 @@ async function run() {
   assert.deepStrictEqual(JSON.parse(apiCalls[0].options.body), { versionId: 'version-2' });
   assert.strictEqual(refreshCalls, 1);
 
+  global.localStorage = { removeItem() {} };
+  const makeDefault = makeButton('defaultVersionBtn', 'version-pdf');
+  await listener({ target: makeDefault, preventDefault() {}, stopPropagation() {} });
+  assert.strictEqual(apiCalls.length, 2, 'default selection makes one request');
+  assert.strictEqual(apiCalls[1].url, '/api/assets/asset-1/default-version');
+  assert.strictEqual(apiCalls[1].options.method, 'PATCH');
+  assert.strictEqual(refreshCalls, 2);
+  assert.strictEqual(selected.has('asset-1'), false);
+  delete global.localStorage;
+
   console.log('main detail version actions tests passed');
 }
 

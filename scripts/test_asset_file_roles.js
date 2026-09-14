@@ -1,0 +1,10 @@
+const assert = require('node:assert/strict');
+const { validateFileRole } = require('../src/services/assetFileRoleService');
+assert.equal(validateFileRole('version', 'application/pdf', 'application/pdf'), '');
+assert.notEqual(validateFileRole('version', 'image/jpeg', 'application/pdf'), '');
+assert.notEqual(validateFileRole('version', 'image/png', 'image/jpeg'), '');
+assert.equal(validateFileRole('attachment', 'image/jpeg', 'application/pdf'), '');
+assert.equal(validateFileRole('attachment', 'application/pdf', 'image/jpeg'), '');
+assert.equal(validateFileRole('version', 'APPLICATION/PDF', 'application/pdf'), '');
+assert.notEqual(validateFileRole('other', 'application/pdf', 'application/pdf'), '');
+console.log('asset file role tests passed');
