@@ -66,7 +66,11 @@
         return;
       }
       selectedImageVersionIds.delete(String(asset.id));
-      const viewerUrl = `/pdf-viewer.html?file=${encodeURIComponent(previewUrl)}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang())}&pdfAdvanced=0`;
+      const snapshotMediaUrl = String(version?.snapshotMediaUrl || version?.mediaUrl || '').trim();
+      const viewerFileUrl = !office && snapshotMediaUrl.startsWith('/uploads/')
+        ? snapshotMediaUrl
+        : previewUrl;
+      const viewerUrl = `/pdf-viewer.html?file=${encodeURIComponent(viewerFileUrl)}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang())}&pdfAdvanced=0`;
       if (frame) {
         frame.src = viewerUrl;
         frame.dataset.versionId = versionId;
