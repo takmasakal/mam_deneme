@@ -150,6 +150,15 @@
       if (!root) return () => {};
       activeBindings.get(root)?.();
       const { asset, workflow } = context;
+      const rows = Array.from(root.querySelectorAll('.version[data-version-id]'));
+      let order = []; try { order = JSON.parse(localStorage.getItem(`mam:version-order:${asset.id}`) || '[]'); } catch (_error) {}
+      rows.sort((a, b) => (order.indexOf(a.dataset.versionId) < 0 ? 9999 : order.indexOf(a.dataset.versionId)) - (order.indexOf(b.dataset.versionId) < 0 ? 9999 : order.indexOf(b.dataset.versionId))).forEach((row) => root.appendChild(row));
+      let dragging = null;
+      rows.forEach((row) => {
+        row.addEventListener('dragstart', () => { dragging = row; });
+        row.addEventListener('dragover', (event) => { event.preventDefault(); if (dragging && dragging !== row) root.insertBefore(dragging, row); });
+        row.addEventListener('dragend', () => { dragging = null; localStorage.setItem(`mam:version-order:${asset.id}`, JSON.stringify(Array.from(root.querySelectorAll('.version[data-version-id]')).map((item) => item.dataset.versionId))); });
+      });
 
       const onClick = async (event) => {
         const target = event.target?.closest ? event.target : event.target?.parentElement;

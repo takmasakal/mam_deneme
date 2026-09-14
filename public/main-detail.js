@@ -203,7 +203,7 @@
         </div>
       ` : '';
       return `
-        <div class="${rowClass}" data-version-id="${escapeHtml(version.versionId)}"${restoreAttr}>
+        <div class="${rowClass}" draggable="true" data-version-id="${escapeHtml(version.versionId)}"${restoreAttr}>
           <strong>${escapeHtml(version.label)}</strong> - ${escapeHtml(cleanNote)}<br />
           <span class="asset-meta">${escapeHtml(formatDate(version.createdAt))}</span><br />
           <span class="asset-meta">${escapeHtml(t('version_action'))}: ${escapeHtml(t(`action_${rowState.actionType}`) || String(version.actionType || 'manual'))} | ${escapeHtml(t('version_actor'))}: ${escapeHtml(version.actorUsername || '-')}</span>
