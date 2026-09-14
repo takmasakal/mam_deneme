@@ -7042,6 +7042,7 @@ registerAssetRoutes(app, {
   buildUserContextFromRequest,
   createAssetRecord,
   isVideoCandidate,
+  inferAssetType,
     computeBufferSha256,
     computeFileSha256,
     computeFileSha256Stream,
