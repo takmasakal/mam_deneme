@@ -1560,6 +1560,16 @@ function registerAssetRoutes(app, deps) {
       if (loaded.status !== 200) {
         return res.status(loaded.status).json({ error: loaded.error });
       }
+      if (loaded.row.default_version_id) {
+        const preferred = await pool.query('SELECT snapshot_source_path, snapshot_media_url, snapshot_file_name FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [req.params.id, loaded.row.default_version_id]);
+        const snapshot = preferred.rows[0];
+        if (snapshot?.snapshot_media_url) {
+          const snapshotPath = String(snapshot.snapshot_source_path || '') || publicUploadUrlToAbsolutePath(snapshot.snapshot_media_url);
+          if (snapshotPath && fs.existsSync(snapshotPath)) {
+            return res.sendFile(snapshotPath);
+          }
+        }
+      }
       auditDownloadResponse(req, res, loaded.row, {
         source: 'api_asset_file',
         transport: 'api',
