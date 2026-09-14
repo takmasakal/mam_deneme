@@ -69,6 +69,7 @@
     }
 
 function thumbnailMarkup(asset) {
+  try { const saved = localStorage.getItem(`mam:version-thumbnail:${asset?.id}`); if (saved) asset = { ...asset, thumbnailUrl: saved }; } catch (_error) {}
   const thumbSrc = escapeHtml(asset.thumbnailUrl || '');
   const declaredType = String(asset?.type || '').trim().toLowerCase();
   if (declaredType === 'other' || declaredType === 'file') {
