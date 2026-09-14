@@ -2373,6 +2373,7 @@ const detailVersionActionsModule = window.createMainDetailVersionActions({
 
 const detailAssetActionsModule = window.createMainDetailAssetActions({
   api,
+  showShortcutToast,
   t,
   serializeForm,
   extractDcMetadataFromPayload,

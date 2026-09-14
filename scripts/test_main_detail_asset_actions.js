@@ -19,15 +19,29 @@ function makeRoot() {
 
 async function run() {
   const apiCalls = [];
+  const notifications = [];
   let refreshCount = 0;
   const root = makeRoot();
   const module = createMainDetailAssetActions({
+    showShortcutToast: (message) => notifications.push(message),
     api: async (url, options) => {
       apiCalls.push({ url, options });
       return {};
     },
     t: (key) => key,
-    serializeForm: () => ({ title: 'Updated title', dcTitle: 'DC title' }),
+    serializeForm: (form) => form?.id === 'assetVisibilityForm'
+      ? {
+          visibility: 'owner_groups',
+          allowedGroups: 'team-a, team-b',
+          allowedUsers: 'user-a',
+          deniedGroups: '',
+          deniedUsers: '',
+          editAllowedGroups: '',
+          editAllowedUsers: '',
+          editDeniedGroups: '',
+          editDeniedUsers: ''
+        }
+      : ({ title: 'Updated title', dcTitle: 'DC title', ...(form.fileRole ? { fileRole: form.fileRole } : {}) }),
     extractDcMetadataFromPayload: () => ({ dc_title: 'DC title' }),
     readFileAsBase64: async () => 'data:application/octet-stream;base64,AA==',
     refreshAssetDetail: async () => { refreshCount += 1; },
@@ -90,8 +104,12 @@ async function run() {
     target: ensureProxyButton,
     preventDefault() {}
   });
-  assert.strictEqual(apiCalls[2].url, '/api/assets/asset-1/ensure-proxy');
-  assert.strictEqual(refreshCount, 3);
+  assert.strictEqual(apiCalls[3].url, '/api/assets/asset-1/ensure-proxy');
+  assert.strictEqual(refreshCount, 4);
+  for (const fileRole of ['attachment', 'version']) {
+    await root.listeners.submit({ target: { id: 'versionForm', fileRole }, preventDefault() {} });
+  }
+  assert.deepStrictEqual(notifications, ['Dosya eklendi', 'Versiyon eklendi']);
 
   console.log('main detail asset actions tests passed');
 }

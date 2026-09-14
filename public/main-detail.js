@@ -326,6 +326,16 @@
 
       const versionAccess = getVersionSectionAccess(asset);
       const { assetIsPdf, assetIsOffice, canViewVersions, canManageVersions } = versionAccess;
+      const fileGroups = () => [
+        { attachment: false, title: 'Versiyonlar', empty: 'Henüz versiyon yok.' },
+        { attachment: true, title: 'Ek dosyalar', empty: 'Henüz ek dosya yok.' }
+      ].map((group) => {
+        const files = (asset.versions || []).filter((file) => (file.fileRole === 'attachment' || file.actionType === 'attachment') === group.attachment);
+        return `<section class="asset-file-group" style="border:1px solid var(--border, #414141);border-radius:8px;padding:12px;margin-top:12px;">
+          <h4>${group.title}</h4>
+          <div data-file-group="${group.attachment ? 'attachment' : 'version'}">${files.length ? files.map((file) => renderVersionRow(asset, file, versionAccess, canManageVersions)).join('') : `<p class="asset-meta">${group.empty}</p>`}</div>
+        </section>`;
+      }).join('');
       const versionSection = canManageVersions ? `
         <form id="versionForm" class="inline-grid">
           <h4>Dosya ekle</h4>
@@ -356,12 +366,12 @@
           </div>
         ` : ''}
         <div id="assetVersionsList">
-        ${asset.versions.map((v) => renderVersionRow(asset, v, versionAccess, true)).join('')}
+        ${fileGroups()}
         </div>
       ` : (canViewVersions ? `
         <h4>Dosyalar</h4>
         <div id="assetVersionsList">
-        ${asset.versions.map((v) => renderVersionRow(asset, v, versionAccess, false)).join('')}
+        ${fileGroups()}
         </div>
       ` : '');
 

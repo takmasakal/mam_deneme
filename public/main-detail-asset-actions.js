@@ -2,6 +2,7 @@
   function createMainDetailAssetActions(deps = {}) {
     const {
       api,
+      showShortcutToast,
       t,
       serializeForm,
       extractDcMetadataFromPayload,
@@ -95,6 +96,7 @@
         method: 'POST',
         body: JSON.stringify(payload)
       });
+      showShortcutToast?.(payload.fileRole === 'attachment' ? 'Dosya eklendi' : 'Versiyon eklendi', { type: 'success' });
       await refresh(asset, workflow);
     }
 

@@ -181,11 +181,11 @@
       const { asset, workflow } = context;
       const rows = Array.from(root.querySelectorAll('.version[data-version-id]'));
       let order = []; try { order = JSON.parse(localStorage.getItem(`mam:version-order:${asset.id}`) || '[]'); } catch (_error) {}
-      rows.sort((a, b) => (order.indexOf(a.dataset.versionId) < 0 ? 9999 : order.indexOf(a.dataset.versionId)) - (order.indexOf(b.dataset.versionId) < 0 ? 9999 : order.indexOf(b.dataset.versionId))).forEach((row) => root.appendChild(row));
+      rows.sort((a, b) => (order.indexOf(a.dataset.versionId) < 0 ? 9999 : order.indexOf(a.dataset.versionId)) - (order.indexOf(b.dataset.versionId) < 0 ? 9999 : order.indexOf(b.dataset.versionId))).forEach((row) => row.parentElement.appendChild(row));
       let dragging = null;
       rows.forEach((row) => {
         row.addEventListener('dragstart', () => { dragging = row; });
-        row.addEventListener('dragover', (event) => { event.preventDefault(); if (dragging && dragging !== row) root.insertBefore(dragging, row); });
+        row.addEventListener('dragover', (event) => { if (dragging && dragging !== row && dragging.parentElement === row.parentElement) { event.preventDefault(); row.parentElement.insertBefore(dragging, row); } });
         row.addEventListener('dragend', () => {
           dragging = null;
           const ids = Array.from(root.querySelectorAll('.version[data-version-id]')).map((item) => item.dataset.versionId);
