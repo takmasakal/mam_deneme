@@ -157,7 +157,7 @@
       rows.forEach((row) => {
         row.addEventListener('dragstart', () => { dragging = row; });
         row.addEventListener('dragover', (event) => { event.preventDefault(); if (dragging && dragging !== row) root.insertBefore(dragging, row); });
-        row.addEventListener('dragend', () => { dragging = null; localStorage.setItem(`mam:version-order:${asset.id}`, JSON.stringify(Array.from(root.querySelectorAll('.version[data-version-id]')).map((item) => item.dataset.versionId))); });
+        row.addEventListener('dragend', () => { dragging = null; localStorage.setItem(`mam:version-order:${asset.id}`, JSON.stringify(Array.from(root.querySelectorAll('.version[data-version-id]')).map((item) => item.dataset.versionId))); document.dispatchEvent(new CustomEvent('mam:version-order-changed', { detail: { assetId: asset.id } })); });
       });
 
       const onClick = async (event) => {

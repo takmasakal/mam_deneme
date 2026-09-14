@@ -56,6 +56,13 @@ const LOCAL_DETAIL_VIDEO_PIN = 'mam.detail.video.pin';
 const LOCAL_SUBTITLE_FONT_SIZE = 'mam.subtitle.fontSize';
 const SESSION_VIDEO_TOOLS_RETURN_SEARCH = 'mam.videoTools.returnSearch';
 const selectedImageVersionIds = new Map();
+document.addEventListener('mam:version-order-changed', (event) => {
+  const asset = currentAssets.find((item) => String(item.id) === String(event.detail?.assetId));
+  if (asset?.versions?.length) {
+    try { const order = JSON.parse(localStorage.getItem(`mam:version-order:${asset.id}`) || '[]'); const top = [...asset.versions].sort((a,b) => (order.indexOf(a.versionId) < 0 ? 9999 : order.indexOf(a.versionId)) - (order.indexOf(b.versionId) < 0 ? 9999 : order.indexOf(b.versionId)))[0]; if (top?.snapshotThumbnailUrl) asset.thumbnailUrl = top.snapshotThumbnailUrl; } catch (_error) {}
+  }
+  renderAssets(currentAssets);
+});
 const I18N_PATH = '/i18n.json';
 const DETAIL_PANEL_BASE_MIN_PX = 377;
 const PLAYER_FPS = 25;
