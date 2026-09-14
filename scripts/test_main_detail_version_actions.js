@@ -21,6 +21,7 @@ async function run() {
   let listenerCount = 0;
   let removedListenerCount = 0;
   const root = {
+    querySelectorAll() { return []; },
     addEventListener(type, callback, capture) {
       assert.strictEqual(type, 'click');
       assert.strictEqual(capture, true);

@@ -42,20 +42,45 @@
 
     function previewVersion(asset, versionId) {
       if (!versionId) return;
-      const office = Boolean(asset?.isOffice || asset?.office || /office|word|excel|powerpoint|spreadsheet|presentation/i.test(String(asset?.type || asset?.mimeType || asset?.fileName || '')));
       const version = (asset?.versions || []).find((item) => String(item?.versionId || item?.version_id) === versionId);
+      const versionMime = String(version?.snapshotMimeType || version?.mimeType || asset?.mimeType || '').toLowerCase();
+      const versionFileName = String(version?.snapshotFileName || version?.fileName || asset?.fileName || '');
+      const office = /officedocument|msword|ms-excel|ms-powerpoint/i.test(versionMime)
+        || /\.(docx?|xlsx?|pptx?)$/i.test(versionFileName);
+      const imageVersion = versionMime.startsWith('image/');
       showShortcutToast?.(`${version?.label || version?.versionLabel || versionId} önizlemesi yüklendi`, { type: 'success' });
       const previewUrl = office
         ? `/api/assets/${encodeURIComponent(asset.id)}/libreoffice-preview.pdf?versionId=${encodeURIComponent(versionId)}`
         : `/api/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(versionId)}/preview`;
-      selectedImageVersionIds.set(String(asset.id), versionId);
       const image = assetDetail.querySelector('.image-asset-viewer');
-      if (!image) {
-        global.open?.(previewUrl, '_blank', 'noopener,noreferrer');
+      const frame = assetDetail.querySelector('#pdfViewerFrame, #docViewerFrame');
+      if (imageVersion || (image && !versionMime)) {
+        selectedImageVersionIds.set(String(asset.id), versionId);
+        if (image) {
+          image.src = previewUrl;
+          image.dataset.versionId = versionId;
+        } else if (frame) {
+          frame.src = previewUrl;
+          frame.dataset.versionId = versionId;
+        }
         return;
       }
-      image.src = previewUrl;
-      image.dataset.versionId = versionId;
+      selectedImageVersionIds.delete(String(asset.id));
+      const viewerUrl = `/pdf-viewer.html?file=${encodeURIComponent(previewUrl)}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang())}&pdfAdvanced=0`;
+      if (frame) {
+        frame.src = viewerUrl;
+        frame.dataset.versionId = versionId;
+        return;
+      }
+      if (image?.replaceWith) {
+        const replacement = documentRef.createElement('iframe');
+        replacement.id = 'pdfViewerFrame';
+        replacement.className = 'asset-viewer pdf-viewer-frame';
+        replacement.title = 'Version Preview';
+        replacement.src = viewerUrl;
+        replacement.dataset.versionId = versionId;
+        image.replaceWith(replacement);
+      }
     }
 
     async function restorePdfVersion(asset, workflow, versionId) {
