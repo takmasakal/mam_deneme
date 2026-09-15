@@ -225,6 +225,16 @@ app.post('/api/assets/:id/pdf/save', async (req, res) => {
     const loaded = await loadVisibleAssetRow(req, assetId);
     if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
     const row = loaded.row;
+    const sourceVersionId = String(req.body?.sourceVersionId || '').trim();
+    if (sourceVersionId) {
+      const result = await pool.query('SELECT action_type, snapshot_mime_type FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, sourceVersionId]);
+      const source = result.rows[0];
+      if (!source) return res.status(404).json({ error: 'File not found' });
+      const original = await pool.query("SELECT snapshot_mime_type FROM asset_versions WHERE asset_id = $1 ORDER BY created_at ASC, CASE WHEN label = 'v1' THEN 0 ELSE 1 END, version_id ASC LIMIT 1", [assetId]);
+      if (source.action_type === 'attachment' || String(source.snapshot_mime_type || '').toLowerCase() !== String(original.rows[0]?.snapshot_mime_type || row.mime_type || '').toLowerCase()) {
+        return res.status(403).json({ error: 'Attachment is read-only', code: 'ATTACHMENT_READ_ONLY' });
+      }
+    }
     if (!canUsePdfAdvancedOrEditAsset(req, loaded)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
