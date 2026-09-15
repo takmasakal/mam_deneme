@@ -49,6 +49,7 @@
       const office = /officedocument|msword|ms-excel|ms-powerpoint/i.test(versionMime)
         || /\.(docx?|xlsx?|pptx?)$/i.test(versionFileName);
       const imageVersion = versionMime.startsWith('image/');
+      const attachment = version?.fileRole === 'attachment' || version?.actionType === 'attachment';
       const host = assetDetail.querySelector('[data-detail-file-preview]');
       if (host) {
         const mediaUrl = String(version?.snapshotMediaUrl || '').trim();
@@ -67,6 +68,7 @@
         if (isAudio || isVideo) { target.controls = true; target.preload = 'metadata'; }
         const fileUrl = office ? `/api/assets/${encodeURIComponent(asset.id)}/libreoffice-preview.pdf?versionId=${encodeURIComponent(versionId)}` : mediaUrl;
         target.src = imageVersion ? `/api/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(versionId)}/preview` : isAudio || isVideo ? mediaUrl : `/pdf-viewer.html?file=${encodeURIComponent(fileUrl)}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang())}&pdfAdvanced=0`;
+        if (attachment && target.src.startsWith('/pdf-viewer.html?')) target.src += '&attachment=1';
         const wrapper = documentRef.createElement('div');
         wrapper.className = 'viewer-resizable';
         wrapper.appendChild(target);
@@ -99,7 +101,7 @@
       const viewerFileUrl = !office && snapshotMediaUrl.startsWith('/uploads/')
         ? snapshotMediaUrl
         : previewUrl;
-      const viewerUrl = `/pdf-viewer.html?file=${encodeURIComponent(viewerFileUrl)}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang())}&pdfAdvanced=0`;
+      const viewerUrl = `/pdf-viewer.html?file=${encodeURIComponent(viewerFileUrl)}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang())}&pdfAdvanced=0${attachment ? '&attachment=1' : ''}`;
       if (frame) {
         frame.src = viewerUrl;
         frame.dataset.versionId = versionId;
