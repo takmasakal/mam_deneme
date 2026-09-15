@@ -900,8 +900,22 @@ function registerAssetRoutes(app, deps) {
         hydratedRows.push(await ensureDocumentThumbnailForRow(withPdfThumb));
       }
       const includeFileSize = fileSizeRange.active || isFileSizeSort;
+      const attachmentSummaries = new Map();
+      if ((q || (advancedActive && advancedDefinition?.values?.q)) && hydratedRows.length) {
+        const result = await pool.query(`SELECT av.asset_id, av.version_id, av.label, av.note, av.snapshot_file_name
+          FROM asset_versions av JOIN assets a ON a.id = av.asset_id
+          WHERE av.asset_id = ANY($1::text[]) AND (av.action_type = 'attachment' OR av.snapshot_mime_type <> COALESCE(
+            (SELECT v.snapshot_mime_type FROM asset_versions v WHERE v.asset_id = av.asset_id ORDER BY v.created_at ASC, CASE WHEN v.label = 'v1' THEN 0 ELSE 1 END, v.version_id ASC LIMIT 1), a.mime_type))
+          ORDER BY av.created_at DESC`, [hydratedRows.map((row) => row.id)]);
+        for (const file of result.rows) {
+          const items = attachmentSummaries.get(file.asset_id) || [];
+          items.push({ versionId: file.version_id, label: file.label, note: file.note, fileName: file.snapshot_file_name });
+          attachmentSummaries.set(file.asset_id, items);
+        }
+      }
       const responseAssets = await Promise.all(hydratedRows.map(async (row) => {
         const asset = mapAssetRowForUser(row, accessContext);
+        asset.attachmentSearchItems = attachmentSummaries.get(row.id) || [];
         if (row.default_version_media_url) asset.mediaUrl = row.default_version_media_url;
         if (row.default_version_thumbnail_url) asset.thumbnailUrl = row.default_version_thumbnail_url;
         if (row.default_version_file_name) asset.fileName = row.default_version_file_name;

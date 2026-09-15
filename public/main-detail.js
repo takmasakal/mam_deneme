@@ -181,6 +181,9 @@
 
     function renderVersionRow(asset, version, access, interactive) {
       const attachment = version.fileRole === 'attachment' || version.actionType === 'attachment';
+      const renderFileText = (value) => attachment
+        ? highlightMatch(String(value || ''), currentSearchHighlightQuery(), effectiveSearchHighlightClass(currentSearchQuery(), currentSearchHighlightQuery(), currentSearchFuzzyUsed()))
+        : escapeHtml(value || '');
       const rowState = getVersionRowState(version, access);
       const changeKindLabel = rowState.actionType === 'pdf_save' ? renderPdfChangeKindLabel(version) : '';
       const cleanNote = cleanVersionNoteText(version.note);
@@ -203,7 +206,8 @@
       ` : '';
       return `
         <div class="${rowClass}" draggable="true" data-version-id="${escapeHtml(version.versionId)}"${restoreAttr}>
-          <strong>${escapeHtml(version.label)}</strong> <span class="asset-meta">${version.fileRole === 'attachment' || version.actionType === 'attachment' ? 'Ek dosya' : 'Versiyon'}</span> - ${escapeHtml(cleanNote)}<br />
+          <strong>${renderFileText(version.label)}</strong> <span class="asset-meta">${attachment ? 'Ek dosya' : 'Versiyon'}</span> - ${renderFileText(cleanNote)}<br />
+          ${attachment && version.snapshotFileName ? `<span class="asset-meta">Dosya adı: ${renderFileText(version.snapshotFileName)}</span><br />` : ''}
           <span class="asset-meta">${escapeHtml(formatDate(version.createdAt))}</span><br />
           <span class="asset-meta">${escapeHtml(t('version_action'))}: ${escapeHtml(t(`action_${rowState.actionType}`) || String(version.actionType || 'manual'))} | ${escapeHtml(t('version_actor'))}: ${escapeHtml(version.actorUsername || '-')}</span>
           ${changeKindLabel ? `<br /><span class="asset-meta">${escapeHtml(t('version_change_type'))}: ${escapeHtml(changeKindLabel)}</span>` : ''}

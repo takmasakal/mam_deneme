@@ -205,6 +205,7 @@ function assetRenderKey(asset, searchState, searchHighlightClass) {
     fileSizeBytes: asset?.fileSizeBytes || '',
     tags: asset?.tags || [],
     metadata: asset?.metadata || {},
+    attachmentSearchItems: asset?.attachmentSearchItems || [],
     dc: asset?.dc || {},
     ocrHits: (asset?.ocrSearchHits || []).map(compactAssetHit),
     subtitleHits: (asset?.subtitleSearchHits || []).map(compactAssetHit),
