@@ -97,4 +97,14 @@ const asset = {
   assert.match(html, /duration: 90s \| file_size: 5\.00 MB/);
 }
 
+{
+  const renderer = createRenderer({});
+  const withAttachment = { ...asset, attachmentSearchItems: [{ label: 'Ek rapor', note: '<script>rapor</script>', fileName: 'rapor.pdf' }] };
+  const html = renderer.render(withAttachment, { currentSearchQuery: 'rapor' });
+  assert.match(html, /Ek dosya · Ek rapor · Ad:/);
+  assert.match(html, /Açıklama:.*<mark>&lt;script&gt;rapor&lt;\/script&gt;<\/mark>/);
+  assert.match(html, /Dosya adı:.*<mark>rapor.pdf<\/mark>/);
+  assert.doesNotMatch(html, /<script>/);
+  assert.doesNotMatch(renderer.render(withAttachment, {}), /Ek dosya ·/);
+}
 console.log('mainAssetCard tests passed');

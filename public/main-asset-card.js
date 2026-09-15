@@ -52,6 +52,14 @@
       const metadataHits = hasTextSearch
         ? metadataHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass)
         : '';
+      const attachmentHits = hasTextSearch ? (asset.attachmentSearchItems || []).flatMap((file) => {
+        return [['Ad', file.label], ['Açıklama', file.note], ['Dosya adı', file.fileName]].flatMap(([field, value]) => {
+          if (!value) return [];
+          const highlighted = renderText(value);
+          if (highlighted === escapeHtml(value)) return [];
+          return [`<div class="asset-meta dc-hit-row"><span>Ek dosya · ${escapeHtml(file.label || file.fileName || '')} · ${field}: </span>${highlighted}</div>`];
+        });
+      }).join('') : '';
       const dcHits = hasTextSearch
         ? dcHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass)
         : '';
@@ -143,6 +151,7 @@
             <div class="asset-meta">${renderText(asset.type)} | ${renderText(asset.owner)}</div>
             ${mediaInfoRow}
             ${metadataHits ? `<div class="asset-meta dc-hit-row">${metadataHits}</div>` : ''}
+            ${attachmentHits}
             ${tagHits ? `<div class="asset-meta dc-hit-row">${tagHits}</div>` : ''}
             ${dcHits ? `<div class="asset-meta dc-hit-row">${dcHits}</div>` : ''}
             ${clipHits ? `<div class="asset-meta dc-hit-row">${clipHits}</div>` : ''}
