@@ -104,8 +104,8 @@ async function run() {
     target: ensureProxyButton,
     preventDefault() {}
   });
-  assert.strictEqual(apiCalls[3].url, '/api/assets/asset-1/ensure-proxy');
-  assert.strictEqual(refreshCount, 4);
+  assert.strictEqual(apiCalls[2].url, '/api/assets/asset-1/ensure-proxy');
+  assert.strictEqual(refreshCount, 3);
   for (const fileRole of ['attachment', 'version']) {
     await root.listeners.submit({ target: { id: 'versionForm', fileRole }, preventDefault() {} });
   }

@@ -14,6 +14,7 @@
       canUsePdfAdvancedTools,
       selectedImageVersionIds,
       assetDetail,
+      cleanupPreview = () => {},
       documentRef = global.document,
       confirmAction = global.confirm?.bind(global),
       alertError = global.alert?.bind(global),
@@ -48,6 +49,34 @@
       const office = /officedocument|msword|ms-excel|ms-powerpoint/i.test(versionMime)
         || /\.(docx?|xlsx?|pptx?)$/i.test(versionFileName);
       const imageVersion = versionMime.startsWith('image/');
+      const host = assetDetail.querySelector('[data-detail-file-preview]');
+      if (host) {
+        const mediaUrl = String(version?.snapshotMediaUrl || '').trim();
+        if (!mediaUrl.startsWith('/uploads/')) { alertError('Önizleme mevcut değil'); return; }
+        const isAudio = versionMime.startsWith('audio/');
+        const isVideo = versionMime.startsWith('video/');
+        const pdf = versionMime === 'application/pdf';
+        if (!imageVersion && !isAudio && !isVideo && !pdf && !office) { alertError('Bu dosya türü önizlenemiyor'); return; }
+        cleanupPreview();
+        host.querySelectorAll('audio, video').forEach((media) => media.pause());
+        const target = documentRef.createElement(imageVersion ? 'img' : isAudio ? 'audio' : isVideo ? 'video' : 'iframe');
+        target.className = 'asset-viewer' + (imageVersion ? ' image-asset-viewer' : !isAudio && !isVideo ? ' pdf-viewer-frame' : '');
+        target.dataset.versionId = versionId;
+        target.title = String(version?.label || versionFileName);
+        target.alt = target.title;
+        if (isAudio || isVideo) { target.controls = true; target.preload = 'metadata'; }
+        const fileUrl = office ? `/api/assets/${encodeURIComponent(asset.id)}/libreoffice-preview.pdf?versionId=${encodeURIComponent(versionId)}` : mediaUrl;
+        target.src = imageVersion ? `/api/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(versionId)}/preview` : isAudio || isVideo ? mediaUrl : `/pdf-viewer.html?file=${encodeURIComponent(fileUrl)}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang())}&pdfAdvanced=0`;
+        const wrapper = documentRef.createElement('div');
+        wrapper.className = 'viewer-resizable';
+        wrapper.appendChild(target);
+        host.replaceChildren(wrapper);
+        selectedImageVersionIds.delete(String(asset.id));
+        target.addEventListener(isAudio || isVideo ? 'loadedmetadata' : 'load', () => {
+          showShortcutToast?.(`${version?.label || versionFileName} önizlemesi yüklendi`, { type: 'success' });
+        }, { once: true });
+        return;
+      }
       showShortcutToast?.(`${version?.label || version?.versionLabel || versionId} önizlemesi yüklendi`, { type: 'success' });
       const previewUrl = office
         ? `/api/assets/${encodeURIComponent(asset.id)}/libreoffice-preview.pdf?versionId=${encodeURIComponent(versionId)}`
@@ -120,7 +149,8 @@
 
     async function deleteVersion(asset, button, versionId) {
       if (!versionId || button.disabled) return;
-      if (!await openVersionDeleteDialog()) return;
+      const file = asset.versions?.find((item) => item.versionId === versionId);
+      if (!await openVersionDeleteDialog({ attachment: file?.fileRole === 'attachment' || file?.actionType === 'attachment' })) return;
       const row = button.closest('.version');
       const previousLabel = String(button.textContent || '').trim() || t('delete_version');
       button.disabled = true;
@@ -145,6 +175,7 @@
       if (!versionId || button.disabled) return;
       const current = (asset.versions || []).find((version) => String(version.versionId || '') === versionId);
       const next = await openVersionEditDialog({
+        attachment: current?.fileRole === 'attachment' || current?.actionType === 'attachment',
         label: String(current?.label || '').trim(),
         note: cleanVersionNoteText(String(current?.note || ''))
       });

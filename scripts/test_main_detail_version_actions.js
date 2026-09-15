@@ -38,11 +38,14 @@ async function run() {
   const image = { src: '', dataset: {} };
   const frame = { src: '', dataset: {} };
   let showImageViewer = true;
+  let previewHost = null;
+  let cleanupCalls = 0;
   const selected = new Map();
   const apiCalls = [];
   let refreshCalls = 0;
 
   const module = createMainDetailVersionActions({
+    cleanupPreview: () => { cleanupCalls += 1; },
     api: async (url, options) => {
       apiCalls.push({ url, options });
       return {};
@@ -59,6 +62,7 @@ async function run() {
     selectedImageVersionIds: selected,
     assetDetail: {
       querySelector(selector) {
+        if (selector === '[data-detail-file-preview]') return previewHost;
         if (selector === '.image-asset-viewer') return showImageViewer ? image : null;
         if (selector === '#pdfViewerFrame, #docViewerFrame') return showImageViewer ? null : frame;
         return null;
@@ -66,7 +70,7 @@ async function run() {
     },
     documentRef: {
       body: { appendChild() {} },
-      createElement: () => ({ setAttribute() {}, click() {}, remove() {} })
+      createElement: (tag) => ({ tag, dataset: {}, setAttribute() {}, click() {}, remove() {}, addEventListener() {}, appendChild(child) { this.child = child; } })
     },
     confirmAction: () => true,
     alertError: () => {}
@@ -129,6 +133,25 @@ async function run() {
   assert.strictEqual(refreshCalls, 2);
   assert.strictEqual(selected.has('asset-1'), false);
   delete global.localStorage;
+  let pauses = 0;
+  previewHost = {
+    querySelectorAll: () => [{ pause() { pauses += 1; } }],
+    replaceChildren(child) { this.child = child; }
+  };
+  module.bind(root, {
+    asset: { id: 'audio-asset', mimeType: 'audio/mpeg', versions: [
+      { versionId: 'pdf-attachment', fileRole: 'attachment', snapshotMimeType: 'application/pdf', snapshotMediaUrl: '/uploads/attached.pdf', label: 'Belge' },
+      { versionId: 'image-attachment', fileRole: 'attachment', snapshotMimeType: 'image/jpeg', snapshotMediaUrl: '/uploads/photo.jpg', label: 'Fotoğraf' }
+    ] }, workflow: []
+  });
+  await listener({ target: makeButton('previewVersionBtn', 'pdf-attachment'), preventDefault() {}, stopPropagation() {} });
+  assert.equal(previewHost.child.child.tag, 'iframe');
+  assert.equal(new URL(previewHost.child.child.src, 'http://localhost').searchParams.get('file'), '/uploads/attached.pdf');
+  assert.equal(pauses, 1, 'audio stops before the PDF replaces it');
+  assert.equal(cleanupCalls, 1);
+  await listener({ target: makeButton('previewVersionBtn', 'image-attachment'), preventDefault() {}, stopPropagation() {} });
+  assert.equal(previewHost.child.child.tag, 'img', 'image replaces the PDF in the same host');
+  assert.equal(apiCalls.length, 2, 'preview never changes the default');
 
   console.log('main detail version actions tests passed');
 }

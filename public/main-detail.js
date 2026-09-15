@@ -173,7 +173,7 @@
         actionType,
         canRestorePdf: Boolean(access.canManageVersions && access.assetIsPdf && hasSnapshot),
         canRestoreOffice: Boolean(access.canManageVersions && access.assetIsOffice && hasSnapshot),
-        canPreviewVersion: Boolean(hasSnapshot && (snapshotMime.startsWith('image/') || snapshotMime === 'application/pdf' || snapshotMime.includes('word') || snapshotMime.includes('officedocument'))),
+        canPreviewVersion: Boolean(hasSnapshot && (/^(image|audio|video)\//.test(snapshotMime) || snapshotMime === 'application/pdf' || snapshotMime.includes('word') || snapshotMime.includes('officedocument') || snapshotMime.includes('ms-excel') || snapshotMime.includes('ms-powerpoint'))),
         canDownloadVersion: Boolean(hasSnapshot && access.canDownloadAsset),
         canEditVersion: canEditOrDelete,
         canDeleteVersion: canEditOrDelete
@@ -181,24 +181,25 @@
     }
 
     function renderVersionRow(asset, version, access, interactive) {
+      const attachment = version.fileRole === 'attachment' || version.actionType === 'attachment';
       const rowState = getVersionRowState(version, access);
       const changeKindLabel = rowState.actionType === 'pdf_save' ? renderPdfChangeKindLabel(version) : '';
       const cleanNote = cleanVersionNoteText(version.note);
       const rowClass = 'version';
       const restoreAttr = '';
       const downloadButton = rowState.canDownloadVersion
-        ? `<button type="button" class="downloadVersionBtn" data-version-id="${escapeHtml(version.versionId)}">${escapeHtml(t('download_version'))}</button>`
+        ? `<button type="button" class="downloadVersionBtn" data-version-id="${escapeHtml(version.versionId)}">${attachment ? 'İndir' : escapeHtml(t('download_version'))}</button>`
         : '';
       const previewButton = rowState.canPreviewVersion
         ? `<button type="button" class="previewVersionBtn" data-version-id="${escapeHtml(version.versionId)}">${escapeHtml(t('preview_version'))}</button>`
         : '';
       const actionBar = (interactive || downloadButton || previewButton) ? `
         <div class="timecode-bar" style="margin-top:8px;">
-          ${interactive ? `<button type="button" class="defaultVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${asset.defaultVersionId === version.versionId ? 'disabled' : ''}>${asset.defaultVersionId === version.versionId ? 'Varsayılan' : 'Varsayılan yap'}</button>` : ''}
+          ${interactive && !attachment ? `<button type="button" class="defaultVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${asset.defaultVersionId === version.versionId ? 'disabled' : ''}>${asset.defaultVersionId === version.versionId ? 'Varsayılan' : 'Varsayılan yap'}</button>` : ''}
           ${previewButton}
           ${downloadButton}
-          ${interactive ? `<button type="button" class="editVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canEditVersion ? '' : 'disabled'}>${escapeHtml(t('edit_version_name'))}</button>` : ''}
-          ${interactive && rowState.canDeleteVersion ? `<button type="button" class="deleteVersionBtn danger" data-version-id="${escapeHtml(version.versionId)}">${escapeHtml(t('delete_version'))}</button>` : ''}
+          ${interactive ? `<button type="button" class="editVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canEditVersion ? '' : 'disabled'}>${attachment ? 'Adını düzenle' : escapeHtml(t('edit_version_name'))}</button>` : ''}
+          ${interactive && rowState.canDeleteVersion ? `<button type="button" class="deleteVersionBtn danger" data-version-id="${escapeHtml(version.versionId)}">${attachment ? 'Sil' : escapeHtml(t('delete_version'))}</button>` : ''}
         </div>
       ` : '';
       return `
@@ -224,7 +225,7 @@
       const trashStatus = asset.inTrash ? `<strong>${t('in_trash')}</strong>` : t('active');
       const searchHighlightClass = effectiveSearchHighlightClass(currentSearchQuery(), currentSearchHighlightQuery(), currentSearchFuzzyUsed());
 
-      const viewerSection = isVideo(asset)
+      const viewerContent = isVideo(asset)
         ? `
           ${mediaViewer(asset, { showVideoToolsButton: false, includeSubtitleTools: false, includeSectionHide: true, includeClipSectionHide: false, includeAudioSectionHide: false, audioSideLayout: false, includeDetailPin: true })}
         `
@@ -232,6 +233,7 @@
           ${mediaViewer(asset, { imagePreviewUrl: options.imagePreviewUrl })}
         `;
 
+      const viewerSection = `<div data-detail-file-preview>${viewerContent}</div>`;
       const tagsMarkup = asset.tags.length
         ? `
           <div class="meta-label-row">

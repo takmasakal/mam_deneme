@@ -1612,8 +1612,10 @@ function registerAssetRoutes(app, deps) {
       if (await rejectIfForeignEditLock(req, res, req.params.id)) return undefined;
       const versionId = String(req.body?.versionId || '').trim();
       if (!versionId) return res.status(400).json({ error: 'versionId is required' });
-      const version = await pool.query('SELECT version_id, snapshot_media_url, snapshot_thumbnail_url FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [req.params.id, versionId]);
+      const version = await pool.query('SELECT version_id, snapshot_media_url, snapshot_thumbnail_url, snapshot_mime_type, action_type FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [req.params.id, versionId]);
       if (!version.rowCount) return res.status(404).json({ error: 'Version not found' });
+      const original = await pool.query("SELECT snapshot_mime_type FROM asset_versions WHERE asset_id = $1 ORDER BY created_at ASC, CASE WHEN label = 'v1' THEN 0 ELSE 1 END, version_id ASC LIMIT 1", [req.params.id]);
+      if (version.rows[0].action_type === 'attachment' || String(version.rows[0].snapshot_mime_type || '').toLowerCase() !== String(original.rows[0]?.snapshot_mime_type || loaded.row.mime_type || '').toLowerCase()) return res.status(400).json({ error: 'Ek dosyalar varsayılan yapılamaz' });
       await pool.query('UPDATE assets SET default_version_id = $1, updated_at = NOW() WHERE id = $2', [versionId, req.params.id]);
       await recordAuditEvent?.(req, { action: 'asset.default_file_changed', targetType: 'asset', targetId: req.params.id, details: { versionId, previousVersionId: loaded.row.default_version_id || '' } });
       res.json({ saved: true, defaultVersionId: versionId });
