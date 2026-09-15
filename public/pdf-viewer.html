@@ -722,6 +722,7 @@
       };
 
       const resolvePdfAdvancedPermission = async () => {
+        if (isAttachmentPreview) return false;
         try {
           const response = await fetch('/api/me', { credentials: 'include' });
           if (!response.ok) return requestedPdfAdvanced;
@@ -763,6 +764,7 @@
       };
 
       const resolvePdfSavePermission = async () => {
+        if (isAttachmentPreview) return false;
         const me = await resolveCurrentUserProfile();
         if (toStrictBool(me?.canUsePdfAdvancedTools, toStrictBool(me?.isAdmin, false))) return true;
         const asset = await resolveCurrentAssetProfile();
@@ -988,10 +990,6 @@
         attachDirtyTracking();
 
         btn.addEventListener('click', async () => {
-          if (isAttachmentPreview) {
-            setStatus(uiLang === 'tr' ? 'Ek dosyalarda değişiklik yapılamaz.' : 'Attachments cannot be modified.', true);
-            return;
-          }
           btn.disabled = true;
           setStatus(uiLang === 'tr' ? 'Kaydediliyor...' : 'Saving...', false);
           try {
@@ -1006,6 +1004,7 @@
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 pdfBase64,
+                sourceVersionId: params.get('versionId') || '',
                 fileName: `asset-${assetId}-edited.pdf`,
                 changeKinds: Array.from(pdfChangeKinds)
               })
