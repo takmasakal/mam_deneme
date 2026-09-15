@@ -90,16 +90,17 @@ function openClipEditorDialog(initial) {
 }
 
 function openVersionEditDialog(initial) {
+  const title = initial.attachment ? 'Adını düzenle' : t('edit_version_name');
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'clip-modal-backdrop';
     overlay.innerHTML = `
-      <div class="clip-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('edit_version_name'))}">
-        <h4>${escapeHtml(t('edit_version_name'))}</h4>
-        <label>${escapeHtml(t('edit_version_name_prompt'))}
+      <div class="clip-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+        <h4>${escapeHtml(title)}</h4>
+        <label>${escapeHtml(initial.attachment ? 'Dosya adı' : t('edit_version_name_prompt'))}
           <input id="versionEditorName" type="text" value="${escapeHtml(initial.label || '')}" />
         </label>
-        <label>${escapeHtml(t('edit_version_note_prompt'))}
+        <label>${escapeHtml(initial.attachment ? 'Not' : t('edit_version_note_prompt'))}
           <input id="versionEditorNote" type="text" value="${escapeHtml(initial.note || '')}" />
         </label>
         <div class="clip-modal-actions">
@@ -133,17 +134,18 @@ function openVersionEditDialog(initial) {
   });
 }
 
-function openVersionDeleteDialog() {
+function openVersionDeleteDialog(options = {}) {
+  const title = options.attachment ? 'Sil' : t('delete_version');
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'clip-modal-backdrop';
     overlay.innerHTML = `
-      <div class="clip-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('delete_version'))}">
-        <h4>${escapeHtml(t('delete_version'))}</h4>
-        <p>${escapeHtml(t('delete_version_confirm'))}</p>
+      <div class="clip-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+        <h4>${escapeHtml(title)}</h4>
+        <p>${escapeHtml(options.attachment ? 'Ek dosya silinsin mi?' : t('delete_version_confirm'))}</p>
         <div class="clip-modal-actions">
           <button type="button" id="versionDeleteCancel">${escapeHtml(t('clip_editor_cancel'))}</button>
-          <button type="button" id="versionDeleteConfirm" class="danger">${escapeHtml(t('delete_version'))}</button>
+          <button type="button" id="versionDeleteConfirm" class="danger">${escapeHtml(title)}</button>
         </div>
       </div>
     `;

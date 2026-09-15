@@ -1916,8 +1916,8 @@ function openVersionEditDialog(initial) {
   return dialogsModule.openVersionEditDialog(initial);
 }
 
-function openVersionDeleteDialog() {
-  return dialogsModule.openVersionDeleteDialog();
+function openVersionDeleteDialog(options) {
+  return dialogsModule.openVersionDeleteDialog(options);
 }
 
 function openTimecodeJumpDialog(initialTc = '') {
@@ -2480,6 +2480,14 @@ const detailVersionActionsModule = window.createMainDetailVersionActions({
   currentLang: () => currentLang,
   canUsePdfAdvancedTools: () => currentUserCanUsePdfAdvancedTools,
   selectedImageVersionIds,
+  cleanupPreview: () => {
+    activePlayerCleanup?.();
+    activePlayerCleanup = null;
+    activeViewerLoadingCleanup?.();
+    activeViewerLoadingCleanup = null;
+    assetDetail.classList.remove('video-detail-mode', 'audio-detail-mode');
+    panelDetail?.classList.remove('panel-video-detail');
+  },
   assetDetail
 });
 
