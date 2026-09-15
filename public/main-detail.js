@@ -358,7 +358,7 @@
         { attachment: true, title: 'Ek dosyalar', empty: 'Henüz ek dosya yok.' }
       ].map((group) => {
         const files = (asset.versions || []).filter((file) => (file.fileRole === 'attachment' || file.actionType === 'attachment') === group.attachment);
-        return `<section class="asset-file-group" style="border:1px solid var(--border, #414141);border-radius:8px;padding:12px;margin-top:12px;">
+        return `<section class="asset-file-group" style="border:1px solid ${group.attachment ? 'rgba(106, 160, 190, 0.35)' : 'var(--border, #414141)'};${group.attachment ? 'background:rgba(80, 135, 165, 0.10);' : ''}border-radius:8px;padding:12px;margin-top:12px;">
           <h4>${group.title}</h4>
           <div data-file-group="${group.attachment ? 'attachment' : 'version'}">${files.length ? files.map((file) => renderVersionRow(asset, file, versionAccess, canManageVersions)).join('') : `<p class="asset-meta">${group.empty}</p>`}</div>
         </section>`;
