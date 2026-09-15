@@ -99,9 +99,10 @@ const asset = {
 
 {
   const renderer = createRenderer({});
-  const withAttachment = { ...asset, attachmentSearchItems: [{ label: 'Ek rapor', note: '<script>rapor</script>', fileName: 'rapor.pdf' }] };
+  const withAttachment = { ...asset, attachmentSearchItems: [{ versionId: 'attachment-42', label: 'Ek rapor', note: '<script>rapor</script>', fileName: 'rapor.pdf' }] };
   const html = renderer.render(withAttachment, { currentSearchQuery: 'rapor' });
   assert.match(html, /Ek dosya · Ek rapor · Ad:/);
+  assert.match(html, /data-field-jump="1" data-id="asset-1" data-attachment-id="attachment-42"/);
   assert.match(html, /Açıklama:.*<mark>&lt;script&gt;rapor&lt;\/script&gt;<\/mark>/);
   assert.match(html, /Dosya adı:.*<mark>rapor.pdf<\/mark>/);
   assert.doesNotMatch(html, /<script>/);
