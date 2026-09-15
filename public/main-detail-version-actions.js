@@ -67,8 +67,7 @@
         target.alt = target.title;
         if (isAudio || isVideo) { target.controls = true; target.preload = 'metadata'; }
         const fileUrl = office ? `/api/assets/${encodeURIComponent(asset.id)}/libreoffice-preview.pdf?versionId=${encodeURIComponent(versionId)}` : mediaUrl;
-        target.src = imageVersion ? `/api/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(versionId)}/preview` : isAudio || isVideo ? mediaUrl : `/pdf-viewer.html?file=${encodeURIComponent(fileUrl)}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang())}&pdfAdvanced=0`;
-        if (target.src.startsWith('/pdf-viewer.html?')) target.src += `&versionId=${encodeURIComponent(versionId)}${attachment ? '&attachment=1' : ''}`;
+        target.src = imageVersion ? `/api/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(versionId)}/preview` : isAudio || isVideo ? mediaUrl : `/pdf-viewer.html?file=${encodeURIComponent(fileUrl)}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang())}&pdfAdvanced=0&versionId=${encodeURIComponent(versionId)}${attachment ? '&attachment=1' : ''}`;
         const wrapper = documentRef.createElement('div');
         wrapper.className = 'viewer-resizable';
         wrapper.appendChild(target);
