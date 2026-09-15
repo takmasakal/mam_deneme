@@ -57,7 +57,7 @@
           if (!value) return [];
           const highlighted = renderText(value);
           if (highlighted === escapeHtml(value)) return [];
-          return [`<div class="asset-meta dc-hit-row"><span>Ek dosya · ${escapeHtml(file.label || file.fileName || '')} · ${field}: </span>${highlighted}</div>`];
+          return [`<div class="asset-meta dc-hit-row"><button type="button" data-field-jump="1" data-id="${escapeHtml(asset.id)}" data-attachment-id="${escapeHtml(file.versionId || '')}" style="text-align:left;white-space:normal;"><span>Ek dosya · ${escapeHtml(file.label || file.fileName || '')} · ${field}: </span>${highlighted}</button></div>`];
         });
       }).join('') : '';
       const dcHits = hasTextSearch

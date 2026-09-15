@@ -2762,6 +2762,18 @@ async function openAsset(id, workflow, options = {}) {
   detailAssetActionsModule.bind(assetDetail, { asset, workflow });
 
   detailVersionActionsModule.bind(assetDetail, { asset, workflow });
+  const attachmentId = String(options.focusAttachmentId || '').trim();
+  if (attachmentId) {
+    const row = Array.from(assetDetail.querySelectorAll('.version[data-version-id]'))
+      .find((item) => item.dataset.versionId === attachmentId);
+    if (row) {
+      row.tabIndex = -1;
+      row.focus({ preventScroll: true });
+      row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      row.classList.add('search-hit-active');
+      setTimeout(() => row.classList.remove('search-hit-active'), 1800);
+    }
+  }
 
 }
 
@@ -2821,10 +2833,11 @@ assetGrid.addEventListener('click', async (event) => {
     const id = String(fieldJumpBtn.dataset.id || '').trim();
     const focusFieldName = String(fieldJumpBtn.dataset.fieldName || '').trim();
     const focusTag = String(fieldJumpBtn.dataset.focusTag || '').trim();
-    if (!id || (!focusFieldName && !focusTag)) return;
+    const focusAttachmentId = String(fieldJumpBtn.dataset.attachmentId || '').trim();
+    if (!id || (!focusFieldName && !focusTag && !focusAttachmentId)) return;
     setSingleSelection(id);
     const workflow = await loadWorkflow();
-    await openAsset(id, workflow, { focusFieldName, focusTag });
+    await openAsset(id, workflow, { focusFieldName, focusTag, focusAttachmentId });
     return;
   }
 
