@@ -147,6 +147,7 @@ async function run() {
   await listener({ target: makeButton('previewVersionBtn', 'pdf-attachment'), preventDefault() {}, stopPropagation() {} });
   assert.equal(previewHost.child.child.tag, 'iframe');
   assert.equal(new URL(previewHost.child.child.src, 'http://localhost').searchParams.get('file'), '/uploads/attached.pdf');
+  assert.equal(new URL(previewHost.child.child.src, 'http://localhost').searchParams.get('attachment'), '1');
   assert.equal(pauses, 1, 'audio stops before the PDF replaces it');
   assert.equal(cleanupCalls, 1);
   await listener({ target: makeButton('previewVersionBtn', 'image-attachment'), preventDefault() {}, stopPropagation() {} });

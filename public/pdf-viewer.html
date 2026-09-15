@@ -227,6 +227,7 @@
       const isPdf = file.toLowerCase().endsWith('.pdf');
       const uiLang = String(params.get('lang') || 'en').trim().toLowerCase() === 'tr' ? 'tr' : 'en';
       const requestedPdfAdvanced = String(params.get('pdfAdvanced') || '').trim() === '1';
+      const isAttachmentPreview = params.get('attachment') === '1';
       let cachedAssetProfile = null;
 
       const topBar = document.getElementById('topBar');
@@ -910,6 +911,10 @@
         attachDirtyTracking();
 
         btn.addEventListener('click', async () => {
+          if (isAttachmentPreview) {
+            setStatus(uiLang === 'tr' ? 'Ek dosyalarda değişiklik yapılamaz.' : 'Attachments cannot be modified.', true);
+            return;
+          }
           btn.disabled = true;
           setStatus(uiLang === 'tr' ? 'Kaydediliyor...' : 'Saving...', false);
           try {
