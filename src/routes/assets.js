@@ -435,6 +435,8 @@ function registerAssetRoutes(app, deps) {
       appendAssetAccessWhere(baseWhere, baseValues, accessContext, 'assets');
   
       const buildAssetTextWhere = (parsedQuery) => {
+        const attachmentText = `COALESCE((SELECT string_agg(concat_ws(' ', av.label, av.note, av.snapshot_file_name), ' ') FROM asset_versions av WHERE av.asset_id = assets.id AND (av.action_type = 'attachment' OR av.snapshot_mime_type <> COALESCE((SELECT first_version.snapshot_mime_type FROM asset_versions first_version WHERE first_version.asset_id = assets.id ORDER BY first_version.created_at ASC, CASE WHEN first_version.label = 'v1' THEN 0 ELSE 1 END, first_version.version_id ASC LIMIT 1), assets.mime_type))), '')`;
+        const searchableDescription = `concat_ws(' ', assets.description, ${attachmentText})`;
         const clauses = [];
         const params = [];
         const pushAssetQueryGroup = (term, options = {}) => {
@@ -446,7 +448,7 @@ function registerAssetRoutes(app, deps) {
             const idx = baseValues.length + params.length;
             clauses.push(`(
               ${sqlTextFold('title')} ${negate ? '!~' : '~'} $${idx}
-              ${joiner} ${sqlTextFold('description')} ${negate ? '!~' : '~'} $${idx}
+              ${joiner} ${sqlTextFold(searchableDescription)} ${negate ? '!~' : '~'} $${idx}
               ${joiner} ${sqlTextFold('owner')} ${negate ? '!~' : '~'} $${idx}
               ${joiner} ${sqlTextFold("dc_metadata::text")} ${negate ? '!~' : '~'} $${idx}
               ${joiner} ${negate ? 'NOT ' : ''}EXISTS (
@@ -461,7 +463,7 @@ function registerAssetRoutes(app, deps) {
           const idx = baseValues.length + params.length;
           clauses.push(`(
             ${sqlTextFold('title')} ${negate ? 'NOT LIKE' : 'LIKE'} $${idx}
-            ${joiner} ${sqlTextFold('description')} ${negate ? 'NOT LIKE' : 'LIKE'} $${idx}
+            ${joiner} ${sqlTextFold(searchableDescription)} ${negate ? 'NOT LIKE' : 'LIKE'} $${idx}
             ${joiner} ${sqlTextFold('owner')} ${negate ? 'NOT LIKE' : 'LIKE'} $${idx}
             ${joiner} ${sqlTextFold("dc_metadata::text")} ${negate ? 'NOT LIKE' : 'LIKE'} $${idx}
             ${joiner} ${negate ? 'NOT ' : ''}EXISTS (
@@ -482,7 +484,7 @@ function registerAssetRoutes(app, deps) {
             const idx = baseValues.length + params.length;
             clauses.push(`(
               NOT (${sqlTextFold('title')} ~ $${idx})
-              AND NOT (${sqlTextFold('description')} ~ $${idx})
+              AND NOT (${sqlTextFold(searchableDescription)} ~ $${idx})
               AND NOT (${sqlTextFold('owner')} ~ $${idx})
               AND NOT (${sqlTextFold("dc_metadata::text")} ~ $${idx})
               AND NOT EXISTS (
@@ -499,7 +501,7 @@ function registerAssetRoutes(app, deps) {
               const idx = baseValues.length + params.length;
               optionalGroups.push(`(
                 ${sqlTextFold('title')} LIKE $${idx}
-                OR ${sqlTextFold('description')} LIKE $${idx}
+                OR ${sqlTextFold(searchableDescription)} LIKE $${idx}
                 OR ${sqlTextFold('owner')} LIKE $${idx}
                 OR ${sqlTextFold("dc_metadata::text")} LIKE $${idx}
                 OR EXISTS (
@@ -514,7 +516,7 @@ function registerAssetRoutes(app, deps) {
               const idx = baseValues.length + params.length;
               optionalGroups.push(`(
                 ${sqlTextFold('title')} ~ $${idx}
-                OR ${sqlTextFold('description')} ~ $${idx}
+                OR ${sqlTextFold(searchableDescription)} ~ $${idx}
                 OR ${sqlTextFold('owner')} ~ $${idx}
                 OR ${sqlTextFold("dc_metadata::text")} ~ $${idx}
                 OR EXISTS (
@@ -733,6 +735,12 @@ function registerAssetRoutes(app, deps) {
         } else {
           // Elasticsearch can be empty/stale after local rebuilds; SQL remains the source of truth.
           rows = await fetchAssetRows(textWhere.clauses, textWhere.params);
+        }
+        if (rankedIds?.length) {
+          const sqlRows = await fetchAssetRows(textWhere.clauses, textWhere.params);
+          // Attachment names/notes live in PostgreSQL; include them even when
+          // Elasticsearch already returned unrelated matches. SQL also enforces exclusions.
+          rows = parsedAssetQuery.hasOperators ? sqlRows : Array.from(new Map([...rows, ...sqlRows].map((row) => [row.id, row])).values());
         }
         if (!rows.length && !parsedAssetQuery.hasOperators) {
           const candidateRows = await fetchAssetRows();
