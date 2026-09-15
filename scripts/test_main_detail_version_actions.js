@@ -70,7 +70,7 @@ async function run() {
     },
     documentRef: {
       body: { appendChild() {} },
-      createElement: (tag) => ({ tag, dataset: {}, setAttribute() {}, click() {}, remove() {}, addEventListener() {}, appendChild(child) { this.child = child; } })
+      createElement: (tag) => ({ tag, dataset: {}, get src() { return this.url || ''; }, set src(value) { this.url = new URL(value, 'https://mam.example').href; }, setAttribute() {}, click() {}, remove() {}, addEventListener() {}, appendChild(child) { this.child = child; } })
     },
     confirmAction: () => true,
     alertError: () => {}
@@ -141,6 +141,7 @@ async function run() {
   module.bind(root, {
     asset: { id: 'audio-asset', mimeType: 'audio/mpeg', versions: [
       { versionId: 'pdf-attachment', fileRole: 'attachment', snapshotMimeType: 'application/pdf', snapshotMediaUrl: '/uploads/attached.pdf', label: 'Belge' },
+      { versionId: 'word-attachment', fileRole: 'attachment', snapshotMimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', snapshotMediaUrl: '/uploads/attached.docx', snapshotFileName: 'attached.docx', label: 'Word' },
       { versionId: 'image-attachment', fileRole: 'attachment', snapshotMimeType: 'image/jpeg', snapshotMediaUrl: '/uploads/photo.jpg', label: 'Fotoğraf' }
     ] }, workflow: []
   });
@@ -153,6 +154,11 @@ async function run() {
   await listener({ target: makeButton('previewVersionBtn', 'image-attachment'), preventDefault() {}, stopPropagation() {} });
   assert.equal(previewHost.child.child.tag, 'img', 'image replaces the PDF in the same host');
   assert.equal(apiCalls.length, 2, 'preview never changes the default');
+  await listener({ target: makeButton('previewVersionBtn', 'word-attachment'), preventDefault() {}, stopPropagation() {} });
+  const wordUrl = new URL(previewHost.child.child.src);
+  assert.equal(wordUrl.searchParams.get('attachment'), '1');
+  assert.equal(wordUrl.searchParams.get('versionId'), 'word-attachment');
+  assert.equal(wordUrl.searchParams.get('file'), '/api/assets/audio-asset/libreoffice-preview.pdf?versionId=word-attachment');
 
   console.log('main detail version actions tests passed');
 }
