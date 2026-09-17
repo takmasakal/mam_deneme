@@ -7,6 +7,7 @@
     clipQ: 'Clip search'
   };
   const FIELD_ORDER = Object.keys(FIELD_LABELS);
+  const defaultGroups = () => ({ and: FIELD_ORDER.filter((field) => field !== 'clipQ'), or: ['clipQ'] });
   const RANGE_FIELDS = ['durationMinSec', 'durationMaxSec', 'sizeMinMb', 'sizeMaxMb'];
   const SIZE_UNIT_FIELDS = ['sizeMinUnit', 'sizeMaxUnit'];
   const STORAGE_KEY_PREFIX = 'mam.advanced.searches:';
@@ -30,7 +31,7 @@
     const savedSelect = document.getElementById('advancedSearchSaved');
     const sortOrderInputs = modal?.querySelectorAll('input[name="advancedSortOrder"]');
     const dateFieldSelect = modal?.querySelector('select[name="dateField"]');
-    const state = { and: [...FIELD_ORDER], or: [] };
+    const state = defaultGroups();
     const datePicker = { element: null, inputName: '', month: new Date() };
     let advancedTypeValue = '';
     let lastSelectedSortValue = '';
@@ -637,8 +638,7 @@
       setDateField('created');
       setSortValue('');
       if (todayCheck) todayCheck.checked = false;
-      state.and = [...FIELD_ORDER];
-      state.or = [];
+      Object.assign(state, defaultGroups());
       render();
     }
 
@@ -680,7 +680,7 @@
       const item = readSaved()[index];
       if (!item) return;
       enabled = true;
-      const nextState = item.state && typeof item.state === 'object' ? item.state : { and: FIELD_ORDER, or: [] };
+      const nextState = item.state && typeof item.state === 'object' ? item.state : defaultGroups();
       state.and = FIELD_ORDER.filter((field) => Array.isArray(nextState.and) && nextState.and.includes(field));
       state.or = FIELD_ORDER.filter((field) => Array.isArray(nextState.or) && nextState.or.includes(field) && !state.and.includes(field));
       FIELD_ORDER.forEach((field) => setAdvancedFieldValue(field, item.values?.[field] || ''));
@@ -700,7 +700,7 @@
       setDateField(item.values?.dateField || (String(item.values?.sortBy || '').startsWith('updated_') ? 'updated' : 'created'));
       setSortValue(item.values?.sortBy || '');
       const assigned = new Set([...state.and, ...state.or]);
-      FIELD_ORDER.filter((field) => !assigned.has(field)).forEach((field) => state.and.push(field));
+      FIELD_ORDER.filter((field) => !assigned.has(field)).forEach((field) => state[field === 'clipQ' ? 'or' : 'and'].push(field));
       render();
     }
 
