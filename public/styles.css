@@ -711,9 +711,14 @@
   line-height: 1.2;
 }
 
-.advanced-search-and h4 { color: #5ee0a6; }
-.advanced-search-or h4 { color: var(--mam-color-accent, #f4bf63); }
-.advanced-search-dropzone.drag-over { border-color: var(--accent); background: rgba(66, 125, 255, 0.08); }
+.advanced-search-and { --advanced-group-color: #5ee0a6; }
+.advanced-search-or { --advanced-group-color: #f4bf63; }
+.advanced-search-group h4 { color: var(--advanced-group-color); }
+.advanced-search-group .advanced-search-dropzone,
+.advanced-search-group .advanced-search-field {
+  border: 1px dashed var(--advanced-group-color);
+}
+.advanced-search-dropzone.drag-over { background: rgba(66, 125, 255, 0.08); }
 
 .advanced-search-field {
   display: grid;
