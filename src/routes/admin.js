@@ -1,3 +1,4 @@
+const { createMetadataAdminAccessService } = require('../services/metadataAdminAccessService');
 const fs = require('fs');
 const path = require('path');
 const { nanoid } = require('nanoid');
@@ -14,6 +15,7 @@ function registerAdminRoutes(app, deps) {
     proxyJobs,
     subtitleJobs,
     videoOcrJobs,
+    metadataEnrichmentService,
     requireScopedAdminAccess,
     publicUploadUrlToAbsolutePath,
     reloadLearnedTurkishCorrectionsFromDb,
@@ -119,6 +121,7 @@ function registerAdminRoutes(app, deps) {
     nanoid: providedNanoid,
     removeAssetFromElastic
   } = deps;
+  const metadataAdminAccess = createMetadataAdminAccessService(assetAccessService);
   const resolvedNanoid = typeof providedNanoid === 'function' ? providedNanoid : nanoid;
 
   function resolveSubtitleFilePath(subtitleUrl) {
@@ -3787,34 +3790,51 @@ app.get('/api/admin/assets/suggest', async (req, res) => {
   }
 });
 
+async function metadataAdminContext(req, res) {
+  const context = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+  if (!context.canAccessMetadataAdmin) {
+    res.status(403).json({ error: 'Metadata management permission is required' });
+    return null;
+  }
+  return context;
+}
+
+app.get('/api/admin/metadata/assets/suggest', async (req, res) => {
+  try {
+    const context = await metadataAdminContext(req, res);
+    if (!context) return;
+    const q = String(req.query.q || '').trim();
+    if (q.length < 3) return res.json([]);
+    const values = [`%${q}%`];
+    const where = ['(assets.title ILIKE $1 OR assets.file_name ILIKE $1)'];
+    metadataAdminAccess.appendWhere(where, values, context);
+    const result = await pool.query(`SELECT assets.* FROM assets WHERE ${where.join(' AND ')} ORDER BY assets.updated_at DESC LIMIT 100`, values);
+    const limit = Math.max(1, Math.min(15, Number(req.query.limit) || 8));
+    return res.json(result.rows.filter((row) => metadataAdminAccess.canManage(row, context)).slice(0, limit)
+      .map((row) => ({ id: row.id, title: row.title, fileName: row.file_name, type: row.type })));
+  } catch (_error) {
+    return res.status(500).json({ error: 'Failed to suggest metadata assets' });
+  }
+});
+
 app.post('/api/admin/metadata/generate', async (req, res) => {
   try {
-    const effective = await requireSuperAdminRequest(req, res);
-    if (!effective) return undefined;
+    const context = await metadataAdminContext(req, res);
+    if (!context) return;
     const assetId = String(req.body?.assetId || '').trim();
     const assetName = String(req.body?.assetName || '').trim();
     if (!assetId && !assetName) return res.status(400).json({ error: 'assetId or assetName is required' });
-    const result = assetId
-      ? await pool.query('SELECT * FROM assets WHERE id = $1 AND deleted_at IS NULL LIMIT 1', [assetId])
-      : await pool.query(
-        `
-          SELECT *
-          FROM assets
-          WHERE deleted_at IS NULL
-            AND (title ILIKE $1 OR file_name ILIKE $1)
-          ORDER BY
-            CASE
-              WHEN LOWER(title) = LOWER($2) THEN 0
-              WHEN LOWER(file_name) = LOWER($2) THEN 1
-              ELSE 2
-            END,
-            updated_at DESC
-          LIMIT 1
-        `,
-        [`%${assetName}%`, assetName]
-      );
+    const values = assetId ? [assetId] : [`%${assetName}%`, assetName];
+    const where = [assetId ? 'assets.id = $1' : '(assets.title ILIKE $1 OR assets.file_name ILIKE $1)'];
+    metadataAdminAccess.appendWhere(where, values, context);
+    const order = assetId ? '' : 'ORDER BY CASE WHEN LOWER(title) = LOWER($2) THEN 0 WHEN LOWER(file_name) = LOWER($2) THEN 1 ELSE 2 END, updated_at DESC';
+    const result = await pool.query(`SELECT assets.* FROM assets WHERE ${where.join(' AND ')} ${order} LIMIT 1`, values);
     const row = result.rows[0];
-    if (!row) return res.status(404).json({ error: 'Asset not found' });
+    if (!row || !metadataAdminAccess.canManage(row, context)) return res.status(404).json({ error: 'Asset not found' });
+    if (assetEditLockService) {
+      const lockResult = await assetEditLockService.assertWritable(req, row.id);
+      if (!lockResult.ok) return assetEditLockService.sendLocked(res, lockResult);
+    }
     const job = metadataEnrichmentService?.queueAsset?.(row);
     if (!job) {
       return res.status(400).json({

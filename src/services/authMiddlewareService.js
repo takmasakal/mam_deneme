@@ -92,6 +92,9 @@ function createAuthMiddlewareService({
       /^\/document-rights\/assets\/[^/]+\/edit-lock$/
     ];
     const safePath = String(req.path || '').trim();
+    if (/^\/metadata\/(?:assets\/suggest|generate)$/.test(safePath)) {
+      return requirePermissionFlag('canAccessMetadataAdmin', 'Failed to verify metadata admin permissions')(req, res, next);
+    }
     if (textAdminPaths.some((pattern) => pattern.test(safePath))) {
       return requireTextAdminAccess(req, res, next);
     }

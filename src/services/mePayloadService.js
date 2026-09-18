@@ -45,6 +45,7 @@ function createMePayloadService({
         isAdmin: effective.isAdmin,
         canAccessAdmin: effective.canAccessAdmin,
         canAccessTextAdmin,
+        canAccessMetadataAdmin: Boolean(effective.canAccessMetadataAdmin),
         canAccessAssetRightsAdmin: Boolean(
           effective.canAccessAdmin || assetAccessService.hasScopedAssetRightsAdminAccess(accessContext)
         ),

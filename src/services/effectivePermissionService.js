@@ -136,6 +136,7 @@ function createEffectivePermissionService({
       isAdmin: canAccessAdmin,
       canAccessAdmin,
       canAccessTextAdmin,
+      canAccessMetadataAdmin: Boolean(effective.metadataAdminAccess || canAccessAdmin),
       canEditMetadata: Boolean(effective.metadataEdit),
       canEditOffice,
       canDeleteAssets: Boolean(effective.assetDelete),

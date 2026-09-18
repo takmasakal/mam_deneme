@@ -635,6 +635,7 @@ let i18n = {
     perm_asset_delete: 'Asset delete',
     perm_pdf_advanced: 'PDF advanced tools',
     perm_text_admin: 'OCR / subtitle admin',
+    perm_metadata_admin: 'Metadata Management',
     perm_document_rights_admin: 'Document rights admin',
     perm_advanced_search: 'Advanced search',
     user_permissions_saved: 'User permissions saved.',
@@ -1150,6 +1151,7 @@ let i18n = {
     perm_asset_delete: 'Varlık silme',
     perm_pdf_advanced: 'PDF gelişmiş araçlar',
     perm_text_admin: 'OCR / altyazı yöneticisi',
+    perm_metadata_admin: 'Metadata Yönetimi',
     perm_document_rights_admin: 'Doküman yetkileri yöneticisi',
     perm_advanced_search: 'Gelişmiş arama',
     user_permissions_saved: 'Kullanıcı yetkileri kaydedildi.',
@@ -2311,7 +2313,7 @@ async function requestMetadataSuggestions() {
   const reqId = ++metadataSuggestReqSeq;
   const params = new URLSearchParams({ q: query, limit: '8', includeTrash: '0' });
   try {
-    const result = await api(`/api/admin/assets/suggest?${params.toString()}`);
+    const result = await api(`/api/admin/metadata/assets/suggest?${params.toString()}`);
     if (reqId !== metadataSuggestReqSeq) return;
     renderMetadataSuggestions(result, query);
   } catch (_error) {
@@ -2867,6 +2869,8 @@ function applyAdminAccessMode(me = {}) {
     elements: {
       settingsForm,
       settingsMsg,
+      metadataSettingsForm,
+      metadataSettingsMsg,
       ocrSettingsForm,
       ocrSettingsMsg,
       subtitleSettingsForm,
@@ -4508,7 +4512,9 @@ runMetadataToolBtn?.addEventListener('click', async () => {
     if (metadataToolMsg) {
       metadataToolMsg.textContent = `${t('metadata_generation_queued')} ${result.assetTitle || result.assetId || ''}`.trim();
     }
-    await refreshTrackingAndHealth({ forceServer: true });
+    if (currentAdminProfile?.canAccessAdmin || currentAdminProfile?.isAdmin) {
+      await refreshTrackingAndHealth({ forceServer: true });
+    }
   } catch (error) {
     if (metadataToolMsg) metadataToolMsg.textContent = error.message || t('metadata_generation_failed');
   } finally {
@@ -5125,7 +5131,7 @@ function applyAdminLanguage(nextLang) {
 languageSelect?.addEventListener('change', async (event) => {
   applyAdminLanguage(event.target.value);
   const access = accessScopeModule.getAdminAccessMode(currentAdminProfile || {});
-  if (!access.isAssetRightsOnly && !access.isDocumentRightsOnly && (!currentAdminProfile?.canAccessTextAdmin || currentAdminProfile?.canAccessAdmin || currentAdminProfile?.isAdmin)) {
+  if (access.canAccessAdmin) {
     await refreshTrackingAndHealth({ force: false });
     if (currentAdminProfile?.isSuperAdmin) {
       await loadUserPermissions();
@@ -5133,7 +5139,7 @@ languageSelect?.addEventListener('change', async (event) => {
       await loadGroupAdmins();
     }
   }
-  if (!access.isAssetRightsOnly && !access.isDocumentRightsOnly) {
+  if (access.canAccessAdmin || access.canAccessTextAdmin) {
     const activeSub = settingsSubTabs.find((item) => item.classList.contains('active'))?.dataset?.settingsTab || 'general';
     if (activeSub === 'ocr') {
       await loadOcrRecords();
@@ -5269,14 +5275,14 @@ document.addEventListener('keydown', onLanguageShortcut, true);
     const me = await api('/api/me');
     window.mamSessionExpiry?.start(me.authSession || {});
     const access = applyAdminAccessMode(me);
-    if (!access.canAccessAdmin && !access.canAccessTextAdmin && !access.canAccessAssetRightsAdmin && !access.canAccessDocumentRightsAdmin) {
+    if (!access.canAccessMetadataAdmin && !access.canAccessAdmin && !access.canAccessTextAdmin && !access.canAccessAssetRightsAdmin && !access.canAccessDocumentRightsAdmin) {
       window.location.href = '/';
       return;
     }
     await loadI18nFile();
     applyAdminLanguage(currentLang);
     updateProxyToolUi();
-    if (!access.isTextOnly && !access.isAssetRightsOnly && !access.isDocumentRightsOnly) {
+    if (access.canAccessAdmin) {
       await loadSettings();
       await refreshTrackingAndHealth();
       if (access.isSuperAdmin) {
@@ -5289,7 +5295,7 @@ document.addEventListener('keydown', onLanguageShortcut, true);
     } else if (access.isDocumentRightsOnly) {
       await loadDocumentRightsRows();
     }
-    if (!access.isAssetRightsOnly && !access.isDocumentRightsOnly) {
+    if (access.canAccessAdmin || access.canAccessTextAdmin) {
       const initialSubtab = access.isTextOnly ? 'ocr' : 'general';
       switchSettingsSubtab(initialSubtab);
       if (initialSubtab === 'ocr') {
