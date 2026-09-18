@@ -1415,7 +1415,7 @@ async function loadCurrentUser() {
     if (adminMenuLink) {
       const canAccessAssetRightsAdmin = toStrictBool(me.canAccessAssetRightsAdmin, canAccessAdmin);
       const canAccessDocumentRightsAdmin = toStrictBool(me.canAccessDocumentRightsAdmin, canAccessAdmin);
-      adminMenuLink.classList.toggle('hidden', !(canAccessAdmin || canAccessTextAdmin || canAccessAssetRightsAdmin || canAccessDocumentRightsAdmin));
+      adminMenuLink.classList.toggle('hidden', !(me.canAccessMetadataAdmin || canAccessAdmin || canAccessTextAdmin || canAccessAssetRightsAdmin || canAccessDocumentRightsAdmin));
     }
     accessScopeModule?.applyAssetTypeScope?.({
       allowedAssetTypes: Array.isArray(me.allowedAssetTypes) ? me.allowedAssetTypes : null,

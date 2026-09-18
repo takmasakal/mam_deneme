@@ -95,6 +95,7 @@
   function getAdminAccessMode(profile = {}) {
     const current = profile && typeof profile === 'object' ? profile : {};
     const canAccessAdmin = Boolean(current.canAccessAdmin || current.isAdmin);
+    const canAccessMetadataAdmin = Boolean(current.canAccessMetadataAdmin || canAccessAdmin);
     const canAccessTextAdmin = Boolean(current.canAccessTextAdmin || canAccessAdmin);
     const canAccessAssetRightsAdmin = Boolean(current.canAccessAssetRightsAdmin || canAccessAdmin);
     const canAccessDocumentRightsAdmin = Boolean(current.canAccessDocumentRightsAdmin || canAccessAdmin);
@@ -105,6 +106,7 @@
     return {
       canAccessAdmin,
       canAccessTextAdmin,
+      canAccessMetadataAdmin,
       canAccessAssetRightsAdmin,
       canAccessDocumentRightsAdmin,
       isSuperAdmin,
@@ -130,7 +132,7 @@
 
   function canShowAdminMenu(profile = {}) {
     const access = getAdminAccessMode(profile);
-    return access.canAccessAdmin || access.canAccessTextAdmin || access.canAccessAssetRightsAdmin || access.canAccessDocumentRightsAdmin;
+    return access.canAccessMetadataAdmin || access.canAccessAdmin || access.canAccessTextAdmin || access.canAccessAssetRightsAdmin || access.canAccessDocumentRightsAdmin;
   }
 
   function applyAdminAccessMode({
@@ -152,7 +154,7 @@
       auditEvents: canShowFullAdminPanels,
       assetRights: canShowFullAdminPanels || access.canAccessAssetRightsAdmin,
       documentRights: !access.canAccessAdmin && access.canAccessDocumentRightsAdmin,
-      metadata: canShowFullAdminPanels,
+      metadata: access.canAccessMetadataAdmin,
       settings: canShowFullAdminPanels || access.canAccessTextAdmin
     };
     Object.entries(visibleMainTabs).forEach(([tabName, visible]) => {
@@ -174,6 +176,8 @@
       setPanelVisibility(settingsSubPanels, tabName, 'settingsPanel', visible);
     });
 
+    setElementHidden(elements.metadataSettingsForm, !canShowFullAdminPanels);
+    setElementHidden(elements.metadataSettingsMsg, !canShowFullAdminPanels);
     setElementHidden(elements.settingsForm, !canShowFullAdminPanels);
     setElementHidden(elements.settingsMsg, !canShowFullAdminPanels);
     setElementHidden(elements.ocrSettingsForm, !canShowFullAdminPanels);
@@ -183,7 +187,9 @@
     setElementHidden(elements.authSessionSettingsForm, !canShowFullAdminPanels || !access.isSuperAdmin);
     setElementHidden(elements.authSessionSettingsMsg, !canShowFullAdminPanels || !access.isSuperAdmin);
 
-    if (!access.canAccessAdmin && access.canAccessTextAdmin) {
+    if (!access.canAccessAdmin && access.canAccessMetadataAdmin) {
+      if (typeof switchTab === 'function') switchTab('metadata');
+    } else if (!access.canAccessAdmin && access.canAccessTextAdmin) {
       if (typeof switchTab === 'function') switchTab('settings');
       if (typeof switchSettingsSubtab === 'function') switchSettingsSubtab('ocr');
     } else if (!access.canAccessAdmin && access.canAccessAssetRightsAdmin) {

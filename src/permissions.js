@@ -1,5 +1,10 @@
 const PERMISSION_DEFINITIONS = [
   {
+    key: 'metadata.admin',
+    legacyField: 'metadataAdminAccess',
+    labelKey: 'perm_metadata_admin'
+  },
+  {
     key: 'admin.access',
     legacyField: 'adminPageAccess',
     labelKey: 'perm_admin_access'

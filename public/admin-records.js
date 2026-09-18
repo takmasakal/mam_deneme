@@ -158,6 +158,7 @@
           { key: 'office.edit', legacyField: 'officeEdit', labelKey: 'perm_office_edit' },
           { key: 'asset.delete', legacyField: 'assetDelete', labelKey: 'perm_asset_delete' },
           { key: 'pdf.advanced', legacyField: 'pdfAdvancedTools', labelKey: 'perm_pdf_advanced' },
+          { key: 'metadata.admin', legacyField: 'metadataAdminAccess', labelKey: 'perm_metadata_admin' },
           { key: 'text.admin', legacyField: 'textAdminAccess', labelKey: 'perm_text_admin' },
           { key: 'document.rights.admin', legacyField: 'documentRightsAdminAccess', labelKey: 'perm_document_rights_admin' },
           { key: 'advanced.search', legacyField: 'advancedSearchAccess', labelKey: 'perm_advanced_search' }
