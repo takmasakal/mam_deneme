@@ -159,6 +159,10 @@
       const actionType = String(version?.actionType || 'manual').toLowerCase();
       const hasSnapshot = String(version?.snapshotMediaUrl || '').startsWith('/uploads/');
       const snapshotMime = String(version?.snapshotMimeType || '').toLowerCase();
+      const snapshotFileName = String(version?.snapshotFileName || '').toLowerCase();
+      const textPreviewable = snapshotMime.startsWith('text/')
+        || snapshotMime === 'application/json'
+        || /\.json(?:$|[?#])/.test(snapshotFileName);
       const actorUsername = String(version?.actorUsername || '').trim().toLowerCase();
       const username = String(currentUsername() || '').trim().toLowerCase();
       const isOwnVersion = Boolean(username && actorUsername && username === actorUsername);
@@ -173,7 +177,7 @@
         actionType,
         canRestorePdf: Boolean(access.canManageVersions && access.assetIsPdf && hasSnapshot),
         canRestoreOffice: Boolean(access.canManageVersions && access.assetIsOffice && hasSnapshot),
-        canPreviewVersion: Boolean(hasSnapshot && (/^(image|audio|video)\//.test(snapshotMime) || snapshotMime === 'application/pdf' || snapshotMime.includes('word') || snapshotMime.includes('officedocument') || snapshotMime.includes('ms-excel') || snapshotMime.includes('ms-powerpoint'))),
+        canPreviewVersion: Boolean(hasSnapshot && (/^(image|audio|video)\//.test(snapshotMime) || textPreviewable || snapshotMime === 'application/pdf' || snapshotMime.includes('word') || snapshotMime.includes('officedocument') || snapshotMime.includes('ms-excel') || snapshotMime.includes('ms-powerpoint'))),
         canDownloadVersion: Boolean(hasSnapshot && access.canDownloadAsset),
         canEditVersion: canEditOrDelete,
         canDeleteVersion: canEditOrDelete
