@@ -6752,7 +6752,23 @@ app.get('/api/assets/:id/preview-text', async (req, res) => {
       return res.status(loaded.status).json({ error: loaded.error });
     }
 
-    const row = loaded.row;
+    const versionId = String(req.query?.versionId || '').trim();
+    let row = loaded.row;
+    if (versionId) {
+      const versionResult = await pool.query(
+        'SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2',
+        [row.id, versionId]
+      );
+      const version = versionResult.rows[0];
+      if (!version) return res.status(404).json({ error: 'Version not found' });
+      row = {
+        ...row,
+        file_name: version.snapshot_file_name || row.file_name,
+        mime_type: version.snapshot_mime_type || row.mime_type,
+        source_path: version.snapshot_source_path || '',
+        media_url: version.snapshot_media_url || ''
+      };
+    }
     let inputPath = row.source_path;
     if (!inputPath || !fs.existsSync(inputPath)) {
       const mediaPath = publicUploadUrlToAbsolutePath(row.media_url);

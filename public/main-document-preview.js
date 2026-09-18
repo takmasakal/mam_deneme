@@ -94,7 +94,9 @@ function initDocumentPreview(asset) {
     try {
       let text = '';
       try {
-        const extracted = await api(`/api/assets/${asset.id}/preview-text`);
+        const versionId = String(asset?.previewVersionId || '').trim();
+        const suffix = versionId ? `?versionId=${encodeURIComponent(versionId)}` : '';
+        const extracted = await api(`/api/assets/${asset.id}/preview-text${suffix}`);
         text = String(extracted.text || '');
         richPreviewHtml = String(extracted.html || '');
         preferRich = String(extracted.mode || '').toLowerCase() === 'html' && Boolean(richPreviewHtml.trim());

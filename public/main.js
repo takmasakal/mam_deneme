@@ -2488,6 +2488,8 @@ const detailVersionActionsModule = window.createMainDetailVersionActions({
     assetDetail.classList.remove('video-detail-mode', 'audio-detail-mode');
     panelDetail?.classList.remove('panel-video-detail');
   },
+  documentSearchControls,
+  initDocumentPreview,
   assetDetail
 });
 
