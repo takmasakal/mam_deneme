@@ -66,14 +66,34 @@ async function run() {
 
   const routes = {};
   let queued = 0;
+  let assetVisibilityUpdates = 0;
   let queryResult = [own];
   let lastQuery;
   const app = new Proxy({}, { get: (_target, method) => (path, ...handlers) => { routes[`${method} ${path}`] = handlers.at(-1); } });
   registerAdminRoutes(app, {
-    assetAccessService: { ...access, resolveAccessContext: async (req) => req.context },
+    assetAccessService: {
+      ...access,
+      resolveAccessContext: async (req) => req.context,
+      updateAssetVisibility: async () => {
+        assetVisibilityUpdates++;
+        return { status: 200, row: { id: 'own', title: 'Document' } };
+      }
+    },
     pool: { query: async (sql, values) => { lastQuery = { sql, values }; return { rows: queryResult }; } },
     metadataEnrichmentService: { queueAsset: () => { queued++; return { jobId: 'job' }; } },
-    recordAuditEvent: async () => {}
+    getUserPermissionsSettings: async () => ({ users: { boss: { permissionKeys: ['admin.access'] } }, groups: {} }),
+    fetchKeycloakUsers: async ({ search }) => ({
+      users: search === 'chief' ? [{ username: 'chief', email: 'chief@example.com' }] : [],
+      realmByUsername: new Map()
+    }),
+    isVisibleKeycloakUser: () => true,
+    fetchKeycloakUserPermissionDefaults: async (users) => new Map(users.map((user) => [String(user.username || '').toLowerCase(), user.username === 'chief' ? ['admin.access'] : []])),
+    fetchKeycloakGroupMembers: async () => ({ groupPathsByUsername: new Map() }),
+    resolvePermissionKeysFromPrincipals: () => ({ permissionKeys: [] }),
+    normalizePermissionEntry,
+    PERMISSION_KEYS,
+    recordAuditEvent: async () => {},
+    indexAssetToElastic: async () => {}
   });
   const generate = routes['post /api/admin/metadata/generate'];
   let res = response();
@@ -95,6 +115,22 @@ async function run() {
   res = response();
   await routes['get /api/admin/metadata/assets/suggest']({ context, query: { q: 'Doc' } }, res);
   assert.deepStrictEqual(res.body.map((row) => row.id), ['own']);
+  res = response();
+  await routes['patch /api/admin/assets/:id/access']({
+    params: { id: 'own' },
+    context: { ...context, canManageAllAssetVisibility: false },
+    body: { deniedUsers: ['boss'] }
+  }, res);
+  assert.strictEqual(res.code, 403);
+  assert.strictEqual(assetVisibilityUpdates, 0, 'protected admin target must be rejected before update');
+  res = response();
+  await routes['patch /api/admin/assets/:id/access']({
+    params: { id: 'own' },
+    context: { ...context, canManageAllAssetVisibility: false },
+    body: { allowedUsers: ['chief@example.com'] }
+  }, res);
+  assert.strictEqual(res.code, 403);
+  assert.strictEqual(assetVisibilityUpdates, 0, 'Keycloak inherited admin target must be rejected before update');
 
   const sandbox = { window: {} };
   vm.runInNewContext(fs.readFileSync(require.resolve('../public/main-access-scope.js'), 'utf8'), sandbox);
