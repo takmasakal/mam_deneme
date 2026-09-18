@@ -15,6 +15,8 @@
       selectedImageVersionIds,
       assetDetail,
       cleanupPreview = () => {},
+      documentSearchControls = () => '',
+      initDocumentPreview = () => () => {},
       documentRef = global.document,
       confirmAction = global.confirm?.bind(global),
       alertError = global.alert?.bind(global),
@@ -49,6 +51,9 @@
       const office = /officedocument|msword|ms-excel|ms-powerpoint/i.test(versionMime)
         || /\.(docx?|xlsx?|pptx?)$/i.test(versionFileName);
       const imageVersion = versionMime.startsWith('image/');
+      const textPreview = versionMime.startsWith('text/')
+        || versionMime === 'application/json'
+        || /\.json$/i.test(versionFileName);
       const attachment = version?.fileRole === 'attachment' || version?.actionType === 'attachment';
       const host = assetDetail.querySelector('[data-detail-file-preview]');
       if (host) {
@@ -57,9 +62,29 @@
         const isAudio = versionMime.startsWith('audio/');
         const isVideo = versionMime.startsWith('video/');
         const pdf = versionMime === 'application/pdf';
-        if (!imageVersion && !isAudio && !isVideo && !pdf && !office) { alertError('Bu dosya türü önizlenemiyor'); return; }
+        if (!imageVersion && !isAudio && !isVideo && !pdf && !office && !textPreview) { alertError('Bu dosya türü önizlenemiyor'); return; }
         cleanupPreview();
         host.querySelectorAll('audio, video').forEach((media) => media.pause());
+        if (textPreview) {
+          const wrapper = documentRef.createElement('div');
+          wrapper.className = 'viewer-resizable doc-preview-shell';
+          wrapper.innerHTML = `
+            ${documentSearchControls()}
+            <pre id="docPreviewBox" class="doc-preview">${t('preview_loading')}</pre>
+          `;
+          host.replaceChildren(wrapper);
+          initDocumentPreview({
+            ...asset,
+            id: asset.id,
+            title: version?.label || versionFileName || asset?.title || '',
+            fileName: versionFileName || asset?.fileName || '',
+            mimeType: versionMime || 'application/json',
+            mediaUrl,
+            previewVersionId: versionId
+          });
+          showShortcutToast?.(`${version?.label || versionFileName} önizlemesi yüklendi`, { type: 'success' });
+          return;
+        }
         const target = documentRef.createElement(imageVersion ? 'img' : isAudio ? 'audio' : isVideo ? 'video' : 'iframe');
         target.className = 'asset-viewer' + (imageVersion ? ' image-asset-viewer' : !isAudio && !isVideo ? ' pdf-viewer-frame' : '');
         target.dataset.versionId = versionId;
