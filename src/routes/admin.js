@@ -409,6 +409,126 @@ function limitGroupsForAssetRightsAdmin(values, context) {
   return list.filter((group) => managed.includes(group));
 }
 
+const ASSET_ACCESS_USER_FIELDS = [
+  'allowedUsers',
+  'deniedUsers',
+  'editAllowedUsers',
+  'editDeniedUsers',
+  'downloadAllowedUsers',
+  'downloadDeniedUsers',
+  'uploadAllowedUsers',
+  'uploadDeniedUsers'
+];
+
+function normalizeAssetAccessPrincipal(value) {
+  return assetAccessService.normalizeAccessName(String(value || '').trim().replace(/^\/+/, ''));
+}
+
+function collectAssetAccessUserTargets(payload) {
+  const targets = new Set();
+  ASSET_ACCESS_USER_FIELDS.forEach((field) => {
+    assetAccessService.normalizeAccessList(payload?.[field] || []).forEach((value) => {
+      const normalized = normalizeAssetAccessPrincipal(value);
+      if (normalized) targets.add(normalized);
+    });
+  });
+  return Array.from(targets);
+}
+
+function getSavedUserPermissionEntry(saved, username) {
+  const normalized = normalizeAssetAccessPrincipal(username);
+  if (!normalized) return null;
+  const savedUsers = saved?.users && typeof saved.users === 'object' && !Array.isArray(saved.users) ? saved.users : {};
+  if (Object.prototype.hasOwnProperty.call(savedUsers, normalized)) return savedUsers[normalized];
+  if (saved && typeof saved === 'object' && !Array.isArray(saved) && Object.prototype.hasOwnProperty.call(saved, normalized)) {
+    return saved[normalized];
+  }
+  return null;
+}
+
+function permissionEntryHasAdminAccess(entry, inheritedKeys = []) {
+  if (typeof normalizePermissionEntry !== 'function') return false;
+  const normalized = normalizePermissionEntry(entry, inheritedKeys);
+  return Boolean(normalized.adminPageAccess || normalized.permissionKeys?.includes('admin.access'));
+}
+
+function targetMatchesKeycloakUser(user, target) {
+  const displayName = [user?.firstName, user?.lastName].map((item) => String(item || '').trim()).filter(Boolean).join(' ');
+  return [user?.username, user?.email, user?.id, displayName]
+    .map((value) => normalizeAssetAccessPrincipal(value))
+    .filter(Boolean)
+    .includes(target);
+}
+
+async function findProtectedAssetAccessUserTargets(payload, context) {
+  if (context?.canManageAllAssetVisibility) return [];
+  const targets = collectAssetAccessUserTargets(payload);
+  if (!targets.length) return [];
+  const blocked = new Set();
+  const saved = typeof getUserPermissionsSettings === 'function' ? await getUserPermissionsSettings() : {};
+  const savedGroups = saved?.groups && typeof saved.groups === 'object' && !Array.isArray(saved.groups) ? saved.groups : {};
+  const directProtectedNames = new Set([
+    'superadmin',
+    'super admin',
+    'super-admin',
+    'super_admin',
+    'admin',
+    'standart yönetici',
+    'standart yonetici'
+  ].map(normalizeAssetAccessPrincipal));
+
+  targets.forEach((target) => {
+    if (directProtectedNames.has(target)) blocked.add(target);
+    if (permissionEntryHasAdminAccess(getSavedUserPermissionEntry(saved, target))) blocked.add(target);
+    const principalKeys = typeof resolvePermissionKeysFromPrincipals === 'function'
+      ? resolvePermissionKeysFromPrincipals({ username: target, displayName: target, groups: [target], roles: [target] }).permissionKeys
+      : [];
+    if (principalKeys.includes('admin.access')) blocked.add(target);
+  });
+
+  if (blocked.size === targets.length || typeof fetchKeycloakUsers !== 'function') return Array.from(blocked);
+
+  const keycloakMatches = [];
+  const keycloakUsersByUsername = new Map();
+  await Promise.all(targets.map(async (target) => {
+    if (blocked.has(target)) return;
+    const search = target.includes('@') ? target.split('@')[0] : target;
+    if (search.length < 2) return;
+    const data = await fetchKeycloakUsers({ search, max: 25 }).catch(() => null);
+    const users = (Array.isArray(data?.users) ? data.users : [])
+      .filter((user) => (typeof isVisibleKeycloakUser === 'function' ? isVisibleKeycloakUser(user) : true))
+      .filter((user) => targetMatchesKeycloakUser(user, target));
+    users.forEach((user) => {
+      const username = normalizeAssetAccessPrincipal(user?.username);
+      if (!username) return;
+      keycloakUsersByUsername.set(username, user);
+      keycloakMatches.push({ target, username, user });
+    });
+  }));
+
+  if (!keycloakMatches.length) return Array.from(blocked);
+
+  const kcUsers = Array.from(keycloakUsersByUsername.values());
+  const [permissionDefaultsByUser, permissionGroupMembers] = await Promise.all([
+    typeof fetchKeycloakUserPermissionDefaults === 'function'
+      ? fetchKeycloakUserPermissionDefaults(kcUsers, new Map()).catch(() => new Map())
+      : Promise.resolve(new Map()),
+    typeof fetchKeycloakGroupMembers === 'function'
+      ? fetchKeycloakGroupMembers(getPermissionGroupCandidateNames(savedGroups), { maxPerGroup: 1000 }).catch(() => ({ groupPathsByUsername: new Map() }))
+      : Promise.resolve({ groupPathsByUsername: new Map() })
+  ]);
+
+  keycloakMatches.forEach(({ target, username }) => {
+    const inherited = uniquePermissionKeys([
+      ...(permissionDefaultsByUser instanceof Map ? permissionDefaultsByUser.get(username) || [] : []),
+      ...resolveInheritedPermissionKeysForGroups(permissionGroupMembers?.groupPathsByUsername?.get(username) || [], savedGroups)
+    ]);
+    if (permissionEntryHasAdminAccess(getSavedUserPermissionEntry(saved, username), inherited)) blocked.add(target);
+  });
+
+  return Array.from(blocked);
+}
+
 async function requireFullAdminRequest(req, res) {
   const effective = await resolveEffectivePermissions(req);
   if (!effective?.canAccessAdmin) {
@@ -1048,6 +1168,12 @@ app.patch('/api/admin/assets/:id/access', async (req, res) => {
   try {
     const accessContext = await requireAssetRightsAdminRequest(req, res);
     if (!accessContext) return null;
+    const protectedUserTargets = await findProtectedAssetAccessUserTargets(req.body || {}, accessContext);
+    if (protectedUserTargets.length) {
+      return res.status(403).json({
+        error: `Standart yönetici veya superadmin kullanıcıları için varlık yetkisi kaydı yapılamaz: ${protectedUserTargets.join(', ')}`
+      });
+    }
     const result = await assetAccessService.updateAssetVisibility(req.params.id, req.body || {}, accessContext);
     if (result.status !== 200) {
       return res.status(result.status).json({ error: result.error });
