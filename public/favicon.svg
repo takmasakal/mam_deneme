@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <style>
+      @font-face {
+        font-family: "Bakbak One";
+        src: url("/fonts/BakbakOne-Regular.ttf") format("truetype");
+      }
+      text {
+        font-family: "Bakbak One", "Arial Black", sans-serif;
+        font-size: 46px;
+        font-weight: 400;
+      }
+    </style>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#1f2128"/>
+  <rect x="4" y="4" width="56" height="56" rx="11" fill="#2a2d36" stroke="#3a3f4b" stroke-width="2"/>
+  <text x="32" y="48" fill="#e2a63b" text-anchor="middle">B</text>
+</svg>
