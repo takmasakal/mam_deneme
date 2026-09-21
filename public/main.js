@@ -1171,6 +1171,7 @@ function highlightTextByRanges(text, ranges) { return commonModule.highlightText
 function serializeForm(form) { return commonModule.serializeForm(form); }
 function highlightSuggestText(text, query) { return commonModule.highlightSuggestText(text, query); }
 function getSubtitleOverlayEnabled(assetId, fallback = false) { return commonModule.getSubtitleOverlayEnabled(assetId, fallback); }
+function normalizeActiveSubtitleAsset(asset) { return commonModule.normalizeActiveSubtitleAsset(asset); }
 function syncSubtitleOverlayInOpenPlayers(asset) { return commonModule.syncSubtitleOverlayInOpenPlayers(asset); }
 function initCustomSubtitleOverlay(mediaEl, asset, root = document) { return commonModule.initCustomSubtitleOverlay(mediaEl, asset, root); }
 function scheduleNativeSubtitleCuePosition(mediaEl) { return commonModule.scheduleNativeSubtitleCuePosition(mediaEl); }
@@ -2529,6 +2530,7 @@ async function openAsset(id, workflow, options = {}) {
   selectedAssetId = id;
   selectedAssetIds.add(id);
   lastSelectedAssetId = id;
+  normalizeActiveSubtitleAsset(asset);
   updateAssetSelectionUi();
 
   if (activePlayerCleanup) {
