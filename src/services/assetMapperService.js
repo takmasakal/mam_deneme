@@ -27,6 +27,17 @@ function createAssetMapperService(deps = {}) {
       }];
     }
     const subtitleActiveByLang = resolveSubtitleActiveByLang(dcMetadata, subtitleItems);
+    const directSubtitleUrl = String(dcMetadata.subtitleUrl || '').trim();
+    const activeSubtitleUrls = subtitleActiveByLang && typeof subtitleActiveByLang === 'object'
+      ? Object.values(subtitleActiveByLang).map((url) => String(url || '').trim()).filter(Boolean)
+      : [];
+    const activeSubtitleItem = subtitleItems.find((item) => directSubtitleUrl && String(item.subtitleUrl || '').trim() === directSubtitleUrl)
+      || subtitleItems.find((item) => activeSubtitleUrls.includes(String(item.subtitleUrl || '').trim()))
+      || subtitleItems[0]
+      || null;
+    const subtitleUrl = directSubtitleUrl || String(activeSubtitleItem?.subtitleUrl || '').trim();
+    const subtitleLang = subtitleUrl ? normalizeSubtitleLang(activeSubtitleItem?.subtitleLang || dcMetadata.subtitleLang) : '';
+    const subtitleLabel = subtitleUrl ? String(activeSubtitleItem?.subtitleLabel || dcMetadata.subtitleLabel || '').trim() : '';
     if (!videoOcrItems.length && String(dcMetadata.videoOcrUrl || '').trim()) {
       videoOcrItems = [{
         id: nanoid(),
@@ -96,9 +107,9 @@ function createAssetMapperService(deps = {}) {
       downloadDeniedGroups: row.download_denied_groups || [],
       dcMetadata,
       audioChannels: Number(dcMetadata.audioChannels) || 0,
-      subtitleUrl: String(dcMetadata.subtitleUrl || '').trim(),
-      subtitleLang: dcMetadata.subtitleUrl ? normalizeSubtitleLang(dcMetadata.subtitleLang) : '',
-      subtitleLabel: String(dcMetadata.subtitleLabel || '').trim(),
+      subtitleUrl,
+      subtitleLang,
+      subtitleLabel,
       subtitleItems,
       subtitleActiveByLang,
       audioStreamOptions: Array.isArray(dcMetadata.audioStreamOptions) ? dcMetadata.audioStreamOptions : [],
