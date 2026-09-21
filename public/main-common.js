@@ -125,7 +125,34 @@
       return getSubtitleStyleSettings().customOverlayEnabled;
     }
 
+    function normalizeActiveSubtitleAsset(asset) {
+      if (!asset || typeof asset !== 'object') return asset;
+      const dc = asset.dcMetadata && typeof asset.dcMetadata === 'object' ? asset.dcMetadata : {};
+      const items = Array.isArray(asset.subtitleItems) ? asset.subtitleItems : (Array.isArray(dc.subtitleItems) ? dc.subtitleItems : []);
+      const directUrl = String(asset.subtitleUrl || dc.subtitleUrl || '').trim();
+      if (directUrl) {
+        if (!asset.subtitleUrl) asset.subtitleUrl = directUrl;
+        return asset;
+      }
+      const activeByLang = asset.subtitleActiveByLang && typeof asset.subtitleActiveByLang === 'object'
+        ? asset.subtitleActiveByLang
+        : (dc.subtitleActiveByLang && typeof dc.subtitleActiveByLang === 'object' ? dc.subtitleActiveByLang : {});
+      const activeUrls = Object.values(activeByLang).map((url) => String(url || '').trim()).filter(Boolean);
+      const activeItem = items.find((item) => activeUrls.includes(String(item?.subtitleUrl || '').trim()))
+        || items.find((item) => String(item?.subtitleUrl || '').trim())
+        || null;
+      const subtitleUrl = String(activeItem?.subtitleUrl || '').trim();
+      if (!subtitleUrl) return asset;
+      asset.subtitleUrl = subtitleUrl;
+      asset.subtitleLang = String(activeItem?.subtitleLang || asset.subtitleLang || dc.subtitleLang || '').trim();
+      asset.subtitleLabel = String(activeItem?.subtitleLabel || asset.subtitleLabel || dc.subtitleLabel || '').trim();
+      if (!Array.isArray(asset.subtitleItems) && Array.isArray(items)) asset.subtitleItems = items;
+      if (!asset.subtitleActiveByLang && activeByLang && typeof activeByLang === 'object') asset.subtitleActiveByLang = activeByLang;
+      return asset;
+    }
+
     function syncSubtitleOverlayInOpenPlayers(asset) {
+      normalizeActiveSubtitleAsset(asset);
       const assetId = String(asset?.id || '').trim();
       const subtitleUrl = String(asset?.subtitleUrl || '').trim();
       if (!assetId) return;
@@ -875,6 +902,7 @@
     }
 
     function initCustomSubtitleOverlay(mediaEl, asset, root = document) {
+      normalizeActiveSubtitleAsset(asset);
       if (!(mediaEl instanceof HTMLMediaElement) || !asset?.id) return () => {};
       const audioViewer = mediaEl.closest('.audio-detail-viewer, .audio-tools-viewer-shell');
       const host = audioViewer?.querySelector('[data-audio-subtitle-stage]')
@@ -1018,6 +1046,7 @@
     }
 
     function subtitleTrackMarkup(asset) {
+      normalizeActiveSubtitleAsset(asset);
       if (!asset?.subtitleUrl) return '';
       if (!getSubtitleOverlayEnabled(asset.id, false)) return '';
       if (customSubtitleOverlayEnabled()) return '';
@@ -1040,6 +1069,7 @@
       serializeForm,
       highlightSuggestText,
       getSubtitleOverlayEnabled,
+      normalizeActiveSubtitleAsset,
       syncSubtitleOverlayInOpenPlayers,
       readFileAsBase64,
       getFileExtension,

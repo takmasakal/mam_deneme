@@ -1038,6 +1038,16 @@ function initVideoOcrTools(asset, root = document) {
     asset.videoOcrUrl = mappedAsset.videoOcrUrl || asset.videoOcrUrl || '';
     asset.videoOcrLabel = mappedAsset.videoOcrLabel || asset.videoOcrLabel || '';
     asset.videoOcrItems = Array.isArray(mappedAsset.videoOcrItems) ? mappedAsset.videoOcrItems : (asset.videoOcrItems || []);
+    if (typeof normalizeActiveSubtitleAsset === 'function') {
+      asset.subtitleUrl = mappedAsset.subtitleUrl || asset.subtitleUrl || '';
+      asset.subtitleLang = mappedAsset.subtitleLang || asset.subtitleLang || '';
+      asset.subtitleLabel = mappedAsset.subtitleLabel || asset.subtitleLabel || '';
+      asset.subtitleItems = Array.isArray(mappedAsset.subtitleItems) ? mappedAsset.subtitleItems : (asset.subtitleItems || []);
+      asset.subtitleActiveByLang = mappedAsset.subtitleActiveByLang && typeof mappedAsset.subtitleActiveByLang === 'object'
+        ? mappedAsset.subtitleActiveByLang
+        : (asset.subtitleActiveByLang || {});
+      normalizeActiveSubtitleAsset(asset);
+    }
   };
   const renderOcrItems = () => {
     const items = ocrItems();
