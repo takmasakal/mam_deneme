@@ -58,11 +58,11 @@
       const host = assetDetail.querySelector('[data-detail-file-preview]');
       if (host) {
         const mediaUrl = String(version?.snapshotMediaUrl || '').trim();
-        if (!mediaUrl.startsWith('/uploads/')) { alertError('Önizleme mevcut değil'); return; }
+        if (!mediaUrl.startsWith('/uploads/')) { alertError(t('preview_not_available')); return; }
         const isAudio = versionMime.startsWith('audio/');
         const isVideo = versionMime.startsWith('video/');
         const pdf = versionMime === 'application/pdf';
-        if (!imageVersion && !isAudio && !isVideo && !pdf && !office && !textPreview) { alertError('Bu dosya türü önizlenemiyor'); return; }
+        if (!imageVersion && !isAudio && !isVideo && !pdf && !office && !textPreview) { alertError(t('preview_not_supported')); return; }
         cleanupPreview();
         host.querySelectorAll('audio, video').forEach((media) => media.pause());
         if (textPreview) {
@@ -82,7 +82,7 @@
             mediaUrl,
             previewVersionId: versionId
           });
-          showShortcutToast?.(`${version?.label || versionFileName} önizlemesi yüklendi`, { type: 'success' });
+          showShortcutToast?.(t('version_preview_loaded').replace('{name}', version?.label || versionFileName), { type: 'success' });
           return;
         }
         const target = documentRef.createElement(imageVersion ? 'img' : isAudio ? 'audio' : isVideo ? 'video' : 'iframe');
@@ -99,11 +99,11 @@
         host.replaceChildren(wrapper);
         selectedImageVersionIds.delete(String(asset.id));
         target.addEventListener(isAudio || isVideo ? 'loadedmetadata' : 'load', () => {
-          showShortcutToast?.(`${version?.label || versionFileName} önizlemesi yüklendi`, { type: 'success' });
+          showShortcutToast?.(t('version_preview_loaded').replace('{name}', version?.label || versionFileName), { type: 'success' });
         }, { once: true });
         return;
       }
-      showShortcutToast?.(`${version?.label || version?.versionLabel || versionId} önizlemesi yüklendi`, { type: 'success' });
+      showShortcutToast?.(t('version_preview_loaded').replace('{name}', version?.label || version?.versionLabel || versionId), { type: 'success' });
       const previewUrl = office
         ? `/api/assets/${encodeURIComponent(asset.id)}/libreoffice-preview.pdf?versionId=${encodeURIComponent(versionId)}`
         : `/api/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(versionId)}/preview`;
