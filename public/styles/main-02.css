@@ -81,16 +81,15 @@ button:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 18px;
-  min-height: 58px;
-  padding: 13px 22px;
-  border-radius: 18px;
+  gap: 8px;
+  min-height: 0;
+  padding: 10px;
+  border-radius: 10px;
   border: 2px solid #e2a63b;
   background: rgba(226, 166, 59, 0.03);
   color: #e2a63b;
-  font-size: 20px;
-  font-weight: 500;
-  line-height: 1.1;
+  font: inherit;
+  line-height: normal;
   box-shadow:
     0 0 0 1px rgba(226, 166, 59, 0.16) inset,
     0 0 18px rgba(226, 166, 59, 0.18);
@@ -110,8 +109,8 @@ button:hover {
 
 .mam-action-icon {
   display: inline-flex;
-  width: 30px;
-  height: 30px;
+  width: 18px;
+  height: 18px;
   flex: 0 0 auto;
 }
 
@@ -120,7 +119,7 @@ button:hover {
   height: 100%;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2.2;
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
