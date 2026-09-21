@@ -319,7 +319,7 @@
               <label>${t('dc_coverage')}<input name="dcCoverage" value="${escapeHtml(dc.coverage || '')}" />${buildInlineFieldMatch(dc.coverage || '', currentSearchHighlightQuery(), searchHighlightClass)}</label>
               <label>${t('dc_rights')}<input name="dcRights" value="${escapeHtml(dc.rights || '')}" />${buildInlineFieldMatch(dc.rights || '', currentSearchHighlightQuery(), searchHighlightClass)}</label>
             </div>
-            <button type="submit">${t('save_metadata')}</button>
+            <button type="submit" class="mam-action-btn mam-action-btn-save"><span class="mam-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v6h8V4"/><path d="M8 16h8"/></svg></span><span class="mam-action-label">${t('save_metadata')}</span></button>
           </fieldset>
         </form>
 
@@ -353,7 +353,7 @@
           <input name="label" placeholder="${escapeHtml(t('ph_version_label'))}" />
           <input name="note" placeholder="${t('what_changed')}" />
           <input name="versionFile" type="file" required />
-          <button type="submit">Dosya ekle</button>
+          <button type="submit" class="mam-action-btn mam-action-btn-file"><span class="mam-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M12 12v6m-3-3h6"/></svg></span><span class="mam-action-label">Dosya ekle</span></button>
         </form>
 
         <h4>Dosyalar</h4>

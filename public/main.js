@@ -1339,7 +1339,13 @@ function applyStaticI18n() {
   document.body.classList.toggle('lang-en', currentLang !== 'tr');
   document.querySelectorAll('[data-i18n]').forEach((el) => {
     const key = el.getAttribute('data-i18n');
-    if (key) el.textContent = t(key);
+    if (!key) return;
+    const label = el.querySelector?.('.mam-action-label');
+    if (label) {
+      label.textContent = t(key);
+    } else {
+      el.textContent = t(key);
+    }
   });
   document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
     const key = el.getAttribute('data-i18n-placeholder');

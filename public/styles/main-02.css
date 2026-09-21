@@ -112,6 +112,65 @@ button:hover {
   background: #efb24d;
 }
 
+#panelIngest .mam-action-btn,
+#panelDetail .mam-action-btn,
+#panelDetail #editForm button.mam-action-btn[type="submit"],
+#panelDetail #versionForm button.mam-action-btn[type="submit"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  min-height: 58px;
+  padding: 13px 22px;
+  border-radius: 18px;
+  border: 2px solid #e2a63b;
+  background: rgba(226, 166, 59, 0.03);
+  color: #e2a63b;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.1;
+  box-shadow:
+    0 0 0 1px rgba(226, 166, 59, 0.16) inset,
+    0 0 18px rgba(226, 166, 59, 0.18);
+}
+
+#panelIngest .mam-action-btn:hover,
+#panelIngest .mam-action-btn:focus-visible,
+#panelDetail .mam-action-btn:hover,
+#panelDetail .mam-action-btn:focus-visible,
+#panelDetail #editForm button.mam-action-btn[type="submit"]:hover,
+#panelDetail #editForm button.mam-action-btn[type="submit"]:focus-visible,
+#panelDetail #versionForm button.mam-action-btn[type="submit"]:hover,
+#panelDetail #versionForm button.mam-action-btn[type="submit"]:focus-visible {
+  background: rgba(226, 166, 59, 0.12);
+  color: #f0b75a;
+  border-color: #f0b75a;
+  box-shadow:
+    0 0 0 1px rgba(240, 183, 90, 0.24) inset,
+    0 0 22px rgba(226, 166, 59, 0.24);
+}
+
+.mam-action-icon {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+}
+
+.mam-action-icon svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mam-action-label {
+  display: inline-block;
+}
+
 .current-user-btn {
   background: #212631 !important;
   border: 1px solid #59627a !important;
