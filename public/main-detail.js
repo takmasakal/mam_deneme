@@ -195,24 +195,24 @@
       const rowClass = 'version';
       const restoreAttr = '';
       const downloadButton = rowState.canDownloadVersion
-        ? `<button type="button" class="downloadVersionBtn" data-version-id="${escapeHtml(version.versionId)}">${attachment ? 'İndir' : escapeHtml(t('download_version'))}</button>`
+        ? `<button type="button" class="downloadVersionBtn" data-version-id="${escapeHtml(version.versionId)}">${attachment ? escapeHtml(t('download_attachment')) : escapeHtml(t('download_version'))}</button>`
         : '';
       const previewButton = rowState.canPreviewVersion
         ? `<button type="button" class="previewVersionBtn" data-version-id="${escapeHtml(version.versionId)}">${escapeHtml(t('preview_version'))}</button>`
         : '';
       const actionBar = (interactive || downloadButton || previewButton) ? `
         <div class="timecode-bar" style="margin-top:8px;">
-          ${interactive && !attachment ? `<button type="button" class="defaultVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${asset.defaultVersionId === version.versionId ? 'disabled' : ''}>${asset.defaultVersionId === version.versionId ? 'Varsayılan' : 'Varsayılan yap'}</button>` : ''}
+          ${interactive && !attachment ? `<button type="button" class="defaultVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${asset.defaultVersionId === version.versionId ? 'disabled' : ''}>${asset.defaultVersionId === version.versionId ? escapeHtml(t('default_version')) : escapeHtml(t('make_default_version'))}</button>` : ''}
           ${previewButton}
           ${downloadButton}
-          ${interactive ? `<button type="button" class="editVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canEditVersion ? '' : 'disabled'}>${attachment ? 'Adını düzenle' : escapeHtml(t('edit_version_name'))}</button>` : ''}
-          ${interactive && rowState.canDeleteVersion ? `<button type="button" class="deleteVersionBtn danger" data-version-id="${escapeHtml(version.versionId)}">${attachment ? 'Sil' : escapeHtml(t('delete_version'))}</button>` : ''}
+          ${interactive ? `<button type="button" class="editVersionBtn" data-version-id="${escapeHtml(version.versionId)}" ${rowState.canEditVersion ? '' : 'disabled'}>${attachment ? escapeHtml(t('edit_attachment_name')) : escapeHtml(t('edit_version_name'))}</button>` : ''}
+          ${interactive && rowState.canDeleteVersion ? `<button type="button" class="deleteVersionBtn danger" data-version-id="${escapeHtml(version.versionId)}">${attachment ? escapeHtml(t('delete_attachment')) : escapeHtml(t('delete_version'))}</button>` : ''}
         </div>
       ` : '';
       return `
         <div class="${rowClass}" draggable="true" data-version-id="${escapeHtml(version.versionId)}"${restoreAttr}>
-          <strong>${renderFileText(version.label)}</strong> <span class="asset-meta">${attachment ? 'Ek dosya' : 'Versiyon'}</span> - ${renderFileText(cleanNote)}<br />
-          ${attachment && version.snapshotFileName ? `<span class="asset-meta">Dosya adı: ${renderFileText(version.snapshotFileName)}</span><br />` : ''}
+          <strong>${renderFileText(version.label)}</strong> <span class="asset-meta">${attachment ? escapeHtml(t('attachment_file')) : escapeHtml(t('version_label'))}</span> - ${renderFileText(cleanNote)}<br />
+          ${attachment && version.snapshotFileName ? `<span class="asset-meta">${escapeHtml(t('file_name'))}: ${renderFileText(version.snapshotFileName)}</span><br />` : ''}
           <span class="asset-meta">${escapeHtml(formatDate(version.createdAt))}</span><br />
           <span class="asset-meta">${escapeHtml(t('version_action'))}: ${escapeHtml(t(`action_${rowState.actionType}`) || String(version.actionType || 'manual'))} | ${escapeHtml(t('version_actor'))}: ${escapeHtml(version.actorUsername || '-')}</span>
           ${changeKindLabel ? `<br /><span class="asset-meta">${escapeHtml(t('version_change_type'))}: ${escapeHtml(changeKindLabel)}</span>` : ''}
