@@ -337,8 +337,8 @@
       const versionAccess = getVersionSectionAccess(asset);
       const { assetIsPdf, assetIsOffice, canViewVersions, canManageVersions } = versionAccess;
       const fileGroups = () => [
-        { attachment: false, title: 'Versiyonlar', empty: 'Henüz versiyon yok.' },
-        { attachment: true, title: 'Ek dosyalar', empty: 'Henüz ek dosya yok.' }
+        { attachment: false, title: t('versions'), empty: t('versions_empty') },
+        { attachment: true, title: t('attachments'), empty: t('attachments_empty') }
       ].map((group) => {
         const files = (asset.versions || []).filter((file) => (file.fileRole === 'attachment' || file.actionType === 'attachment') === group.attachment);
         return `<section class="asset-file-group" style="border:1px solid ${group.attachment ? 'rgba(106, 160, 190, 0.35)' : 'var(--border, #414141)'};${group.attachment ? 'background:rgba(80, 135, 165, 0.10);' : ''}border-radius:8px;padding:12px;margin-top:12px;">
@@ -348,15 +348,15 @@
       }).join('');
       const versionSection = canManageVersions ? `
         <form id="versionForm" class="inline-grid">
-          <h4>Dosya ekle</h4>
-          <select name="fileRole" aria-label="Dosya rolü"><option value="version">Yeni versiyon (${escapeHtml(asset.versionMimeType || asset.mimeType || '')})</option><option value="attachment">Ek dosya</option></select>
+          <h4>${escapeHtml(t('add_file'))}</h4>
+          <select name="fileRole" aria-label="${escapeHtml(t('file_role'))}"><option value="version">${escapeHtml(t('new_version'))} (${escapeHtml(asset.versionMimeType || asset.mimeType || '')})</option><option value="attachment">${escapeHtml(t('attachment_file'))}</option></select>
           <input name="label" placeholder="${escapeHtml(t('ph_version_label'))}" />
           <input name="note" placeholder="${t('what_changed')}" />
           <input name="versionFile" type="file" required />
-          <button type="submit" class="mam-action-btn mam-action-btn-file"><span class="mam-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M12 12v6m-3-3h6"/></svg></span><span class="mam-action-label">Dosya ekle</span></button>
+          <button type="submit" class="mam-action-btn mam-action-btn-file"><span class="mam-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M12 12v6m-3-3h6"/></svg></span><span class="mam-action-label">${escapeHtml(t('add_file'))}</span></button>
         </form>
 
-        <h4>Dosyalar</h4>
+        <h4>${escapeHtml(t('files'))}</h4>
         ${(
           (currentUserCanUsePdfAdvancedTools() || (asset.canEditAssetPdf ?? asset.canEditAsset))
           && asset.canDownloadAsset !== false
@@ -379,7 +379,7 @@
         ${fileGroups()}
         </div>
       ` : (canViewVersions ? `
-        <h4>Dosyalar</h4>
+        <h4>${escapeHtml(t('files'))}</h4>
         <div id="assetVersionsList">
         ${fileGroups()}
         </div>
