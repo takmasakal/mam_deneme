@@ -189,10 +189,16 @@
         if (!input?.matches?.('input[name="versionFile"]')) return;
         input.setCustomValidity(t('version_file_required'));
       };
+      const updateVersionFileName = (input) => {
+        const nameTarget = input.closest('.localized-file-input')?.querySelector('[data-version-file-name]');
+        if (!nameTarget) return;
+        nameTarget.textContent = input.files?.[0]?.name || t('no_file_chosen');
+      };
       const onVersionFileChange = (event) => {
         const input = event.target;
         if (!input?.matches?.('input[name="versionFile"]')) return;
         input.setCustomValidity('');
+        updateVersionFileName(input);
       };
       root.addEventListener('submit', onSubmit);
       root.addEventListener('click', onClick);
