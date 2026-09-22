@@ -87,16 +87,19 @@
 
       const payload = serializeForm(form);
       const versionFile = form.elements?.versionFile?.files?.[0];
-      if (versionFile) {
-        payload.fileName = versionFile.name;
-        payload.mimeType = versionFile.type || 'application/octet-stream';
-        payload.fileData = await readFileAsBase64(versionFile);
+      if (!versionFile) {
+        showShortcutToast?.(t('version_file_required'), { type: 'error' });
+        form.elements?.versionFile?.focus?.();
+        return;
       }
+      payload.fileName = versionFile.name;
+      payload.mimeType = versionFile.type || 'application/octet-stream';
+      payload.fileData = await readFileAsBase64(versionFile);
       await api(`/api/assets/${asset.id}/versions`, {
         method: 'POST',
         body: JSON.stringify(payload)
       });
-      showShortcutToast?.(payload.fileRole === 'attachment' ? 'Dosya eklendi' : 'Versiyon eklendi', { type: 'success' });
+      showShortcutToast?.(payload.fileRole === 'attachment' ? t('attachment_added') : t('version_added'), { type: 'success' });
       await refresh(asset, workflow);
     }
 
@@ -184,11 +187,20 @@
       const { asset, workflow } = context;
       const onSubmit = (event) => handleSubmit(event, asset, workflow);
       const onClick = (event) => handleClick(event, asset, workflow);
+      const onVersionFileChange = (event) => {
+        const input = event.target;
+        if (!input?.matches?.('input[name="versionFile"]')) return;
+        const nameTarget = input.closest('.version-file-picker')?.querySelector('[data-version-file-name]');
+        if (!nameTarget) return;
+        nameTarget.textContent = input.files?.[0]?.name || t('no_file_chosen');
+      };
       root.addEventListener('submit', onSubmit);
       root.addEventListener('click', onClick);
+      root.addEventListener('change', onVersionFileChange);
       const cleanup = () => {
         root.removeEventListener('submit', onSubmit);
         root.removeEventListener('click', onClick);
+        root.removeEventListener('change', onVersionFileChange);
         if (activeBindings.get(root) === cleanup) activeBindings.delete(root);
       };
       activeBindings.set(root, cleanup);
