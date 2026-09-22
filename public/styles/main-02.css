@@ -1145,3 +1145,48 @@ button:hover {
   padding: 5px 10px;
   font-size: 11px;
 }
+
+.version-file-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.version-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.version-file-picker-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 5px 12px;
+  border: 1px solid rgba(226, 166, 59, 0.78);
+  border-radius: 10px;
+  background: rgba(226, 166, 59, 0.08);
+  color: #f2c978;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(226, 166, 59, 0.14);
+}
+
+.version-file-picker:focus-within .version-file-picker-button,
+.version-file-picker:hover .version-file-picker-button {
+  border-color: rgba(226, 166, 59, 0.95);
+  background: rgba(226, 166, 59, 0.14);
+}
+
+.version-file-picker-name {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
