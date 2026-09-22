@@ -714,7 +714,9 @@
 .advanced-search-and { --advanced-group-color: #5ee0a6; }
 .advanced-search-or { --advanced-group-color: #f4bf63; }
 .advanced-search-group h4 { color: var(--advanced-group-color); }
-.advanced-search-group .advanced-search-dropzone,
+.advanced-search-group .advanced-search-dropzone {
+  border: 1px dashed #3f4654;
+}
 .advanced-search-group .advanced-search-field {
   border: 1px dashed var(--advanced-group-color);
 }
