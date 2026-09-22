@@ -368,18 +368,20 @@
         </section>`;
       }).join('');
       const versionSection = canManageVersions ? `
-        <form id="versionForm" class="inline-grid">
-          <h4>${escapeHtml(t('add_file'))}</h4>
-          <select name="fileRole" aria-label="${escapeHtml(t('file_role'))}"><option value="version">${escapeHtml(t('new_version'))} (${escapeHtml(asset.versionMimeType || asset.mimeType || '')})</option><option value="attachment">${escapeHtml(t('attachment_file'))}</option></select>
-          <input name="label" placeholder="${escapeHtml(t('ph_version_label'))}" />
-          <input name="note" placeholder="${t('what_changed')}" />
-          <label class="localized-file-input">
-            <input name="versionFile" type="file" required />
-            <span class="localized-file-input-button">${escapeHtml(t('choose_file'))}</span>
-            <span class="localized-file-input-name" data-version-file-name>${escapeHtml(t('no_file_chosen'))}</span>
-          </label>
-          <button type="submit" class="mam-action-btn mam-action-btn-file"><span class="mam-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M12 12v6m-3-3h6"/></svg></span><span class="mam-action-label">${escapeHtml(t('add_file'))}</span></button>
-        </form>
+        <section class="asset-file-add-container">
+          <form id="versionForm" class="inline-grid">
+            <h4>${escapeHtml(t('add_file'))}</h4>
+            <select name="fileRole" aria-label="${escapeHtml(t('file_role'))}"><option value="version">${escapeHtml(t('new_version'))} (${escapeHtml(asset.versionMimeType || asset.mimeType || '')})</option><option value="attachment">${escapeHtml(t('attachment_file'))}</option></select>
+            <input name="label" placeholder="${escapeHtml(t('ph_version_label'))}" />
+            <input name="note" placeholder="${t('what_changed')}" />
+            <label class="localized-file-input">
+              <input name="versionFile" type="file" required />
+              <span class="localized-file-input-button">${escapeHtml(t('choose_file'))}</span>
+              <span class="localized-file-input-name" data-version-file-name>${escapeHtml(t('no_file_chosen'))}</span>
+            </label>
+            <button type="submit" class="mam-action-btn mam-action-btn-file"><span class="mam-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M12 12v6m-3-3h6"/></svg></span><span class="mam-action-label">${escapeHtml(t('add_file'))}</span></button>
+          </form>
+        </section>
 
         <h4>${escapeHtml(t('files'))}</h4>
         ${(
