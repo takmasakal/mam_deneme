@@ -1345,3 +1345,16 @@ button:hover {
   border-color: rgba(226, 166, 59, 0.78);
   color: #f2c978;
 }
+
+
+.asset-file-add-container {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.18);
+  padding: 12px;
+  margin: 0 0 14px 0;
+}
+
+.asset-file-add-container h4 {
+  margin-top: 0;
+}
