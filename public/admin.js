@@ -36,11 +36,15 @@ const rotateApiTokenBtn = document.getElementById('rotateApiTokenBtn');
 const copyApiTokenBtn = document.getElementById('copyApiTokenBtn');
 const apiHelpBox = document.getElementById('apiHelpBox');
 const apiGuideDoc = document.getElementById('apiGuideDoc');
-const startProxyJobBtn = document.getElementById('startProxyJobBtn');
 const includeTrash = document.getElementById('includeTrash');
 const proxyJobState = document.getElementById('proxyJobState');
 const proxyProgress = document.getElementById('proxyProgress');
 const proxyJobErrors = document.getElementById('proxyJobErrors');
+const scanMissingProxyBtn = document.getElementById('scanMissingProxyBtn');
+const autoScanMissingProxyBtn = document.getElementById('autoScanMissingProxyBtn');
+const cancelMissingProxyScanBtn = document.getElementById('cancelMissingProxyScanBtn');
+const missingProxyScanState = document.getElementById('missingProxyScanState');
+const missingProxyRows = document.getElementById('missingProxyRows');
 const proxyToolAssetName = document.getElementById('proxyToolAssetName');
 const proxyToolSuggestList = document.getElementById('proxyToolSuggestList');
 const proxyToolAction = document.getElementById('proxyToolAction');
@@ -307,6 +311,28 @@ let i18n = {
     settings: 'Settings',
     loading: 'Loading...',
     auto_proxy_backfill: 'Auto backfill proxies on upload',
+    missing_proxy_tool_title: 'Missing Proxy/Thumbnail Generation',
+    missing_proxy_tool_desc: 'Scan assets with missing proxy or thumbnail files, then generate only the missing component.',
+    scan_missing_proxies_manual: 'Scan Missing Manually',
+    scan_missing_proxies_auto: 'Scan Missing Automatically',
+    stop_scan: 'Stop scan',
+    missing_proxy_asset_name: 'Asset name',
+    missing_proxy_component: 'Missing component',
+    missing_proxy_component_all: 'All',
+    missing_proxy_component_thumbnail: 'Thumbnail',
+    missing_proxy_component_proxy: 'Proxy',
+    missing_proxy_generate: 'Generate',
+    missing_proxy_scan_running: 'Scanning missing proxy/thumbnail files...',
+    missing_proxy_scan_cancelled: 'Scan cancelled.',
+    missing_proxy_scan_done: '{count} missing item found.',
+    missing_proxy_scan_empty: 'No missing proxy or thumbnail item found.',
+    missing_proxy_filter_empty: 'No item matches this component filter.',
+    missing_proxy_filter_count: '{count} shown',
+    missing_proxy_scan_failed: 'Missing proxy/thumbnail scan failed.',
+    missing_proxy_auto_generate_started: 'Found {count} item(s); generation job started.',
+    missing_proxy_single_generate_started: 'Generation started for the selected asset.',
+    missing_proxy_single_generate_done: 'Generation completed for the selected asset.',
+    missing_proxy_single_generate_failed: 'Generation failed for the selected asset.',
     player_mode: 'Player Mode',
     player_mode_vidstack: 'Vidstack',
     player_mode_mpegdash: 'MPEG-DASH (dash.js)',
@@ -827,6 +853,28 @@ let i18n = {
     settings: 'Ayarlar',
     loading: 'Yükleniyor...',
     auto_proxy_backfill: 'Yüklemede proxy backfill otomatik',
+    missing_proxy_tool_title: 'Eksik Proxy/Thumbnail Üretimi',
+    missing_proxy_tool_desc: 'Proxy veya thumbnail dosyası eksik varlıkları tara, sonra yalnızca eksik bileşeni üret.',
+    scan_missing_proxies_manual: 'Eksikleri Manuel Tara',
+    scan_missing_proxies_auto: 'Eksikleri Otomatik Tara',
+    stop_scan: 'Taramayı durdur',
+    missing_proxy_asset_name: 'Varlık adı',
+    missing_proxy_component: 'Eksik Bileşen',
+    missing_proxy_component_all: 'Tümü',
+    missing_proxy_component_thumbnail: 'Thumbnail',
+    missing_proxy_component_proxy: 'Proxy',
+    missing_proxy_generate: 'Üret',
+    missing_proxy_scan_running: 'Eksik proxy/thumbnail dosyaları taranıyor...',
+    missing_proxy_scan_cancelled: 'Tarama durduruldu.',
+    missing_proxy_scan_done: '{count} eksik kayıt bulundu.',
+    missing_proxy_scan_empty: 'Eksik proxy veya thumbnail kaydı bulunmadı.',
+    missing_proxy_filter_empty: 'Bu bileşen filtresine uyan kayıt yok.',
+    missing_proxy_filter_count: '{count} gösteriliyor',
+    missing_proxy_scan_failed: 'Eksik proxy/thumbnail taraması başarısız oldu.',
+    missing_proxy_auto_generate_started: '{count} kayıt bulundu; üretim görevi başlatıldı.',
+    missing_proxy_single_generate_started: 'Seçilen varlık için üretim başlatıldı.',
+    missing_proxy_single_generate_done: 'Seçilen varlık için üretim tamamlandı.',
+    missing_proxy_single_generate_failed: 'Seçilen varlık için üretim başarısız oldu.',
     player_mode: 'Oynatıcı Modu',
     player_mode_vidstack: 'Vidstack',
     player_mode_mpegdash: 'MPEG-DASH (dash.js)',
@@ -2039,6 +2087,156 @@ function renderProxyJob(job) {
     proxyJobState.textContent = `${t('proxy_job_done')} ${t('processed')} ${processed}/${total}`;
   } else if (job.status === 'failed') {
     proxyJobState.textContent = t('proxy_job_failed');
+  }
+}
+
+let missingProxyItems = [];
+let missingProxyScanController = null;
+
+function missingProxyHasProxyNeed(item = {}) {
+  return Boolean(item.missingProxy || item.badStatus || (Array.isArray(item.missingComponents) && item.missingComponents.includes('proxy')));
+}
+
+function missingProxyHasThumbnailNeed(item = {}) {
+  return Boolean(item.missingThumbnail || (Array.isArray(item.missingComponents) && item.missingComponents.includes('thumbnail')));
+}
+
+function missingProxyComponentText(item = {}) {
+  const parts = [];
+  if (missingProxyHasThumbnailNeed(item)) parts.push(t('missing_proxy_component_thumbnail'));
+  if (missingProxyHasProxyNeed(item)) parts.push(t('missing_proxy_component_proxy'));
+  return parts.join(' / ') || '-';
+}
+
+function missingProxyGenerateMode(item = {}) {
+  const family = String(item.assetFamily || '').trim().toLowerCase();
+  if (missingProxyHasProxyNeed(item) || family === 'video') return 'proxy';
+  if (family === 'document') return 'document_thumbnail';
+  if (family === 'image') return 'image_thumbnail';
+  return 'thumbnail';
+}
+
+async function startMissingProxyRepair(item = {}) {
+  const assetId = String(item.id || '').trim();
+  if (!assetId) return;
+  const mode = missingProxyGenerateMode(item);
+  if (mode === 'proxy') {
+    await startProxyJob({ includeTrash: includeTrash.checked, assetIds: [assetId] });
+    return;
+  }
+  await api('/api/admin/proxy-tools/run', {
+    method: 'POST',
+    body: JSON.stringify({ assetId, mode })
+  });
+}
+
+async function startMissingProxyAutoRepair(items = []) {
+  const repairItems = Array.isArray(items) ? items : [];
+  const videoIds = repairItems
+    .filter((item) => missingProxyGenerateMode(item) === 'proxy')
+    .map((item) => String(item.id || '').trim())
+    .filter(Boolean);
+  const directItems = repairItems.filter((item) => missingProxyGenerateMode(item) !== 'proxy');
+  for (const item of directItems) {
+    await startMissingProxyRepair(item);
+  }
+  if (videoIds.length) {
+    await startProxyJob({ includeTrash: includeTrash.checked, assetIds: videoIds });
+  }
+}
+
+function getMissingProxyFilterValue() {
+  const filter = missingProxyRows?.querySelector('#missingProxyComponentFilter');
+  return String(filter?.value || 'all').trim().toLowerCase();
+}
+
+function getFilteredMissingProxyItems() {
+  const filter = getMissingProxyFilterValue();
+  if (filter === 'thumbnail') return missingProxyItems.filter(missingProxyHasThumbnailNeed);
+  if (filter === 'proxy') return missingProxyItems.filter(missingProxyHasProxyNeed);
+  return missingProxyItems;
+}
+
+function updateMissingProxyStateText() {
+  if (!missingProxyScanState) return;
+  if (!missingProxyItems.length) return;
+  const filteredCount = getFilteredMissingProxyItems().length;
+  const base = t('missing_proxy_scan_done').replace('{count}', String(missingProxyItems.length));
+  missingProxyScanState.textContent = filteredCount === missingProxyItems.length
+    ? base
+    : `${base} ${t('missing_proxy_filter_count').replace('{count}', String(filteredCount))}`;
+}
+
+function renderMissingProxyRows(items = missingProxyItems) {
+  if (Array.isArray(items) && items !== missingProxyItems) missingProxyItems = items;
+  if (!missingProxyRows) return;
+  const currentFilter = getMissingProxyFilterValue();
+  const rows = getFilteredMissingProxyItems();
+  const header = `
+    <div class="proxy-missing-table-head">
+      <span>${escapeHtml(t('missing_proxy_asset_name'))}</span>
+      <label class="proxy-missing-component-filter">
+        <span>${escapeHtml(t('missing_proxy_component'))}</span>
+        <select id="missingProxyComponentFilter">
+          <option value="all" ${currentFilter === 'all' ? 'selected' : ''}>${escapeHtml(t('missing_proxy_component_all'))}</option>
+          <option value="thumbnail" ${currentFilter === 'thumbnail' ? 'selected' : ''}>${escapeHtml(t('missing_proxy_component_thumbnail'))}</option>
+          <option value="proxy" ${currentFilter === 'proxy' ? 'selected' : ''}>${escapeHtml(t('missing_proxy_component_proxy'))}</option>
+        </select>
+      </label>
+      <span></span>
+    </div>`;
+  const body = rows.length
+    ? rows.map((item) => `
+      <div class="proxy-missing-row" data-missing-proxy-row="${escapeHtml(item.id || '')}">
+        <strong title="${escapeHtml(item.fileName || item.id || '')}">${escapeHtml(item.title || item.fileName || item.id || '')}</strong>
+        <span>${escapeHtml(missingProxyComponentText(item))}</span>
+        <button type="button" class="proxy-missing-generate-btn" data-missing-proxy-generate="${escapeHtml(item.id || '')}">${escapeHtml(t('missing_proxy_generate'))}</button>
+      </div>`).join('')
+    : `<div class="empty proxy-missing-empty">${escapeHtml(t(missingProxyItems.length ? 'missing_proxy_filter_empty' : 'missing_proxy_scan_empty'))}</div>`;
+  missingProxyRows.innerHTML = `<div class="proxy-missing-table">${header}${body}</div>`;
+  updateMissingProxyStateText();
+}
+
+async function scanMissingProxies({ autoGenerate = false } = {}) {
+  if (!scanMissingProxyBtn || !missingProxyScanState) return;
+  missingProxyScanController?.abort?.();
+  missingProxyScanController = new AbortController();
+  scanMissingProxyBtn.disabled = true;
+  if (autoScanMissingProxyBtn) autoScanMissingProxyBtn.disabled = true;
+  if (cancelMissingProxyScanBtn) cancelMissingProxyScanBtn.disabled = false;
+  missingProxyScanState.textContent = t('missing_proxy_scan_running');
+  if (missingProxyRows) missingProxyRows.innerHTML = '';
+  try {
+    const params = new URLSearchParams();
+    if (includeTrash?.checked) params.set('includeTrash', '1');
+    const result = await api(`/api/admin/proxy-missing-scan${params.toString() ? `?${params}` : ''}`, {
+      signal: missingProxyScanController.signal
+    });
+    renderMissingProxyRows(result.items || []);
+    if (!result.items?.length) {
+      missingProxyScanState.textContent = '';
+      return;
+    }
+    if (autoGenerate) {
+      const repairItems = Array.isArray(result.items) ? result.items : [];
+      if (repairItems.length) {
+        missingProxyScanState.textContent = t('missing_proxy_auto_generate_started').replace('{count}', String(repairItems.length));
+        await startMissingProxyAutoRepair(repairItems);
+      }
+    }
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      missingProxyScanState.textContent = t('missing_proxy_scan_cancelled');
+    } else {
+      missingProxyScanState.textContent = error?.message && error.message !== 'Request failed'
+        ? error.message
+        : t('missing_proxy_scan_failed');
+    }
+  } finally {
+    scanMissingProxyBtn.disabled = false;
+    if (autoScanMissingProxyBtn) autoScanMissingProxyBtn.disabled = false;
+    if (cancelMissingProxyScanBtn) cancelMissingProxyScanBtn.disabled = true;
+    missingProxyScanController = null;
   }
 }
 
@@ -3843,7 +4041,7 @@ async function cleanupAuditEvents() {
 
 async function loadSettings() {
   const settings = await api('/api/admin/settings');
-  settingsForm.elements.autoProxyBackfillOnUpload.checked = Boolean(settings.autoProxyBackfillOnUpload);
+  if (settingsForm.elements.autoProxyBackfillOnUpload) settingsForm.elements.autoProxyBackfillOnUpload.checked = Boolean(settings.autoProxyBackfillOnUpload);
   settingsForm.elements.allowFilelessAssetCreation.checked = Boolean(settings.allowFilelessAssetCreation);
   if (settingsForm.elements.newAssetDefaultVisibility) {
     const defaultVisibility = String(settings.newAssetDefaultVisibility || 'owner_groups').toLowerCase();
@@ -4133,7 +4331,6 @@ async function pollJob() {
 settingsForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const payload = {
-    autoProxyBackfillOnUpload: settingsForm.elements.autoProxyBackfillOnUpload.checked,
     allowFilelessAssetCreation: settingsForm.elements.allowFilelessAssetCreation.checked,
     newAssetDefaultVisibility: String(settingsForm.elements.newAssetDefaultVisibility?.value || 'owner_groups'),
     playerUiMode: String(settingsForm.elements.playerUiMode.value || 'vidstack'),
@@ -4366,7 +4563,7 @@ settingsForm?.elements?.oidcBearerEnabled?.addEventListener('change', () => {
   renderApiGuide();
 });
 
-startProxyJobBtn.addEventListener('click', async () => {
+async function startProxyJob(payload = {}) {
   if (pollTimer) {
     clearTimeout(pollTimer);
     pollTimer = null;
@@ -4375,7 +4572,7 @@ startProxyJobBtn.addEventListener('click', async () => {
   try {
     const job = await api('/api/admin/proxy-jobs', {
       method: 'POST',
-      body: JSON.stringify({ includeTrash: includeTrash.checked })
+      body: JSON.stringify(payload)
     });
     activeJobId = job.id;
     proxyJobState.textContent = t('proxy_job_started');
@@ -4390,6 +4587,47 @@ startProxyJobBtn.addEventListener('click', async () => {
         await pollJob();
       }
     }
+  }
+}
+
+scanMissingProxyBtn?.addEventListener('click', () => {
+  scanMissingProxies({ autoGenerate: false }).catch((error) => {
+    if (missingProxyScanState) missingProxyScanState.textContent = error?.message || t('missing_proxy_scan_failed');
+  });
+});
+
+autoScanMissingProxyBtn?.addEventListener('click', () => {
+  scanMissingProxies({ autoGenerate: true }).catch((error) => {
+    if (missingProxyScanState) missingProxyScanState.textContent = error?.message || t('missing_proxy_scan_failed');
+  });
+});
+
+cancelMissingProxyScanBtn?.addEventListener('click', () => {
+  missingProxyScanController?.abort?.();
+});
+
+missingProxyRows?.addEventListener('change', (event) => {
+  if (!event.target?.matches?.('#missingProxyComponentFilter')) return;
+  renderMissingProxyRows();
+});
+
+missingProxyRows?.addEventListener('click', async (event) => {
+  const btn = event.target?.closest?.('[data-missing-proxy-generate]');
+  if (!btn) return;
+  const assetId = String(btn.getAttribute('data-missing-proxy-generate') || '').trim();
+  const item = missingProxyItems.find((candidate) => String(candidate.id || '') === assetId);
+  if (!assetId || !item) return;
+  btn.disabled = true;
+  try {
+    if (missingProxyScanState) missingProxyScanState.textContent = t('missing_proxy_single_generate_started');
+    await startMissingProxyRepair(item);
+    if (missingProxyScanState) missingProxyScanState.textContent = t('missing_proxy_single_generate_done');
+    missingProxyItems = missingProxyItems.filter((candidate) => String(candidate.id || '') !== assetId);
+    renderMissingProxyRows();
+  } catch (error) {
+    if (missingProxyScanState) missingProxyScanState.textContent = String(error?.message || t('missing_proxy_single_generate_failed'));
+  } finally {
+    btn.disabled = false;
   }
 });
 

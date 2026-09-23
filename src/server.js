@@ -5925,10 +5925,21 @@ async function runProxyJob(jobId, options = {}) {
   job.status = 'running';
   job.startedAt = new Date().toISOString();
   const includeTrash = Boolean(options.includeTrash);
+  const assetIds = Array.isArray(options.assetIds)
+    ? [...new Set(options.assetIds.map((id) => String(id || '').trim()).filter(Boolean))]
+    : [];
 
   try {
-    const where = includeTrash ? '' : 'WHERE deleted_at IS NULL';
-    const result = await pool.query(`SELECT * FROM assets ${where} ORDER BY created_at ASC`);
+    let result;
+    if (assetIds.length) {
+      result = await pool.query(
+        `SELECT * FROM assets WHERE id = ANY($1::text[]) ${includeTrash ? '' : 'AND deleted_at IS NULL'} ORDER BY created_at ASC`,
+        [assetIds]
+      );
+    } else {
+      const where = includeTrash ? '' : 'WHERE deleted_at IS NULL';
+      result = await pool.query(`SELECT * FROM assets ${where} ORDER BY created_at ASC`);
+    }
     const targets = result.rows.filter((row) =>
       isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })
     );
@@ -5937,7 +5948,9 @@ async function runProxyJob(jobId, options = {}) {
     for (const row of targets) {
       job.currentAssetId = row.id;
       job.processed += 1;
-      if (hasStoredFile(row.proxy_url, 'proxies') && hasStoredFile(row.thumbnail_url, 'thumbnails')) {
+      const proxyStatus = String(row.proxy_status || '').trim().toLowerCase();
+      const proxyStatusOk = !proxyStatus || ['ready', 'not_applicable'].includes(proxyStatus);
+      if (proxyStatusOk && hasStoredFile(row.proxy_url, 'proxies') && hasStoredFile(row.thumbnail_url, 'thumbnails')) {
         job.skipped += 1;
         continue;
       }
@@ -6139,6 +6152,8 @@ async function ensureVideoProxyAndThumbnail(row, options = {}) {
   let proxyUrl = resolveStoredUrl(row.proxy_url, 'proxies');
   let proxyStatus = row.proxy_status || 'not_applicable';
   let thumbnailUrl = resolveStoredUrl(row.thumbnail_url, 'thumbnails');
+  if (proxyUrl && !hasStoredFile(proxyUrl, 'proxies')) proxyUrl = '';
+  if (thumbnailUrl && !hasStoredFile(thumbnailUrl, 'thumbnails')) thumbnailUrl = '';
   const previousProxyUrl = proxyUrl;
   const previousThumbnailUrl = thumbnailUrl;
   let detectedAudioChannels = Number(row?.dc_metadata?.audioChannels) || 0;

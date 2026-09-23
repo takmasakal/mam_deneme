@@ -660,6 +660,7 @@ button:hover {
 }
 
 .detail-artifact-badge-button:hover,
+.detail-artifact-badge-button.active,
 .detail-subtitle-language-picker[open] .detail-artifact-badge-button {
   background: #e9a936;
   border-color: #e9a936;
@@ -697,6 +698,12 @@ button:hover {
 #panelDetail .detail-subtitle-language-tr {
   background: #d92732;
   border-color: #d92732;
+  color: #ffffff;
+}
+
+#panelDetail .detail-subtitle-language-en {
+  background: #2757d9;
+  border-color: #2757d9;
   color: #ffffff;
 }
 
