@@ -488,9 +488,13 @@
                   <span data-i18n="proxy_tool_timecode">Thumbnail Timecode</span>
                   <input id="proxyToolTimecode" type="text" data-i18n-placeholder="proxy_tool_timecode_ph" placeholder="00:00:12:10 or 12.4" />
                 </label>
-                <label id="proxyToolReplaceFileWrap" class="hidden">
+                <label id="proxyToolReplaceFileWrap" class="hidden proxy-tool-file-field">
                   <span data-i18n="proxy_tool_replace_file">New Asset File</span>
-                  <input id="proxyToolReplaceFile" type="file" />
+                  <span class="admin-localized-file-input">
+                    <input id="proxyToolReplaceFile" type="file" />
+                    <span class="admin-localized-file-input-button" data-i18n="choose_file">Choose file</span>
+                    <span id="proxyToolReplaceFileName" class="admin-localized-file-input-name" data-i18n="no_file_chosen">No file chosen</span>
+                  </span>
                 </label>
               </div>
               <div class="proxy-tool-actions">
