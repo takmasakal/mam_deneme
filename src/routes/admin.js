@@ -3915,8 +3915,27 @@ app.get('/api/admin/proxy-missing-scan', async (req, res) => {
         return false;
       }
     };
+    const sourceFileExists = (row) => {
+      const direct = String(row.source_path || '').trim();
+      if (direct) {
+        try {
+          const resolved = path.resolve(direct);
+          const uploadsRoot = path.resolve(UPLOADS_DIR);
+          if ((resolved === uploadsRoot || resolved.startsWith(`${uploadsRoot}${path.sep}`)) && fs.existsSync(resolved) && fs.statSync(resolved).size > 0) return true;
+        } catch (_error) {}
+      }
+      const mediaUrl = String(row.media_url || '').trim();
+      if (!mediaUrl) return false;
+      const absolute = publicUploadUrlToAbsolutePath(mediaUrl);
+      if (!absolute) return false;
+      try {
+        return fs.existsSync(absolute) && fs.statSync(absolute).size > 0;
+      } catch (_error) {
+        return false;
+      }
+    };
     const items = result.rows
-      .filter(hasThumbnailCandidate)
+      .filter((row) => hasThumbnailCandidate(row) && sourceFileExists(row))
       .map((row) => {
         const video = isVideo(row);
         const document = isDocument(row);
