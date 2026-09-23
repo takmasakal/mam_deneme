@@ -2205,7 +2205,9 @@ async function scanMissingProxies({ autoGenerate = false } = {}) {
   if (autoScanMissingProxyBtn) autoScanMissingProxyBtn.disabled = true;
   if (cancelMissingProxyScanBtn) cancelMissingProxyScanBtn.disabled = false;
   missingProxyScanState.textContent = t('missing_proxy_scan_running');
-  if (missingProxyRows) missingProxyRows.innerHTML = '';
+  if (missingProxyRows) {
+    missingProxyRows.innerHTML = `<div class="proxy-missing-table"><div class="empty proxy-missing-empty">${escapeHtml(t('missing_proxy_scan_running'))}</div></div>`;
+  }
   try {
     const params = new URLSearchParams();
     if (includeTrash?.checked) params.set('includeTrash', '1');
