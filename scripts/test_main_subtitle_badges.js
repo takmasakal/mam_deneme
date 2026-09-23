@@ -36,8 +36,13 @@ let customOverlayEnabled = true;
 const context = vm.createContext({
   window: {}, Element, console,
   CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
-  document: { querySelectorAll: (selector) => selector === '[data-subtitle-asset-id]' ? [picker] : players.filter((p) => p.tagName === 'VIDEO' || selector.includes('audio')) },
+  document: {
+    addEventListener() {},
+    removeEventListener() {},
+    querySelectorAll: (selector) => selector === '[data-subtitle-asset-id]' ? [picker] : players.filter((p) => p.tagName === 'VIDEO' || selector.includes('audio'))
+  },
   t: (key) => key,
+  showShortcutToast() {},
   setSubtitleOverlayEnabled: (id, enabled) => states.set(id, enabled)
 });
 vm.runInContext(read('main-common.js'), context);

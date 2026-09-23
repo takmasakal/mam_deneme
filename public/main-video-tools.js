@@ -422,6 +422,12 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
   applySubtitleFontSize(subtitleFontSize);
 
   const getLang = () => String(langInput.value || '').trim().toLowerCase().slice(0, 12) || 'tr';
+  const subtitleLanguageName = (lang) => {
+    const key = String(lang || '').trim().toLowerCase();
+    if (key === 'tr' || key === 'tur') return t('subtitle_lang_turkish');
+    if (key === 'en' || key === 'eng') return t('subtitle_lang_english');
+    return key || 'tr';
+  };
   const getModel = () => 'small';
   const getAudioStreamOptions = () => Array.isArray(asset.audioStreamOptions) ? asset.audioStreamOptions : [];
   const getSelectedAudioStream = () => {
@@ -707,12 +713,17 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
       alert(t('subtitle_file_required'));
       return;
     }
+    const selectedLang = getLang();
+    const confirmMessage = t('subtitle_upload_lang_confirm')
+      .replace('{lang}', subtitleLanguageName(selectedLang))
+      .replace('{code}', selectedLang);
+    if (!confirm(confirmMessage)) return;
     setBusy(true);
     try {
       const payload = {
         fileName: file.name,
         fileData: await readFileAsBase64(file),
-        lang: getLang()
+        lang: selectedLang
       };
       const result = await api(`/api/assets/${asset.id}/subtitles`, { method: 'POST', body: JSON.stringify(payload) });
       applyAssetFromApi(result.asset);

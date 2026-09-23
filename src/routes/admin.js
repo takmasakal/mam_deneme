@@ -3868,15 +3868,101 @@ app.post('/api/admin/image-derivatives/repair', async (req, res) => {
   }
 });
 
+app.get('/api/admin/proxy-missing-scan', async (req, res) => {
+  try {
+    const includeTrash = String(req.query?.includeTrash || '').trim() === '1';
+    const where = includeTrash ? '' : 'WHERE deleted_at IS NULL';
+    const result = await pool.query(`
+      SELECT id, title, file_name, type, mime_type, media_url, source_path, proxy_url, thumbnail_url, proxy_status, deleted_at, created_at, updated_at
+      FROM assets
+      ${where}
+      ORDER BY updated_at DESC
+      LIMIT 5000
+    `);
+    const isVideo = (row) => {
+      if (typeof isVideoCandidate === 'function') {
+        return isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type });
+      }
+      const mime = String(row.mime_type || '').toLowerCase();
+      const type = String(row.type || '').toLowerCase();
+      const fileName = String(row.file_name || '').toLowerCase();
+      return mime.startsWith('video/') || type === 'video' || /\.(mp4|mov|m4v|webm|mkv|avi)$/i.test(fileName);
+    };
+    const isDocument = (row) => {
+      if (typeof isDocumentCandidate === 'function') {
+        return isDocumentCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type });
+      }
+      const mime = String(row.mime_type || '').toLowerCase();
+      const type = String(row.type || '').toLowerCase();
+      const fileName = String(row.file_name || '').toLowerCase();
+      return type === 'document' || mime.includes('pdf') || mime.includes('word') || mime.includes('officedocument') || /\.(pdf|doc|docx|xls|xlsx|ppt|pptx|txt|rtf)$/i.test(fileName);
+    };
+    const isImage = (row) => {
+      const mime = String(row.mime_type || '').toLowerCase();
+      const type = String(row.type || '').toLowerCase();
+      const fileName = String(row.file_name || '').toLowerCase();
+      return mime.startsWith('image/') || type === 'image' || /\.(jpe?g|png|gif|webp|tiff?|bmp|heic|svg)$/i.test(fileName);
+    };
+    const hasThumbnailCandidate = (row) => isVideo(row) || isDocument(row) || isImage(row);
+    const storedFileExists = (value, defaultSubdir) => {
+      if (typeof hasStoredFile === 'function') return hasStoredFile(value, defaultSubdir);
+      const resolved = typeof resolveStoredUrl === 'function' ? resolveStoredUrl(value, defaultSubdir) : String(value || '').trim();
+      const absolute = publicUploadUrlToAbsolutePath(String(resolved || '').trim());
+      if (!absolute) return false;
+      try {
+        return fs.existsSync(absolute) && fs.statSync(absolute).size > 0;
+      } catch (_error) {
+        return false;
+      }
+    };
+    const items = result.rows
+      .filter(hasThumbnailCandidate)
+      .map((row) => {
+        const video = isVideo(row);
+        const document = isDocument(row);
+        const image = isImage(row);
+        const missingProxy = video ? !storedFileExists(row.proxy_url, 'proxies') : false;
+        const missingThumbnail = !storedFileExists(row.thumbnail_url, 'thumbnails');
+        const status = String(row.proxy_status || '').trim().toLowerCase();
+        const badStatus = video && status && !['ready', 'not_applicable'].includes(status);
+        const missingComponents = [];
+        if (missingThumbnail) missingComponents.push('thumbnail');
+        if (missingProxy || badStatus) missingComponents.push('proxy');
+        return {
+          id: row.id,
+          title: String(row.title || row.file_name || row.id || ''),
+          fileName: String(row.file_name || ''),
+          type: String(row.type || ''),
+          assetFamily: video ? 'video' : document ? 'document' : image ? 'image' : 'asset',
+          proxyStatus: String(row.proxy_status || ''),
+          missingProxy,
+          missingThumbnail,
+          missingComponents,
+          badStatus,
+          inTrash: Boolean(row.deleted_at),
+          updatedAt: row.updated_at
+        };
+      })
+      .filter((item) => item.missingProxy || item.missingThumbnail || item.badStatus);
+    return res.json({ items, count: items.length, scanned: result.rows.length });
+  } catch (error) {
+    console.error('Failed to scan missing proxy/thumbnail files:', error?.message || error);
+    return res.status(500).json({ error: 'Failed to scan missing proxy/thumbnail files' });
+  }
+});
+
 app.post('/api/admin/proxy-jobs', async (req, res) => {
   const running = Array.from(proxyJobs.values()).find((job) => job.status === 'running' || job.status === 'queued');
   if (running) {
     return res.status(409).json({ error: 'A proxy job is already running', job: running });
   }
 
+  const assetIds = Array.isArray(req.body?.assetIds)
+    ? [...new Set(req.body.assetIds.map((id) => String(id || '').trim()).filter(Boolean))]
+    : [];
   const job = createProxyJob();
   setTimeout(() => {
-    runProxyJob(job.id, { includeTrash: Boolean(req.body?.includeTrash) }).catch(() => {});
+    runProxyJob(job.id, { includeTrash: Boolean(req.body?.includeTrash), assetIds }).catch(() => {});
   }, 0);
   return res.status(202).json(job);
 });
@@ -3983,30 +4069,32 @@ app.post('/api/admin/metadata/generate', async (req, res) => {
 app.post('/api/admin/proxy-tools/run', async (req, res) => {
   try {
     const assetName = String(req.body?.assetName || '').trim();
+    const assetId = String(req.body?.assetId || '').trim();
     const mode = String(req.body?.mode || '').trim().toLowerCase();
-    if (!assetName) return res.status(400).json({ error: 'assetName is required' });
+    if (!assetName && !assetId) return res.status(400).json({ error: 'assetName or assetId is required' });
     if (!['thumbnail', 'image_thumbnail', 'image_preview', 'document_thumbnail', 'preview', 'proxy', 'replace_asset', 'replace_pdf', 'delete_asset'].includes(mode)) {
       return res.status(400).json({ error: 'mode must be one of: thumbnail, image_thumbnail, image_preview, document_thumbnail, preview, proxy, replace_asset, replace_pdf, delete_asset' });
     }
 
-    const like = `%${assetName}%`;
-    const match = await pool.query(
-      `
-        SELECT *
-        FROM assets
-        WHERE title ILIKE $1 OR file_name ILIKE $1
-        ORDER BY
-          CASE
-            WHEN LOWER(title) = LOWER($2) THEN 0
-            WHEN LOWER(file_name) = LOWER($2) THEN 1
-            ELSE 2
-          END,
-          updated_at DESC
-        LIMIT 20
-      `,
-      [like, assetName]
-    );
-    if (!match.rowCount) return res.status(404).json({ error: 'Asset not found by name' });
+    const match = assetId
+      ? await pool.query('SELECT * FROM assets WHERE id = $1 LIMIT 1', [assetId])
+      : await pool.query(
+        `
+          SELECT *
+          FROM assets
+          WHERE title ILIKE $1 OR file_name ILIKE $1
+          ORDER BY
+            CASE
+              WHEN LOWER(title) = LOWER($2) THEN 0
+              WHEN LOWER(file_name) = LOWER($2) THEN 1
+              ELSE 2
+            END,
+            updated_at DESC
+          LIMIT 20
+        `,
+        [`%${assetName}%`, assetName]
+      );
+    if (!match.rowCount) return res.status(404).json({ error: assetId ? 'Asset not found by ID' : 'Asset not found by name' });
 
     let row = match.rows[0];
     let info = {};

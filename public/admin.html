@@ -332,10 +332,6 @@
             <form id="settingsForm" class="stack">
               <fieldset class="settings-group">
                 <legend data-i18n="settings_group_player">Player</legend>
-                <label class="toggle-row">
-                  <input type="checkbox" name="autoProxyBackfillOnUpload" />
-                  <span data-i18n="auto_proxy_backfill">Auto backfill proxies on upload</span>
-                </label>
                 <label>
                   <span data-i18n="new_asset_default_visibility">New asset default visibility</span>
                   <select name="newAssetDefaultVisibility">
@@ -449,9 +445,19 @@
 
           <section class="settings-subpanel" data-settings-panel="proxy">
             <h3 data-i18n="proxy_jobs">Proxy Jobs</h3>
-            <div class="proxy-job-actions">
+            <div class="proxy-job-actions proxy-job-options">
               <label><input type="checkbox" id="includeTrash" /> <span data-i18n="include_trash">Include trash</span></label>
-              <button id="startProxyJobBtn" type="button" data-i18n="start_proxy_job">Start Proxy Job</button>
+            </div>
+            <div class="proxy-tool-box proxy-missing-tool">
+              <h3 data-i18n="missing_proxy_tool_title">Missing Proxy/Thumbnail Generation</h3>
+              <p class="admin-note" data-i18n="missing_proxy_tool_desc">Scan for video assets with missing proxy or thumbnail files, then generate only the missing component.</p>
+              <div class="proxy-missing-actions">
+                <button id="scanMissingProxyBtn" type="button" class="proxy-missing-scan-btn" data-i18n="scan_missing_proxies_manual">Scan Missing Manually</button>
+                <button id="autoScanMissingProxyBtn" type="button" class="proxy-missing-scan-btn" data-i18n="scan_missing_proxies_auto">Scan Missing Automatically</button>
+                <button id="cancelMissingProxyScanBtn" type="button" class="proxy-missing-scan-btn secondary" data-i18n="stop_scan">Stop scan</button>
+              </div>
+              <div id="missingProxyScanState" class="admin-note"></div>
+              <div id="missingProxyRows" class="proxy-missing-rows"></div>
             </div>
             <div id="proxyJobState" class="admin-note"></div>
             <div class="progress-wrap"><div id="proxyProgress" class="progress-bar"></div></div>

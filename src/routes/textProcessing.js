@@ -5,6 +5,18 @@ const {
   setActiveSubtitleForLanguage
 } = require('../services/subtitleSelectionService');
 
+function inferSubtitleLangFromText(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replaceAll('_', '-')
+    .replaceAll('.', '-');
+  if (!normalized) return '';
+  if (/(^|[-\s])(tr|tur|turkce|türkçe|turkish)([-\s]|$)/u.test(normalized)) return 'tr';
+  if (/(^|[-\s])(en|eng|english|ingilizce|ingilizce|i̇ngilizce)([-\s]|$)/u.test(normalized)) return 'en';
+  return '';
+}
+
 function registerTextProcessingRoutes(app, deps) {
   const {
     pool,
@@ -148,16 +160,18 @@ function registerTextProcessingRoutes(app, deps) {
       fs.writeFileSync(subtitleOut.absolutePath, subtitleVtt, 'utf8');
   
       const subtitleUrl = subtitleOut.publicUrl;
+      const requestedLang = String(lang || '').trim();
+      const effectiveLang = normalizeSubtitleLang(requestedLang || inferSubtitleLangFromText(safeName) || 'tr');
       const updatedRow = await saveAssetSubtitleMetadata(
         req.params.id,
         row,
         subtitleUrl,
-        normalizeSubtitleLang(lang),
+        effectiveLang,
         safeName
       );
       return res.json({
         subtitleUrl,
-        subtitleLang: normalizeSubtitleLang(lang),
+        subtitleLang: effectiveLang,
         subtitleLabel: safeName,
         asset: mapAssetRow(updatedRow)
       });
