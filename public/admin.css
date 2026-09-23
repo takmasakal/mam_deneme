@@ -2904,6 +2904,7 @@ body {
 
 
 .proxy-missing-tool {
+  contain: layout paint;
   margin-top: 14px;
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 18px;
