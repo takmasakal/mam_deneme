@@ -333,14 +333,6 @@
               <fieldset class="settings-group">
                 <legend data-i18n="settings_group_player">Player</legend>
                 <label>
-                  <span data-i18n="new_asset_default_visibility">New asset default visibility</span>
-                  <select name="newAssetDefaultVisibility">
-                    <option value="owner_groups" data-i18n="new_asset_visibility_owner_groups">Owner groups</option>
-                    <option value="public" data-i18n="visibility_public">Public</option>
-                    <option value="private" data-i18n="visibility_private">Hide</option>
-                  </select>
-                </label>
-                <label>
                   <span data-i18n="player_mode">Player Mode</span>
                   <select name="playerUiMode" id="playerUiModeSelect">
                     <option value="vidstack" data-i18n="player_mode_vidstack">Vidstack</option>
@@ -351,6 +343,14 @@
 
               <fieldset class="settings-group">
                 <legend data-i18n="settings_group_ingest">Asset ingest</legend>
+                <label>
+                  <span data-i18n="new_asset_default_visibility">New asset default visibility</span>
+                  <select name="newAssetDefaultVisibility">
+                    <option value="owner_groups" data-i18n="new_asset_visibility_owner_groups">Owner groups</option>
+                    <option value="public" data-i18n="visibility_public">Public</option>
+                    <option value="private" data-i18n="visibility_private">Hide</option>
+                  </select>
+                </label>
                 <label class="toggle-row">
                   <input type="checkbox" name="allowFilelessAssetCreation" />
                   <span data-i18n="allow_fileless_asset_creation">Allow creating assets without a file</span>
