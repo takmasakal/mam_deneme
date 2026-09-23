@@ -52,6 +52,7 @@ const proxyToolTimecodeWrap = document.getElementById('proxyToolTimecodeWrap');
 const proxyToolTimecode = document.getElementById('proxyToolTimecode');
 const proxyToolReplaceFileWrap = document.getElementById('proxyToolReplaceFileWrap');
 const proxyToolReplaceFile = document.getElementById('proxyToolReplaceFile');
+const proxyToolReplaceFileName = document.getElementById('proxyToolReplaceFileName');
 const runProxyToolBtn = document.getElementById('runProxyToolBtn');
 const proxyToolMsg = document.getElementById('proxyToolMsg');
 const metadataToolAssetName = document.getElementById('metadataToolAssetName');
@@ -310,6 +311,8 @@ let i18n = {
     identity_mam_group_count: 'MAM groups',
     settings: 'Settings',
     loading: 'Loading...',
+    choose_file: 'Choose file',
+    no_file_chosen: 'No file chosen',
     auto_proxy_backfill: 'Auto backfill proxies on upload',
     missing_proxy_tool_title: 'Missing Proxy/Thumbnail Generation',
     missing_proxy_tool_desc: 'Scan assets with missing proxy or thumbnail files, then generate only the missing component.',
@@ -848,6 +851,8 @@ let i18n = {
     identity_mam_group_count: 'MAM grubu',
     settings: 'Ayarlar',
     loading: 'Yükleniyor...',
+    choose_file: 'Dosya seç',
+    no_file_chosen: 'Dosya seçilmedi',
     auto_proxy_backfill: 'Yüklemede proxy backfill otomatik',
     missing_proxy_tool_title: 'Eksik Proxy/Thumbnail Üretimi',
     missing_proxy_tool_desc: 'Proxy veya thumbnail dosyası eksik varlıkları tara, sonra yalnızca eksik bileşeni üret.',
@@ -2291,6 +2296,12 @@ async function loadSettingsSubtabData(tabName) {
     await loadIdentityOverview();
     await loadGroupAdmins();
   }
+}
+
+function updateProxyToolReplaceFileName() {
+  if (!proxyToolReplaceFileName) return;
+  const file = proxyToolReplaceFile?.files?.[0] || null;
+  proxyToolReplaceFileName.textContent = file?.name || t('no_file_chosen');
 }
 
 function updateProxyToolUi() {
@@ -4669,12 +4680,15 @@ runProxyToolBtn?.addEventListener('click', async () => {
     }
     if ((mode === 'replace_asset' || mode === 'replace_pdf') && proxyToolReplaceFile) {
       proxyToolReplaceFile.value = '';
+      updateProxyToolReplaceFileName();
     }
     await refreshTrackingAndHealth();
   } catch (error) {
     if (proxyToolMsg) proxyToolMsg.textContent = String(error.message || 'Request failed');
   }
 });
+
+proxyToolReplaceFile?.addEventListener('change', updateProxyToolReplaceFileName);
 
 proxyToolAssetName?.addEventListener('focus', () => {
   if (proxySuggestHideTimer) {
