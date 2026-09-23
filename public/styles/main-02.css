@@ -1139,9 +1139,11 @@ button:hover {
 
 .video-tools-modal .tool-file-wrap,
 .video-tools-page-detail .tool-file-wrap {
-  display: inline-flex;
+  display: inline-grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
+  width: min(460px, 100%);
   max-width: 100%;
   padding: 6px;
   border: 1px solid rgba(148, 163, 184, 0.32);
@@ -1174,9 +1176,9 @@ button:hover {
 
 .video-tools-modal .tool-file-wrap .subtitle-localized-file-input,
 .video-tools-page-detail .tool-file-wrap .subtitle-localized-file-input {
-  width: min(360px, 100%);
-  min-width: 180px;
-  flex: 1 1 220px;
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .video-tools-modal .tool-file-wrap .subtitle-localized-file-input .localized-file-input-button,
@@ -1188,6 +1190,9 @@ button:hover {
 .video-tools-modal .tool-file-wrap .subtitle-localized-file-input .localized-file-input-name,
 .video-tools-page-detail .tool-file-wrap .subtitle-localized-file-input .localized-file-input-name {
   font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 
