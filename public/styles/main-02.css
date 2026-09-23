@@ -1251,6 +1251,25 @@ button:hover {
   padding-top: 2px;
 }
 
+
+.video-tools-modal .tool-file-wrap,
+.video-tools-page-detail .tool-file-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.18);
+}
+
+.video-tools-modal .tool-file-wrap #subtitleUploadBtn,
+.video-tools-page-detail .tool-file-wrap #subtitleUploadBtn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .video-tools-modal .tool-actions button,
 .video-tools-modal .tool-actions .subtitle-item-download-btn,
 .video-tools-modal .tool-file-wrap button,
@@ -1270,8 +1289,8 @@ button:hover {
 
 .video-tools-modal .tool-file-wrap .subtitle-localized-file-input,
 .video-tools-page-detail .tool-file-wrap .subtitle-localized-file-input {
-  width: auto;
-  max-width: min(360px, 100%);
+  width: min(360px, 100%);
+  min-width: 180px;
   flex: 1 1 220px;
 }
 
