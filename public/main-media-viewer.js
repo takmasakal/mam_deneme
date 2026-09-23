@@ -197,7 +197,11 @@ function mediaViewer(asset, options = {}) {
                 <button type="button" id="subtitleTranslateBtn">${t('subtitle_translate_tr')}</button>
                 <button type="button" id="subtitleRenameBtn">${t('subtitle_save_name')}</button>
                 <div class="tool-file-wrap">
-                  <input id="subtitleFileInput" type="file" accept=".vtt,.srt,text/vtt,application/x-subrip" />
+                  <label class="localized-file-input subtitle-localized-file-input">
+                    <input id="subtitleFileInput" type="file" accept=".vtt,.srt,text/vtt,application/x-subrip" />
+                    <span class="localized-file-input-button">${escapeHtml(t('choose_file'))}</span>
+                    <span class="localized-file-input-name" data-subtitle-file-name>${escapeHtml(t('no_file_chosen'))}</span>
+                  </label>
                   <button type="button" id="subtitleUploadBtn">${t('subtitle_upload')}</button>
                 </div>
               </div>
@@ -423,7 +427,11 @@ function mediaViewer(asset, options = {}) {
               <button type="button" id="subtitleTranslateBtn">${t('subtitle_translate_tr')}</button>
               <button type="button" id="subtitleRenameBtn">${t('subtitle_save_name')}</button>
               <div class="tool-file-wrap">
-                <input id="subtitleFileInput" type="file" accept=".vtt,.srt,text/vtt,application/x-subrip" />
+                <label class="localized-file-input subtitle-localized-file-input">
+                    <input id="subtitleFileInput" type="file" accept=".vtt,.srt,text/vtt,application/x-subrip" />
+                    <span class="localized-file-input-button">${escapeHtml(t('choose_file'))}</span>
+                    <span class="localized-file-input-name" data-subtitle-file-name>${escapeHtml(t('no_file_chosen'))}</span>
+                  </label>
                 <button type="button" id="subtitleUploadBtn">${t('subtitle_upload')}</button>
               </div>
             </div>

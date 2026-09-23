@@ -384,6 +384,7 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
   const zemberekCheck = byId('subtitleZemberekCheck');
   const renameBtn = byId('subtitleRenameBtn');
   const fileInput = byId('subtitleFileInput');
+  const subtitleFileNameEl = root.querySelector('[data-subtitle-file-name]');
   const uploadBtn = byId('subtitleUploadBtn');
   const generateBtn = byId('subtitleGenerateBtn');
   const translateBtn = byId('subtitleTranslateBtn');
@@ -413,6 +414,13 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     const value = String(audioChannelSelect.value || '').trim();
     return value ? Number(value) : null;
   };
+  const updateSubtitleFileName = () => {
+    if (!subtitleFileNameEl) return;
+    const file = fileInput?.files?.[0] || null;
+    subtitleFileNameEl.textContent = file?.name || t('no_file_chosen');
+  };
+  fileInput?.addEventListener('change', updateSubtitleFileName);
+
   const getOverlayEnabled = () => getSubtitleOverlayEnabled(asset.id, false);
 
   const setStatus = (text) => {
