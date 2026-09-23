@@ -1153,6 +1153,24 @@ button:hover {
   font-size: 11px;
 }
 
+.video-tools-modal .tool-file-wrap .subtitle-localized-file-input,
+.video-tools-page-detail .tool-file-wrap .subtitle-localized-file-input {
+  width: auto;
+  max-width: min(360px, 100%);
+  flex: 1 1 220px;
+}
+
+.video-tools-modal .tool-file-wrap .subtitle-localized-file-input .localized-file-input-button,
+.video-tools-page-detail .tool-file-wrap .subtitle-localized-file-input .localized-file-input-button {
+  min-height: 34px;
+  font-size: 11px;
+}
+
+.video-tools-modal .tool-file-wrap .subtitle-localized-file-input .localized-file-input-name,
+.video-tools-page-detail .tool-file-wrap .subtitle-localized-file-input .localized-file-input-name {
+  font-size: 0.82rem;
+}
+
 
 .localized-file-input {
   position: relative;
@@ -1210,7 +1228,7 @@ button:hover {
   border-radius: 12px;
   background: rgba(15, 23, 42, 0.18);
   padding: 12px;
-  margin: 0 0 14px 0;
+  margin: 16px 0 14px 0;
 }
 
 .asset-file-add-container h4 {
