@@ -22,7 +22,9 @@
       scheduleNativeSubtitleCuePosition,
       secondsToTimecode,
       PLAYER_FPS,
-      parseTimecodeInput
+      parseTimecodeInput,
+      openVideoToolsInPlace,
+      leaveVideoToolsInPlace
     } = deps || {};
 
 function openVideoToolsPage(assetId, startAtSeconds = 0) {
@@ -53,6 +55,7 @@ function openVideoToolsPage(assetId, startAtSeconds = 0) {
   next.searchParams.set('backPanels', backPanels);
   if (startAtSeconds > 0) next.searchParams.set('tc', String(startAtSeconds.toFixed(3)));
   else next.searchParams.delete('tc');
+  if (typeof openVideoToolsInPlace === 'function' && openVideoToolsInPlace(id, startAtSeconds, next, backPanels)) return;
   window.location.assign(next.toString());
 }
 
@@ -70,6 +73,7 @@ function leaveVideoToolsPage(returnAssetId = '', returnStartAtSeconds = 0) {
   else next.searchParams.delete('openTc');
   if (/^[01]{3}$/.test(backPanels)) next.searchParams.set('restorePanels', backPanels);
   else next.searchParams.delete('restorePanels');
+  if (typeof leaveVideoToolsInPlace === 'function' && leaveVideoToolsInPlace(backId, returnStartAtSeconds, next, backPanels)) return;
   window.location.assign(next.toString());
 }
 
