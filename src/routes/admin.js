@@ -294,6 +294,28 @@ async function requireTextAdminRequest(req, res) {
   return { effective, context };
 }
 
+
+async function requireProxyAdminRequest(req, res) {
+  const gate = await requireTextAdminRequest(req, res);
+  if (!gate) return null;
+  return gate;
+}
+
+function proxyAdminHasFullAccess(gate = {}) {
+  return Boolean(gate?.effective?.isSuperAdmin || gate?.effective?.canAccessAdmin);
+}
+
+function canProxyAdminAccessAsset(row, gate = {}) {
+  if (proxyAdminHasFullAccess(gate)) return true;
+  return assetAccessService.canViewAsset(row, gate.context || {});
+}
+
+function appendProxyAdminAssetWhere(where, values, gate = {}, alias = 'assets') {
+  where.push(`${alias}.deleted_at IS NULL`);
+  if (proxyAdminHasFullAccess(gate)) return;
+  assetAccessService.appendAssetAccessWhere(where, values, gate.context || {}, alias);
+}
+
 function canTextAdminViewAsset(row, gate = {}) {
   if (gate?.effective?.isSuperAdmin || gate?.effective?.canAccessAdmin) return true;
   return assetAccessService.canViewAsset(row, gate.context || {});
@@ -3912,15 +3934,24 @@ app.post('/api/admin/image-derivatives/repair', async (req, res) => {
 
 app.get('/api/admin/proxy-missing-scan', async (req, res) => {
   try {
-    const includeTrash = String(req.query?.includeTrash || '').trim() === '1';
-    const where = includeTrash ? '' : 'WHERE deleted_at IS NULL';
+    const gate = await requireProxyAdminRequest(req, res);
+    if (!gate) return;
+    const includeTrash = proxyAdminHasFullAccess(gate) && String(req.query?.includeTrash || '').trim() === '1';
+    const where = [];
+    const values = [];
+    appendProxyAdminAssetWhere(where, values, gate, 'assets');
+    if (includeTrash) {
+      const deletedIndex = where.indexOf('assets.deleted_at IS NULL');
+      if (deletedIndex >= 0) where.splice(deletedIndex, 1);
+    }
     const result = await pool.query(`
-      SELECT id, title, file_name, type, mime_type, media_url, source_path, proxy_url, thumbnail_url, proxy_status, deleted_at, created_at, updated_at
+      SELECT id, title, file_name, type, mime_type, media_url, source_path, proxy_url, thumbnail_url, proxy_status, deleted_at, created_at, updated_at,
+             visibility, owner_user, owner_groups, allowed_users, allowed_groups, denied_users, denied_groups
       FROM assets
-      ${where}
+      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
       ORDER BY updated_at DESC
       LIMIT 5000
-    `);
+    `, values);
     const isVideo = (row) => {
       if (typeof isVideoCandidate === 'function') {
         return isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type });
@@ -4013,17 +4044,28 @@ app.get('/api/admin/proxy-missing-scan', async (req, res) => {
 });
 
 app.post('/api/admin/proxy-jobs', async (req, res) => {
+  const gate = await requireProxyAdminRequest(req, res);
+  if (!gate) return;
   const running = Array.from(proxyJobs.values()).find((job) => job.status === 'running' || job.status === 'queued');
   if (running) {
     return res.status(409).json({ error: 'A proxy job is already running', job: running });
   }
 
-  const assetIds = Array.isArray(req.body?.assetIds)
+  let assetIds = Array.isArray(req.body?.assetIds)
     ? [...new Set(req.body.assetIds.map((id) => String(id || '').trim()).filter(Boolean))]
     : [];
+  if (!proxyAdminHasFullAccess(gate)) {
+    if (!assetIds.length) {
+      return res.status(400).json({ error: 'assetIds are required for scoped proxy generation' });
+    }
+    const visibleRows = await pool.query('SELECT * FROM assets WHERE id = ANY($1::text[]) AND deleted_at IS NULL', [assetIds]);
+    const visibleIds = new Set(visibleRows.rows.filter((row) => canProxyAdminAccessAsset(row, gate)).map((row) => String(row.id || '')));
+    assetIds = assetIds.filter((id) => visibleIds.has(id));
+    if (!assetIds.length) return res.status(404).json({ error: 'Asset not found' });
+  }
   const job = createProxyJob();
   setTimeout(() => {
-    runProxyJob(job.id, { includeTrash: Boolean(req.body?.includeTrash), assetIds }).catch(() => {});
+    runProxyJob(job.id, { includeTrash: proxyAdminHasFullAccess(gate) && Boolean(req.body?.includeTrash), assetIds }).catch(() => {});
   }, 0);
   return res.status(202).json(job);
 });
@@ -4041,15 +4083,33 @@ app.get('/api/admin/proxy-jobs', async (_req, res) => {
 
 app.get('/api/admin/assets/suggest', async (req, res) => {
   try {
+    const gate = await requireProxyAdminRequest(req, res);
+    if (!gate) return;
     const includeTrashRaw = String(req.query.includeTrash || '1').trim().toLowerCase();
-    const includeTrash = !['0', 'false', 'no'].includes(includeTrashRaw);
+    const includeTrash = proxyAdminHasFullAccess(gate) && !['0', 'false', 'no'].includes(includeTrashRaw);
     const suggestions = await queryAssetSuggestions({
       q: req.query.q,
       limit: req.query.limit,
       trash: includeTrash ? 'all' : 'active'
     });
+    if (proxyAdminHasFullAccess(gate)) {
+      return res.json(
+        suggestions.map((row) => ({
+          id: row.id,
+          title: row.title,
+          fileName: row.fileName,
+          type: row.type,
+          inTrash: row.inTrash,
+          updatedAt: row.updatedAt
+        }))
+      );
+    }
+    const ids = suggestions.map((row) => String(row.id || '').trim()).filter(Boolean);
+    if (!ids.length) return res.json([]);
+    const rows = await pool.query('SELECT * FROM assets WHERE id = ANY($1::text[]) AND deleted_at IS NULL', [ids]);
+    const visible = new Set(rows.rows.filter((row) => canProxyAdminAccessAsset(row, gate)).map((row) => String(row.id || '')));
     return res.json(
-      suggestions.map((row) => ({
+      suggestions.filter((row) => visible.has(String(row.id || ''))).map((row) => ({
         id: row.id,
         title: row.title,
         fileName: row.fileName,
@@ -4129,12 +4189,17 @@ app.post('/api/admin/metadata/generate', async (req, res) => {
 
 app.post('/api/admin/proxy-tools/run', async (req, res) => {
   try {
+    const gate = await requireProxyAdminRequest(req, res);
+    if (!gate) return;
     const assetName = String(req.body?.assetName || '').trim();
     const assetId = String(req.body?.assetId || '').trim();
     const mode = String(req.body?.mode || '').trim().toLowerCase();
     if (!assetName && !assetId) return res.status(400).json({ error: 'assetName or assetId is required' });
     if (!['thumbnail', 'image_thumbnail', 'image_preview', 'document_thumbnail', 'preview', 'proxy', 'replace_asset', 'replace_pdf', 'delete_asset'].includes(mode)) {
       return res.status(400).json({ error: 'mode must be one of: thumbnail, image_thumbnail, image_preview, document_thumbnail, preview, proxy, replace_asset, replace_pdf, delete_asset' });
+    }
+    if (!proxyAdminHasFullAccess(gate) && ['replace_asset', 'replace_pdf', 'delete_asset'].includes(mode)) {
+      return res.status(403).json({ error: 'Full admin permission is required for this action' });
     }
 
     const match = assetId
@@ -4157,7 +4222,8 @@ app.post('/api/admin/proxy-tools/run', async (req, res) => {
       );
     if (!match.rowCount) return res.status(404).json({ error: assetId ? 'Asset not found by ID' : 'Asset not found by name' });
 
-    let row = match.rows[0];
+    let row = match.rows.find((candidate) => canProxyAdminAccessAsset(candidate, gate));
+    if (!row) return res.status(404).json({ error: 'Asset not found' });
     let info = {};
     if (assetEditLockService) {
       const lockResult = await assetEditLockService.assertWritable(req, row.id);
