@@ -1472,9 +1472,10 @@ function openTextEditorModal({
 }) {
   return new Promise((resolve) => {
     const safeMediaUrl = String(mediaUrl || '').trim();
-    const mode = String(previewMode || 'audio').trim().toLowerCase();
+    const requestedMode = String(previewMode || 'audio').trim().toLowerCase();
+    const mode = requestedMode === 'image' || requestedMode === 'photo' ? requestedMode : 'audio';
     const hasAudio = Boolean(mode === 'audio' && safeMediaUrl);
-    const hasVideo = Boolean(mode === 'video' && safeMediaUrl);
+    const hasVideo = false;
     const hasImage = Boolean((mode === 'image' || mode === 'photo') && safeMediaUrl);
     const backdrop = document.createElement('div');
     backdrop.className = 'content-modal-backdrop';
