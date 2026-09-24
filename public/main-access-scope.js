@@ -144,7 +144,7 @@
     const visibleSettingsTabs = {
       general: canShowFullAdminPanels,
       workflow: canShowFullAdminPanels,
-      proxy: canShowFullAdminPanels,
+      proxy: canShowFullAdminPanels || access.canAccessTextAdmin,
       backup: canShowFullAdminPanels,
       ocr: access.canAccessTextAdmin,
       subtitle: access.canAccessTextAdmin,

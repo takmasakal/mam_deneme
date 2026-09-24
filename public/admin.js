@@ -2267,7 +2267,9 @@ function switchSettingsSubtab(tabName) {
 async function loadSettingsSubtabData(tabName) {
   const tab = String(tabName || '').trim().toLowerCase();
   if (tab === 'proxy') {
-    await refreshTrackingAndHealth();
+    if (currentAdminProfile?.canAccessAdmin || currentAdminProfile?.isAdmin) {
+      await refreshTrackingAndHealth();
+    }
     return;
   }
   if (tab === 'ocr') {
@@ -2306,10 +2308,20 @@ function updateProxyToolReplaceFileName() {
 }
 
 function updateProxyToolUi() {
+  const fullAdmin = Boolean(currentAdminProfile?.canAccessAdmin || currentAdminProfile?.isAdmin);
+  Array.from(proxyToolAction?.options || []).forEach((option) => {
+    const restricted = ['replace_asset', 'replace_pdf', 'delete_asset'].includes(String(option.value || '').trim().toLowerCase());
+    option.hidden = restricted && !fullAdmin;
+    option.disabled = restricted && !fullAdmin;
+  });
   const mode = String(proxyToolAction?.value || 'thumbnail').trim().toLowerCase();
-  const showTimecode = mode === 'thumbnail';
+  if (!fullAdmin && ['replace_asset', 'replace_pdf', 'delete_asset'].includes(mode) && proxyToolAction) {
+    proxyToolAction.value = 'thumbnail';
+  }
+  const activeMode = String(proxyToolAction?.value || 'thumbnail').trim().toLowerCase();
+  const showTimecode = activeMode === 'thumbnail';
   // Proxy üretiminde de yeni kaynak video seçilebilsin diye dosya alanını açık tutuyoruz.
-  const showReplaceFile = mode === 'replace_asset' || mode === 'replace_pdf' || mode === 'proxy';
+  const showReplaceFile = activeMode === 'replace_asset' || activeMode === 'replace_pdf' || activeMode === 'proxy';
   if (proxyToolTimecodeWrap) proxyToolTimecodeWrap.classList.toggle('hidden', !showTimecode);
   if (proxyToolReplaceFileWrap) proxyToolReplaceFileWrap.classList.toggle('hidden', !showReplaceFile);
 }
@@ -4683,7 +4695,9 @@ runProxyToolBtn?.addEventListener('click', async () => {
       proxyToolReplaceFile.value = '';
       updateProxyToolReplaceFileName();
     }
-    await refreshTrackingAndHealth();
+    if (currentAdminProfile?.canAccessAdmin || currentAdminProfile?.isAdmin) {
+      await refreshTrackingAndHealth();
+    }
   } catch (error) {
     if (proxyToolMsg) proxyToolMsg.textContent = String(error.message || 'Request failed');
   }

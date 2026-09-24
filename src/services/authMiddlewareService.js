@@ -77,7 +77,11 @@ function createAuthMiddlewareService({
     const textAdminPaths = [
       /^\/ocr-records(?:\/content)?$/,
       /^\/subtitle-records(?:\/content)?$/,
-      /^\/text-search$/
+      /^\/text-search$/,
+      /^\/proxy-missing-scan$/,
+      /^\/proxy-jobs(?:\/[^/]+)?$/,
+      /^\/proxy-tools\/run$/,
+      /^\/assets\/suggest$/
     ];
     const assetRightsAdminPaths = [
       /^\/assets\/access$/,
