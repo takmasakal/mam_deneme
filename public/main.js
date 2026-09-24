@@ -276,8 +276,11 @@ function openVideoToolsInPlace(assetId, startAtSeconds = 0, nextUrl = null, back
 function leaveVideoToolsInPlace(assetId = '', startAtSeconds = 0, nextUrl = null, backPanels = '') {
   const id = String(assetId || selectedAssetId || '').trim();
   setVideoToolsPageModeActive(false);
-  applyVideoToolsPanelState(backPanels);
-  if (nextUrl) window.history.pushState({ view: 'detail', assetId: id }, '', nextUrl.toString());
+  applyVideoToolsPanelState('111');
+  if (nextUrl) {
+    nextUrl.searchParams.set('restorePanels', '111');
+    window.history.pushState({ view: 'detail', assetId: id }, '', nextUrl.toString());
+  }
   if (id) {
     getWorkflow()
       .then((workflow) => openAsset(id, workflow, { startAtSeconds: Math.max(0, Number(startAtSeconds) || 0), scrollToVideoTop: true }))
