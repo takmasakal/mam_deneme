@@ -395,6 +395,10 @@ body {
   cursor: not-allowed;
 }
 
+#ocrRecordsPager {
+  margin-bottom: 12px;
+}
+
 .identity-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
