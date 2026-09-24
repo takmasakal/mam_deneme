@@ -39,8 +39,8 @@ const splitterDots = Array.from(document.querySelectorAll('.splitter-dot'));
 const splitterTabs = Array.from(document.querySelectorAll('.splitter-tab'));
 const pageParams = new URLSearchParams(window.location.search);
 const requestedToolsView = String(pageParams.get('view') || '').trim().toLowerCase();
-const isAudioToolsPageMode = requestedToolsView === 'audio-tools';
-const isVideoToolsPageMode = requestedToolsView === 'video-tools' || isAudioToolsPageMode;
+let isAudioToolsPageMode = requestedToolsView === 'audio-tools';
+let isVideoToolsPageMode = requestedToolsView === 'video-tools' || isAudioToolsPageMode;
 const requestedVideoToolsAssetId = String(pageParams.get('assetId') || '').trim();
 const requestedVideoToolsStartSec = Math.max(0, Number(pageParams.get('tc') || 0) || 0);
 const requestedOpenAssetId = String(pageParams.get('openAsset') || '').trim();
@@ -248,6 +248,58 @@ function updateSearchResultCounter() {
   searchResultCounter.classList.remove('hidden');
 }
 
+
+function setVideoToolsPageModeActive(active, toolsView = 'video-tools') {
+  const normalizedView = String(toolsView || '').trim().toLowerCase();
+  isAudioToolsPageMode = Boolean(active && normalizedView === 'audio-tools');
+  isVideoToolsPageMode = Boolean(active);
+  document.body.classList.toggle('video-tools-page-mode', isVideoToolsPageMode);
+}
+
+function applyVideoToolsPanelState(backPanels = '') {
+  if (isVideoToolsPageMode) {
+    panelVisibility.panelIngest = false;
+    panelVisibility.panelAssets = false;
+    panelVisibility.panelDetail = true;
+  } else if (/^[01]{3}$/.test(backPanels)) {
+    panelVisibility.panelIngest = backPanels[0] === '1';
+    panelVisibility.panelAssets = backPanels[1] === '1';
+    panelVisibility.panelDetail = backPanels[2] === '1';
+    if (!panelVisibility.panelIngest && !panelVisibility.panelAssets && !panelVisibility.panelDetail) panelVisibility.panelAssets = true;
+  }
+  applyPanelLayout();
+}
+
+function openVideoToolsInPlace(assetId, startAtSeconds = 0, nextUrl = null, backPanels = '') {
+  const id = String(assetId || '').trim();
+  if (!id) return false;
+  const toolsView = String(nextUrl?.searchParams?.get?.('view') || 'video-tools').trim().toLowerCase() === 'audio-tools' ? 'audio-tools' : 'video-tools';
+  setVideoToolsPageModeActive(true, toolsView);
+  applyVideoToolsPanelState(backPanels);
+  if (nextUrl) window.history.pushState({ view: toolsView, assetId: id }, '', nextUrl.toString());
+  getWorkflow()
+    .then((workflow) => openAsset(id, workflow, { startAtSeconds: Math.max(0, Number(startAtSeconds) || 0), scrollToVideoTop: true }))
+    .catch((error) => alert(error.message || 'Request failed'));
+  return true;
+}
+
+function leaveVideoToolsInPlace(assetId = '', startAtSeconds = 0, nextUrl = null, backPanels = '') {
+  const id = String(assetId || selectedAssetId || '').trim();
+  setVideoToolsPageModeActive(false);
+  applyVideoToolsPanelState(backPanels);
+  if (nextUrl) window.history.pushState({ view: 'detail', assetId: id }, '', nextUrl.toString());
+  if (id) {
+    getWorkflow()
+      .then((workflow) => openAsset(id, workflow, { startAtSeconds: Math.max(0, Number(startAtSeconds) || 0), scrollToVideoTop: true }))
+      .catch((error) => alert(error.message || 'Request failed'));
+  }
+  return true;
+}
+
+window.addEventListener('popstate', () => {
+  window.location.reload();
+});
+
 const shellModule = window.createMainShellModule({
   searchForm,
   assetTypeFilters,
@@ -256,6 +308,8 @@ const shellModule = window.createMainShellModule({
   panelVideoToolsBtn,
   pageParams,
   isVideoToolsPageMode,
+  openVideoToolsInPlace,
+  leaveVideoToolsInPlace,
   panelVisibilityRef: {
     get: () => panelVisibility,
     set: (next) => { panelVisibility = next; }
