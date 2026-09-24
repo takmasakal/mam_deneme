@@ -275,6 +275,20 @@ function openVideoToolsInPlace(assetId, startAtSeconds = 0, nextUrl = null, back
 
 function leaveVideoToolsInPlace(assetId = '', startAtSeconds = 0, nextUrl = null, backPanels = '') {
   const id = String(assetId || selectedAssetId || '').trim();
+  if (activePlayerCleanup) {
+    activePlayerCleanup();
+    activePlayerCleanup = null;
+  }
+  if (activeViewerLoadingCleanup) {
+    activeViewerLoadingCleanup();
+    activeViewerLoadingCleanup = null;
+  }
+  if (activeDetailPinCleanup) {
+    activeDetailPinCleanup();
+    activeDetailPinCleanup = null;
+  }
+  assetDetail.classList.remove('video-tools-page-detail', 'video-detail-mode', 'audio-detail-mode', 'detail-video-pinned');
+  assetDetail.innerHTML = `<div class="empty">${escapeHtml(t('loading'))}...</div>`;
   setVideoToolsPageModeActive(false);
   applyVideoToolsPanelState('111');
   if (nextUrl) {
@@ -282,9 +296,11 @@ function leaveVideoToolsInPlace(assetId = '', startAtSeconds = 0, nextUrl = null
     window.history.pushState({ view: 'detail', assetId: id }, '', nextUrl.toString());
   }
   if (id) {
-    getWorkflow()
-      .then((workflow) => openAsset(id, workflow, { startAtSeconds: Math.max(0, Number(startAtSeconds) || 0), scrollToVideoTop: true }))
-      .catch((error) => alert(error.message || 'Request failed'));
+    requestAnimationFrame(() => {
+      getWorkflow()
+        .then((workflow) => openAsset(id, workflow, { startAtSeconds: Math.max(0, Number(startAtSeconds) || 0), scrollToVideoTop: true }))
+        .catch((error) => alert(error.message || 'Request failed'));
+    });
   }
   return true;
 }
