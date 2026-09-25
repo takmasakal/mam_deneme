@@ -814,43 +814,14 @@ html[data-theme="light"] .asset-head-filters label {
 }
 
 html[data-theme="light"] .asset-head-filters input[type="checkbox"] {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 18px;
-  height: 18px;
   margin: 0;
-  border: 1.5px solid #e60028;
-  border-radius: 2px;
-  background: #ffffff;
-  box-shadow: 0 3px 8px rgba(230, 0, 40, 0.12);
-  display: inline-grid;
-  place-content: center;
+  accent-color: #e60028;
   vertical-align: middle;
 }
 
-html[data-theme="light"] .asset-head-filters input[type="checkbox"]::before {
-  content: "";
-  width: 9px;
-  height: 5px;
-  border-left: 2px solid #ffffff;
-  border-bottom: 2px solid #ffffff;
-  transform: rotate(-45deg) scale(0);
-  transform-origin: center;
-  transition: transform 0.12s ease;
-}
-
-html[data-theme="light"] .asset-head-filters input[type="checkbox"]:checked {
-  background: #e60028;
-  border-color: #e60028;
-}
-
-html[data-theme="light"] .asset-head-filters input[type="checkbox"]:checked::before {
-  transform: rotate(-45deg) scale(1);
-}
-
 html[data-theme="light"] .asset-head-filters input[type="checkbox"]:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 4px rgba(230, 0, 40, 0.14);
+  outline: 2px solid rgba(230, 0, 40, 0.35);
+  outline-offset: 2px;
 }
 
 html[data-theme="light"] .asset-view-switch {
@@ -877,9 +848,4 @@ html[data-theme="light"] .asset-view-btn::before,
 html[data-theme="light"] .asset-view-btn.active::before {
   filter: brightness(0) invert(1);
   opacity: 1;
-}
-
-html[data-theme="light"] .asset-head-filters input[type="checkbox"] {
-  border-radius: 2px;
-  aspect-ratio: 1 / 1;
 }
