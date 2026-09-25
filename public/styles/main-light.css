@@ -899,3 +899,43 @@ html[data-theme="light"] .asset-list-page-current,
 html[data-theme="light"] .asset-list-page-size label {
   color: #5f6878;
 }
+
+/* Light mode left column header: preserve original geometry, adjust colors only */
+html[data-theme="light"] #panelIngest .top-row {
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: inherit;
+}
+
+html[data-theme="light"] #panelIngest .app-brand,
+html[data-theme="light"] #panelIngest .app-brand span,
+html[data-theme="light"] #panelIngest .app-brand span:first-child,
+html[data-theme="light"] #panelIngest .app-brand span:last-child {
+  color: #ffffff;
+  background: transparent;
+  border-color: transparent;
+}
+
+html[data-theme="light"] #panelIngest .user-box-label,
+html[data-theme="light"] #panelIngest .lang-box-label {
+  color: #8f98a8;
+}
+
+html[data-theme="light"] #panelIngest .current-user-btn,
+html[data-theme="light"] #panelIngest .lang-box select {
+  background: #f1f3f6;
+  color: #596274;
+  border-color: #dfe4ec;
+  box-shadow: none;
+}
+
+html[data-theme="light"] #panelIngest .current-user-btn:hover,
+html[data-theme="light"] #panelIngest .lang-box select:hover {
+  background: #e9edf3;
+  color: #424b5d;
+  border-color: #cfd6e3;
+}
