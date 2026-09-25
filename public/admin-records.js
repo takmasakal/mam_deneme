@@ -749,7 +749,7 @@
               title: `${t('subtitle_records')} - ${rowEl.querySelector('.subtitle-row-main strong')?.textContent || assetId}`,
               content: String(readResult.content || ''),
               mediaUrl,
-              previewMode: String(rowEl.dataset.assetType || '').toLowerCase() === 'audio' ? 'audio' : 'video',
+              previewMode: 'audio',
               onSave: async (nextContent) => {
                 await api('/api/admin/subtitle-records/content', {
                   method: 'PATCH',
