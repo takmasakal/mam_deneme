@@ -849,3 +849,53 @@ html[data-theme="light"] .asset-view-btn.active::before {
   filter: brightness(0) invert(1);
   opacity: 1;
 }
+
+/* Light mode asset pager: keep original shape, use grey sample-like surface */
+html[data-theme="light"] .asset-list-pager {
+  background: #f1f3f6;
+  border-color: #dfe4ec;
+  box-shadow: 0 6px 16px rgba(18, 27, 40, 0.06);
+}
+
+html[data-theme="light"] .asset-list-page-size-select,
+html[data-theme="light"] .asset-list-page-input {
+  min-height: unset;
+  background: #f1f3f6;
+  color: #182133;
+  border-color: #cfd6e3;
+  box-shadow: none;
+}
+
+html[data-theme="light"] .asset-list-page-btn {
+  width: 28px;
+  height: 24px;
+  min-width: 28px;
+  padding: 0;
+  border-radius: 6px;
+  background: #f1f3f6;
+  color: #e60028;
+  border-color: #cfd6e3;
+  box-shadow: none;
+  transform: none;
+}
+
+html[data-theme="light"] .asset-list-page-btn:hover:not(:disabled) {
+  background: #fff6f8;
+  border-color: rgba(230, 0, 40, 0.38);
+  color: #e60028;
+  box-shadow: none;
+  transform: none;
+}
+
+html[data-theme="light"] .asset-list-page-btn:disabled {
+  background: #e9edf3;
+  color: #a5adbb;
+  border-color: #dce2eb;
+  box-shadow: none;
+}
+
+html[data-theme="light"] .asset-list-pager-range,
+html[data-theme="light"] .asset-list-page-current,
+html[data-theme="light"] .asset-list-page-size label {
+  color: #5f6878;
+}
