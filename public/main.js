@@ -29,6 +29,7 @@ const ocrSuggestList = document.getElementById('ocrSuggestList');
 const subtitleQueryInput = searchForm.querySelector('[name="subtitleQ"]');
 const subtitleSuggestList = document.getElementById('subtitleSuggestList');
 const languageSelect = document.getElementById('languageSelect');
+const themeSelect = document.getElementById('themeSelect');
 const currentUserBtn = document.getElementById('currentUserBtn');
 const advancedSearchBtn = document.getElementById('advancedSearchBtn');
 const userMenu = document.getElementById('userMenu');
@@ -49,6 +50,7 @@ const requestedRestorePanels = String(pageParams.get('restorePanels') || '').tri
 const LOCAL_PANEL_SIZE = 'mam.panel.sizes';
 const LOCAL_PANEL_VIS = 'mam.panel.visibility';
 const LOCAL_LANG = 'mam.lang';
+const LOCAL_THEME = 'mam.theme';
 const LOGIN_LANG_COOKIE = 'mam.login.lang';
 const LOCAL_VIDEO_TOOLS_ORDER = 'mam.video.tools.order';
 const LOCAL_ASSET_VIEW_MODE = 'mam.assets.view.mode';
@@ -402,6 +404,10 @@ let i18n = {
     unknown_user: 'Unknown user',
     logout: 'Logout',
     language_label: 'Language',
+    theme_label: 'Theme',
+    theme_dark: 'Dark',
+    theme_light: 'Light',
+    theme_system: 'System',
     generate_metadata: 'Generate metadata',
     admin_page: 'Admin',
     ingest_title: 'Ingest Asset',
@@ -803,6 +809,10 @@ let i18n = {
     unknown_user: 'Bilinmeyen kullanıcı',
     logout: 'Çıkış Yap',
     language_label: 'Dil',
+    theme_label: 'Tema',
+    theme_dark: 'Koyu',
+    theme_light: 'Açık',
+    theme_system: 'Sistem',
     generate_metadata: 'Metadata üret',
     admin_page: 'Yönetim',
     ingest_title: 'Varlık Yükle',
@@ -1445,6 +1455,45 @@ async function loadUiSettings() {
     }
   } catch (_error) {}
   applySubtitleStyleSettings();
+}
+
+
+function resolveThemePreference(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'light' || normalized === 'system') return normalized;
+  return 'dark';
+}
+
+function systemThemeValue() {
+  try {
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  } catch (_error) {
+    return 'dark';
+  }
+}
+
+function applyThemePreference(value) {
+  const preference = resolveThemePreference(value);
+  const theme = preference === 'system' ? systemThemeValue() : preference;
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.dataset.themePreference = preference;
+  if (themeSelect && themeSelect.value !== preference) themeSelect.value = preference;
+}
+
+function initThemePreference() {
+  let preference = 'dark';
+  try {
+    preference = resolveThemePreference(localStorage.getItem(LOCAL_THEME) || 'dark');
+  } catch (_error) {
+    preference = 'dark';
+  }
+  applyThemePreference(preference);
+  try {
+    const media = window.matchMedia?.('(prefers-color-scheme: light)');
+    media?.addEventListener?.('change', () => {
+      if (resolveThemePreference(localStorage.getItem(LOCAL_THEME) || 'dark') === 'system') applyThemePreference('system');
+    });
+  } catch (_error) {}
 }
 
 function applyStaticI18n() {
@@ -3038,6 +3087,12 @@ clearSearchBtn?.addEventListener('click', async () => {
   });
 });
 
+themeSelect?.addEventListener('change', (event) => {
+  const preference = resolveThemePreference(event.target.value);
+  try { localStorage.setItem(LOCAL_THEME, preference); } catch (_error) {}
+  applyThemePreference(preference);
+});
+
 languageSelect?.addEventListener('change', async (event) => {
   currentLang = event.target.value === 'tr' ? 'tr' : 'en';
   localStorage.setItem(LOCAL_LANG, currentLang);
@@ -3160,6 +3215,7 @@ function prepareInitialShell() {
     restoreVideoToolsReturnSearchState();
     currentLang = currentLang === 'tr' ? 'tr' : 'en';
     if (languageSelect) languageSelect.value = currentLang;
+    initThemePreference();
     applyStaticI18n();
     loadPanelPrefs();
     loadPanelVisibilityPrefs();

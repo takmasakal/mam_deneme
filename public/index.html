@@ -5,7 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MetMAM</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=20260912-subtitle-toggle-2" />
+    <script>
+      (() => {
+        try {
+          const saved = localStorage.getItem('mam.theme') || 'dark';
+          const system = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+          const theme = saved === 'system' ? system : (saved === 'light' ? 'light' : 'dark');
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.dataset.themePreference = saved;
+        } catch (_error) {
+          document.documentElement.dataset.theme = 'dark';
+          document.documentElement.dataset.themePreference = 'dark';
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="/styles.css?v=20260925-light-mode-1" />
   </head>
   <body>
     <main class="layout">
@@ -20,6 +34,14 @@
                 <div class="user-menu-actions">
                   <a id="adminMenuLink" class="admin-link hidden" href="/admin.html" data-i18n="admin_page">Admin</a>
                   <button type="button" id="logoutBtn" class="logout-btn" data-i18n="logout">Logout</button>
+                  <label class="theme-menu-row">
+                    <span data-i18n="theme_label">Theme</span>
+                    <select id="themeSelect" aria-label="Theme">
+                      <option value="dark" data-i18n="theme_dark">Dark</option>
+                      <option value="light" data-i18n="theme_light">Light</option>
+                      <option value="system" data-i18n="theme_system">System</option>
+                    </select>
+                  </label>
                 </div>
               </div>
             </div>
