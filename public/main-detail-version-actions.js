@@ -14,6 +14,7 @@
       canUsePdfAdvancedTools,
       selectedImageVersionIds,
       assetDetail,
+      previewMediaVersion,
       cleanupPreview = () => {},
       documentSearchControls = () => '',
       initDocumentPreview = () => () => {},
@@ -63,6 +64,12 @@
         const isVideo = versionMime.startsWith('video/');
         const pdf = versionMime === 'application/pdf';
         if (!imageVersion && !isAudio && !isVideo && !pdf && !office && !textPreview) { alertError(t('preview_not_supported')); return; }
+        const existingMedia = host.querySelector?.('#assetMediaEl, video, audio') || null;
+        if ((isAudio || isVideo) && typeof previewMediaVersion === 'function'
+          && previewMediaVersion({ asset, version, mediaUrl, isVideo, isAudio, mediaEl: existingMedia, host })) {
+          showShortcutToast?.(t('version_preview_loaded').replace('{name}', version?.label || versionFileName), { type: 'success' });
+          return;
+        }
         cleanupPreview();
         host.querySelectorAll('audio, video').forEach((media) => media.pause());
         if (textPreview) {

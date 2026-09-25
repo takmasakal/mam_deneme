@@ -2608,6 +2608,48 @@ const detailVersionActionsModule = window.createMainDetailVersionActions({
   currentLang: () => currentLang,
   canUsePdfAdvancedTools: () => currentUserCanUsePdfAdvancedTools,
   selectedImageVersionIds,
+  previewMediaVersion: ({ asset, version, mediaUrl, isVideo: versionIsVideo, isAudio: versionIsAudio, mediaEl: previewMediaEl, host }) => {
+    let mediaEl = previewMediaEl || assetDetail.querySelector('#assetMediaEl, video, audio');
+    const expectedTag = versionIsVideo ? 'VIDEO' : versionIsAudio ? 'AUDIO' : '';
+    if (!mediaUrl || !host) return false;
+    let actualTag = String(mediaEl?.tagName || mediaEl?.localName || '').toUpperCase();
+    const previewAsset = { ...asset, mediaUrl, proxyUrl: versionIsVideo ? mediaUrl : asset.proxyUrl };
+    if (!mediaEl || actualTag !== expectedTag) {
+      if (!versionIsVideo) return false;
+      activePlayerCleanup?.();
+      activePlayerCleanup = null;
+      activeViewerLoadingCleanup?.();
+      activeViewerLoadingCleanup = null;
+      activeDetailPinCleanup?.();
+      activeDetailPinCleanup = null;
+      host.innerHTML = mediaViewer(previewAsset, {
+        showVideoToolsButton: false,
+        includeSubtitleTools: false,
+        includeSectionHide: true,
+        includeClipSectionHide: false,
+        includeAudioSectionHide: false,
+        audioSideLayout: false,
+        includeDetailPin: true
+      });
+      mediaEl = host.querySelector('#assetMediaEl');
+      actualTag = String(mediaEl?.tagName || mediaEl?.localName || '').toUpperCase();
+      if (!mediaEl || actualTag !== 'VIDEO') return false;
+      assetDetail.classList.add('video-detail-mode');
+      panelDetail?.classList.add('panel-video-detail');
+      activeViewerLoadingCleanup = initMediaViewerLoadingStates(host);
+      activeDetailPinCleanup = initDetailVideoPin(assetDetail);
+      syncDetailHeaderTimecode(assetDetail);
+    }
+    activePlayerCleanup?.();
+    activePlayerCleanup = null;
+    try { mediaEl.pause(); } catch (_error) {}
+    mediaEl.removeAttribute('data-dash-manifest');
+    mediaEl.dataset.versionId = String(version?.versionId || version?.version_id || '');
+    mediaEl.src = mediaUrl;
+    mediaEl.load();
+    activePlayerCleanup = initAssetPlayer(previewAsset, assetDetail);
+    return true;
+  },
   cleanupPreview: () => {
     activePlayerCleanup?.();
     activePlayerCleanup = null;

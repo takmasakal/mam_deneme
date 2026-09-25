@@ -40,6 +40,7 @@ async function run() {
   let showImageViewer = true;
   let previewHost = null;
   let cleanupCalls = 0;
+  let preservedMediaPayload = null;
   const selected = new Map();
   const apiCalls = [];
   let refreshCalls = 0;
@@ -60,6 +61,10 @@ async function run() {
     currentLang: () => 'tr',
     canUsePdfAdvancedTools: () => true,
     selectedImageVersionIds: selected,
+    previewMediaVersion: (payload) => {
+      preservedMediaPayload = payload;
+      return true;
+    },
     assetDetail: {
       querySelector(selector) {
         if (selector === '[data-detail-file-preview]') return previewHost;
@@ -112,6 +117,28 @@ async function run() {
   const pdfPreview = makeButton('previewVersionBtn', 'version-pdf');
   await listener({ target: pdfPreview, preventDefault() {}, stopPropagation() {} });
   assert.match(frame.src, /file=%2Fuploads%2Fversions%2Fdocument\.pdf/);
+
+  previewHost = {
+    querySelector: () => ({ tagName: 'VIDEO' }),
+    querySelectorAll: () => []
+  };
+  module.bind(root, {
+    asset: {
+      id: 'video-asset',
+      mimeType: 'video/mp4',
+      versions: [{ versionId: 'video-version', snapshotMimeType: 'video/mp4', snapshotMediaUrl: '/uploads/version.mp4', label: 'v2' }]
+    },
+    workflow: []
+  });
+  await listener({ target: makeButton('previewVersionBtn', 'video-version'), preventDefault() {}, stopPropagation() {} });
+  assert.strictEqual(preservedMediaPayload.mediaUrl, '/uploads/version.mp4');
+  assert.strictEqual(preservedMediaPayload.isVideo, true);
+  assert.strictEqual(preservedMediaPayload.host, previewHost);
+
+  module.bind(root, {
+    asset: { id: 'asset-1', versions: [], canDownloadAsset: true },
+    workflow: ['draft']
+  });
 
   const restore = makeButton('restorePdfVersionBtn', 'version-2');
   await listener({

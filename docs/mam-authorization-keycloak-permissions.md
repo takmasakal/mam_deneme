@@ -542,3 +542,215 @@ For the first-column dropdown:
 | Keycloak group appears but permission missing | `src/permissions.js` mapping or admin user settings | group is not mapped to app permission |
 | Group with spaces behaves strangely | DB arrays and normalization | old data may contain split tokens |
 | Superadmin does not get full access | `/api/me.groups`, `permissionKeys` | Keycloak group not resolved or stale override |
+
+## Database Query Reference
+
+These queries are for diagnosis and audit. The authoritative effective decision remains in `src/services/assetAccessService.js`, especially `canViewAsset()`, `canDownloadAsset()`, `canEditAsset()`, and `canDeleteAsset()`.
+
+Set the container name for the environment:
+
+```bash
+# MetMAM local
+DB_CONTAINER=mam-postgres
+
+# Kaisha / Belgelik
+DB_CONTAINER=kaisha-postgres
+```
+
+### Assets owned by or explicitly allowed to user `x`
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+WITH p AS (SELECT lower(trim('x')) AS username)
+SELECT a.id, a.title, a.type, a.visibility, a.owner_user, a.owner_groups,
+       a.allowed_users, a.allowed_groups, a.denied_users, a.denied_groups,
+       a.edit_allowed_users, a.download_allowed_users, a.deleted_at
+FROM assets a CROSS JOIN p
+WHERE a.deleted_at IS NULL
+  AND (
+    lower(trim(coalesce(a.owner_user, ''))) = p.username
+    OR EXISTS (
+      SELECT 1 FROM unnest(coalesce(a.allowed_users, '{}')) u
+      WHERE lower(trim(u)) = p.username
+    )
+  )
+ORDER BY a.updated_at DESC;
+"
+```
+
+This finds explicit asset grants. It does not independently apply type rules or Keycloak group membership.
+
+### Document candidates visible to group `y`
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+WITH p AS (SELECT lower(trim('y')) AS group_name)
+SELECT a.id, a.title, a.type, a.visibility, a.owner_user, a.owner_groups,
+       a.allowed_groups, a.denied_groups, a.edit_allowed_groups,
+       a.download_allowed_groups, a.deleted_at
+FROM assets a CROSS JOIN p
+WHERE a.deleted_at IS NULL
+  AND lower(coalesce(a.type, '')) IN ('document', 'doc')
+  AND NOT EXISTS (
+    SELECT 1 FROM unnest(coalesce(a.denied_groups, '{}')) g
+    WHERE lower(trim(g)) = p.group_name
+  )
+  AND (
+    a.visibility = 'public'
+    OR EXISTS (SELECT 1 FROM unnest(coalesce(a.owner_groups, '{}')) g WHERE lower(trim(g)) = p.group_name)
+    OR EXISTS (SELECT 1 FROM unnest(coalesce(a.allowed_groups, '{}')) g WHERE lower(trim(g)) = p.group_name)
+  )
+ORDER BY a.updated_at DESC;
+"
+```
+
+Also inspect `asset_type_access.denied_groups` for `document`; a type-level deny can override ordinary public visibility.
+
+### Asset type visibility, upload, and download rules
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+SELECT type_group, visibility, owner_groups, allowed_users, allowed_groups,
+       denied_users, denied_groups, edit_allowed_users, edit_allowed_groups,
+       edit_denied_users, edit_denied_groups, download_allowed_users,
+       download_allowed_groups, download_denied_users, download_denied_groups,
+       upload_allowed_users, upload_allowed_groups, upload_denied_users,
+       upload_denied_groups
+FROM asset_type_access
+ORDER BY type_group;
+"
+```
+
+### All access columns for one asset
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+SELECT id, title, type, visibility, owner_user, owner_groups,
+       allowed_users, allowed_groups, denied_users, denied_groups,
+       edit_allowed_users, edit_allowed_groups, edit_denied_users,
+       edit_denied_groups, download_allowed_users, download_allowed_groups,
+       download_denied_users, download_denied_groups, deleted_at, updated_at
+FROM assets
+WHERE id = 'ASSET_ID';
+"
+```
+
+### Application permissions for user or group `x`
+
+User/group settings are stored as JSON in `admin_settings.value` under the `user_permissions` key:
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+SELECT key, jsonb_pretty(value)
+FROM admin_settings
+WHERE key = 'user_permissions';
+"
+```
+
+To find `x` in both the user and group maps:
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+WITH settings AS (
+  SELECT value FROM admin_settings WHERE key = 'user_permissions'
+), principals AS (
+  SELECT 'user' AS principal_type, key AS principal_name, value AS permissions
+  FROM settings, jsonb_each(coalesce(value->'users', '{}'))
+  UNION ALL
+  SELECT 'group', key, value
+  FROM settings, jsonb_each(coalesce(value->'groups', '{}'))
+)
+SELECT principal_type, principal_name, jsonb_pretty(permissions)
+FROM principals
+WHERE lower(principal_name) = lower('x');
+"
+```
+
+Inspect `assetDelete`, `metadataEdit`, `officeEdit`, `pdfAdvancedTools`, and `textAdminAccess` in the returned JSON.
+
+### Group-admin assignments
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+SELECT id, group_name, username, admin_scopes, asset_type_groups,
+       created_at, created_by
+FROM group_admins
+ORDER BY group_name, username;
+"
+```
+
+An empty `asset_type_groups` means all types; a non-empty array limits the assignment to those types.
+
+### Detect split group names
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+SELECT id, title, owner_groups, allowed_groups, denied_groups
+FROM assets
+WHERE EXISTS (
+  SELECT 1
+  FROM unnest(coalesce(owner_groups, '{}') || coalesce(allowed_groups, '{}') || coalesce(denied_groups, '{}')) g
+  WHERE lower(trim(g)) IN ('standart', 'yönetici', 'kullanıcı')
+)
+ORDER BY updated_at DESC;
+"
+```
+
+Wrong for one group: `{standart,yönetici}`. Correct: `{"standart yönetici"}`.
+
+### Delete, edit, and download audit
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+SELECT id, title, owner_user, allowed_users, edit_allowed_users,
+       download_allowed_users, denied_users, edit_denied_users,
+       download_denied_users, deleted_at
+FROM assets
+WHERE owner_user IS NOT NULL
+   OR cardinality(coalesce(allowed_users, '{}')) > 0
+   OR cardinality(coalesce(edit_allowed_users, '{}')) > 0
+   OR cardinality(coalesce(download_allowed_users, '{}')) > 0
+ORDER BY updated_at DESC;
+"
+```
+
+### Schema and deleted-asset checks
+
+```bash
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+SELECT column_name, data_type
+FROM information_schema.columns
+WHERE table_name IN ('assets', 'asset_type_access', 'group_admins', 'admin_settings')
+ORDER BY table_name, ordinal_position;
+"
+
+docker exec -it "$DB_CONTAINER" psql -U postgres -d mam_mvp -c "
+SELECT id, title, type, owner_user, deleted_at
+FROM assets
+WHERE deleted_at IS NOT NULL
+ORDER BY deleted_at DESC;
+"
+```
+
+## API Verification After SQL
+
+```js
+fetch('/api/me?ts=' + Date.now(), { cache: 'no-store' })
+  .then(async r => console.log('me', r.status, await r.text()));
+
+fetch('/api/assets/ASSET_ID?ts=' + Date.now(), { cache: 'no-store' })
+  .then(async r => console.log('asset', r.status, await r.text()));
+```
+
+Check these single-asset fields:
+
+```text
+canDownloadAsset
+canEditAsset
+canEditAssetMetadata
+canEditAssetOffice
+canEditAssetPdf
+canDeleteAsset
+```
+
+SQL shows raw DB records. Confirm the effective result with `/api/me`, `/api/assets`, and the single-asset API response together. If the API returns `true` but the button is missing, inspect frontend build/cache. If the API returns `false` while the button is visible, frontend and backend authorization decisions have diverged.
