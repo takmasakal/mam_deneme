@@ -711,3 +711,98 @@ html[data-theme="light"] .file-picker-name,
 html[data-theme="light"] .selected-file-name {
   color: #7a8495;
 }
+
+/* Light mode grey container surfaces */
+html[data-theme="light"] .ingest-panel-card,
+html[data-theme="light"] .search,
+html[data-theme="light"] #assetGrid,
+html[data-theme="light"] #assetDetail,
+html[data-theme="light"] .detail-card,
+html[data-theme="light"] .viewer-extra,
+html[data-theme="light"] .admin-card,
+html[data-theme="light"] .settings-card,
+html[data-theme="light"] .proxy-repair-card,
+html[data-theme="light"] .metadata-card,
+html[data-theme="light"] .attachment-add-card,
+html[data-theme="light"] .version-add-card,
+html[data-theme="light"] .subtitle-upload-card,
+html[data-theme="light"] .search-query-wrap,
+html[data-theme="light"] .search-main-row,
+html[data-theme="light"] .search-ocr-row,
+html[data-theme="light"] .advanced-search-content,
+html[data-theme="light"] .metadata-form,
+html[data-theme="light"] .visibility-form,
+html[data-theme="light"] .proxy-repair-toolbar,
+html[data-theme="light"] .proxy-repair-results,
+html[data-theme="light"] .localized-file-input,
+html[data-theme="light"] .file-picker,
+html[data-theme="light"] .subtitle-upload-controls,
+html[data-theme="light"] .replace-file-controls {
+  background: #f1f3f6;
+  border-color: #dfe4ec;
+}
+
+html[data-theme="light"] .asset-card,
+html[data-theme="light"] .asset-list-row,
+html[data-theme="light"] .attachment-card,
+html[data-theme="light"] .version-card,
+html[data-theme="light"] .detail-version-row,
+html[data-theme="light"] .detail-attachment-row,
+html[data-theme="light"] .admin-table-row {
+  background: #f1f3f6;
+  border-color: #dfe4ec;
+}
+
+html[data-theme="light"] .asset-card:hover,
+html[data-theme="light"] .asset-list-row:hover,
+html[data-theme="light"] .attachment-card:hover,
+html[data-theme="light"] .version-card:hover,
+html[data-theme="light"] .detail-version-row:hover,
+html[data-theme="light"] .detail-attachment-row:hover {
+  background: #f6f7f9;
+}
+
+html[data-theme="light"] .panel-head,
+html[data-theme="light"] .detail-section-title,
+html[data-theme="light"] .collapsible-head,
+html[data-theme="light"] .card-title,
+html[data-theme="light"] .section-title,
+html[data-theme="light"] .settings-section-title,
+html[data-theme="light"] .admin-section-title {
+  background: #f1f3f6;
+  border-color: #dfe4ec;
+}
+
+html[data-theme="light"] input,
+html[data-theme="light"] textarea,
+html[data-theme="light"] select,
+html[data-theme="light"] .search-input,
+html[data-theme="light"] .search-query,
+html[data-theme="light"] .metadata-input,
+html[data-theme="light"] .metadata-textarea,
+html[data-theme="light"] .form-control,
+html[data-theme="light"] .theme-menu-row select,
+html[data-theme="light"] .lang-box select,
+html[data-theme="light"] .page-size-select,
+html[data-theme="light"] .sort-select {
+  background: #ffffff;
+}
+
+html[data-theme="light"] table,
+html[data-theme="light"] .admin-table,
+html[data-theme="light"] .proxy-repair-table {
+  background: #f1f3f6;
+  border-color: #dfe4ec;
+}
+
+html[data-theme="light"] th,
+html[data-theme="light"] .table-head,
+html[data-theme="light"] .proxy-repair-table thead {
+  background: #e9edf3;
+}
+
+html[data-theme="light"] td,
+html[data-theme="light"] tr,
+html[data-theme="light"] .table-cell {
+  background: #f7f8fa;
+}
