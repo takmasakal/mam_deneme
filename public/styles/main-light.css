@@ -395,3 +395,319 @@ html[data-theme="light"] .theme-menu-row select {
   color: var(--mam-light-text);
   border-color: var(--mam-light-border-strong);
 }
+
+/* TRT portal-inspired control polish for light mode */
+html[data-theme="light"] .panel,
+html[data-theme="light"] .ingest-panel-card,
+html[data-theme="light"] .search,
+html[data-theme="light"] #assetGrid,
+html[data-theme="light"] #assetDetail,
+html[data-theme="light"] .detail-card,
+html[data-theme="light"] .viewer-extra,
+html[data-theme="light"] .admin-card,
+html[data-theme="light"] .settings-card,
+html[data-theme="light"] .proxy-repair-card,
+html[data-theme="light"] .metadata-card,
+html[data-theme="light"] .modal-card,
+html[data-theme="light"] .modal-content {
+  background: #ffffff;
+  border: 1px solid #e3e7ee;
+  box-shadow: 0 8px 24px rgba(18, 27, 40, 0.08);
+}
+
+html[data-theme="light"] .panel,
+html[data-theme="light"] .admin-card,
+html[data-theme="light"] .settings-card,
+html[data-theme="light"] .modal-card,
+html[data-theme="light"] .modal-content {
+  border-radius: 26px;
+}
+
+html[data-theme="light"] input,
+html[data-theme="light"] textarea,
+html[data-theme="light"] select,
+html[data-theme="light"] .search-input,
+html[data-theme="light"] .search-query,
+html[data-theme="light"] .metadata-input,
+html[data-theme="light"] .metadata-textarea,
+html[data-theme="light"] .form-control {
+  min-height: 42px;
+  border-radius: 15px;
+  border: 1px solid #d4dae4;
+  background: #ffffff;
+  color: #182133;
+  box-shadow: 0 3px 9px rgba(18, 27, 40, 0.06);
+}
+
+html[data-theme="light"] textarea,
+html[data-theme="light"] .metadata-textarea {
+  border-radius: 18px;
+}
+
+html[data-theme="light"] input::placeholder,
+html[data-theme="light"] textarea::placeholder,
+html[data-theme="light"] .search-input::placeholder,
+html[data-theme="light"] .search-query::placeholder {
+  color: #9aa4b5;
+}
+
+html[data-theme="light"] select,
+html[data-theme="light"] .theme-menu-row select,
+html[data-theme="light"] .lang-box select,
+html[data-theme="light"] .page-size-select,
+html[data-theme="light"] .sort-select {
+  min-height: 42px;
+  border-radius: 14px;
+  background-color: #ffffff;
+  color: #424b5d;
+  border-color: #d4dae4;
+  box-shadow: 0 4px 11px rgba(18, 27, 40, 0.10);
+}
+
+html[data-theme="light"] button,
+html[data-theme="light"] .button,
+html[data-theme="light"] .mam-action-btn,
+html[data-theme="light"] .asset-view-btn,
+html[data-theme="light"] .advanced-search-btn,
+html[data-theme="light"] .panel-action-btn,
+html[data-theme="light"] .search-clear-btn,
+html[data-theme="light"] .localized-file-input-button,
+html[data-theme="light"] .subtitle-localized-file-input,
+html[data-theme="light"] .file-picker-button,
+html[data-theme="light"] .file-action-btn,
+html[data-theme="light"] .version-actions button,
+html[data-theme="light"] .attachment-actions button,
+html[data-theme="light"] .pager button,
+html[data-theme="light"] .pagination button,
+html[data-theme="light"] .timecode-bar button {
+  border-radius: 999px;
+  border: 1px solid #d7dce5;
+  background: #ffffff;
+  color: #5d6678;
+  box-shadow: 0 4px 11px rgba(18, 27, 40, 0.08);
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+html[data-theme="light"] button:hover,
+html[data-theme="light"] .button:hover,
+html[data-theme="light"] .mam-action-btn:hover,
+html[data-theme="light"] .asset-view-btn:hover,
+html[data-theme="light"] .advanced-search-btn:hover,
+html[data-theme="light"] .panel-action-btn:hover,
+html[data-theme="light"] .search-clear-btn:hover,
+html[data-theme="light"] .localized-file-input-button:hover,
+html[data-theme="light"] .subtitle-localized-file-input:hover,
+html[data-theme="light"] .file-picker-button:hover,
+html[data-theme="light"] .file-action-btn:hover,
+html[data-theme="light"] .version-actions button:hover,
+html[data-theme="light"] .attachment-actions button:hover,
+html[data-theme="light"] .pager button:hover,
+html[data-theme="light"] .pagination button:hover,
+html[data-theme="light"] .timecode-bar button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(230, 0, 40, 0.36);
+  background: #fff6f8;
+  color: #e60028;
+  box-shadow: 0 9px 18px rgba(230, 0, 40, 0.13);
+}
+
+html[data-theme="light"] button:disabled,
+html[data-theme="light"] .button:disabled,
+html[data-theme="light"] .mam-action-btn:disabled,
+html[data-theme="light"] .asset-view-btn:disabled,
+html[data-theme="light"] .panel-action-btn:disabled,
+html[data-theme="light"] .file-action-btn:disabled {
+  transform: none;
+  background: #f3f5f8;
+  color: #adb5c3;
+  border-color: #e0e5ed;
+  box-shadow: none;
+}
+
+html[data-theme="light"] .primary,
+html[data-theme="light"] button.primary,
+html[data-theme="light"] .btn-primary,
+html[data-theme="light"] .mam-action-btn.primary,
+html[data-theme="light"] #panelVideoToolsBtn,
+html[data-theme="light"] #applyFiltersBtn,
+html[data-theme="light"] .advanced-search-apply-btn,
+html[data-theme="light"] .metadata-save-btn,
+html[data-theme="light"] .visibility-save-btn,
+html[data-theme="light"] .upload-submit-btn,
+html[data-theme="light"] .proxy-repair-generate-btn,
+html[data-theme="light"] .admin-save-btn,
+html[data-theme="light"] .save-btn {
+  background: #e60028;
+  border-color: #e60028;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(230, 0, 40, 0.23);
+}
+
+html[data-theme="light"] .primary:hover,
+html[data-theme="light"] button.primary:hover,
+html[data-theme="light"] .btn-primary:hover,
+html[data-theme="light"] .mam-action-btn.primary:hover,
+html[data-theme="light"] #panelVideoToolsBtn:hover,
+html[data-theme="light"] #applyFiltersBtn:hover,
+html[data-theme="light"] .advanced-search-apply-btn:hover,
+html[data-theme="light"] .metadata-save-btn:hover,
+html[data-theme="light"] .visibility-save-btn:hover,
+html[data-theme="light"] .upload-submit-btn:hover,
+html[data-theme="light"] .proxy-repair-generate-btn:hover,
+html[data-theme="light"] .admin-save-btn:hover,
+html[data-theme="light"] .save-btn:hover {
+  background: #c90023;
+  border-color: #c90023;
+  color: #ffffff;
+  box-shadow: 0 11px 22px rgba(230, 0, 40, 0.28);
+}
+
+html[data-theme="light"] .danger,
+html[data-theme="light"] button.danger,
+html[data-theme="light"] .delete-btn,
+html[data-theme="light"] .remove-btn {
+  color: #e60028;
+  border-color: rgba(230, 0, 40, 0.28);
+  background: #fff5f7;
+}
+
+html[data-theme="light"] .search-query-wrap,
+html[data-theme="light"] .search-main-row,
+html[data-theme="light"] .search-ocr-row,
+html[data-theme="light"] .advanced-search-content,
+html[data-theme="light"] .metadata-form,
+html[data-theme="light"] .visibility-form,
+html[data-theme="light"] .attachment-add-card,
+html[data-theme="light"] .version-add-card,
+html[data-theme="light"] .subtitle-upload-card,
+html[data-theme="light"] .proxy-repair-toolbar,
+html[data-theme="light"] .proxy-repair-results {
+  background: #ffffff;
+  border-color: #e4e8ef;
+  border-radius: 20px;
+}
+
+html[data-theme="light"] .asset-card,
+html[data-theme="light"] .asset-list-row,
+html[data-theme="light"] .attachment-card,
+html[data-theme="light"] .version-card,
+html[data-theme="light"] .detail-version-row,
+html[data-theme="light"] .detail-attachment-row,
+html[data-theme="light"] .admin-table-row,
+html[data-theme="light"] tr {
+  background: #ffffff;
+  border-color: #edf0f5;
+}
+
+html[data-theme="light"] .asset-card.selected,
+html[data-theme="light"] .asset-list-row.selected,
+html[data-theme="light"] .version-card.is-default,
+html[data-theme="light"] .detail-version-row.is-default {
+  border-color: #e60028;
+  box-shadow: 0 10px 24px rgba(230, 0, 40, 0.14);
+}
+
+html[data-theme="light"] .detail-section-title,
+html[data-theme="light"] .collapsible-head,
+html[data-theme="light"] .card-title,
+html[data-theme="light"] .section-title,
+html[data-theme="light"] .settings-section-title,
+html[data-theme="light"] .admin-section-title {
+  color: #182133;
+  background: #ffffff;
+  border-color: #e4e8ef;
+}
+
+html[data-theme="light"] .detail-section-title::before,
+html[data-theme="light"] .collapsible-head::before,
+html[data-theme="light"] .settings-section-title::before,
+html[data-theme="light"] .admin-section-title::before {
+  background: #fff0f3;
+  color: #e60028;
+}
+
+html[data-theme="light"] .asset-meta,
+html[data-theme="light"] .asset-subtitle,
+html[data-theme="light"] .muted,
+html[data-theme="light"] .hint,
+html[data-theme="light"] .field-hint,
+html[data-theme="light"] .result-count,
+html[data-theme="light"] .empty-state {
+  color: #828b9c;
+}
+
+html[data-theme="light"] .chip,
+html[data-theme="light"] .tag-chip,
+html[data-theme="light"] .status-chip,
+html[data-theme="light"] .type-chip,
+html[data-theme="light"] .format-chip,
+html[data-theme="light"] .badge,
+html[data-theme="light"] .pill {
+  border-radius: 999px;
+  background: #f1f3f6;
+  color: #727b8d;
+  border: 0;
+}
+
+html[data-theme="light"] .asset-thumb,
+html[data-theme="light"] .thumb,
+html[data-theme="light"] .file-icon,
+html[data-theme="light"] .attachment-icon,
+html[data-theme="light"] .version-icon,
+html[data-theme="light"] .folder-icon,
+html[data-theme="light"] .document-icon {
+  background: #f4f5f8;
+  color: #e60028;
+  border-color: #eef1f6;
+}
+
+html[data-theme="light"] table,
+html[data-theme="light"] .admin-table,
+html[data-theme="light"] .proxy-repair-table {
+  background: #ffffff;
+  border: 1px solid #e4e8ef;
+  border-radius: 20px;
+  box-shadow: 0 8px 22px rgba(18, 27, 40, 0.06);
+  overflow: hidden;
+}
+
+html[data-theme="light"] th,
+html[data-theme="light"] .table-head,
+html[data-theme="light"] .proxy-repair-table thead {
+  background: #fafbfc;
+  color: #2a3345;
+  border-color: #e9edf3;
+}
+
+html[data-theme="light"] td,
+html[data-theme="light"] th,
+html[data-theme="light"] .table-cell {
+  border-color: #eef1f5;
+}
+
+html[data-theme="light"] .advanced-search-group.and-group,
+html[data-theme="light"] .advanced-search-group.or-group {
+  background: #ffffff;
+}
+
+html[data-theme="light"] .advanced-search-group-title,
+html[data-theme="light"] .search-label,
+html[data-theme="light"] label {
+  color: #596274;
+}
+
+html[data-theme="light"] .localized-file-input,
+html[data-theme="light"] .file-picker,
+html[data-theme="light"] .subtitle-upload-controls,
+html[data-theme="light"] .replace-file-controls {
+  background: #ffffff;
+  border: 1px solid #e4e8ef;
+  border-radius: 18px;
+  box-shadow: 0 5px 14px rgba(18, 27, 40, 0.05);
+}
+
+html[data-theme="light"] .localized-file-input-name,
+html[data-theme="light"] .file-picker-name,
+html[data-theme="light"] .selected-file-name {
+  color: #7a8495;
+}
