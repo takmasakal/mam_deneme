@@ -820,7 +820,7 @@ html[data-theme="light"] .asset-head-filters input[type="checkbox"] {
   height: 18px;
   margin: 0;
   border: 1.5px solid #e60028;
-  border-radius: 6px;
+  border-radius: 2px;
   background: #ffffff;
   box-shadow: 0 3px 8px rgba(230, 0, 40, 0.12);
   display: inline-grid;
@@ -877,4 +877,9 @@ html[data-theme="light"] .asset-view-btn::before,
 html[data-theme="light"] .asset-view-btn.active::before {
   filter: brightness(0) invert(1);
   opacity: 1;
+}
+
+html[data-theme="light"] .asset-head-filters input[type="checkbox"] {
+  border-radius: 2px;
+  aspect-ratio: 1 / 1;
 }
