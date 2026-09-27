@@ -3205,6 +3205,13 @@ function applyThemePreference(value) {
   if (themeSelect && themeSelect.value !== theme) themeSelect.value = theme;
 }
 
+function toggleThemePreferenceShortcut() {
+  const current = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+  const next = current === 'light' ? 'dark' : 'light';
+  try { localStorage.setItem(LOCAL_THEME, next); } catch (_error) {}
+  applyThemePreference(next);
+}
+
 themeSelect?.addEventListener('change', (event) => {
   const theme = event.target.value === 'light' ? 'light' : 'dark';
   try { localStorage.setItem(LOCAL_THEME, theme); } catch (_error) {}
@@ -3261,7 +3268,19 @@ const onLanguageShortcut = (event) => {
   event.stopPropagation();
 };
 
+const onThemeShortcut = (event) => {
+  const key = String(event.key || '').toLowerCase();
+  if (key !== 't' || event.altKey || event.shiftKey) return;
+  const isMacShortcut = event.metaKey && !event.ctrlKey;
+  const isControlShortcut = event.ctrlKey && !event.metaKey;
+  if (!isMacShortcut && !isControlShortcut) return;
+  event.preventDefault();
+  event.stopPropagation();
+  toggleThemePreferenceShortcut();
+};
+
 document.addEventListener('keydown', onLanguageShortcut);
+document.addEventListener('keydown', onThemeShortcut, true);
 
 closeDetailBtn?.addEventListener('click', () => {
   detailRequestCoordinator.invalidate();
