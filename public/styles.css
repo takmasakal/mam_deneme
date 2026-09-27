@@ -5,10 +5,10 @@
 @import url('/styles/main-04.css?v=20260926-pinned-player-gap-1');
 @import url('/styles/main-05.css?v=20260425-refactor-1');
 @import url('/styles/main-06.css?v=20260901-audio-tools-1');
-@import url('/styles/main-light.css?v=20260927-metmam-parity-1');
+@import url('/styles/main-light.css?v=20260927-match-geometry-1');
 @import url('/styles/main-light-controls.css?v=20260927-metmam-parity-1');
 @import url('/styles/main-light-video-tools.css?v=20260927-metmam-parity-1');
-@import url('/styles/main-light-belgelik.css?v=20260927-dark-geometry-1');
+@import url('/styles/main-light-belgelik.css?v=20260927-match-geometry-1');
 
 /* Keep Belgelik search previews in the form flow so they cannot cover actions. */
 #panelIngest #searchForm #searchSuggestList.search-suggest,

@@ -109,3 +109,19 @@ html[data-theme="light"] body.video-tools-page-mode .inline-tc-btn.tc-out-label,
 html[data-theme="light"] #assetDetail .inline-tc-btn.tc-out-label {
   color: #c62828 !important;
 }
+
+/* Match-result boxes use the same compact geometry as the dark theme. */
+html[data-theme="light"] #assetGrid .dc-hit-row .dc-hit {
+  border-radius: 6px !important;
+}
+
+html[data-theme="light"] #assetGrid .asset-hit-list .ocr-hit-jump {
+  border-radius: 8px !important;
+  padding: 6px 8px !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+html[data-theme="light"] #assetGrid .asset-hit-list .ocr-hit-jump:hover {
+  transform: none !important;
+}
