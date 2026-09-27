@@ -509,7 +509,10 @@
       const hasSelection = Boolean(savedSelect?.value);
       const loadButton = document.getElementById('advancedSearchLoadBtn');
       const deleteButton = document.getElementById('advancedSearchDeleteBtn');
-      if (loadButton) loadButton.disabled = !hasSelection;
+      if (loadButton) {
+        loadButton.disabled = !hasSelection;
+        loadButton.classList.toggle('has-saved-search-selection', hasSelection);
+      }
       if (deleteButton) deleteButton.disabled = !hasSelection;
     }
 
