@@ -1,11 +1,11 @@
 /* Belgelik light theme, phase 1: first-column brand header. */
 html[data-theme="light"] #panelIngest .top-row {
-  box-sizing: border-box;
-  padding: 14px;
-  border: 1px solid #e1e5ec;
-  border-radius: 12px;
-  background: #ffffff;
-  box-shadow: 0 8px 20px rgba(18, 27, 40, 0.06);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 html[data-theme="light"] #panelIngest .app-brand {
