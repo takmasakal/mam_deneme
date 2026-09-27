@@ -433,7 +433,9 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     renameBtn.disabled = busy;
     uploadBtn.disabled = busy;
     generateBtn.disabled = busy;
-    if (translateBtn) translateBtn.disabled = busy;
+    itemsEl.querySelectorAll('.subtitle-item-translate-btn').forEach((button) => {
+      button.disabled = busy;
+    });
     modelSelect.disabled = busy;
     audioStreamSelect.disabled = busy || getAudioStreamOptions().length <= 1;
     audioChannelSelect.disabled = busy || audioChannelSelect.options.length <= 1;
