@@ -10,6 +10,14 @@
 @import url('/styles/main-light-video-tools.css?v=20260927-metmam-parity-1');
 @import url('/styles/main-light-belgelik.css?v=20260927-video-tools-light-1');
 
+/* Keep Belgelik search previews in the form flow so they cannot cover actions. */
+#panelIngest #searchForm #searchSuggestList.search-suggest,
+#panelIngest #searchForm #ocrSuggestList.search-suggest,
+#panelIngest #searchForm #subtitleSuggestList.search-suggest {
+  position: static !important;
+  margin-top: 4px;
+}
+
 .search-title-row { display: flex !important; align-items: center; gap: 8px; }
 .search-title-row .search-clear-btn { margin-left: auto; }
 
