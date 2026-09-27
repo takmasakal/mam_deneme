@@ -383,7 +383,6 @@
           </form>
         </section>
 
-        <h4>${escapeHtml(t('files'))}</h4>
         ${(
           (currentUserCanUsePdfAdvancedTools() || (asset.canEditAssetPdf ?? asset.canEditAsset))
           && asset.canDownloadAsset !== false
@@ -406,7 +405,6 @@
         ${fileGroups()}
         </div>
       ` : (canViewVersions ? `
-        <h4>${escapeHtml(t('files'))}</h4>
         <div id="assetVersionsList">
         ${fileGroups()}
         </div>
