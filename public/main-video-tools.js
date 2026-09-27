@@ -618,7 +618,7 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
           <a class="subtitle-item-download-btn" href="${escapeHtml(item.subtitleUrl)}" download target="_blank" rel="noreferrer">${t('subtitle_download')}</a>
           ${itemLanguage !== 'tr' ? `<button type="button" class="subtitle-item-translate-btn">${t('subtitle_translate_tr')}</button>` : ''}
           ${currentUserCanDeleteAssetsRef.get() ? `<button type="button" class="subtitle-item-remove-btn">${t('subtitle_remove')}</button>` : ''}
-          <button type="button" class="subtitle-item-use-btn">${active ? t('subtitle_active') : t('subtitle_use')}</button>
+          <button type="button" class="subtitle-item-use-btn" ${active ? 'disabled aria-current="true"' : ''}>${active ? t('subtitle_active') : t('subtitle_use')}</button>
         </div>
       `;
     }).join('');
