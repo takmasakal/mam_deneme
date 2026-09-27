@@ -478,7 +478,7 @@ select.subtitle-lang-input {
 
 .subtitle-item-row {
   display: grid;
-  grid-template-columns: 1fr auto auto auto auto;
+  grid-template-columns: 1fr repeat(5, auto);
   gap: 8px;
   align-items: center;
   border: 1px solid #363d50;
@@ -506,6 +506,12 @@ select.subtitle-lang-input {
 }
 
 .subtitle-item-use-btn {
+  width: auto;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.subtitle-item-translate-btn {
   width: auto;
   padding: 4px 8px;
   font-size: 11px;

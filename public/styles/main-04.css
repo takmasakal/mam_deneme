@@ -142,11 +142,11 @@
 }
 
 #assetDetail.video-detail-mode.detail-video-pinned .detail-video-fixed .player-controls-box {
-  bottom: 10px;
+  bottom: 6px;
 }
 
 #assetDetail.video-detail-mode.detail-video-pinned .detail-video-fixed .custom-player-bar {
-  bottom: 72px;
+  bottom: 61px;
 }
 
 #assetDetail.video-detail-mode.detail-video-pinned.detail-video-show-overlay-controls .detail-video-fixed .custom-player-bar,
@@ -331,6 +331,10 @@
   border-radius: 10px;
   padding: 8px;
   background: #141414;
+}
+
+#assetDetail.video-detail-mode .player-controls-box {
+  margin-top: 4px;
 }
 
 .custom-player-bar {

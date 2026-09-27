@@ -200,7 +200,6 @@ function mediaViewer(asset, options = {}) {
               <div class="tool-actions">
                 <label class="video-tools-check subtitle-backend-check tool-toggle-pill"><input id="subtitleZemberekCheck" type="checkbox" checked /> ${t('subtitle_use_zemberek')}</label>
                 <button type="button" id="subtitleGenerateBtn">${t('subtitle_generate')}</button>
-                <button type="button" id="subtitleTranslateBtn">${t('subtitle_translate_tr')}</button>
                 <button type="button" id="subtitleRenameBtn">${t('subtitle_save_name')}</button>
                 <div class="tool-file-wrap">
                   <label class="localized-file-input subtitle-localized-file-input">
@@ -423,7 +422,6 @@ function mediaViewer(asset, options = {}) {
                   <div class="tool-actions">
                     <label class="video-tools-check subtitle-backend-check tool-toggle-pill"><input id="subtitleZemberekCheck" type="checkbox" checked /> ${t('subtitle_use_zemberek')}</label>
                     <button type="button" id="subtitleGenerateBtn">${t('subtitle_generate')}</button>
-                    <button type="button" id="subtitleTranslateBtn">${t('subtitle_translate_tr')}</button>
                     <button type="button" id="subtitleRenameBtn">${t('subtitle_save_name')}</button>
                     <div class="tool-file-wrap"><label class="localized-file-input subtitle-localized-file-input">
                     <input id="subtitleFileInput" type="file" accept=".vtt,.srt,text/vtt,application/x-subrip" />
