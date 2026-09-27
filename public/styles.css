@@ -6,7 +6,7 @@
 @import url('/styles/main-05.css?v=20260425-refactor-1');
 @import url('/styles/main-06.css?v=20260831-audio-clips-width-2');
 @import url('/styles/main-light.css?v=20260927-workflow-button-1');
-@import url('/styles/main-light-controls.css?v=20260927-photo-ocr-actions-1');
+@import url('/styles/main-light-controls.css?v=20260927-advanced-search-actions-1');
 @import url('/styles/main-light-video-tools.css?v=20260927-video-tools-light-11');
 
 .image-viewer-resizable {
@@ -803,6 +803,17 @@
 .advanced-search-saved-row #advancedSearchLoadBtn {
   grid-column: 2;
   grid-row: 1;
+}
+.advanced-search-saved-row #advancedSearchLoadBtn.has-saved-search-selection {
+  background: var(--mam-color-success, #16845f) !important;
+  border-color: var(--mam-color-success, #16845f) !important;
+  color: #fff !important;
+}
+.advanced-search-saved-row #advancedSearchLoadBtn.has-saved-search-selection:hover,
+.advanced-search-saved-row #advancedSearchLoadBtn.has-saved-search-selection:focus-visible {
+  background: var(--mam-color-success-hover, #116b4d) !important;
+  border-color: var(--mam-color-success-hover, #116b4d) !important;
+  color: #fff !important;
 }
 .advanced-search-saved-row #advancedSearchSaveBtn { grid-column: 3; grid-row: 1; }
 .advanced-search-saved-row #advancedSearchDeleteBtn { grid-column: 4; grid-row: 1; }

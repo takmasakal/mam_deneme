@@ -71,6 +71,53 @@ html[data-theme="light"] .advanced-search-dialog .advanced-search-group {
   border-color: #f0d9df;
 }
 
+html[data-theme="light"] .advanced-search-dialog .advanced-search-help-btn {
+  display: inline-grid;
+  place-items: center;
+  background: var(--mam-light-red, #e60028) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red, #e60028) !important;
+  box-shadow: 0 4px 10px rgba(230, 0, 40, 0.2);
+  line-height: 1;
+}
+
+html[data-theme="light"] .advanced-search-dialog .advanced-search-help-btn:hover,
+html[data-theme="light"] .advanced-search-dialog .advanced-search-help-btn:focus-visible {
+  background: var(--mam-light-red-dark, #c90023) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red-dark, #c90023) !important;
+}
+
+html[data-theme="light"] .advanced-search-dialog .advanced-search-date-row input,
+html[data-theme="light"] .advanced-search-dialog .advanced-search-date-row select,
+html[data-theme="light"] .advanced-search-dialog .advanced-search-range-row input,
+html[data-theme="light"] .advanced-search-dialog .advanced-search-range-row select {
+  height: 30px;
+  min-height: 30px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+html[data-theme="light"] .advanced-search-dialog #advancedSearchLoadBtn:not(.has-saved-search-selection),
+html[data-theme="light"] .advanced-search-dialog #advancedSearchSaveBtn,
+html[data-theme="light"] .advanced-search-dialog #advancedSearchClearBtn {
+  background: #ffffff !important;
+  color: var(--mam-light-red, #e60028) !important;
+  border-color: rgba(230, 0, 40, 0.42) !important;
+}
+
+html[data-theme="light"] .advanced-search-dialog #advancedSearchLoadBtn:not(.has-saved-search-selection):hover:not(:disabled),
+html[data-theme="light"] .advanced-search-dialog #advancedSearchLoadBtn:not(.has-saved-search-selection):focus-visible,
+html[data-theme="light"] .advanced-search-dialog #advancedSearchSaveBtn:hover,
+html[data-theme="light"] .advanced-search-dialog #advancedSearchSaveBtn:focus-visible,
+html[data-theme="light"] .advanced-search-dialog #advancedSearchClearBtn:hover,
+html[data-theme="light"] .advanced-search-dialog #advancedSearchClearBtn:focus-visible {
+  background: #fff3f5 !important;
+  color: var(--mam-light-red-dark, #c90023) !important;
+  border-color: var(--mam-light-red, #e60028) !important;
+}
+
 /* Keep the empty third-column message clear of the rounded panel edge. */
 html[data-theme="light"] #panelDetail #assetDetail.empty {
   box-sizing: border-box;
