@@ -115,13 +115,15 @@ html[data-theme="light"] #assetGrid .dc-hit-row .dc-hit {
   border-radius: 6px !important;
 }
 
-html[data-theme="light"] #assetGrid .asset-hit-list .ocr-hit-jump {
+html[data-theme="light"] #assetGrid .asset-hit-list .ocr-hit-jump,
+html[data-theme="light"] #assetGrid .asset-hit-list .media-hit-jump {
   border-radius: 8px !important;
   padding: 6px 8px !important;
   box-shadow: none !important;
   transform: none !important;
 }
 
-html[data-theme="light"] #assetGrid .asset-hit-list .ocr-hit-jump:hover {
+html[data-theme="light"] #assetGrid .asset-hit-list .ocr-hit-jump:hover,
+html[data-theme="light"] #assetGrid .asset-hit-list .media-hit-jump:hover {
   transform: none !important;
 }
