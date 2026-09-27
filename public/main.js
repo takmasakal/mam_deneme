@@ -29,6 +29,7 @@ const ocrSuggestList = document.getElementById('ocrSuggestList');
 const subtitleQueryInput = searchForm.querySelector('[name="subtitleQ"]');
 const subtitleSuggestList = document.getElementById('subtitleSuggestList');
 const languageSelect = document.getElementById('languageSelect');
+const themeSelect = document.getElementById('themeSelect');
 const currentUserBtn = document.getElementById('currentUserBtn');
 const userMenu = document.getElementById('userMenu');
 const adminMenuLink = document.getElementById('adminMenuLink');
@@ -50,6 +51,7 @@ const requestedRestorePanels = String(pageParams.get('restorePanels') || '').tri
 const LOCAL_PANEL_SIZE = 'mam.panel.sizes';
 const LOCAL_PANEL_VIS = 'mam.panel.visibility';
 const LOCAL_LANG = 'mam.lang';
+const LOCAL_THEME = 'mam.theme';
 const LOGIN_LANG_COOKIE = 'mam.login.lang';
 const LOCAL_VIDEO_TOOLS_ORDER = 'mam.video.tools.order';
 const LOCAL_ASSET_VIEW_MODE = 'mam.assets.view.mode';
@@ -412,6 +414,9 @@ let i18n = {
     unknown_user: 'Unknown user',
     logout: 'Logout',
     language_label: 'Language',
+    theme_label: 'Theme',
+    theme_dark: 'Dark',
+    theme_light: 'Light',
     admin_page: 'Admin',
     ingest_title: 'Ingest Asset',
     search_title: 'Search',
@@ -831,6 +836,9 @@ let i18n = {
     unknown_user: 'Bilinmeyen kullanıcı',
     logout: 'Çıkış Yap',
     language_label: 'Dil',
+    theme_label: 'Tema',
+    theme_dark: 'Koyu',
+    theme_light: 'Açık',
     admin_page: 'Yönetim',
     ingest_title: 'Varlık Yükle',
     search_title: 'Ara',
@@ -3190,6 +3198,19 @@ clearSearchBtn?.addEventListener('click', async () => {
   });
 });
 
+function applyThemePreference(value) {
+  const theme = String(value || '').trim().toLowerCase() === 'light' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.dataset.themePreference = theme;
+  if (themeSelect && themeSelect.value !== theme) themeSelect.value = theme;
+}
+
+themeSelect?.addEventListener('change', (event) => {
+  const theme = event.target.value === 'light' ? 'light' : 'dark';
+  try { localStorage.setItem(LOCAL_THEME, theme); } catch (_error) {}
+  applyThemePreference(theme);
+});
+
 languageSelect?.addEventListener('change', async (event) => {
   currentLang = event.target.value === 'tr' ? 'tr' : 'en';
   localStorage.setItem(LOCAL_LANG, currentLang);
@@ -3329,6 +3350,9 @@ function startCurrentUserPermissionRefresh() {
 function prepareInitialShell() {
     applyVideoToolsPageLayoutMode();
     restoreVideoToolsReturnSearchState();
+    let themePreference = 'dark';
+    try { themePreference = localStorage.getItem(LOCAL_THEME) || 'dark'; } catch (_error) {}
+    applyThemePreference(themePreference);
     currentLang = currentLang === 'tr' ? 'tr' : 'en';
     if (languageSelect) languageSelect.value = currentLang;
     applyStaticI18n();

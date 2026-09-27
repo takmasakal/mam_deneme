@@ -5,7 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Belgelik</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=20260912-subtitle-toggle-2" />
+    <script>
+      (() => {
+        try {
+          const saved = localStorage.getItem('mam.theme') || 'dark';
+          document.documentElement.dataset.theme = saved === 'light' ? 'light' : 'dark';
+          document.documentElement.dataset.themePreference = saved;
+        } catch (_error) {
+          document.documentElement.dataset.theme = 'dark';
+          document.documentElement.dataset.themePreference = 'dark';
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="/styles.css?v=20260927-belgelik-light-brand-1" />
   </head>
   <body>
     <main class="layout">
@@ -20,6 +32,13 @@
                 <div class="user-menu-actions">
                   <a id="adminMenuLink" class="admin-link hidden" href="/admin.html" data-i18n="admin_page">Admin</a>
                   <button type="button" id="logoutBtn" class="logout-btn" data-i18n="logout">Logout</button>
+                  <label class="theme-menu-row">
+                    <span data-i18n="theme_label">Theme</span>
+                    <select id="themeSelect" aria-label="Theme">
+                      <option value="dark" data-i18n="theme_dark">Dark</option>
+                      <option value="light" data-i18n="theme_light">Light</option>
+                    </select>
+                  </label>
                 </div>
               </div>
             </div>
@@ -283,6 +302,6 @@
     <script src="/main-video-tools.js?v=20260927-subtitle-busy-fix-1"></script>
     <script src="/main-player-bootstrap.js?v=20260901-audio-tools-1"></script>
     <script src="/main-bootstrap.js?v=20260729-bootstrap-1"></script>
-    <script src="/main.js?v=20260925-version-player-1"></script>
+    <script src="/main.js?v=20260927-belgelik-light-theme-1"></script>
   </body>
 </html>
