@@ -12,8 +12,9 @@ html[data-theme="light"] #panelIngest .app-brand {
   display: inline-flex;
   align-items: baseline;
   justify-self: start;
-  gap: 3px;
+  gap: 0;
   color: #e60028;
+  white-space: nowrap;
 }
 
 html[data-theme="light"] #panelIngest .app-brand .belgelik-prefix {
@@ -22,10 +23,11 @@ html[data-theme="light"] #panelIngest .app-brand .belgelik-prefix {
 
 html[data-theme="light"] #panelIngest .app-brand .belgelik-suffix {
   display: inline-block;
-  padding: 2px 7px 3px;
-  border-radius: 7px;
-  background: #e60028;
-  color: #ffffff;
+  margin-left: 0;
+  padding: 2px 6px 3px 4px;
+  border-radius: 6px;
+  background: #e60028 !important;
+  color: #ffffff !important;
   line-height: 0.9;
 }
 
@@ -95,4 +97,15 @@ html[data-theme="light"] #panelIngest .theme-menu-row select {
   background: #ffffff;
   border-color: #d4dae4;
   color: #182133;
+}
+
+/* Keep clip IN/OUT timecodes distinct from ordinary light-theme buttons. */
+html[data-theme="light"] body.video-tools-page-mode .inline-tc-btn.tc-in-label,
+html[data-theme="light"] #assetDetail .inline-tc-btn.tc-in-label {
+  color: #16864a !important;
+}
+
+html[data-theme="light"] body.video-tools-page-mode .inline-tc-btn.tc-out-label,
+html[data-theme="light"] #assetDetail .inline-tc-btn.tc-out-label {
+  color: #c62828 !important;
 }

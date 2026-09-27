@@ -216,8 +216,10 @@ function initAudioTools(mediaEl, root = document) {
 
   const renderAudioGraph = () => {
     const { width, height } = resizeCanvasToDisplay();
+    const lightToolsTheme = document.documentElement.dataset.theme === 'light'
+      && (document.body.classList.contains('video-tools-page-mode') || Boolean(graphCanvas.closest('#assetDetail')));
     g.clearRect(0, 0, width, height);
-    g.fillStyle = '#121212';
+    g.fillStyle = lightToolsTheme ? '#f1f3f6' : '#121212';
     g.fillRect(0, 0, width, height);
 
     const cols = channelCount;
@@ -254,12 +256,12 @@ function initAudioTools(mediaEl, root = document) {
 
       const x = startX + (channelIndex * (meterW + gap));
       const y = 10;
-      g.fillStyle = '#1f2430';
+      g.fillStyle = lightToolsTheme ? '#dfe4ec' : '#1f2430';
       g.fillRect(x, y, meterW, meterH);
 
       // Slight top band to visualize reserved headroom.
       const headroomH = Math.max(2, Math.round(meterH * METER_HEADROOM));
-      g.fillStyle = 'rgba(125, 142, 173, 0.16)';
+      g.fillStyle = lightToolsTheme ? 'rgba(111, 121, 137, 0.16)' : 'rgba(125, 142, 173, 0.16)';
       g.fillRect(x, y, meterW, headroomH);
 
       const activeH = Math.max(2, Math.round(meterH * level));
@@ -277,10 +279,10 @@ function initAudioTools(mediaEl, root = document) {
       g.fillRect(x, py, meterW, activeH);
 
       const peakY = y + meterH - Math.round(meterH * peakHold[channelIndex]);
-      g.fillStyle = '#ecf0f1';
+      g.fillStyle = lightToolsTheme ? '#182130' : '#ecf0f1';
       g.fillRect(x, peakY, meterW, 2);
 
-      g.fillStyle = '#dce3f3';
+      g.fillStyle = lightToolsTheme ? '#3e4959' : '#dce3f3';
       g.font = '11px IBM Plex Sans';
       g.textAlign = 'center';
       g.fillText(`CH ${channelIndex + 1}`, x + (meterW / 2), y + meterH + 16);
