@@ -860,8 +860,19 @@ function registerTextProcessingRoutes(app, deps) {
         [req.params.id, JSON.stringify(updatedDc), new Date().toISOString()]
       );
       const updatedRow = updatedResult.rows[0];
+      // Activating or renaming a subtitle does not change its cues. Rebuilding the
+      // complete cue index here makes this lightweight PATCH wait on thousands of
+      // sequential inserts. Only keep the indexed language in sync.
       try {
-        await syncSubtitleCueIndexForAssetRow(updatedRow);
+        await pool.query(
+          `
+            UPDATE asset_subtitle_cues
+            SET lang = $3
+            WHERE asset_id = $1
+              AND subtitle_url = $2
+          `,
+          [req.params.id, subtitleUrl, subtitleLang]
+        );
       } catch (_error) {}
       return res.json({
         subtitleUrl,
