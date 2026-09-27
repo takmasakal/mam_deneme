@@ -1226,6 +1226,61 @@ html[data-theme="light"] body #panelIngest .user-box button#currentUserBtn {
   box-shadow: none !important;
 }
 
+/* Search-hit shortcuts shown in the detail column. */
+html[data-theme="light"] #panelDetail .dc-hit-row .dc-hit {
+  background: #ffffff !important;
+  border-color: #d7dde7 !important;
+  color: #172033 !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="light"] #panelDetail .dc-hit-row .dc-hit strong {
+  color: #172033 !important;
+}
+
+html[data-theme="light"] #panelDetail .dc-hit-row .dc-hit:hover,
+html[data-theme="light"] #panelDetail .dc-hit-row .dc-hit:focus-visible {
+  background: #fff3f5 !important;
+  border-color: rgba(230, 0, 40, 0.42) !important;
+  color: #172033 !important;
+}
+
+html[data-theme="light"] #panelIngest #clearSearchBtn.search-clear-btn:not(:disabled) {
+  background: var(--mam-light-red, #e60028) !important;
+  border-color: var(--mam-light-red, #e60028) !important;
+  color: #ffffff !important;
+  box-shadow: 0 6px 14px rgba(230, 0, 40, 0.18) !important;
+}
+
+html[data-theme="light"] #panelIngest #clearSearchBtn.search-clear-btn:not(:disabled):hover,
+html[data-theme="light"] #panelIngest #clearSearchBtn.search-clear-btn:not(:disabled):focus-visible {
+  background: var(--mam-light-red-dark, #c90023) !important;
+  border-color: var(--mam-light-red-dark, #c90023) !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] #panelIngest #clearSearchBtn.search-clear-btn:disabled {
+  background: #dfe3e9 !important;
+  border-color: #d1d6de !important;
+  color: #8a93a3 !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+}
+
+/* Match-result shortcuts keep the compact dark-theme geometry. */
+html[data-theme="light"] #assetGrid .dc-hit-row .dc-hit {
+  border-radius: 6px !important;
+}
+
+/* Keep the first-column user and language controls at dark-theme height. */
+html[data-theme="light"] #panelIngest .lang-box select#languageSelect {
+  min-height: 0 !important;
+  height: auto !important;
+  padding: 8px 28px 8px 10px !important;
+  border-radius: 8px !important;
+  line-height: 1.2 !important;
+}
+
 /* Advanced search modal: complete light-theme treatment. */
 html[data-theme="light"] .advanced-search-modal {
   background: rgba(223, 228, 236, 0.72);
