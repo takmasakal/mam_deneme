@@ -217,7 +217,7 @@ function initAudioTools(mediaEl, root = document) {
   const renderAudioGraph = () => {
     const { width, height } = resizeCanvasToDisplay();
     const lightToolsTheme = document.documentElement.dataset.theme === 'light'
-      && document.body.classList.contains('video-tools-page-mode');
+      && (document.body.classList.contains('video-tools-page-mode') || Boolean(graphCanvas.closest('#assetDetail')));
     g.clearRect(0, 0, width, height);
     g.fillStyle = lightToolsTheme ? '#f1f3f6' : '#121212';
     g.fillRect(0, 0, width, height);

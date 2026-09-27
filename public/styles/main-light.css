@@ -1426,6 +1426,7 @@ html[data-theme="light"] #panelIngest .mam-action-btn,
 html[data-theme="light"] #panelDetail .mam-action-btn,
 html[data-theme="light"] #panelDetail #editForm button.mam-action-btn[type="submit"],
 html[data-theme="light"] #panelDetail #versionForm button.mam-action-btn[type="submit"],
+html[data-theme="light"] #panelDetail #transitionForm button[type="submit"],
 html[data-theme="light"] #uploadBtn,
 html[data-theme="light"] #saveMetadataBtn,
 html[data-theme="light"] #saveVisibilityBtn,
@@ -1446,6 +1447,8 @@ html[data-theme="light"] #panelDetail #editForm button.mam-action-btn[type="subm
 html[data-theme="light"] #panelDetail #editForm button.mam-action-btn[type="submit"]:focus-visible,
 html[data-theme="light"] #panelDetail #versionForm button.mam-action-btn[type="submit"]:hover,
 html[data-theme="light"] #panelDetail #versionForm button.mam-action-btn[type="submit"]:focus-visible,
+html[data-theme="light"] #panelDetail #transitionForm button[type="submit"]:hover,
+html[data-theme="light"] #panelDetail #transitionForm button[type="submit"]:focus-visible,
 html[data-theme="light"] #uploadBtn:hover,
 html[data-theme="light"] #saveMetadataBtn:hover,
 html[data-theme="light"] #saveVisibilityBtn:hover,
@@ -1456,6 +1459,18 @@ html[data-theme="light"] #applyFiltersBtn:hover {
   color: #e60028 !important;
   border-color: rgba(230, 0, 40, 0.36) !important;
   box-shadow: 0 8px 18px rgba(230, 0, 40, 0.11) !important;
+}
+
+html[data-theme="light"] #panelDetail #transitionForm button[type="submit"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 10px;
+  border-width: 1.8px;
+  border-radius: 10px;
+  font: inherit;
+  line-height: normal;
 }
 
 html[data-theme="light"] .mam-action-btn .mam-action-icon,
