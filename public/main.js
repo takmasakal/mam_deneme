@@ -1480,6 +1480,14 @@ function applyThemePreference(value) {
   if (themeSelect && themeSelect.value !== preference) themeSelect.value = preference;
 }
 
+
+function toggleThemePreferenceShortcut() {
+  const current = resolveThemePreference(document.documentElement.dataset.themePreference || localStorage.getItem(LOCAL_THEME) || 'dark');
+  const next = current === 'light' ? 'dark' : 'light';
+  try { localStorage.setItem(LOCAL_THEME, next); } catch (_error) {}
+  applyThemePreference(next);
+}
+
 function initThemePreference() {
   let preference = 'dark';
   try {
@@ -2542,6 +2550,54 @@ const detailVersionActionsModule = window.createMainDetailVersionActions({
   currentLang: () => currentLang,
   canUsePdfAdvancedTools: () => currentUserCanUsePdfAdvancedTools,
   selectedImageVersionIds,
+  previewMediaVersion: ({ asset, version, mediaUrl, isVideo: versionIsVideo, isAudio: versionIsAudio, mediaEl: previewMediaEl, host }) => {
+    let mediaEl = previewMediaEl || assetDetail.querySelector('#assetMediaEl, .video-resizable video, .audio-viewer-resizable audio, video, audio');
+    const expectedTag = versionIsVideo ? 'VIDEO' : versionIsAudio ? 'AUDIO' : '';
+    if (!mediaUrl || !host) return false;
+    let actualTag = String(mediaEl?.tagName || mediaEl?.localName || '').toUpperCase();
+    const previewAsset = {
+      ...asset,
+      mediaUrl,
+      proxyUrl: versionIsVideo ? mediaUrl : asset.proxyUrl
+    };
+    if (!mediaEl || actualTag !== expectedTag) {
+      if (!versionIsVideo) return false;
+      activePlayerCleanup?.();
+      activePlayerCleanup = null;
+      activeViewerLoadingCleanup?.();
+      activeViewerLoadingCleanup = null;
+      activeDetailPinCleanup?.();
+      activeDetailPinCleanup = null;
+      host.innerHTML = mediaViewer(previewAsset, {
+        showVideoToolsButton: false,
+        includeSubtitleTools: false,
+        includeSectionHide: true,
+        includeClipSectionHide: false,
+        includeAudioSectionHide: false,
+        audioSideLayout: false,
+        includeDetailPin: true
+      });
+      mediaEl = host.querySelector('#assetMediaEl');
+      actualTag = String(mediaEl?.tagName || mediaEl?.localName || '').toUpperCase();
+      if (!mediaEl || actualTag !== 'VIDEO') return false;
+      assetDetail.classList.add('video-detail-mode');
+      panelDetail?.classList.add('panel-video-detail');
+      activeViewerLoadingCleanup = initMediaViewerLoadingStates(host);
+      activeDetailPinCleanup = initDetailVideoPin(assetDetail);
+      syncDetailHeaderTimecode(assetDetail);
+    }
+    if (activePlayerCleanup) {
+      activePlayerCleanup();
+      activePlayerCleanup = null;
+    }
+    try { mediaEl.pause(); } catch (_error) {}
+    mediaEl.removeAttribute('data-dash-manifest');
+    mediaEl.dataset.versionId = String(version?.versionId || version?.version_id || '');
+    mediaEl.src = mediaUrl;
+    mediaEl.load();
+    activePlayerCleanup = initAssetPlayer(previewAsset, assetDetail);
+    return true;
+  },
   cleanupPreview: () => {
     activePlayerCleanup?.();
     activePlayerCleanup = null;
@@ -3139,7 +3195,19 @@ const onLanguageShortcut = (event) => {
   event.stopPropagation();
 };
 
+const onThemeShortcut = (event) => {
+  const key = String(event.key || '').toLowerCase();
+  if (key !== 't' || event.altKey || event.shiftKey) return;
+  const isMacShortcut = event.metaKey && !event.ctrlKey;
+  const isControlShortcut = event.ctrlKey && !event.metaKey;
+  if (!isMacShortcut && !isControlShortcut) return;
+  event.preventDefault();
+  event.stopPropagation();
+  toggleThemePreferenceShortcut();
+};
+
 document.addEventListener('keydown', onLanguageShortcut);
+document.addEventListener('keydown', onThemeShortcut, true);
 
 closeDetailBtn?.addEventListener('click', () => {
   detailRequestCoordinator.invalidate();

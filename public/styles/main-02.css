@@ -6,6 +6,7 @@
   background: #303746;
   color: #f2f6ff;
   border: 1px solid #4a5367;
+  border-radius: 10px;
 }
 
 .file-picker-btn:hover {

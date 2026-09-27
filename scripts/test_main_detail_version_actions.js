@@ -40,6 +40,8 @@ async function run() {
   let showImageViewer = true;
   let previewHost = null;
   let cleanupCalls = 0;
+  let preserveMediaPreview = false;
+  let preservedMediaPayload = null;
   const selected = new Map();
   const apiCalls = [];
   let refreshCalls = 0;
@@ -60,6 +62,10 @@ async function run() {
     currentLang: () => 'tr',
     canUsePdfAdvancedTools: () => true,
     selectedImageVersionIds: selected,
+    previewMediaVersion: (payload) => {
+      preservedMediaPayload = payload;
+      return preserveMediaPreview;
+    },
     assetDetail: {
       querySelector(selector) {
         if (selector === '[data-detail-file-preview]') return previewHost;
@@ -133,6 +139,30 @@ async function run() {
   assert.strictEqual(refreshCalls, 2);
   assert.strictEqual(selected.has('asset-1'), false);
   delete global.localStorage;
+  preserveMediaPreview = true;
+  previewHost = {
+    querySelector: () => ({ tagName: 'VIDEO' }),
+    querySelectorAll: () => [],
+    replaceChildren() { throw new Error('preserved media preview must not replace the player'); }
+  };
+  module.bind(root, {
+    asset: {
+      id: 'video-asset',
+      mimeType: 'video/mp4',
+      versions: [{ versionId: 'video-version', snapshotMimeType: 'video/mp4', snapshotMediaUrl: '/uploads/version.mp4', label: 'v2' }]
+    },
+    workflow: []
+  });
+  await listener({ target: makeButton('previewVersionBtn', 'video-version'), preventDefault() {}, stopPropagation() {} });
+  assert.equal(preservedMediaPayload.mediaUrl, '/uploads/version.mp4');
+  assert.equal(preservedMediaPayload.isVideo, true);
+  assert.equal(preservedMediaPayload.host, previewHost);
+  assert.equal(cleanupCalls, 0, 'preserved media preview does not replace or clean up the player');
+  preserveMediaPreview = false;
+  previewHost.child = null;
+  await listener({ target: makeButton('previewVersionBtn', 'video-version'), preventDefault() {}, stopPropagation() {} });
+  assert.equal(previewHost.child, null, 'same-kind video preview never falls back to a native replacement player');
+  preserveMediaPreview = false;
   let pauses = 0;
   previewHost = {
     querySelectorAll: () => [{ pause() { pauses += 1; } }],

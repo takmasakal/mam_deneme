@@ -216,8 +216,10 @@ function initAudioTools(mediaEl, root = document) {
 
   const renderAudioGraph = () => {
     const { width, height } = resizeCanvasToDisplay();
+    const lightToolsTheme = document.documentElement.dataset.theme === 'light'
+      && document.body.classList.contains('video-tools-page-mode');
     g.clearRect(0, 0, width, height);
-    g.fillStyle = '#121212';
+    g.fillStyle = lightToolsTheme ? '#f1f3f6' : '#121212';
     g.fillRect(0, 0, width, height);
 
     const cols = channelCount;
@@ -254,12 +256,12 @@ function initAudioTools(mediaEl, root = document) {
 
       const x = startX + (channelIndex * (meterW + gap));
       const y = 10;
-      g.fillStyle = '#1f2430';
+      g.fillStyle = lightToolsTheme ? '#dfe4ec' : '#1f2430';
       g.fillRect(x, y, meterW, meterH);
 
       // Slight top band to visualize reserved headroom.
       const headroomH = Math.max(2, Math.round(meterH * METER_HEADROOM));
-      g.fillStyle = 'rgba(125, 142, 173, 0.16)';
+      g.fillStyle = lightToolsTheme ? 'rgba(111, 121, 137, 0.16)' : 'rgba(125, 142, 173, 0.16)';
       g.fillRect(x, y, meterW, headroomH);
 
       const activeH = Math.max(2, Math.round(meterH * level));
@@ -277,10 +279,10 @@ function initAudioTools(mediaEl, root = document) {
       g.fillRect(x, py, meterW, activeH);
 
       const peakY = y + meterH - Math.round(meterH * peakHold[channelIndex]);
-      g.fillStyle = '#ecf0f1';
+      g.fillStyle = lightToolsTheme ? '#182130' : '#ecf0f1';
       g.fillRect(x, peakY, meterW, 2);
 
-      g.fillStyle = '#dce3f3';
+      g.fillStyle = lightToolsTheme ? '#3e4959' : '#dce3f3';
       g.font = '11px IBM Plex Sans';
       g.textAlign = 'center';
       g.fillText(`CH ${channelIndex + 1}`, x + (meterW / 2), y + meterH + 16);
@@ -387,7 +389,6 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
   const subtitleFileNameEl = root.querySelector('[data-subtitle-file-name]');
   const uploadBtn = byId('subtitleUploadBtn');
   const generateBtn = byId('subtitleGenerateBtn');
-  const translateBtn = byId('subtitleTranslateBtn');
   const searchInput = byId('subtitleSearchInput');
   const searchBtn = byId('subtitleSearchBtn');
   const searchSuggestEl = byId('subtitleSearchSuggest');
@@ -608,12 +609,14 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
       ? asset.subtitleActiveByLang
       : {};
     itemsEl.innerHTML = items.map((item) => {
-      const active = activeByLang[languageKey(item.subtitleLang)] === item.subtitleUrl;
+      const itemLanguage = languageKey(item.subtitleLang);
+      const active = activeByLang[itemLanguage] === item.subtitleUrl;
       return `
         <div class="subtitle-item-row ${active ? 'active' : ''}" data-subtitle-url="${escapeHtml(item.subtitleUrl)}">
           <span class="subtitle-item-label">${escapeHtml(item.subtitleLabel || item.subtitleLang || 'subtitle')}</span>
           <span class="subtitle-item-lang">${escapeHtml(item.subtitleLang || '')}</span>
           <a class="subtitle-item-download-btn" href="${escapeHtml(item.subtitleUrl)}" download target="_blank" rel="noreferrer">${t('subtitle_download')}</a>
+          ${itemLanguage !== 'tr' ? `<button type="button" class="subtitle-item-translate-btn">${t('subtitle_translate_tr')}</button>` : ''}
           ${currentUserCanDeleteAssetsRef.get() ? `<button type="button" class="subtitle-item-remove-btn">${t('subtitle_remove')}</button>` : ''}
           <button type="button" class="subtitle-item-use-btn">${active ? t('subtitle_active') : t('subtitle_use')}</button>
         </div>
@@ -666,6 +669,14 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
         } finally {
           setBusy(false);
         }
+      });
+    });
+    itemsEl.querySelectorAll('.subtitle-item-translate-btn').forEach((btn) => {
+      btn.addEventListener('click', (event) => {
+        const rowEl = event.currentTarget.closest('.subtitle-item-row');
+        const subtitleUrl = rowEl?.dataset?.subtitleUrl || '';
+        const selected = subtitleItems().find((it) => it.subtitleUrl === subtitleUrl);
+        if (selected) onTranslateToTurkish(selected);
       });
     });
   };
@@ -757,8 +768,8 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     }
   };
 
-  const onTranslateToTurkish = async () => {
-    const sourceUrl = String(asset.subtitleUrl || '').trim();
+  const onTranslateToTurkish = async (sourceItem = null) => {
+    const sourceUrl = String(sourceItem?.subtitleUrl || asset.subtitleUrl || '').trim();
     if (!sourceUrl) {
       alert(t('subtitle_translate_source_required'));
       return;
@@ -770,7 +781,7 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
         body: JSON.stringify({
           subtitleUrl: sourceUrl,
           targetLang: 'tr',
-          label: labelInput.value || asset.subtitleLabel || 'subtitle'
+          label: sourceItem?.subtitleLabel || labelInput.value || asset.subtitleLabel || 'subtitle'
         })
       });
       setStatus(t('subtitle_translate_started'));
@@ -885,7 +896,6 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
   renameBtn.addEventListener('click', onRename);
   uploadBtn.addEventListener('click', onUpload);
   generateBtn.addEventListener('click', onGenerate);
-  translateBtn?.addEventListener('click', onTranslateToTurkish);
   searchBtn.addEventListener('click', onSubtitleSearch);
   searchInput.addEventListener('keydown', onSubtitleSearchEnter);
   searchInput.addEventListener('input', queueSubtitleSuggest);

@@ -2,10 +2,12 @@
 @import url('/styles/main-01.css?v=20260620-metmam-brand-2');
 @import url('/styles/main-02.css?v=20260912-subtitle-toggle-2');
 @import url('/styles/main-03.css?v=20260926-preview-border-1');
-@import url('/styles/main-04.css?v=20260722-volume-controls-1');
+@import url('/styles/main-04.css?v=20260926-pinned-player-gap-1');
 @import url('/styles/main-05.css?v=20260425-refactor-1');
 @import url('/styles/main-06.css?v=20260831-audio-clips-width-2');
-@import url('/styles/main-light.css?v=20260925-light-mode-1');
+@import url('/styles/main-light.css?v=20260926-advanced-search-1');
+@import url('/styles/main-light-controls.css?v=20260927-photo-ocr-actions-1');
+@import url('/styles/main-light-video-tools.css?v=20260927-video-tools-light-2');
 
 .image-viewer-resizable {
   position: relative;

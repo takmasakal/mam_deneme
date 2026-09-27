@@ -4,6 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Dokuman Onizleme</title>
+  <script>
+    try {
+      document.documentElement.dataset.theme = window.parent.document.documentElement.dataset.theme || 'dark';
+    } catch (_error) {
+      document.documentElement.dataset.theme = 'dark';
+    }
+  </script>
   <style>
     :root {
       --bg: #0f1218;
@@ -191,6 +198,14 @@
       color: #d6deef;
       line-height: 1.45;
       display: none;
+    }
+
+    html[data-theme="light"] .viewer-wrap,
+    html[data-theme="light"] #embedPdfContainer,
+    html[data-theme="light"] #pdfViewerContainer {
+      background: #eef0f3;
+      border-color: #cfd5de;
+      box-shadow: none;
     }
   </style>
 </head>
