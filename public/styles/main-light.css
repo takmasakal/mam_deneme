@@ -1,0 +1,2038 @@
+html[data-theme="light"] {
+  color-scheme: light;
+  --mam-light-bg: #f6f7f9;
+  --mam-light-surface: #ffffff;
+  --mam-light-surface-soft: #f9fafc;
+  --mam-light-surface-tint: #fff5f7;
+  --mam-light-border: #e2e6ee;
+  --mam-light-border-strong: #cfd6e3;
+  --mam-light-text: #182130;
+  --mam-light-muted: #6f7989;
+  --mam-light-muted-2: #9aa3b2;
+  --mam-light-red: #e60028;
+  --mam-light-red-dark: #c90023;
+  --mam-light-shadow: 0 10px 28px rgba(22, 31, 45, 0.11);
+  --mam-light-shadow-soft: 0 6px 18px rgba(22, 31, 45, 0.08);
+}
+
+html[data-theme="light"] body {
+  background: var(--mam-light-bg);
+  color: var(--mam-light-text);
+}
+
+html[data-theme="light"] .panel,
+html[data-theme="light"] .ingest-panel-card,
+html[data-theme="light"] .search,
+html[data-theme="light"] .asset-card,
+html[data-theme="light"] .asset-list-row,
+html[data-theme="light"] .detail-card,
+html[data-theme="light"] .viewer-shell,
+html[data-theme="light"] .viewer-extra,
+html[data-theme="light"] .version,
+html[data-theme="light"] .attachment-card,
+html[data-theme="light"] .admin-card,
+html[data-theme="light"] .collapsible-section,
+html[data-theme="light"] .video-tools-page-shell,
+html[data-theme="light"] .clip-modal,
+html[data-theme="light"] .content-modal,
+html[data-theme="light"] .advanced-search-modal,
+html[data-theme="light"] .user-menu,
+html[data-theme="light"] .search-suggest,
+html[data-theme="light"] .proxy-suggest {
+  background: var(--mam-light-surface);
+  color: var(--mam-light-text);
+  border-color: var(--mam-light-border);
+  box-shadow: var(--mam-light-shadow-soft);
+}
+
+html[data-theme="light"] .panel {
+  box-shadow: none;
+}
+
+html[data-theme="light"] .top-row,
+html[data-theme="light"] .panel-head,
+html[data-theme="light"] .collapsible-head,
+html[data-theme="light"] .viewer-head,
+html[data-theme="light"] .video-tools-modal-head,
+html[data-theme="light"] .content-modal-head {
+  background: var(--mam-light-surface);
+  color: var(--mam-light-text);
+  border-color: var(--mam-light-border);
+}
+
+html[data-theme="light"] h1,
+html[data-theme="light"] h2,
+html[data-theme="light"] h3,
+html[data-theme="light"] h4,
+html[data-theme="light"] strong,
+html[data-theme="light"] label,
+html[data-theme="light"] .asset-title,
+html[data-theme="light"] .viewer-asset-name,
+html[data-theme="light"] .panel-head h2,
+html[data-theme="light"] .collapsible-head strong {
+  color: var(--mam-light-text);
+}
+
+html[data-theme="light"] .muted,
+html[data-theme="light"] .asset-meta,
+html[data-theme="light"] .viewer-meta,
+html[data-theme="light"] .user-box-label,
+html[data-theme="light"] .lang-box-label,
+html[data-theme="light"] .empty,
+html[data-theme="light"] .admin-note,
+html[data-theme="light"] .field-help {
+  color: var(--mam-light-muted);
+}
+
+html[data-theme="light"] input,
+html[data-theme="light"] textarea,
+html[data-theme="light"] select,
+html[data-theme="light"] .current-user-btn,
+html[data-theme="light"] .localized-file-input-button,
+html[data-theme="light"] .subtitle-localized-file-input .localized-file-input-button {
+  background: #ffffff;
+  color: var(--mam-light-text);
+  border-color: var(--mam-light-border-strong);
+  box-shadow: inset 0 1px 0 rgba(18, 27, 39, 0.03);
+}
+
+html[data-theme="light"] input::placeholder,
+html[data-theme="light"] textarea::placeholder {
+  color: var(--mam-light-muted-2);
+}
+
+html[data-theme="light"] button,
+html[data-theme="light"] .admin-link,
+html[data-theme="light"] .asset-view-btn,
+html[data-theme="light"] .mam-action-btn,
+html[data-theme="light"] .timecode-bar button,
+html[data-theme="light"] .version-actions button,
+html[data-theme="light"] .attachment-actions button {
+  background: #ffffff;
+  color: var(--mam-light-text);
+  border-color: var(--mam-light-border-strong);
+}
+
+html[data-theme="light"] button:hover,
+html[data-theme="light"] .admin-link:hover,
+html[data-theme="light"] .asset-view-btn:hover,
+html[data-theme="light"] .current-user-btn:hover {
+  background: var(--mam-light-surface-tint);
+  border-color: rgba(230, 0, 40, 0.45);
+}
+
+html[data-theme="light"] button[type="submit"],
+html[data-theme="light"] .mam-action-btn,
+html[data-theme="light"] .search-clear-btn,
+html[data-theme="light"] .advanced-search-apply-btn,
+html[data-theme="light"] .asset-view-btn.active,
+html[data-theme="light"] .localized-file-input-button,
+html[data-theme="light"] .subtitle-localized-file-input .localized-file-input-button {
+  border-color: var(--mam-light-red);
+  color: var(--mam-light-red);
+}
+
+html[data-theme="light"] button.primary,
+html[data-theme="light"] .primary,
+html[data-theme="light"] #uploadBtn,
+html[data-theme="light"] #saveMetadataBtn,
+html[data-theme="light"] #saveVisibilityBtn,
+html[data-theme="light"] #attachmentUploadBtn,
+html[data-theme="light"] #applyFiltersBtn {
+  background: var(--mam-light-red);
+  color: #ffffff;
+  border-color: var(--mam-light-red);
+  box-shadow: 0 8px 18px rgba(230, 0, 40, 0.2);
+}
+
+html[data-theme="light"] .app-brand span:first-child,
+html[data-theme="light"] .chip,
+html[data-theme="light"] .match-chip,
+html[data-theme="light"] .detail-subtitle-language-choice,
+html[data-theme="light"] .subtitle-language-choice {
+  color: var(--mam-light-red);
+  border-color: rgba(230, 0, 40, 0.35);
+  background: #fff4f6;
+}
+
+html[data-theme="light"] .asset-card.selected,
+html[data-theme="light"] .asset-list-row.selected,
+html[data-theme="light"] .selected,
+html[data-theme="light"] .search-hit-active {
+  border-color: var(--mam-light-red);
+  box-shadow: 0 0 0 2px rgba(230, 0, 40, 0.12), var(--mam-light-shadow-soft);
+}
+
+html[data-theme="light"] .asset-card-match,
+html[data-theme="light"] .asset-card .search-hit,
+html[data-theme="light"] mark {
+  background: #ffe6eb;
+  color: #8a0018;
+}
+
+html[data-theme="light"] .splitter,
+html[data-theme="light"] .panel-splitter {
+  background: #d9dee8;
+}
+
+html[data-theme="light"] .viewer-core,
+html[data-theme="light"] .video-main-col,
+html[data-theme="light"] .audio-graph,
+html[data-theme="light"] .image-viewer-resizable,
+html[data-theme="light"] .content-modal-video,
+html[data-theme="light"] .media-frame {
+  background: #111722;
+  color: #f3f6ff;
+}
+
+html[data-theme="light"] #panelDetail #assetDetail .viewer-shell,
+html[data-theme="light"] #panelDetail #assetDetail .viewer-core,
+html[data-theme="light"] #panelDetail #assetDetail .video-main-col,
+html[data-theme="light"] #panelDetail #assetDetail .image-viewer-resizable,
+html[data-theme="light"] #panelDetail #assetDetail .media-frame {
+  background: #eef0f3;
+  color: var(--mam-light-text);
+}
+
+html[data-theme="light"] #panelDetail #assetDetail .viewer-resizable,
+html[data-theme="light"] #panelDetail #assetDetail .viewer-resizable > .asset-viewer {
+  background: #eef0f3;
+}
+
+html[data-theme="light"] #panelDetail #assetDetail .viewer-resizable.video-resizable {
+  border: 0;
+}
+
+html[data-theme="light"] .audio-side-col,
+html[data-theme="light"] .channel-controls {
+  background: #f7f8fb;
+  color: var(--mam-light-text);
+  border-color: var(--mam-light-border);
+}
+
+/* Keep third-column video controls identical to their dark-mode treatment. */
+html[data-theme="light"] #assetDetail .custom-player-bar {
+  background: #1a1f2b;
+  color: #f3f6ff;
+  border-color: #3a4156;
+}
+
+html[data-theme="light"] #assetDetail .player-controls-box {
+  background: #141414;
+  color: #f3f6ff;
+  border-color: #2e2e2e;
+}
+
+html[data-theme="light"] #assetDetail .custom-player-bar button,
+html[data-theme="light"] #assetDetail .player-controls-box button {
+  border-radius: 10px;
+  box-shadow: none;
+  transform: none;
+}
+
+html[data-theme="light"] #assetDetail .custom-player-bar .custom-seek {
+  min-height: 0;
+  height: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-theme="light"] #assetDetail.video-detail-mode.detail-video-pinned .detail-video-fixed {
+  background: #eef0f3;
+}
+
+/* Third-column technical information in the light theme palette. */
+html[data-theme="light"] #panelDetail,
+html[data-theme="light"] #panelDetail #assetDetail {
+  background: #ffffff;
+}
+
+html[data-theme="light"] #panelDetail .tech-info-box {
+  background: #ffffff;
+  border-color: #dfe4ec;
+  box-shadow: none;
+}
+
+html[data-theme="light"] #panelDetail .tech-info-box h4,
+html[data-theme="light"] #panelDetail .tech-card h5,
+html[data-theme="light"] #panelDetail .tech-row strong {
+  color: var(--mam-light-text);
+}
+
+html[data-theme="light"] #panelDetail .tech-card {
+  background: #f1f3f6;
+  border-color: #dfe4ec;
+  box-shadow: none;
+}
+
+html[data-theme="light"] #panelDetail .tech-row span {
+  color: var(--mam-light-muted);
+}
+
+html[data-theme="light"] #panelDetail .tech-tab-btn {
+  background: #ffffff;
+  color: #5d6678;
+  border-color: #cfd6e3;
+  box-shadow: none;
+}
+
+html[data-theme="light"] #panelDetail .tech-tab-btn.active {
+  background: #fff0f3;
+  color: var(--mam-light-red);
+  border-color: var(--mam-light-red);
+}
+
+/* Third-column version and attachment groups in the light theme palette. */
+html[data-theme="light"] #panelDetail .asset-file-group {
+  margin: 16px 0 14px !important;
+  padding: 12px !important;
+  border-radius: 12px !important;
+  background: #f1f3f6 !important;
+  border-color: #dfe4ec !important;
+  box-shadow: none;
+}
+
+html[data-theme="light"] #panelDetail .asset-file-group > h4,
+html[data-theme="light"] #panelDetail .asset-file-group .version > strong {
+  color: var(--mam-light-text);
+}
+
+html[data-theme="light"] #panelDetail .asset-file-group .version {
+  background: #ffffff;
+  color: var(--mam-light-text);
+  border-top: 0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+html[data-theme="light"] #panelDetail .asset-file-group .version.version-restorable:hover {
+  background: #fff6f8;
+}
+
+html[data-theme="light"] #panelDetail .asset-file-group .version .timecode-bar {
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid #dfe4ec;
+  border-radius: 10px;
+  background: #f1f3f6;
+}
+
+html[data-theme="light"] body #panelDetail .asset-file-group .version .timecode-bar button:not(.danger) {
+  background: #ffffff !important;
+  color: #182130 !important;
+  border-color: #cfd6e3 !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="light"] body #panelDetail .asset-file-group .version .timecode-bar button:not(.danger):hover {
+  background: #f7f8fa !important;
+  color: #182130 !important;
+  border-color: #aeb7c5 !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="light"] body #panelDetail .asset-file-group .version .timecode-bar button.danger {
+  background: var(--mam-light-red) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="light"] body #panelDetail .asset-file-group .version .timecode-bar button.danger:hover {
+  background: var(--mam-light-red-dark) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red-dark) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="light"] #panelDetail .asset-file-add-container {
+  background: #f1f3f6;
+  border-color: #dfe4ec;
+  box-shadow: none;
+}
+
+html[data-theme="light"] #panelDetail #editForm,
+html[data-theme="light"] #panelDetail #transitionForm {
+  box-sizing: border-box;
+  margin: 16px 0 14px;
+  padding: 12px;
+  border: 1px solid #dfe4ec;
+  border-radius: 12px;
+  background: #f1f3f6;
+  box-shadow: none;
+}
+
+html[data-theme="light"] #panelDetail #editForm > h4:first-child,
+html[data-theme="light"] #panelDetail #transitionForm > h4:first-child {
+  margin-top: 0;
+}
+
+html[data-theme="light"] .logout-btn,
+html[data-theme="light"] button.danger,
+html[data-theme="light"] .danger {
+  color: var(--mam-light-red);
+  border-color: rgba(230, 0, 40, 0.45);
+}
+
+.theme-menu-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(110px, auto);
+  gap: 8px;
+  align-items: center;
+  padding-top: 4px;
+  color: #cfd7e7;
+  font-size: 12px;
+}
+
+.theme-menu-row select {
+  width: 100%;
+  min-height: 32px;
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+
+html[data-theme="light"] .theme-menu-row {
+  color: var(--mam-light-muted);
+}
+
+/* TRT-style stronger red/white experiment */
+html[data-theme="light"] .layout {
+  background:
+    linear-gradient(180deg, rgba(230, 0, 40, 0.075) 0, rgba(230, 0, 40, 0.075) 112px, transparent 112px),
+    var(--mam-light-bg);
+}
+
+html[data-theme="light"] #panelIngest .top-row {
+  margin: -14px -14px 18px;
+  padding: 18px 18px 20px;
+  border-radius: 0 0 24px 24px;
+  background: var(--mam-light-red);
+  color: #ffffff;
+  border: 0;
+  box-shadow: 0 12px 28px rgba(230, 0, 40, 0.18);
+}
+
+html[data-theme="light"] #panelIngest .app-brand,
+html[data-theme="light"] #panelIngest .app-brand span,
+html[data-theme="light"] #panelIngest .user-box-label,
+html[data-theme="light"] #panelIngest .lang-box-label {
+  color: #ffffff;
+}
+
+html[data-theme="light"] #panelIngest .current-user-btn,
+html[data-theme="light"] #panelIngest .lang-box select {
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--mam-light-text);
+  border-color: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 8px 18px rgba(112, 0, 20, 0.12);
+}
+
+html[data-theme="light"] .panel {
+  border: 1px solid var(--mam-light-border);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: var(--mam-light-shadow);
+}
+
+html[data-theme="light"] #panelIngest,
+html[data-theme="light"] #panelAssets,
+html[data-theme="light"] #panelDetail {
+  background: #ffffff;
+}
+
+html[data-theme="light"] .ingest-panel-card,
+html[data-theme="light"] .search,
+html[data-theme="light"] #assetGrid,
+html[data-theme="light"] #assetDetail,
+html[data-theme="light"] .detail-card,
+html[data-theme="light"] .viewer-extra,
+html[data-theme="light"] .asset-card,
+html[data-theme="light"] .asset-list-row {
+  border-radius: 22px;
+  background: #ffffff;
+  border-color: var(--mam-light-border);
+  box-shadow: var(--mam-light-shadow-soft);
+}
+
+html[data-theme="light"] .panel-head {
+  border: 0;
+  border-bottom: 1px solid var(--mam-light-border);
+  background: #ffffff;
+}
+
+html[data-theme="light"] #panelAssets .panel-head,
+html[data-theme="light"] #panelDetail .panel-head {
+  color: var(--mam-light-red);
+}
+
+html[data-theme="light"] #panelAssets .panel-head h2,
+html[data-theme="light"] #panelDetail .panel-head h2,
+html[data-theme="light"] .search-title-row h2 {
+  color: var(--mam-light-text);
+  font-weight: 700;
+}
+
+html[data-theme="light"] .search-title-row,
+html[data-theme="light"] .asset-toolbar,
+html[data-theme="light"] .detail-section-title,
+html[data-theme="light"] .collapsible-head {
+  border-color: var(--mam-light-border);
+}
+
+html[data-theme="light"] .collapsible-head {
+  background: #ffffff;
+  border-radius: 18px;
+}
+
+html[data-theme="light"] .collapsible-section {
+  border-radius: 22px;
+  border-color: var(--mam-light-border);
+}
+
+html[data-theme="light"] .asset-card {
+  padding: 0;
+  overflow: hidden;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+html[data-theme="light"] .asset-card.card-art-glass {
+  border-radius: 20px;
+}
+
+html[data-theme="light"] .asset-card:hover,
+html[data-theme="light"] .asset-list-row:hover {
+  transform: translateY(-1px);
+  border-color: rgba(230, 0, 40, 0.35);
+  box-shadow: 0 14px 30px rgba(22, 31, 45, 0.13);
+}
+
+html[data-theme="light"] .asset-card.selected,
+html[data-theme="light"] .asset-list-row.selected {
+  border: 2px solid var(--mam-light-red);
+  box-shadow: 0 10px 28px rgba(230, 0, 40, 0.16);
+}
+
+html[data-theme="light"] .asset-card.card-art-glass.selected,
+html[data-theme="light"] .asset-card.card-art-glass.selected:hover {
+  border-color: var(--mam-light-red);
+  box-shadow:
+    0 0 0 1px rgba(230, 0, 40, 0.24),
+    0 10px 28px rgba(230, 0, 40, 0.16);
+}
+
+html[data-theme="light"] .asset-thumb,
+html[data-theme="light"] .thumb,
+html[data-theme="light"] .file-icon,
+html[data-theme="light"] .attachment-icon {
+  background: #f3f5f8;
+  color: var(--mam-light-red);
+}
+
+html[data-theme="light"] .chip,
+html[data-theme="light"] .tag-chip,
+html[data-theme="light"] .status-chip,
+html[data-theme="light"] .type-chip {
+  background: #f4f6fa;
+  color: var(--mam-light-muted);
+  border: 0;
+}
+
+html[data-theme="light"] .chip-tag-filter,
+html[data-theme="light"] .detail-subtitle-language-choice.active,
+html[data-theme="light"] .subtitle-language-choice.active {
+  background: #ffe8ed;
+  color: var(--mam-light-red);
+  border-color: rgba(230, 0, 40, 0.35);
+}
+
+html[data-theme="light"] input:focus,
+html[data-theme="light"] textarea:focus,
+html[data-theme="light"] select:focus {
+  outline: none;
+  border-color: rgba(230, 0, 40, 0.52);
+  box-shadow: 0 0 0 4px rgba(230, 0, 40, 0.10);
+}
+
+html[data-theme="light"] .advanced-search-btn,
+html[data-theme="light"] .search-clear-btn,
+html[data-theme="light"] .asset-view-btn,
+html[data-theme="light"] .panel-action-btn,
+html[data-theme="light"] #panelVideoToolsBtn {
+  border-radius: 999px;
+}
+
+html[data-theme="light"] #panelVideoToolsBtn,
+html[data-theme="light"] .advanced-search-apply-btn,
+html[data-theme="light"] #applyFiltersBtn {
+  background: var(--mam-light-red);
+  color: #ffffff;
+  border-color: var(--mam-light-red);
+  box-shadow: 0 10px 20px rgba(230, 0, 40, 0.20);
+}
+
+html[data-theme="light"] .user-menu {
+  border-radius: 18px;
+  box-shadow: var(--mam-light-shadow);
+}
+
+html[data-theme="light"] .theme-menu-row select {
+  background: #ffffff;
+  color: var(--mam-light-text);
+  border-color: var(--mam-light-border-strong);
+}
+
+/* TRT portal-inspired control polish for light mode */
+html[data-theme="light"] .panel,
+html[data-theme="light"] .ingest-panel-card,
+html[data-theme="light"] .search,
+html[data-theme="light"] #assetGrid,
+html[data-theme="light"] #assetDetail,
+html[data-theme="light"] .detail-card,
+html[data-theme="light"] .viewer-extra,
+html[data-theme="light"] .admin-card,
+html[data-theme="light"] .settings-card,
+html[data-theme="light"] .proxy-repair-card,
+html[data-theme="light"] .metadata-card,
+html[data-theme="light"] .modal-card,
+html[data-theme="light"] .modal-content {
+  background: #ffffff;
+  border: 1px solid #e3e7ee;
+  box-shadow: 0 8px 24px rgba(18, 27, 40, 0.08);
+}
+
+html[data-theme="light"] .panel,
+html[data-theme="light"] .admin-card,
+html[data-theme="light"] .settings-card,
+html[data-theme="light"] .modal-card,
+html[data-theme="light"] .modal-content {
+  border-radius: 26px;
+}
+
+html[data-theme="light"] input,
+html[data-theme="light"] textarea,
+html[data-theme="light"] select,
+html[data-theme="light"] .search-input,
+html[data-theme="light"] .search-query,
+html[data-theme="light"] .metadata-input,
+html[data-theme="light"] .metadata-textarea,
+html[data-theme="light"] .form-control {
+  min-height: 42px;
+  border-radius: 15px;
+  border: 1px solid #d4dae4;
+  background: #ffffff;
+  color: #182133;
+  box-shadow: 0 3px 9px rgba(18, 27, 40, 0.06);
+}
+
+html[data-theme="light"] textarea,
+html[data-theme="light"] .metadata-textarea {
+  border-radius: 18px;
+}
+
+html[data-theme="light"] input::placeholder,
+html[data-theme="light"] textarea::placeholder,
+html[data-theme="light"] .search-input::placeholder,
+html[data-theme="light"] .search-query::placeholder {
+  color: #9aa4b5;
+}
+
+html[data-theme="light"] select,
+html[data-theme="light"] .theme-menu-row select,
+html[data-theme="light"] .lang-box select,
+html[data-theme="light"] .page-size-select,
+html[data-theme="light"] .sort-select {
+  min-height: 42px;
+  border-radius: 14px;
+  background-color: #ffffff;
+  color: #424b5d;
+  border-color: #d4dae4;
+  box-shadow: 0 4px 11px rgba(18, 27, 40, 0.10);
+}
+
+html[data-theme="light"] button,
+html[data-theme="light"] .button,
+html[data-theme="light"] .mam-action-btn,
+html[data-theme="light"] .asset-view-btn,
+html[data-theme="light"] .advanced-search-btn,
+html[data-theme="light"] .panel-action-btn,
+html[data-theme="light"] .search-clear-btn,
+html[data-theme="light"] .localized-file-input-button,
+html[data-theme="light"] .subtitle-localized-file-input,
+html[data-theme="light"] .file-picker-button,
+html[data-theme="light"] .file-action-btn,
+html[data-theme="light"] .version-actions button,
+html[data-theme="light"] .attachment-actions button,
+html[data-theme="light"] .pager button,
+html[data-theme="light"] .pagination button,
+html[data-theme="light"] .timecode-bar button {
+  border-radius: 999px;
+  border: 1px solid #d7dce5;
+  background: #ffffff;
+  color: #5d6678;
+  box-shadow: 0 4px 11px rgba(18, 27, 40, 0.08);
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+html[data-theme="light"] button:hover,
+html[data-theme="light"] .button:hover,
+html[data-theme="light"] .mam-action-btn:hover,
+html[data-theme="light"] .asset-view-btn:hover,
+html[data-theme="light"] .advanced-search-btn:hover,
+html[data-theme="light"] .panel-action-btn:hover,
+html[data-theme="light"] .search-clear-btn:hover,
+html[data-theme="light"] .localized-file-input-button:hover,
+html[data-theme="light"] .subtitle-localized-file-input:hover,
+html[data-theme="light"] .file-picker-button:hover,
+html[data-theme="light"] .file-action-btn:hover,
+html[data-theme="light"] .version-actions button:hover,
+html[data-theme="light"] .attachment-actions button:hover,
+html[data-theme="light"] .pager button:hover,
+html[data-theme="light"] .pagination button:hover,
+html[data-theme="light"] .timecode-bar button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(230, 0, 40, 0.36);
+  background: #fff6f8;
+  color: #e60028;
+  box-shadow: 0 9px 18px rgba(230, 0, 40, 0.13);
+}
+
+html[data-theme="light"] button:disabled,
+html[data-theme="light"] .button:disabled,
+html[data-theme="light"] .mam-action-btn:disabled,
+html[data-theme="light"] .asset-view-btn:disabled,
+html[data-theme="light"] .panel-action-btn:disabled,
+html[data-theme="light"] .file-action-btn:disabled {
+  transform: none;
+  background: #f3f5f8;
+  color: #adb5c3;
+  border-color: #e0e5ed;
+  box-shadow: none;
+}
+
+html[data-theme="light"] .primary,
+html[data-theme="light"] button.primary,
+html[data-theme="light"] .btn-primary,
+html[data-theme="light"] .mam-action-btn.primary,
+html[data-theme="light"] #panelVideoToolsBtn,
+html[data-theme="light"] #applyFiltersBtn,
+html[data-theme="light"] .advanced-search-apply-btn,
+html[data-theme="light"] .metadata-save-btn,
+html[data-theme="light"] .visibility-save-btn,
+html[data-theme="light"] .upload-submit-btn,
+html[data-theme="light"] .proxy-repair-generate-btn,
+html[data-theme="light"] .admin-save-btn,
+html[data-theme="light"] .save-btn {
+  background: #e60028;
+  border-color: #e60028;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(230, 0, 40, 0.23);
+}
+
+html[data-theme="light"] .primary:hover,
+html[data-theme="light"] button.primary:hover,
+html[data-theme="light"] .btn-primary:hover,
+html[data-theme="light"] .mam-action-btn.primary:hover,
+html[data-theme="light"] #panelVideoToolsBtn:hover,
+html[data-theme="light"] #applyFiltersBtn:hover,
+html[data-theme="light"] .advanced-search-apply-btn:hover,
+html[data-theme="light"] .metadata-save-btn:hover,
+html[data-theme="light"] .visibility-save-btn:hover,
+html[data-theme="light"] .upload-submit-btn:hover,
+html[data-theme="light"] .proxy-repair-generate-btn:hover,
+html[data-theme="light"] .admin-save-btn:hover,
+html[data-theme="light"] .save-btn:hover {
+  background: #c90023;
+  border-color: #c90023;
+  color: #ffffff;
+  box-shadow: 0 11px 22px rgba(230, 0, 40, 0.28);
+}
+
+html[data-theme="light"] .danger,
+html[data-theme="light"] button.danger,
+html[data-theme="light"] .delete-btn,
+html[data-theme="light"] .remove-btn {
+  color: #e60028;
+  border-color: rgba(230, 0, 40, 0.28);
+  background: #fff5f7;
+}
+
+html[data-theme="light"] .search-query-wrap,
+html[data-theme="light"] .search-main-row,
+html[data-theme="light"] .search-ocr-row,
+html[data-theme="light"] .advanced-search-content,
+html[data-theme="light"] .metadata-form,
+html[data-theme="light"] .visibility-form,
+html[data-theme="light"] .attachment-add-card,
+html[data-theme="light"] .version-add-card,
+html[data-theme="light"] .subtitle-upload-card,
+html[data-theme="light"] .proxy-repair-toolbar,
+html[data-theme="light"] .proxy-repair-results {
+  background: #ffffff;
+  border-color: #e4e8ef;
+  border-radius: 20px;
+}
+
+html[data-theme="light"] .asset-card,
+html[data-theme="light"] .asset-list-row,
+html[data-theme="light"] .attachment-card,
+html[data-theme="light"] .version-card,
+html[data-theme="light"] .detail-version-row,
+html[data-theme="light"] .detail-attachment-row,
+html[data-theme="light"] .admin-table-row,
+html[data-theme="light"] tr {
+  background: #ffffff;
+  border-color: #edf0f5;
+}
+
+html[data-theme="light"] .asset-card.selected,
+html[data-theme="light"] .asset-list-row.selected,
+html[data-theme="light"] .version-card.is-default,
+html[data-theme="light"] .detail-version-row.is-default {
+  border-color: #e60028;
+  box-shadow: 0 10px 24px rgba(230, 0, 40, 0.14);
+}
+
+html[data-theme="light"] .detail-section-title,
+html[data-theme="light"] .collapsible-head,
+html[data-theme="light"] .card-title,
+html[data-theme="light"] .section-title,
+html[data-theme="light"] .settings-section-title,
+html[data-theme="light"] .admin-section-title {
+  color: #182133;
+  background: #ffffff;
+  border-color: #e4e8ef;
+}
+
+html[data-theme="light"] .detail-section-title::before,
+html[data-theme="light"] .collapsible-head::before,
+html[data-theme="light"] .settings-section-title::before,
+html[data-theme="light"] .admin-section-title::before {
+  background: #fff0f3;
+  color: #e60028;
+}
+
+html[data-theme="light"] .asset-meta,
+html[data-theme="light"] .asset-subtitle,
+html[data-theme="light"] .muted,
+html[data-theme="light"] .hint,
+html[data-theme="light"] .field-hint,
+html[data-theme="light"] .result-count,
+html[data-theme="light"] .empty-state {
+  color: #828b9c;
+}
+
+html[data-theme="light"] .chip,
+html[data-theme="light"] .tag-chip,
+html[data-theme="light"] .status-chip,
+html[data-theme="light"] .type-chip,
+html[data-theme="light"] .format-chip,
+html[data-theme="light"] .badge,
+html[data-theme="light"] .pill {
+  border-radius: 999px;
+  background: #f1f3f6;
+  color: #727b8d;
+  border: 0;
+}
+
+html[data-theme="light"] .asset-thumb,
+html[data-theme="light"] .thumb,
+html[data-theme="light"] .file-icon,
+html[data-theme="light"] .attachment-icon,
+html[data-theme="light"] .version-icon,
+html[data-theme="light"] .folder-icon,
+html[data-theme="light"] .document-icon {
+  background: #f4f5f8;
+  color: #e60028;
+  border-color: #eef1f6;
+}
+
+html[data-theme="light"] #assetGrid .asset-card .asset-thumb {
+  border-color: #ffffff;
+  outline-color: #ffffff;
+  box-shadow:
+    inset 0 0 0 1px #ffffff,
+    0 0 0 1px #ffffff;
+}
+
+html[data-theme="light"] table,
+html[data-theme="light"] .admin-table,
+html[data-theme="light"] .proxy-repair-table {
+  background: #ffffff;
+  border: 1px solid #e4e8ef;
+  border-radius: 20px;
+  box-shadow: 0 8px 22px rgba(18, 40, 24, 0.06);
+  overflow: hidden;
+}
+
+html[data-theme="light"] th,
+html[data-theme="light"] .table-head,
+html[data-theme="light"] .proxy-repair-table thead {
+  background: #fafbfc;
+  color: #2a3345;
+  border-color: #e9edf3;
+}
+
+html[data-theme="light"] td,
+html[data-theme="light"] th,
+html[data-theme="light"] .table-cell {
+  border-color: #eef1f5;
+}
+
+html[data-theme="light"] .advanced-search-group.and-group,
+html[data-theme="light"] .advanced-search-group.or-group {
+  background: #ffffff;
+}
+
+html[data-theme="light"] .advanced-search-group-title,
+html[data-theme="light"] .search-label,
+html[data-theme="light"] label {
+  color: #596274;
+}
+
+html[data-theme="light"] .localized-file-input,
+html[data-theme="light"] .file-picker,
+html[data-theme="light"] .subtitle-upload-controls,
+html[data-theme="light"] .replace-file-controls {
+  background: #ffffff;
+  border: 1px solid #e4e8ef;
+  border-radius: 18px;
+  box-shadow: 0 5px 14px rgba(18, 27, 40, 0.05);
+}
+
+html[data-theme="light"] .localized-file-input-name,
+html[data-theme="light"] .file-picker-name,
+html[data-theme="light"] .selected-file-name {
+  color: #7a8495;
+}
+
+/* Light mode grey container surfaces */
+html[data-theme="light"] .ingest-panel-card,
+html[data-theme="light"] .search,
+html[data-theme="light"] #assetGrid,
+html[data-theme="light"] #assetDetail,
+html[data-theme="light"] .detail-card,
+html[data-theme="light"] .viewer-extra,
+html[data-theme="light"] .admin-card,
+html[data-theme="light"] .settings-card,
+html[data-theme="light"] .proxy-repair-card,
+html[data-theme="light"] .metadata-card,
+html[data-theme="light"] .attachment-add-card,
+html[data-theme="light"] .version-add-card,
+html[data-theme="light"] .subtitle-upload-card,
+html[data-theme="light"] .search-query-wrap,
+html[data-theme="light"] .search-main-row,
+html[data-theme="light"] .search-ocr-row,
+html[data-theme="light"] .advanced-search-content,
+html[data-theme="light"] .metadata-form,
+html[data-theme="light"] .visibility-form,
+html[data-theme="light"] .proxy-repair-toolbar,
+html[data-theme="light"] .proxy-repair-results,
+html[data-theme="light"] .localized-file-input,
+html[data-theme="light"] .file-picker,
+html[data-theme="light"] .subtitle-upload-controls,
+html[data-theme="light"] .replace-file-controls {
+  background: #f1f3f6;
+  border-color: #dfe4ec;
+}
+
+/* Let the second-column asset list sit directly on the white panel surface. */
+html[data-theme="light"] #panelAssets #assetGrid {
+  background: #ffffff;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-theme="light"] .asset-card,
+html[data-theme="light"] .asset-list-row,
+html[data-theme="light"] .attachment-card,
+html[data-theme="light"] .version-card,
+html[data-theme="light"] .detail-version-row,
+html[data-theme="light"] .detail-attachment-row,
+html[data-theme="light"] .admin-table-row {
+  background: #f1f3f6;
+  border-color: #dfe4ec;
+}
+
+html[data-theme="light"] .asset-card:hover,
+html[data-theme="light"] .asset-list-row:hover,
+html[data-theme="light"] .attachment-card:hover,
+html[data-theme="light"] .version-card:hover,
+html[data-theme="light"] .detail-version-row:hover,
+html[data-theme="light"] .detail-attachment-row:hover {
+  background: #f6f7f9;
+}
+
+html[data-theme="light"] .panel-head,
+html[data-theme="light"] .detail-section-title,
+html[data-theme="light"] .collapsible-head,
+html[data-theme="light"] .card-title,
+html[data-theme="light"] .section-title,
+html[data-theme="light"] .settings-section-title,
+html[data-theme="light"] .admin-section-title {
+  background: #f1f3f6;
+  border-color: #dfe4ec;
+}
+
+html[data-theme="light"] input,
+html[data-theme="light"] textarea,
+html[data-theme="light"] select,
+html[data-theme="light"] .search-input,
+html[data-theme="light"] .search-query,
+html[data-theme="light"] .metadata-input,
+html[data-theme="light"] .metadata-textarea,
+html[data-theme="light"] .form-control,
+html[data-theme="light"] .theme-menu-row select,
+html[data-theme="light"] .lang-box select,
+html[data-theme="light"] .page-size-select,
+html[data-theme="light"] .sort-select {
+  background: #ffffff;
+}
+
+html[data-theme="light"] table,
+html[data-theme="light"] .admin-table,
+html[data-theme="light"] .proxy-repair-table {
+  background: #f1f3f6;
+  border-color: #dfe4ec;
+}
+
+html[data-theme="light"] th,
+html[data-theme="light"] .table-head,
+html[data-theme="light"] .proxy-repair-table thead {
+  background: #e9edf3;
+}
+
+html[data-theme="light"] td,
+html[data-theme="light"] tr,
+html[data-theme="light"] .table-cell {
+  background: #f7f8fa;
+}
+
+/* Light mode red/white asset filter controls */
+html[data-theme="light"] .asset-head-filters label {
+  color: #e60028;
+  font-weight: 700;
+}
+
+html[data-theme="light"] .asset-head-filters input[type="checkbox"] {
+  margin: 0;
+  accent-color: #e60028;
+  vertical-align: middle;
+}
+
+html[data-theme="light"] .asset-head-filters input[type="checkbox"]:focus-visible {
+  outline: 2px solid rgba(230, 0, 40, 0.35);
+  outline-offset: 2px;
+}
+
+html[data-theme="light"] .asset-view-switch {
+  gap: 8px;
+}
+
+html[data-theme="light"] .asset-view-btn,
+html[data-theme="light"] .asset-view-btn.active {
+  background: #e60028;
+  border-color: #e60028;
+  color: #ffffff;
+  box-shadow: 0 6px 14px rgba(230, 0, 40, 0.22);
+}
+
+html[data-theme="light"] .asset-view-btn:hover,
+html[data-theme="light"] .asset-view-btn.active:hover {
+  background: #c90023;
+  border-color: #c90023;
+  color: #ffffff;
+  box-shadow: 0 9px 18px rgba(230, 0, 40, 0.28);
+}
+
+html[data-theme="light"] .asset-view-btn::before,
+html[data-theme="light"] .asset-view-btn.active::before {
+  filter: brightness(0) invert(1);
+  opacity: 1;
+}
+
+/* Light mode asset pager: preserve the compact dark-mode geometry. */
+html[data-theme="light"] .asset-list-pager {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-width: 1px;
+  border-style: solid;
+  border-radius: 10px;
+  background: #ffffff;
+  border-color: #dfe4ec;
+  box-shadow: none;
+}
+
+html[data-theme="light"] .asset-list-pager:last-child {
+  margin: 10px 0 0;
+}
+
+html[data-theme="light"] .asset-list-page-size-select,
+html[data-theme="light"] .asset-list-page-input {
+  min-height: 0;
+  background: #ffffff;
+  color: #182133;
+  border-color: #cfd6e3;
+  box-shadow: none;
+}
+
+html[data-theme="light"] .asset-list-page-size-select {
+  width: auto;
+  min-width: 68px;
+  height: 28px;
+  padding: 2px 26px 2px 8px;
+  border-radius: 7px;
+}
+
+html[data-theme="light"] .asset-list-page-input {
+  width: 6ch;
+  min-width: 6ch;
+  height: 24px;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+
+html[data-theme="light"] .asset-list-page-btn {
+  width: 28px;
+  height: 24px;
+  min-width: 28px;
+  padding: 0;
+  border-radius: 6px;
+  background: #f1f3f6;
+  color: #e60028;
+  border-color: #cfd6e3;
+  box-shadow: none;
+  transform: none;
+}
+
+html[data-theme="light"] .asset-list-page-btn:hover:not(:disabled) {
+  background: #fff6f8;
+  border-color: rgba(230, 0, 40, 0.38);
+  color: #e60028;
+  box-shadow: none;
+  transform: none;
+}
+
+html[data-theme="light"] .asset-list-page-btn:disabled {
+  background: #e9edf3;
+  color: #a5adbb;
+  border-color: #dce2eb;
+  box-shadow: none;
+}
+
+html[data-theme="light"] .asset-list-pager-range,
+html[data-theme="light"] .asset-list-page-current,
+html[data-theme="light"] .asset-list-page-size label {
+  color: #5f6878;
+}
+
+/* Light mode left column header: preserve original geometry, adjust colors only */
+html[data-theme="light"] #panelIngest .top-row {
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: inherit;
+}
+
+html[data-theme="light"] #panelIngest .app-brand,
+html[data-theme="light"] #panelIngest .app-brand span,
+html[data-theme="light"] #panelIngest .app-brand span:first-child,
+html[data-theme="light"] #panelIngest .app-brand span:last-child {
+  color: #ffffff;
+  background: transparent;
+  border-color: transparent;
+}
+
+html[data-theme="light"] #panelIngest .user-box-label,
+html[data-theme="light"] #panelIngest .lang-box-label {
+  color: #8f98a8;
+}
+
+html[data-theme="light"] #panelIngest .current-user-btn,
+html[data-theme="light"] #panelIngest .lang-box select {
+  background: #f1f3f6;
+  color: #596274;
+  border-color: #dfe4ec;
+  box-shadow: none;
+}
+
+html[data-theme="light"] #panelIngest .current-user-btn:hover,
+html[data-theme="light"] #panelIngest .lang-box select:hover {
+  background: #e9edf3;
+  color: #424b5d;
+  border-color: #cfd6e3;
+}
+
+/* Light mode left header correction: local review before push */
+html[data-theme="light"] #panelIngest .app-brand,
+html[data-theme="light"] #panelIngest .app-brand span,
+html[data-theme="light"] #panelIngest .app-brand span:first-child,
+html[data-theme="light"] #panelIngest .app-brand span:last-child {
+  color: #e60028;
+}
+
+html[data-theme="light"] #panelIngest .user-box,
+html[data-theme="light"] #panelIngest .lang-box {
+  background: #f1f3f6;
+  border-color: #dfe4ec;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+/* Light mode left/search corrections: local review before push */
+html[data-theme="light"] #panelIngest .current-user-btn {
+  background: #ffffff;
+  color: #182133;
+  border-color: #d4dae4;
+}
+
+html[data-theme="light"] #panelIngest .current-user-btn:hover {
+  background: #ffffff;
+  color: #182133;
+  border-color: rgba(230, 0, 40, 0.36);
+}
+
+html[data-theme="light"] #advancedSearchBtn,
+html[data-theme="light"] #advancedSearchBtn.asset-view-btn,
+html[data-theme="light"] #advancedSearchBtn.advanced-search-btn {
+  background: #e60028;
+  color: #ffffff;
+  border-color: #e60028;
+  box-shadow: 0 6px 14px rgba(230, 0, 40, 0.22);
+}
+
+html[data-theme="light"] #advancedSearchBtn:hover,
+html[data-theme="light"] #advancedSearchBtn.asset-view-btn:hover,
+html[data-theme="light"] #advancedSearchBtn.advanced-search-btn:hover {
+  background: #c90023;
+  color: #ffffff;
+  border-color: #c90023;
+}
+
+/* Force current user field fill in light mode */
+html[data-theme="light"] body #panelIngest .user-box #currentUserBtn.current-user-btn,
+html[data-theme="light"] body #panelIngest .user-box button#currentUserBtn {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  color: #182133 !important;
+  border-color: #d4dae4 !important;
+  box-shadow: none !important;
+}
+
+/* Search-hit shortcuts shown in the detail column. */
+html[data-theme="light"] #panelDetail .dc-hit-row .dc-hit {
+  background: #ffffff !important;
+  border-color: #d7dde7 !important;
+  color: #172033 !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="light"] #panelDetail .dc-hit-row .dc-hit strong {
+  color: #172033 !important;
+}
+
+html[data-theme="light"] #panelDetail .dc-hit-row .dc-hit:hover,
+html[data-theme="light"] #panelDetail .dc-hit-row .dc-hit:focus-visible {
+  background: #fff3f5 !important;
+  border-color: rgba(230, 0, 40, 0.42) !important;
+  color: #172033 !important;
+}
+
+html[data-theme="light"] #panelIngest #clearSearchBtn.search-clear-btn:not(:disabled) {
+  background: var(--mam-light-red, #e60028) !important;
+  border-color: var(--mam-light-red, #e60028) !important;
+  color: #ffffff !important;
+  box-shadow: 0 6px 14px rgba(230, 0, 40, 0.18) !important;
+}
+
+html[data-theme="light"] #panelIngest #clearSearchBtn.search-clear-btn:not(:disabled):hover,
+html[data-theme="light"] #panelIngest #clearSearchBtn.search-clear-btn:not(:disabled):focus-visible {
+  background: var(--mam-light-red-dark, #c90023) !important;
+  border-color: var(--mam-light-red-dark, #c90023) !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] #panelIngest #clearSearchBtn.search-clear-btn:disabled {
+  background: #dfe3e9 !important;
+  border-color: #d1d6de !important;
+  color: #8a93a3 !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+}
+
+/* Match-result shortcuts keep the compact dark-theme geometry. */
+html[data-theme="light"] #assetGrid .dc-hit-row .dc-hit {
+  border-radius: 6px !important;
+}
+
+/* Keep the first-column user and language controls at dark-theme height. */
+html[data-theme="light"] #panelIngest .lang-box select#languageSelect {
+  min-height: 0 !important;
+  height: auto !important;
+  padding: 8px 28px 8px 10px !important;
+  border-radius: 8px !important;
+  line-height: 1.2 !important;
+}
+
+/* Advanced search modal: complete light-theme treatment. */
+html[data-theme="light"] .advanced-search-modal {
+  background: rgba(223, 228, 236, 0.72);
+  color: var(--mam-light-text);
+}
+
+html[data-theme="light"] .advanced-search-dialog {
+  background: #ffffff;
+  color: var(--mam-light-text);
+  border-color: var(--mam-light-border-strong);
+  box-shadow: 0 22px 60px rgba(22, 31, 45, 0.18);
+}
+
+html[data-theme="light"] .advanced-search-dialog-head,
+html[data-theme="light"] .advanced-search-title-wrap,
+html[data-theme="light"] .advanced-search-dialog-head h3 {
+  color: var(--mam-light-text);
+}
+
+html[data-theme="light"] #panelIngest .advanced-search-close {
+  background: #ffffff !important;
+  color: var(--mam-light-text) !important;
+  border-color: var(--mam-light-border-strong) !important;
+}
+
+html[data-theme="light"] #panelIngest .advanced-search-close:hover,
+html[data-theme="light"] #panelIngest .advanced-search-close:focus-visible {
+  background: var(--mam-light-surface-tint) !important;
+  color: var(--mam-light-red) !important;
+  border-color: rgba(230, 0, 40, 0.42) !important;
+}
+
+html[data-theme="light"] .advanced-search-help,
+html[data-theme="light"] .advanced-search-help-btn,
+html[data-theme="light"] .advanced-search-range-row label,
+html[data-theme="light"] .advanced-search-duration-group legend,
+html[data-theme="light"] .advanced-search-date-row label,
+html[data-theme="light"] .advanced-search-range-order,
+html[data-theme="light"] .advanced-search-date-order,
+html[data-theme="light"] .advanced-search-field strong {
+  color: var(--mam-light-muted);
+}
+
+html[data-theme="light"] .advanced-search-help-btn {
+  background: #ffffff;
+  border-color: var(--mam-light-border-strong);
+}
+
+html[data-theme="light"] .advanced-search-help-btn:hover,
+html[data-theme="light"] .advanced-search-help-btn:focus-visible {
+  color: var(--mam-light-red);
+  border-color: rgba(230, 0, 40, 0.42);
+}
+
+html[data-theme="light"] .advanced-search-constraint,
+html[data-theme="light"] .advanced-search-fields,
+html[data-theme="light"] .advanced-search-group,
+html[data-theme="light"] .advanced-search-field,
+html[data-theme="light"] .advanced-search-range-order,
+html[data-theme="light"] .advanced-search-date-order {
+  background: var(--mam-light-surface-soft);
+  border-color: var(--mam-light-border);
+}
+
+html[data-theme="light"] .advanced-search-constraint summary,
+html[data-theme="light"] .advanced-search-type-row > strong,
+html[data-theme="light"] .advanced-search-type-options label {
+  color: var(--mam-light-text);
+}
+
+html[data-theme="light"] .advanced-search-constraint[open] summary {
+  border-bottom-color: var(--mam-light-border);
+}
+
+html[data-theme="light"] .advanced-search-constraint summary::after {
+  color: var(--mam-light-muted);
+}
+
+html[data-theme="light"] .advanced-search-group .advanced-search-dropzone {
+  background: #ffffff;
+  border-color: var(--mam-light-border-strong);
+}
+
+html[data-theme="light"] .advanced-search-dropzone.drag-over {
+  background: #fff4f6;
+  border-color: rgba(230, 0, 40, 0.46);
+}
+
+html[data-theme="light"] .date-picker-popover {
+  background: #ffffff;
+  color: var(--mam-light-text);
+  border-color: var(--mam-light-border-strong);
+  box-shadow: var(--mam-light-shadow);
+}
+
+html[data-theme="light"] .date-picker-head button,
+html[data-theme="light"] .date-picker-day,
+html[data-theme="light"] .date-picker-today {
+  color: var(--mam-light-text);
+}
+
+html[data-theme="light"] .date-picker-weekdays {
+  color: var(--mam-light-muted);
+}
+
+html[data-theme="light"] .advanced-search-actions #advancedSearchApplyBtn {
+  background: var(--mam-light-red) !important;
+  border-color: var(--mam-light-red) !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] .advanced-search-actions #advancedSearchApplyBtn:hover,
+html[data-theme="light"] .advanced-search-actions #advancedSearchApplyBtn:focus-visible {
+  background: var(--mam-light-red-dark) !important;
+  border-color: var(--mam-light-red-dark) !important;
+}
+
+/* Highlight the third-column Choose File control in light mode. */
+html[data-theme="light"] body #panelDetail #versionForm .localized-file-input-button {
+  background: var(--mam-light-red) !important;
+  background-color: var(--mam-light-red) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red) !important;
+  box-shadow: 0 6px 14px rgba(230, 0, 40, 0.22) !important;
+}
+
+html[data-theme="light"] body #panelDetail #versionForm .localized-file-input:hover .localized-file-input-button,
+html[data-theme="light"] body #panelDetail #versionForm .localized-file-input:focus-within .localized-file-input-button {
+  background: var(--mam-light-red-dark) !important;
+  background-color: var(--mam-light-red-dark) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red-dark) !important;
+}
+
+/* Keep OCR and subtitle match rows geometrically consistent with dark mode. */
+html[data-theme="light"] #assetGrid .asset-hit-list .ocr-hit-jump {
+  border-radius: 8px !important;
+  padding: 6px 8px !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+html[data-theme="light"] #assetGrid .asset-hit-list .ocr-hit-jump:hover {
+  transform: none !important;
+}
+
+html[data-theme="light"] #assetGrid .asset-hit-list .ocr-hit-jump .dc-hit-tc {
+  color: var(--mam-light-red) !important;
+}
+
+html[data-theme="light"] body #panelIngest .user-box #currentUserBtn.current-user-btn:hover,
+html[data-theme="light"] body #panelIngest .user-box button#currentUserBtn:hover {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  color: #182133 !important;
+  border-color: rgba(230, 0, 40, 0.36) !important;
+}
+
+/* Force advanced search icon to red/white in light mode */
+html[data-theme="light"] #advancedSearchBtn.advanced-search-btn {
+  font-size: 16px;
+  line-height: 1;
+  text-indent: 0;
+}
+
+html[data-theme="light"] #advancedSearchBtn.advanced-search-btn::before {
+  content: none !important;
+  display: none !important;
+  background: none !important;
+}
+
+html[data-theme="light"] #advancedSearchBtn.advanced-search-btn,
+html[data-theme="light"] #advancedSearchBtn.advanced-search-btn * {
+  color: #ffffff !important;
+  fill: #ffffff !important;
+  stroke: #ffffff !important;
+}
+
+/* Override base important advanced search button colors in light mode */
+html[data-theme="light"] #panelIngest #advancedSearchBtn.advanced-search-btn {
+  background: #e60028 !important;
+  background-color: #e60028 !important;
+  border-color: #e60028 !important;
+  color: #ffffff !important;
+  box-shadow: 0 6px 14px rgba(230, 0, 40, 0.22) !important;
+}
+
+html[data-theme="light"] #panelIngest #advancedSearchBtn.advanced-search-btn:hover,
+html[data-theme="light"] #panelIngest #advancedSearchBtn.advanced-search-btn:focus-visible {
+  background: #c90023 !important;
+  background-color: #c90023 !important;
+  border-color: #c90023 !important;
+  color: #ffffff !important;
+}
+
+/* Light mode primary action buttons: grey fill with red label/icon */
+html[data-theme="light"] #panelIngest .mam-action-btn,
+html[data-theme="light"] #panelDetail .mam-action-btn,
+html[data-theme="light"] #panelDetail #editForm button.mam-action-btn[type="submit"],
+html[data-theme="light"] #panelDetail #versionForm button.mam-action-btn[type="submit"],
+html[data-theme="light"] #panelDetail #transitionForm button[type="submit"],
+html[data-theme="light"] #uploadBtn,
+html[data-theme="light"] #saveMetadataBtn,
+html[data-theme="light"] #saveVisibilityBtn,
+html[data-theme="light"] #attachmentUploadBtn,
+html[data-theme="light"] #applyFiltersBtn {
+  background: #f1f3f6 !important;
+  background-color: #f1f3f6 !important;
+  color: #e60028 !important;
+  border-color: #dfe4ec !important;
+  box-shadow: 0 6px 16px rgba(18, 27, 40, 0.08) !important;
+}
+
+html[data-theme="light"] #panelIngest .mam-action-btn:hover,
+html[data-theme="light"] #panelIngest .mam-action-btn:focus-visible,
+html[data-theme="light"] #panelDetail .mam-action-btn:hover,
+html[data-theme="light"] #panelDetail .mam-action-btn:focus-visible,
+html[data-theme="light"] #panelDetail #editForm button.mam-action-btn[type="submit"]:hover,
+html[data-theme="light"] #panelDetail #editForm button.mam-action-btn[type="submit"]:focus-visible,
+html[data-theme="light"] #panelDetail #versionForm button.mam-action-btn[type="submit"]:hover,
+html[data-theme="light"] #panelDetail #versionForm button.mam-action-btn[type="submit"]:focus-visible,
+html[data-theme="light"] #panelDetail #transitionForm button[type="submit"]:hover,
+html[data-theme="light"] #panelDetail #transitionForm button[type="submit"]:focus-visible,
+html[data-theme="light"] #uploadBtn:hover,
+html[data-theme="light"] #saveMetadataBtn:hover,
+html[data-theme="light"] #saveVisibilityBtn:hover,
+html[data-theme="light"] #attachmentUploadBtn:hover,
+html[data-theme="light"] #applyFiltersBtn:hover {
+  background: #e9edf3 !important;
+  background-color: #e9edf3 !important;
+  color: #e60028 !important;
+  border-color: rgba(230, 0, 40, 0.36) !important;
+  box-shadow: 0 8px 18px rgba(230, 0, 40, 0.11) !important;
+}
+
+html[data-theme="light"] #panelDetail #transitionForm button[type="submit"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 10px;
+  border-width: 1.8px;
+  border-radius: 10px;
+  font: inherit;
+  line-height: normal;
+}
+
+html[data-theme="light"] .mam-action-btn .mam-action-icon,
+html[data-theme="light"] .mam-action-btn .mam-action-label,
+html[data-theme="light"] .mam-action-btn svg,
+html[data-theme="light"] .mam-action-btn svg path {
+  color: #e60028 !important;
+  fill: none !important;
+  stroke: #e60028 !important;
+}
+
+/* Light mode upload file picker button: red fill with white label */
+html[data-theme="light"] #panelIngest #mediaFileBtn.file-picker-btn {
+  background: #e60028 !important;
+  background-color: #e60028 !important;
+  color: #ffffff !important;
+  border-color: #e60028 !important;
+  box-shadow: 0 6px 14px rgba(230, 0, 40, 0.22) !important;
+}
+
+html[data-theme="light"] #panelIngest #mediaFileBtn.file-picker-btn:hover,
+html[data-theme="light"] #panelIngest #mediaFileBtn.file-picker-btn:focus-visible {
+  background: #c90023 !important;
+  background-color: #c90023 !important;
+  color: #ffffff !important;
+  border-color: #c90023 !important;
+  box-shadow: 0 8px 18px rgba(230, 0, 40, 0.28) !important;
+}
+
+/* Light mode detail header timecode and close button */
+html[data-theme="light"] #panelDetailTcSlot .viewer-tc,
+html[data-theme="light"] #panelDetailTcSlot .viewer-tc-inline,
+html[data-theme="light"] #assetDetail .viewer-tc,
+html[data-theme="light"] #assetDetail .viewer-tc-inline {
+  background: #f1f3f6 !important;
+  color: #e60028 !important;
+  border-color: #dfe4ec !important;
+  box-shadow: 0 5px 14px rgba(18, 27, 40, 0.08) !important;
+}
+
+html[data-theme="light"] #panelDetailTcSlot .viewer-tc strong,
+html[data-theme="light"] #assetDetail .viewer-tc strong {
+  color: #e60028 !important;
+}
+
+html[data-theme="light"] #panelDetail #closeDetailBtn.close-detail-btn {
+  background: #e60028 !important;
+  background-color: #e60028 !important;
+  color: #ffffff !important;
+  border-color: #e60028 !important;
+  box-shadow: 0 6px 14px rgba(230, 0, 40, 0.22) !important;
+}
+
+html[data-theme="light"] #panelDetail #closeDetailBtn.close-detail-btn:hover,
+html[data-theme="light"] #panelDetail #closeDetailBtn.close-detail-btn:focus-visible {
+  background: #c90023 !important;
+  background-color: #c90023 !important;
+  color: #ffffff !important;
+  border-color: #c90023 !important;
+  box-shadow: 0 8px 18px rgba(230, 0, 40, 0.28) !important;
+}
+
+/* Slightly round the first-column upload file button in light mode */
+html[data-theme="light"] #panelIngest #mediaFileBtn.file-picker-btn {
+  border-radius: 10px !important;
+}
+
+/* Light mode search suggestions: red / grey / white */
+html[data-theme="light"] #searchSuggestList.search-suggest,
+html[data-theme="light"] #ocrSuggestList.search-suggest,
+html[data-theme="light"] #subtitleSuggestList.search-suggest {
+  background: #f1f3f6 !important;
+  border-color: #dfe4ec !important;
+  box-shadow: 0 10px 24px rgba(18, 27, 40, 0.12) !important;
+}
+
+html[data-theme="light"] #searchSuggestList .search-suggest-item,
+html[data-theme="light"] #ocrSuggestList .search-suggest-item,
+html[data-theme="light"] #subtitleSuggestList .search-suggest-item {
+  background: #ffffff !important;
+  color: #182133 !important;
+}
+
+html[data-theme="light"] #searchSuggestList .search-suggest-item:hover,
+html[data-theme="light"] #searchSuggestList .search-suggest-item.active,
+html[data-theme="light"] #ocrSuggestList .search-suggest-item:hover,
+html[data-theme="light"] #ocrSuggestList .search-suggest-item.active,
+html[data-theme="light"] #subtitleSuggestList .search-suggest-item:hover,
+html[data-theme="light"] #subtitleSuggestList .search-suggest-item.active {
+  background: #fff6f8 !important;
+  color: #182133 !important;
+}
+
+html[data-theme="light"] #searchSuggestList .search-suggest-item strong,
+html[data-theme="light"] #ocrSuggestList .search-suggest-item strong,
+html[data-theme="light"] #subtitleSuggestList .search-suggest-item strong {
+  color: #182133 !important;
+}
+
+html[data-theme="light"] #searchSuggestList .search-suggest-item span,
+html[data-theme="light"] #ocrSuggestList .search-suggest-item span,
+html[data-theme="light"] #subtitleSuggestList .search-suggest-item span {
+  color: #6f7989 !important;
+}
+
+html[data-theme="light"] #searchSuggestList .search-suggest-item mark,
+html[data-theme="light"] #ocrSuggestList .search-suggest-item mark,
+html[data-theme="light"] #subtitleSuggestList .search-suggest-item mark {
+  background: #e60028 !important;
+  color: #ffffff !important;
+  border-radius: 3px !important;
+  padding: 0 2px !important;
+}
+
+/* Preserve dark-mode search suggestion geometry in light mode */
+html[data-theme="light"] #searchSuggestList.search-suggest,
+html[data-theme="light"] #ocrSuggestList.search-suggest,
+html[data-theme="light"] #subtitleSuggestList.search-suggest {
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  top: calc(100% + 4px) !important;
+  z-index: 45 !important;
+  border-radius: 10px !important;
+  max-height: 240px !important;
+  overflow-y: auto !important;
+  padding: 4px !important;
+}
+
+html[data-theme="light"] #searchSuggestList .search-suggest-item,
+html[data-theme="light"] #ocrSuggestList .search-suggest-item,
+html[data-theme="light"] #subtitleSuggestList .search-suggest-item {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  padding: 8px !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  transform: none !important;
+  display: grid !important;
+  gap: 2px !important;
+  text-align: left !important;
+  line-height: normal !important;
+}
+
+html[data-theme="light"] #searchSuggestList .search-suggest-item:hover,
+html[data-theme="light"] #searchSuggestList .search-suggest-item.active,
+html[data-theme="light"] #ocrSuggestList .search-suggest-item:hover,
+html[data-theme="light"] #ocrSuggestList .search-suggest-item.active,
+html[data-theme="light"] #subtitleSuggestList .search-suggest-item:hover,
+html[data-theme="light"] #subtitleSuggestList .search-suggest-item.active {
+  transform: none !important;
+  box-shadow: none !important;
+  border: 0 !important;
+}
+
+html[data-theme="light"] #searchSuggestList .search-suggest-item strong,
+html[data-theme="light"] #ocrSuggestList .search-suggest-item strong,
+html[data-theme="light"] #subtitleSuggestList .search-suggest-item strong {
+  font-size: 13px !important;
+  line-height: 1.3 !important;
+}
+
+html[data-theme="light"] #searchSuggestList .search-suggest-item span,
+html[data-theme="light"] #ocrSuggestList .search-suggest-item span,
+html[data-theme="light"] #subtitleSuggestList .search-suggest-item span {
+  font-size: 11px !important;
+  line-height: 1.3 !important;
+}
+
+/* Light mode suggestion item border to match dark-mode visual framing */
+html[data-theme="light"] #searchSuggestList .search-suggest-item,
+html[data-theme="light"] #ocrSuggestList .search-suggest-item,
+html[data-theme="light"] #subtitleSuggestList .search-suggest-item {
+  box-sizing: border-box !important;
+  border: 1px solid rgba(230, 0, 40, 0.42) !important;
+}
+
+html[data-theme="light"] #searchSuggestList .search-suggest-item:hover,
+html[data-theme="light"] #searchSuggestList .search-suggest-item.active,
+html[data-theme="light"] #ocrSuggestList .search-suggest-item:hover,
+html[data-theme="light"] #ocrSuggestList .search-suggest-item.active,
+html[data-theme="light"] #subtitleSuggestList .search-suggest-item:hover,
+html[data-theme="light"] #subtitleSuggestList .search-suggest-item.active {
+  border: 1px solid #e60028 !important;
+}
+
+/* Light mode splitter tabs: preserve dark-mode geometry, adjust colors */
+html[data-theme="light"] .splitter-tab {
+  position: absolute !important;
+  top: 84px !important;
+  writing-mode: vertical-rl !important;
+  transform: rotate(180deg) !important;
+  transform-origin: center !important;
+  border-radius: 12px !important;
+  padding: 18px 7px !important;
+  font-size: 13px !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  white-space: nowrap !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.26) !important;
+}
+
+html[data-theme="light"] .splitter-tab-search {
+  left: -35px !important;
+  background: #e60028 !important;
+  background-color: #e60028 !important;
+  color: #ffffff !important;
+  border: 1px solid #e60028 !important;
+}
+
+html[data-theme="light"] .splitter-tab-assets {
+  right: -35px !important;
+  background: #f1f3f6 !important;
+  background-color: #f1f3f6 !important;
+  color: #e60028 !important;
+  border: 1px solid #dfe4ec !important;
+}
+
+html[data-theme="light"] body.lang-en .splitter-tab-assets {
+  right: -26px !important;
+}
+
+html[data-theme="light"] .splitter-tab-search:hover,
+html[data-theme="light"] .splitter-tab-search:focus-visible {
+  background: #c90023 !important;
+  background-color: #c90023 !important;
+  color: #ffffff !important;
+  border-color: #c90023 !important;
+  transform: rotate(180deg) !important;
+}
+
+html[data-theme="light"] .splitter-tab-assets:hover,
+html[data-theme="light"] .splitter-tab-assets:focus-visible {
+  background: #e9edf3 !important;
+  background-color: #e9edf3 !important;
+  color: #e60028 !important;
+  border-color: rgba(230, 0, 40, 0.36) !important;
+  transform: rotate(180deg) !important;
+}
+
+/* Correct splitter tabs back to exact dark-mode geometry */
+html[data-theme="light"] .splitter-tab {
+  display: none !important;
+  position: absolute !important;
+  top: 56px !important;
+  left: calc(100% - 1px) !important;
+  width: auto !important;
+  min-width: 0 !important;
+  padding: 8px 7px !important;
+  border-radius: 0 10px 10px 0 !important;
+  border-left: none !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.5px !important;
+  line-height: 1.1 !important;
+  white-space: nowrap !important;
+  writing-mode: vertical-rl !important;
+  text-orientation: mixed !important;
+  text-transform: uppercase !important;
+  transform: none !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.22) !important;
+}
+
+html[data-theme="light"] .splitter-tab-search {
+  top: 56px !important;
+  left: calc(100% - 1px) !important;
+  right: auto !important;
+  background: #e60028 !important;
+  background-color: #e60028 !important;
+  color: #ffffff !important;
+  border: 1px solid #e60028 !important;
+  border-left: none !important;
+  z-index: 10 !important;
+}
+
+html[data-theme="light"] .splitter-tab-assets {
+  top: 148px !important;
+  left: calc(100% - 1px) !important;
+  right: auto !important;
+  border-radius: 0 10px 10px 0 !important;
+  border: 1px solid #dfe4ec !important;
+  border-left: none !important;
+  border-right: 1px solid #dfe4ec !important;
+  background: #f1f3f6 !important;
+  background-color: #f1f3f6 !important;
+  color: #e60028 !important;
+  z-index: 6 !important;
+  writing-mode: vertical-rl !important;
+  text-orientation: mixed !important;
+}
+
+html[data-theme="light"] body.lang-en .splitter-tab-assets {
+  top: 164px !important;
+  right: auto !important;
+}
+
+html[data-theme="light"] .splitter-tab-search:hover,
+html[data-theme="light"] .splitter-tab-search:focus-visible {
+  background: #c90023 !important;
+  background-color: #c90023 !important;
+  color: #ffffff !important;
+  border-color: #c90023 !important;
+  border-left: none !important;
+  filter: brightness(1.04) !important;
+  transform: none !important;
+}
+
+html[data-theme="light"] .splitter-tab-assets:hover,
+html[data-theme="light"] .splitter-tab-assets:focus-visible {
+  background: #e9edf3 !important;
+  background-color: #e9edf3 !important;
+  color: #e60028 !important;
+  border-color: rgba(230, 0, 40, 0.36) !important;
+  border-left: none !important;
+  filter: brightness(1.04) !important;
+  transform: none !important;
+}
+
+/* Keep splitter tabs visible when panel state asks for them in light mode */
+html[data-theme="light"] .splitter-tab[style*="display: block"],
+html[data-theme="light"] .splitter-tab[style*="display:block"],
+html[data-theme="light"] .splitter-tab[style*="display: inline-flex"],
+html[data-theme="light"] .splitter-tab[style*="display:inline-flex"] {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Keep search title row frameless like dark mode */
+html[data-theme="light"] #panelIngest .search-title-row {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="light"] #panelIngest #clearSearchBtn.search-clear-btn {
+  background-clip: padding-box !important;
+}
+
+/* Make the first-column search card a single grey surface like upload card */
+html[data-theme="light"] #panelIngest .ingest-panel-card:first-of-type,
+html[data-theme="light"] #panelIngest .ingest-panel-card:first-of-type .search,
+html[data-theme="light"] #panelIngest .ingest-panel-card:first-of-type .search-title-row {
+  background: #f1f3f6 !important;
+  background-color: #f1f3f6 !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="light"] #panelIngest .ingest-panel-card:first-of-type .search-title-row {
+  border: 0 !important;
+  outline: 0 !important;
+}
+
+/* Make search header area inherit the outer card tone */
+html[data-theme="light"] #panelIngest .ingest-panel-card:first-of-type {
+  background: #f1f3f6 !important;
+  background-color: #f1f3f6 !important;
+}
+
+html[data-theme="light"] #panelIngest .ingest-panel-card:first-of-type .search,
+html[data-theme="light"] #panelIngest .ingest-panel-card:first-of-type .search-title-row {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Remove the separate tint from the first-column search header/card area */
+html[data-theme="light"] #panelIngest .ingest-panel-card:first-of-type,
+html[data-theme="light"] #panelIngest .ingest-panel-card:first-of-type .search,
+html[data-theme="light"] #panelIngest .ingest-panel-card:first-of-type .search-title-row {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="light"] #panelIngest .ingest-panel-card:first-of-type {
+  border-color: transparent !important;
+}
+
+/* Force the first-column search block to use the same tone as the surrounding panel */
+html[data-theme="light"] #panelIngest,
+html[data-theme="light"] #panelIngest > .ingest-panel-card:first-of-type,
+html[data-theme="light"] #panelIngest > .ingest-panel-card:first-of-type > #searchForm,
+html[data-theme="light"] #panelIngest > .ingest-panel-card:first-of-type > #searchForm.search,
+html[data-theme="light"] #panelIngest > .ingest-panel-card:first-of-type > #searchForm .search-title-row {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  background-image: none !important;
+}
+
+html[data-theme="light"] #panelIngest > .ingest-panel-card:first-of-type,
+html[data-theme="light"] #panelIngest > .ingest-panel-card:first-of-type > #searchForm.search {
+  box-shadow: none !important;
+}
+
+/* Match the search header area to the surrounding measured light-panel tone */
+html[data-theme="light"] #panelIngest > .ingest-panel-card:first-of-type,
+html[data-theme="light"] #panelIngest > .ingest-panel-card:first-of-type > #searchForm,
+html[data-theme="light"] #panelIngest > .ingest-panel-card:first-of-type > #searchForm.search,
+html[data-theme="light"] #panelIngest > .ingest-panel-card:first-of-type > #searchForm .search-title-row {
+  background: #edeff2 !important;
+  background-color: #edeff2 !important;
+  background-image: none !important;
+}
+
+/* Correct target: the search card follows .top-row, so :first-of-type does not match */
+html[data-theme="light"] #panelIngest > .top-row + .ingest-panel-card,
+html[data-theme="light"] #panelIngest > .top-row + .ingest-panel-card > #searchForm,
+html[data-theme="light"] #panelIngest > .top-row + .ingest-panel-card > #searchForm.search,
+html[data-theme="light"] #panelIngest > .top-row + .ingest-panel-card > #searchForm .search-title-row {
+  background: #edeff2 !important;
+  background-color: #edeff2 !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="light"] #panelIngest > .top-row + .ingest-panel-card,
+html[data-theme="light"] #panelIngest > .top-row + .ingest-panel-card > #searchForm.search,
+html[data-theme="light"] #panelIngest > .top-row + .ingest-panel-card > #searchForm .search-title-row {
+  border-color: transparent !important;
+  outline: 0 !important;
+}
+
+/* Light mode user menu spacing */
+html[data-theme="light"] #panelIngest .user-menu {
+  padding: 10px !important;
+  min-height: 120px !important;
+  background: #ffffff !important;
+  border: 1px solid #dfe4ec !important;
+  box-shadow: 0 10px 24px rgba(18, 27, 40, 0.10) !important;
+}
+
+html[data-theme="light"] #panelIngest .user-menu-actions {
+  gap: 10px 12px !important;
+  align-items: center !important;
+}
+
+html[data-theme="light"] #panelIngest .user-menu-actions .admin-link,
+html[data-theme="light"] #panelIngest .user-menu-actions .logout-btn {
+  min-height: 44px !important;
+  padding: 10px 12px !important;
+}
+
+html[data-theme="light"] #panelIngest .theme-menu-row {
+  padding-top: 8px !important;
+  gap: 10px !important;
+}
+
+html[data-theme="light"] #panelIngest .theme-menu-row select {
+  min-height: 38px !important;
+}
+
+/* Keep user-menu action button geometry identical to dark mode */
+html[data-theme="light"] #panelIngest .user-menu-actions .admin-link,
+html[data-theme="light"] #panelIngest .user-menu-actions .logout-btn {
+  min-height: 0 !important;
+  padding: 8px 8px !important;
+  font-size: 12px !important;
+  border-radius: 10px !important;
+}
+
+html[data-theme="light"] #panelIngest .theme-menu-row select option[value="system"] {
+  display: none;
+}
+
+/* Tighten theme selector row spacing inside the user menu */
+html[data-theme="light"] #panelIngest .theme-menu-row {
+  padding-top: 2px !important;
+  margin: 0 !important;
+  gap: 6px !important;
+  align-items: center !important;
+}
+
+html[data-theme="light"] #panelIngest .theme-menu-row select {
+  min-height: 32px !important;
+  padding-top: 4px !important;
+  padding-bottom: 4px !important;
+}
+
+/* Reduce extra space below the theme row */
+html[data-theme="light"] #panelIngest .user-menu {
+  min-height: 0 !important;
+  padding-bottom: 6px !important;
+}
+
+html[data-theme="light"] #panelIngest .user-menu-actions {
+  row-gap: 6px !important;
+}
+
+/* Keep current-user button geometry identical to dark mode */
+html[data-theme="light"] body #panelIngest .user-box #currentUserBtn.current-user-btn,
+html[data-theme="light"] body #panelIngest .user-box button#currentUserBtn {
+  width: 100% !important;
+  text-align: left !important;
+  border-radius: 8px !important;
+  padding: 8px 10px !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  min-height: 0 !important;
+  height: auto !important;
+  box-shadow: none !important;
+}

@@ -1,0 +1,546 @@
+/* MetMAM video/audio tools workspace light theme. Player surfaces stay dark. */
+html[data-theme="light"] body.video-tools-page-mode,
+html[data-theme="light"] body.video-tools-page-mode .layout,
+html[data-theme="light"] body.video-tools-page-mode #panelDetail,
+html[data-theme="light"] body.video-tools-page-mode #assetDetail,
+html[data-theme="light"] body.video-tools-page-mode .video-tools-page-body,
+html[data-theme="light"] body.video-tools-page-mode .video-tools-page-shell,
+html[data-theme="light"] body.video-tools-page-mode .video-tools-modal-body {
+  background: var(--mam-light-bg, #f6f7f9);
+  color: var(--mam-light-text, #182130);
+  box-shadow: none;
+}
+
+html[data-theme="light"] body.video-tools-page-mode .viewer-shell,
+html[data-theme="light"] body.video-tools-page-mode .viewer-core {
+  background: #ffffff;
+  color: var(--mam-light-text, #182130);
+  border-color: var(--mam-light-border, #e2e6ee);
+  box-shadow: var(--mam-light-shadow-soft, 0 6px 18px rgba(22, 31, 45, 0.08));
+}
+
+html[data-theme="light"] body.video-tools-page-mode .viewer-head,
+html[data-theme="light"] body.video-tools-page-mode .viewer-extra {
+  background: #ffffff;
+  color: var(--mam-light-text, #182130);
+  border-color: var(--mam-light-border, #e2e6ee);
+  box-shadow: none;
+}
+
+html[data-theme="light"] body.video-tools-page-mode .viewer-head .viewer-asset-name,
+html[data-theme="light"] body.video-tools-page-mode .viewer-meta,
+html[data-theme="light"] body.video-tools-page-mode .subtitle-status,
+html[data-theme="light"] body.video-tools-page-mode .subtitle-current-inline,
+html[data-theme="light"] body.video-tools-page-mode .subtitle-busy {
+  color: var(--mam-light-text, #182130);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .subtitle-tools,
+html[data-theme="light"] body.video-tools-page-mode .video-ocr-tools,
+html[data-theme="light"] body.video-tools-page-mode .audio-tools,
+html[data-theme="light"] body.video-tools-page-mode .cut-box {
+  background: #ffffff;
+  color: var(--mam-light-text, #182130);
+  border-color: var(--mam-light-border, #e2e6ee);
+  box-shadow: 0 4px 12px rgba(22, 31, 45, 0.05);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .collapsible-body,
+html[data-theme="light"] body.video-tools-page-mode .subtitle-tools-layout,
+html[data-theme="light"] body.video-tools-page-mode .subtitle-tools-row,
+html[data-theme="light"] body.video-tools-page-mode .tool-grid,
+html[data-theme="light"] body.video-tools-page-mode .tool-actions {
+  background: #ffffff;
+  color: var(--mam-light-text, #182130);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .subtitle-tools-row label {
+  color: var(--mam-light-muted, #6f7989);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .collapsible-head {
+  margin: -8px -8px 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid #f0d9df;
+  border-radius: 10px 10px 0 0;
+  background: #fff0f3;
+  color: var(--mam-light-red, #e60028);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .collapsible-head strong {
+  color: var(--mam-light-red, #e60028);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .collapsible-section.collapsed .collapsible-head {
+  margin-bottom: -8px;
+  border-bottom: 0;
+  border-radius: 10px;
+}
+
+html[data-theme="light"] body.video-tools-page-mode input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+html[data-theme="light"] body.video-tools-page-mode textarea,
+html[data-theme="light"] body.video-tools-page-mode select,
+html[data-theme="light"] body.video-tools-page-mode .subtitle-lang-input,
+html[data-theme="light"] body.video-tools-page-mode .subtitle-name-input,
+html[data-theme="light"] body.video-tools-page-mode .cut-label-row input {
+  background: #ffffff;
+  color: var(--mam-light-text, #182130);
+  border-color: var(--mam-light-border-strong, #cfd6e3);
+  box-shadow: inset 0 1px 0 rgba(18, 27, 39, 0.03);
+}
+
+/* Keep tool fields at the compact dimensions used by the dark theme. */
+html[data-theme="light"] body.video-tools-page-mode input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+html[data-theme="light"] body.video-tools-page-mode select,
+html[data-theme="light"] body.video-tools-page-mode .subtitle-lang-input,
+html[data-theme="light"] body.video-tools-page-mode .subtitle-name-input,
+html[data-theme="light"] body.video-tools-page-mode .cut-label-row input {
+  height: 30px;
+  min-height: 30px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+html[data-theme="light"] body.video-tools-page-mode .tool-field > span,
+html[data-theme="light"] body.video-tools-page-mode .cut-label-row label,
+html[data-theme="light"] body.video-tools-page-mode .video-tools-check,
+html[data-theme="light"] body.video-tools-page-mode .audio-tools-header label,
+html[data-theme="light"] body.video-tools-page-mode .audio-graph-options label {
+  color: var(--mam-light-muted, #6f7989);
+}
+
+html[data-theme="light"] body.video-tools-page-mode input[type="checkbox"],
+html[data-theme="light"] body.video-tools-page-mode input[type="radio"] {
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  accent-color: var(--mam-light-red, #e60028);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .tool-toggle-pill,
+html[data-theme="light"] body.video-tools-page-mode .tool-option-group,
+html[data-theme="light"] body.video-tools-page-mode .tool-file-wrap {
+  background: var(--mam-light-surface-soft, #f9fafc);
+  color: var(--mam-light-text, #182130);
+  border-color: var(--mam-light-border, #e2e6ee);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .tool-options-menu {
+  background: #ffffff;
+  border-color: var(--mam-light-border, #e2e6ee);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .tool-options-menu summary {
+  background: #f1f3f6;
+  color: var(--mam-light-text, #182130);
+  border-radius: 9px 9px 0 0;
+}
+
+html[data-theme="light"] body.video-tools-page-mode .tool-options-menu summary::after {
+  color: var(--mam-light-red, #e60028);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .ocr-flow-stage {
+  background: linear-gradient(180deg, #ffffff 0%, #f7f8fa 100%);
+  color: var(--mam-light-text, #182130);
+  border-color: var(--mam-light-border-strong, #cfd6e3);
+  box-shadow: 0 4px 12px rgba(22, 31, 45, 0.06);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .ocr-flow-stage h5 {
+  background: #fff0f3;
+  color: var(--mam-light-red, #e60028);
+  border-bottom-color: #f0d9df;
+  border-radius: 9px 9px 0 0;
+}
+
+html[data-theme="light"] body.video-tools-page-mode .ocr-flow-stage:not(:last-child)::after {
+  background: linear-gradient(90deg, #ef9eac 0%, var(--mam-light-red, #e60028) 100%);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .ocr-flow-stage:not(:last-child)::before {
+  border-left-color: var(--mam-light-red, #e60028);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .tool-inline-help {
+  background: #ffffff;
+  color: var(--mam-light-red, #e60028);
+  border-color: rgba(230, 0, 40, 0.38);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .subtitle-items,
+html[data-theme="light"] body.video-tools-page-mode .cuts-list {
+  background: #f7f8fa;
+  border-color: var(--mam-light-border, #e2e6ee);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .subtitle-item-row,
+html[data-theme="light"] body.video-tools-page-mode .cut-item {
+  background: #f1f3f6;
+  color: var(--mam-light-text, #182130);
+  border-color: var(--mam-light-border, #e2e6ee);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .cut-item,
+html[data-theme="light"] body.video-tools-page-mode .cut-item-meta {
+  background: #f1f3f6;
+  color: var(--mam-light-text, #182130);
+  border-color: var(--mam-light-border, #e2e6ee);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .subtitle-item-row.active,
+html[data-theme="light"] body.video-tools-page-mode .cut-item.active {
+  border-color: var(--mam-light-red, #e60028);
+  box-shadow: inset 0 0 0 1px rgba(230, 0, 40, 0.28);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .subtitle-item-label,
+html[data-theme="light"] body.video-tools-page-mode .subtitle-item-lang,
+html[data-theme="light"] body.video-tools-page-mode .subtitle-item-empty {
+  color: var(--mam-light-text, #182130);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .audio-graph-frame,
+html[data-theme="light"] body.video-tools-page-mode .channel-controls {
+  background: #f1f3f6;
+  color: var(--mam-light-text, #182130);
+  border-color: var(--mam-light-border, #e2e6ee);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .audio-graph-controls-box {
+  border-top-color: var(--mam-light-border-strong, #cfd6e3);
+}
+
+html[data-theme="light"] body.video-tools-page-mode button,
+html[data-theme="light"] body.video-tools-page-mode .subtitle-item-download-btn,
+html[data-theme="light"] body.video-tools-page-mode .localized-file-input-button {
+  background: #ffffff !important;
+  color: var(--mam-light-text, #182130) !important;
+  border-color: var(--mam-light-border-strong, #cfd6e3) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="light"] body.video-tools-page-mode button:hover,
+html[data-theme="light"] body.video-tools-page-mode button:focus-visible,
+html[data-theme="light"] body.video-tools-page-mode .subtitle-item-download-btn:hover,
+html[data-theme="light"] body.video-tools-page-mode .localized-file-input-button:hover {
+  background: #fff5f7 !important;
+  color: var(--mam-light-red, #e60028) !important;
+  border-color: rgba(230, 0, 40, 0.42) !important;
+}
+
+html[data-theme="light"] body.video-tools-page-mode #subtitleGenerateBtn,
+html[data-theme="light"] body.video-tools-page-mode #subtitleTranslateBtn,
+html[data-theme="light"] body.video-tools-page-mode #videoOcrExtractBtn,
+html[data-theme="light"] body.video-tools-page-mode #saveCutBtn {
+  background: var(--mam-light-red, #e60028) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red, #e60028) !important;
+}
+
+html[data-theme="light"] body.video-tools-page-mode #subtitleGenerateBtn:hover,
+html[data-theme="light"] body.video-tools-page-mode #subtitleTranslateBtn:hover,
+html[data-theme="light"] body.video-tools-page-mode #videoOcrExtractBtn:hover,
+html[data-theme="light"] body.video-tools-page-mode #saveCutBtn:hover {
+  background: var(--mam-light-red-dark, #c90023) !important;
+  border-color: var(--mam-light-red-dark, #c90023) !important;
+}
+
+html[data-theme="light"] body.video-tools-page-mode .subtitle-item-remove-btn,
+html[data-theme="light"] body.video-tools-page-mode .cut-item-actions .danger {
+  background: var(--mam-light-red, #e60028) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red, #e60028) !important;
+}
+
+html[data-theme="light"] body.video-tools-page-mode .video-tools-page-close-btn {
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  background: var(--mam-light-red, #e60028) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red, #e60028) !important;
+  box-shadow: 0 6px 14px rgba(230, 0, 40, 0.22);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .video-tools-page-close-btn:hover,
+html[data-theme="light"] body.video-tools-page-mode .video-tools-page-close-btn:focus-visible {
+  background: var(--mam-light-red-dark, #c90023) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red-dark, #c90023) !important;
+}
+
+/* Light player treatment; layout and control dimensions remain unchanged. */
+html[data-theme="light"] body.video-tools-page-mode .custom-player-bar,
+html[data-theme="light"] body.video-tools-page-mode .player-controls-box,
+html[data-theme="light"] body.video-tools-page-mode #assetDetail .custom-player-bar,
+html[data-theme="light"] body.video-tools-page-mode #assetDetail .player-controls-box {
+  background: #f1f3f6 !important;
+  color: var(--mam-light-text, #182130) !important;
+  border-color: var(--mam-light-border-strong, #cfd6e3) !important;
+  box-shadow: 0 3px 10px rgba(22, 31, 45, 0.06);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .custom-player-bar button,
+html[data-theme="light"] body.video-tools-page-mode .player-controls-box button,
+html[data-theme="light"] body.video-tools-page-mode #assetDetail .custom-player-bar button,
+html[data-theme="light"] body.video-tools-page-mode #assetDetail .player-controls-box button,
+html[data-theme="light"] body.video-tools-page-mode #panelDetail .timecode-bar button {
+  background: #ffffff !important;
+  color: var(--mam-light-text, #182130) !important;
+  border-color: var(--mam-light-border-strong, #cfd6e3) !important;
+}
+
+html[data-theme="light"] body.video-tools-page-mode .custom-player-bar button:hover,
+html[data-theme="light"] body.video-tools-page-mode .player-controls-box button:hover {
+  background: #fff5f7 !important;
+  color: var(--mam-light-red, #e60028) !important;
+  border-color: rgba(230, 0, 40, 0.42) !important;
+}
+
+html[data-theme="light"] body.video-tools-page-mode .custom-time,
+html[data-theme="light"] body.video-tools-page-mode #currentTimecode,
+html[data-theme="light"] body.video-tools-page-mode #markSummary {
+  color: var(--mam-light-text, #182130);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .custom-seek::-webkit-slider-runnable-track,
+html[data-theme="light"] body.video-tools-page-mode .custom-volume-vertical::-webkit-slider-runnable-track {
+  background: #cbd2df;
+}
+
+html[data-theme="light"] body.video-tools-page-mode .custom-seek::-moz-range-track,
+html[data-theme="light"] body.video-tools-page-mode .custom-volume-vertical::-moz-range-track {
+  background: #cbd2df;
+}
+
+html[data-theme="light"] body.video-tools-page-mode .custom-seek::-webkit-slider-thumb,
+html[data-theme="light"] body.video-tools-page-mode .custom-volume-vertical::-webkit-slider-thumb,
+html[data-theme="light"] body.video-tools-page-mode .custom-seek::-moz-range-thumb,
+html[data-theme="light"] body.video-tools-page-mode .custom-volume-vertical::-moz-range-thumb {
+  background: #ffffff;
+  border-color: var(--mam-light-red, #e60028);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .custom-volume-popover,
+html[data-theme="light"] body.video-tools-page-mode .playback-rate-menu {
+  background: rgba(255, 255, 255, 0.97);
+  border-color: var(--mam-light-border-strong, #cfd6e3);
+  box-shadow: 0 10px 24px rgba(22, 31, 45, 0.14);
+}
+
+html[data-theme="light"] body.video-tools-page-mode .audio-graph-frame,
+html[data-theme="light"] body.video-tools-page-mode .channel-controls {
+  background: #f1f3f6;
+  color: var(--mam-light-text, #182130);
+  border-color: var(--mam-light-border-strong, #cfd6e3);
+}
+
+/* Match the third-column media tools to the light Video Tools workspace. */
+html[data-theme="light"] #panelDetail .detail-subtitle-language-menu {
+  background: #f1f3f6;
+  border-color: var(--mam-light-border-strong, #cfd6e3);
+  box-shadow: 0 8px 20px rgba(22, 31, 45, 0.14);
+}
+
+html[data-theme="light"] #panelDetail .timecode-bar button,
+html[data-theme="light"] #panelDetail .version .timecode-bar button,
+html[data-theme="light"] #panelDetailTcSlot .viewer-rate-btn,
+html[data-theme="light"] #panelDetailTcSlot .viewer-rate-arrow {
+  background: #ffffff !important;
+  color: var(--mam-light-text, #182130) !important;
+  border-color: var(--mam-light-border-strong, #cfd6e3) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="light"] #panelDetail .timecode-bar button:hover,
+html[data-theme="light"] #panelDetail .timecode-bar button:focus-visible,
+html[data-theme="light"] #panelDetail .version .timecode-bar button:hover,
+html[data-theme="light"] #panelDetail .version .timecode-bar button:focus-visible,
+html[data-theme="light"] #panelDetailTcSlot .viewer-rate-btn:hover,
+html[data-theme="light"] #panelDetailTcSlot .viewer-rate-btn:focus-visible,
+html[data-theme="light"] #panelDetailTcSlot .viewer-rate-arrow:hover,
+html[data-theme="light"] #panelDetailTcSlot .viewer-rate-arrow:focus-visible {
+  background: #fff5f7 !important;
+  color: var(--mam-light-red, #e60028) !important;
+  border-color: rgba(230, 0, 40, 0.42) !important;
+}
+
+html[data-theme="light"] #panelDetailTcSlot .viewer-rate-arrow.is-active {
+  background: #ffe8ed !important;
+  color: var(--mam-light-red, #e60028) !important;
+  border-color: rgba(230, 0, 40, 0.42) !important;
+}
+
+html[data-theme="light"] .playback-rate-menu {
+  background: rgba(255, 255, 255, 0.97) !important;
+  border-color: var(--mam-light-border-strong, #cfd6e3) !important;
+  box-shadow: 0 10px 24px rgba(22, 31, 45, 0.14) !important;
+}
+
+html[data-theme="light"] .playback-rate-option {
+  background: #ffffff !important;
+  color: var(--mam-light-text, #182130) !important;
+  border-color: var(--mam-light-border-strong, #cfd6e3) !important;
+}
+
+html[data-theme="light"] .playback-rate-option:hover,
+html[data-theme="light"] .playback-rate-option:focus-visible {
+  background: #fff5f7 !important;
+  color: var(--mam-light-red, #e60028) !important;
+  border-color: rgba(230, 0, 40, 0.42) !important;
+}
+
+html[data-theme="light"] .playback-rate-option.active {
+  background: var(--mam-light-red, #e60028) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red, #e60028) !important;
+}
+
+html[data-theme="light"] #assetDetail.video-detail-mode .detail-video-meta {
+  border-top: 0;
+}
+
+html[data-theme="light"] #assetDetail .custom-player-bar,
+html[data-theme="light"] #assetDetail .player-controls-box {
+  background: #f1f3f6 !important;
+  color: var(--mam-light-text, #182130) !important;
+  border-color: var(--mam-light-border-strong, #cfd6e3) !important;
+  box-shadow: 0 3px 10px rgba(22, 31, 45, 0.06);
+}
+
+html[data-theme="light"] #assetDetail.video-detail-mode.detail-video-pinned .detail-video-fixed .custom-player-bar,
+html[data-theme="light"] #assetDetail.video-detail-mode.detail-video-pinned .detail-video-fixed .player-controls-box {
+  background: rgba(241, 243, 246, 0.48) !important;
+  border-color: rgba(207, 214, 227, 0.56) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 8px 18px rgba(22, 31, 45, 0.12);
+}
+
+html[data-theme="light"] #assetDetail .custom-player-bar button,
+html[data-theme="light"] #assetDetail .player-controls-box button,
+html[data-theme="light"] #assetDetail .cut-actions button,
+html[data-theme="light"] #assetDetail .cut-item-actions button {
+  background: #ffffff !important;
+  color: var(--mam-light-text, #182130) !important;
+  border-color: var(--mam-light-border-strong, #cfd6e3) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="light"] #assetDetail .custom-player-bar button:hover,
+html[data-theme="light"] #assetDetail .player-controls-box button:hover,
+html[data-theme="light"] #assetDetail .cut-actions button:hover,
+html[data-theme="light"] #assetDetail .cut-item-actions button:hover {
+  background: #fff5f7 !important;
+  color: var(--mam-light-red, #e60028) !important;
+  border-color: rgba(230, 0, 40, 0.42) !important;
+}
+
+html[data-theme="light"] #assetDetail .custom-time,
+html[data-theme="light"] #assetDetail #currentTimecode,
+html[data-theme="light"] #assetDetail #markSummary {
+  color: var(--mam-light-text, #182130);
+}
+
+html[data-theme="light"] #assetDetail .custom-seek::-webkit-slider-runnable-track,
+html[data-theme="light"] #assetDetail .custom-volume-vertical::-webkit-slider-runnable-track {
+  background: #cbd2df;
+}
+
+html[data-theme="light"] #assetDetail .custom-seek::-moz-range-track,
+html[data-theme="light"] #assetDetail .custom-volume-vertical::-moz-range-track {
+  background: #cbd2df;
+}
+
+html[data-theme="light"] #assetDetail .custom-seek::-webkit-slider-thumb,
+html[data-theme="light"] #assetDetail .custom-volume-vertical::-webkit-slider-thumb {
+  background: #ffffff;
+  border-color: var(--mam-light-red, #e60028);
+}
+
+html[data-theme="light"] #assetDetail .custom-seek::-moz-range-thumb,
+html[data-theme="light"] #assetDetail .custom-volume-vertical::-moz-range-thumb {
+  background: #ffffff;
+  border-color: var(--mam-light-red, #e60028);
+}
+
+html[data-theme="light"] #assetDetail .custom-volume-popover,
+html[data-theme="light"] #assetDetail .playback-rate-menu {
+  background: rgba(255, 255, 255, 0.97);
+  border-color: var(--mam-light-border-strong, #cfd6e3);
+  box-shadow: 0 10px 24px rgba(22, 31, 45, 0.14);
+}
+
+html[data-theme="light"] #assetDetail .audio-tools,
+html[data-theme="light"] #assetDetail .cut-box {
+  background: #ffffff;
+  color: var(--mam-light-text, #182130);
+  border-color: var(--mam-light-border, #e2e6ee);
+  box-shadow: 0 4px 12px rgba(22, 31, 45, 0.05);
+}
+
+html[data-theme="light"] #assetDetail .audio-tools .collapsible-head,
+html[data-theme="light"] #assetDetail .cut-box .collapsible-head {
+  background: #fff0f3;
+  color: var(--mam-light-red, #e60028);
+  border-bottom-color: #f0d9df;
+}
+
+html[data-theme="light"] #assetDetail .audio-tools .collapsible-head strong,
+html[data-theme="light"] #assetDetail .cut-box .collapsible-head strong {
+  color: var(--mam-light-red, #e60028);
+}
+
+html[data-theme="light"] #assetDetail .audio-tools .collapsible-body,
+html[data-theme="light"] #assetDetail .cut-box .collapsible-body {
+  background: #ffffff;
+  color: var(--mam-light-text, #182130);
+}
+
+html[data-theme="light"] #assetDetail .audio-graph-frame,
+html[data-theme="light"] #assetDetail .channel-controls,
+html[data-theme="light"] #assetDetail .cuts-list {
+  background: #f1f3f6;
+  color: var(--mam-light-text, #182130);
+  border-color: var(--mam-light-border-strong, #cfd6e3);
+}
+
+html[data-theme="light"] #assetDetail .audio-graph-options label,
+html[data-theme="light"] #assetDetail .cut-label-row label {
+  color: var(--mam-light-muted, #6f7989);
+}
+
+html[data-theme="light"] #assetDetail .cut-label-row input {
+  height: 30px;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid var(--mam-light-border-strong, #cfd6e3);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--mam-light-text, #182130);
+  box-shadow: inset 0 1px 0 rgba(18, 27, 39, 0.03);
+  box-sizing: border-box;
+}
+
+html[data-theme="light"] #assetDetail .cut-item,
+html[data-theme="light"] #assetDetail .cut-item-meta {
+  background: #f1f3f6;
+  color: var(--mam-light-text, #182130);
+  border-color: var(--mam-light-border, #e2e6ee);
+}
+
+html[data-theme="light"] #assetDetail .cut-item.active {
+  border-color: var(--mam-light-red, #e60028);
+  box-shadow: inset 0 0 0 1px rgba(230, 0, 40, 0.28);
+}
+
+html[data-theme="light"] #assetDetail #saveCutBtn,
+html[data-theme="light"] #assetDetail .cut-item-actions .danger {
+  background: var(--mam-light-red, #e60028) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red, #e60028) !important;
+}

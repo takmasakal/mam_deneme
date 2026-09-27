@@ -1,0 +1,193 @@
+/* Native choice controls must not inherit text-input surfaces in light mode. */
+html[data-theme="light"] .advanced-search-dialog input[type="checkbox"],
+html[data-theme="light"] .advanced-search-dialog input[type="radio"],
+html[data-theme="light"] .asset-head-filters input[type="checkbox"],
+html[data-theme="light"] .asset-head-filters input[type="radio"] {
+  width: 16px !important;
+  min-width: 16px !important;
+  height: 16px !important;
+  min-height: 16px !important;
+  margin: 0;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+  accent-color: var(--mam-light-red, #e60028);
+  vertical-align: middle;
+}
+
+html[data-theme="light"] .advanced-search-dialog input[type="checkbox"]:focus,
+html[data-theme="light"] .advanced-search-dialog input[type="checkbox"]:focus-visible,
+html[data-theme="light"] .advanced-search-dialog input[type="radio"]:focus,
+html[data-theme="light"] .advanced-search-dialog input[type="radio"]:focus-visible,
+html[data-theme="light"] .asset-head-filters input[type="checkbox"]:focus,
+html[data-theme="light"] .asset-head-filters input[type="checkbox"]:focus-visible,
+html[data-theme="light"] .asset-head-filters input[type="radio"]:focus,
+html[data-theme="light"] .asset-head-filters input[type="radio"]:focus-visible {
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+/* Advanced date/range sections use the light-theme card header treatment. */
+html[data-theme="light"] #advancedSearchDateSection,
+html[data-theme="light"] #advancedSearchRangeSection {
+  overflow: hidden;
+  border-color: #eadde1;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+html[data-theme="light"] #advancedSearchDateSection > summary,
+html[data-theme="light"] #advancedSearchRangeSection > summary {
+  min-height: 32px;
+  padding: 6px 10px;
+  background: #fff0f3;
+  color: var(--mam-light-red, #e60028);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: normal;
+}
+
+html[data-theme="light"] #advancedSearchDateSection > summary::after,
+html[data-theme="light"] #advancedSearchRangeSection > summary::after {
+  color: var(--mam-light-red, #e60028);
+}
+
+html[data-theme="light"] #advancedSearchDateSection[open] > summary,
+html[data-theme="light"] #advancedSearchRangeSection[open] > summary {
+  border-bottom-color: #f0d9df;
+}
+
+html[data-theme="light"] #advancedSearchDateSection > .advanced-search-date-row,
+html[data-theme="light"] #advancedSearchRangeSection > .advanced-search-range-row,
+html[data-theme="light"] #advancedSearchRangeSection > .advanced-search-range-order-row {
+  background: #ffffff;
+}
+
+html[data-theme="light"] .advanced-search-dialog .advanced-search-group {
+  background: #fff0f3;
+  border-color: #f0d9df;
+}
+
+html[data-theme="light"] .advanced-search-dialog .advanced-search-help-btn {
+  display: inline-grid;
+  place-items: center;
+  background: var(--mam-light-red, #e60028) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red, #e60028) !important;
+  box-shadow: 0 4px 10px rgba(230, 0, 40, 0.2);
+  line-height: 1;
+}
+
+html[data-theme="light"] .advanced-search-dialog .advanced-search-help-btn:hover,
+html[data-theme="light"] .advanced-search-dialog .advanced-search-help-btn:focus-visible {
+  background: var(--mam-light-red-dark, #c90023) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red-dark, #c90023) !important;
+}
+
+html[data-theme="light"] .advanced-search-dialog .advanced-search-date-row input,
+html[data-theme="light"] .advanced-search-dialog .advanced-search-date-row select,
+html[data-theme="light"] .advanced-search-dialog .advanced-search-range-row input,
+html[data-theme="light"] .advanced-search-dialog .advanced-search-range-row select {
+  height: 30px;
+  min-height: 30px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+html[data-theme="light"] .advanced-search-dialog #advancedSearchLoadBtn:not(.has-saved-search-selection),
+html[data-theme="light"] .advanced-search-dialog #advancedSearchSaveBtn,
+html[data-theme="light"] .advanced-search-dialog #advancedSearchClearBtn {
+  background: #ffffff !important;
+  color: var(--mam-light-red, #e60028) !important;
+  border-color: rgba(230, 0, 40, 0.42) !important;
+}
+
+html[data-theme="light"] .advanced-search-dialog #advancedSearchLoadBtn:not(.has-saved-search-selection):hover:not(:disabled),
+html[data-theme="light"] .advanced-search-dialog #advancedSearchLoadBtn:not(.has-saved-search-selection):focus-visible,
+html[data-theme="light"] .advanced-search-dialog #advancedSearchSaveBtn:hover,
+html[data-theme="light"] .advanced-search-dialog #advancedSearchSaveBtn:focus-visible,
+html[data-theme="light"] .advanced-search-dialog #advancedSearchClearBtn:hover,
+html[data-theme="light"] .advanced-search-dialog #advancedSearchClearBtn:focus-visible {
+  background: #fff3f5 !important;
+  color: var(--mam-light-red-dark, #c90023) !important;
+  border-color: var(--mam-light-red, #e60028) !important;
+}
+
+/* Keep the empty third-column message clear of the rounded panel edge. */
+html[data-theme="light"] #panelDetail #assetDetail.empty {
+  box-sizing: border-box;
+  padding: 8px 12px;
+}
+
+html[data-theme="light"] #panelDetail #assetDetail > .empty {
+  box-sizing: border-box;
+  padding: 8px 12px;
+}
+
+/* Third-column photo overlay actions use the MetMAM light-theme accent. */
+html[data-theme="light"] #panelDetail #assetDetail .image-viewer-resizable .image-fullscreen-btn,
+html[data-theme="light"] #panelDetail #assetDetail .image-viewer-resizable .image-ocr-settings-btn {
+  display: inline-grid !important;
+  place-items: center !important;
+  padding: 0 !important;
+  background: var(--mam-light-red, #e60028) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red, #e60028) !important;
+  box-shadow: 0 6px 14px rgba(230, 0, 40, 0.22) !important;
+  line-height: 1 !important;
+  text-align: center !important;
+}
+
+html[data-theme="light"] #panelDetail #assetDetail .image-viewer-resizable .image-fullscreen-btn:hover,
+html[data-theme="light"] #panelDetail #assetDetail .image-viewer-resizable .image-fullscreen-btn:focus-visible,
+html[data-theme="light"] #panelDetail #assetDetail .image-viewer-resizable .image-ocr-settings-btn:hover,
+html[data-theme="light"] #panelDetail #assetDetail .image-viewer-resizable .image-ocr-settings-btn:focus-visible {
+  background: var(--mam-light-red-dark, #c90023) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red-dark, #c90023) !important;
+}
+
+/* Photo OCR dialog actions. */
+html[data-theme="light"] .photo-ocr-modal .photo-ocr-close {
+  display: inline-grid !important;
+  place-items: center !important;
+  width: 34px !important;
+  min-width: 34px !important;
+  height: 34px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  background: var(--mam-light-red, #e60028) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red, #e60028) !important;
+  font-size: 22px !important;
+  line-height: 1 !important;
+  text-align: center !important;
+  box-shadow: 0 6px 14px rgba(230, 0, 40, 0.22) !important;
+}
+
+html[data-theme="light"] .photo-ocr-modal .photo-ocr-close:hover,
+html[data-theme="light"] .photo-ocr-modal .photo-ocr-close:focus-visible {
+  background: var(--mam-light-red-dark, #c90023) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red-dark, #c90023) !important;
+}
+
+html[data-theme="light"] .photo-ocr-modal #photoOcrExtractBtn {
+  border-radius: 8px !important;
+  background: var(--mam-light-red, #e60028) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red, #e60028) !important;
+  box-shadow: 0 6px 14px rgba(230, 0, 40, 0.18) !important;
+}
+
+html[data-theme="light"] .photo-ocr-modal #photoOcrExtractBtn:hover,
+html[data-theme="light"] .photo-ocr-modal #photoOcrExtractBtn:focus-visible {
+  background: var(--mam-light-red-dark, #c90023) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red-dark, #c90023) !important;
+}

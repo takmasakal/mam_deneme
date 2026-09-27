@@ -4,6 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Dokuman Onizleme</title>
+  <script>
+    try {
+      document.documentElement.dataset.theme = window.parent.document.documentElement.dataset.theme || 'dark';
+    } catch (_error) {
+      document.documentElement.dataset.theme = 'dark';
+    }
+  </script>
   <style>
     :root {
       --bg: #0f1218;
@@ -209,6 +216,58 @@
       color: #d6deef;
       line-height: 1.45;
       display: none;
+    }
+
+    html[data-theme="light"] .viewer-wrap,
+    html[data-theme="light"] #embedPdfContainer,
+    html[data-theme="light"] #pdfViewerContainer {
+      background: #eef0f3;
+      border-color: #cfd5de;
+      box-shadow: none;
+    }
+
+    html[data-theme="light"] .topbar {
+      background: #f1f3f6;
+      border-bottom-color: #d2d8e2;
+    }
+
+    html[data-theme="light"] .topbar input[type="text"],
+    html[data-theme="light"] .topbar input[type="number"] {
+      background: #ffffff;
+      border-color: #cbd3e1;
+      color: #172033;
+    }
+
+    html[data-theme="light"] .topbar input::placeholder {
+      color: #7c879a;
+    }
+
+    html[data-theme="light"] .topbar button {
+      background: #ffffff;
+      border-color: #cbd3e1;
+      color: #172033;
+    }
+
+    html[data-theme="light"] .topbar button:hover,
+    html[data-theme="light"] .topbar button:focus-visible {
+      background: #fff3f5;
+      border-color: #e60028;
+      color: #c90023;
+    }
+
+    html[data-theme="light"] .topbar label,
+    html[data-theme="light"] .topbar .meta {
+      color: #667085;
+    }
+
+    html[data-theme="light"] .topbar input[type="checkbox"] {
+      accent-color: #e60028;
+    }
+
+    html[data-theme="light"] #errorBox {
+      background: #ffffff;
+      border-color: #cfd5de;
+      color: #172033;
     }
   </style>
 </head>
