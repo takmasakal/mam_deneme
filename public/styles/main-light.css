@@ -1023,9 +1023,9 @@ html[data-theme="light"] .table-cell {
   background: #f7f8fa;
 }
 
-/* Light mode red/white asset filter controls */
+/* Keep asset type names readable in the light theme. */
 html[data-theme="light"] .asset-head-filters label {
-  color: #e60028;
+  color: var(--mam-light-text, #182130);
   font-weight: 700;
 }
 
