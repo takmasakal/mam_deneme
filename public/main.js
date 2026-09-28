@@ -1477,6 +1477,14 @@ function readThemeCookie() {
   return match ? decodeURIComponent(match[1]) : '';
 }
 
+function persistThemeCookie(value) {
+  const sharedDomain = String(window.location.hostname || '').toLowerCase().endsWith('.trt.net.tr');
+  const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+  const baseCookie = `${LOCAL_THEME}=${value}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
+  document.cookie = baseCookie;
+  if (sharedDomain) document.cookie = `${baseCookie}; Domain=.trt.net.tr`;
+}
+
 function applyThemePreference(value) {
   const preference = resolveThemePreference(value);
   const theme = preference === 'system' ? systemThemeValue() : preference;
@@ -1490,7 +1498,7 @@ function toggleThemePreferenceShortcut() {
   const current = resolveThemePreference(document.documentElement.dataset.themePreference || localStorage.getItem(LOCAL_THEME) || 'dark');
   const next = current === 'light' ? 'dark' : 'light';
   try { localStorage.setItem(LOCAL_THEME, next); } catch (_error) {}
-  document.cookie = `${LOCAL_THEME}=${next}; Path=/; Max-Age=31536000; SameSite=Lax`;
+  persistThemeCookie(next);
   applyThemePreference(next);
 }
 
@@ -3153,7 +3161,7 @@ themeSelect?.addEventListener('change', (event) => {
   if (!event.target.value) return;
   const preference = resolveThemePreference(event.target.value);
   try { localStorage.setItem(LOCAL_THEME, preference); } catch (_error) {}
-  document.cookie = `${LOCAL_THEME}=${preference}; Path=/; Max-Age=31536000; SameSite=Lax`;
+  persistThemeCookie(preference);
   applyThemePreference(preference);
   event.target.value = '';
 });
