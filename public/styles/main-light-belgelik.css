@@ -69,7 +69,7 @@ html[data-theme="light"] #panelIngest .lang-box select:hover {
 .theme-menu-row {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(110px, auto);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   padding-top: 4px;
@@ -78,9 +78,19 @@ html[data-theme="light"] #panelIngest .lang-box select:hover {
 
 .theme-menu-row select {
   width: 100%;
+  min-width: 0;
   min-height: 32px;
   padding: 4px 8px;
   border-radius: 8px;
+}
+
+.user-box,
+.user-menu,
+.user-menu-actions,
+.theme-menu-row {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 html[data-theme="light"] #panelIngest .user-menu {

@@ -8,7 +8,8 @@
     <script>
       (() => {
         try {
-          const saved = localStorage.getItem('mam.theme') || 'dark';
+          const cookieTheme = document.cookie.match(/(?:^|; )mam\.theme=([^;]*)/);
+          const saved = (cookieTheme ? decodeURIComponent(cookieTheme[1]) : '') || localStorage.getItem('mam.theme') || 'dark';
           document.documentElement.dataset.theme = saved === 'light' ? 'light' : 'dark';
           document.documentElement.dataset.themePreference = saved;
         } catch (_error) {
@@ -17,7 +18,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="/styles.css?v=20260927-media-hit-geometry-1" />
+    <link rel="stylesheet" href="/styles.css?v=20260928-theme-menu-1" />
   </head>
   <body>
     <main class="layout">
@@ -33,8 +34,8 @@
                   <a id="adminMenuLink" class="admin-link hidden" href="/admin.html" data-i18n="admin_page">Admin</a>
                   <button type="button" id="logoutBtn" class="logout-btn" data-i18n="logout">Logout</button>
                   <label class="theme-menu-row">
-                    <span data-i18n="theme_label">Theme</span>
                     <select id="themeSelect" aria-label="Theme">
+                      <option value="" data-i18n="theme_label" selected disabled>Theme</option>
                       <option value="dark" data-i18n="theme_dark">Dark</option>
                       <option value="light" data-i18n="theme_light">Light</option>
                     </select>
@@ -302,6 +303,6 @@
     <script src="/main-video-tools.js?v=20260927-belgelik-light-audio-1"></script>
     <script src="/main-player-bootstrap.js?v=20260901-audio-tools-1"></script>
     <script src="/main-bootstrap.js?v=20260729-bootstrap-1"></script>
-    <script src="/main.js?v=20260927-belgelik-theme-shortcut-1"></script>
+    <script src="/main.js?v=20260928-belgelik-theme-sync-2"></script>
   </body>
 </html>

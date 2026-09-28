@@ -3202,20 +3202,29 @@ function applyThemePreference(value) {
   const theme = String(value || '').trim().toLowerCase() === 'light' ? 'light' : 'dark';
   document.documentElement.dataset.theme = theme;
   document.documentElement.dataset.themePreference = theme;
-  if (themeSelect && themeSelect.value !== theme) themeSelect.value = theme;
+  if (themeSelect) themeSelect.value = '';
+}
+
+function readThemeCookie() {
+  const match = document.cookie.match(/(?:^|; )mam\.theme=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : '';
 }
 
 function toggleThemePreferenceShortcut() {
   const current = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
   const next = current === 'light' ? 'dark' : 'light';
   try { localStorage.setItem(LOCAL_THEME, next); } catch (_error) {}
+  document.cookie = `${LOCAL_THEME}=${next}; Path=/; Max-Age=31536000; SameSite=Lax`;
   applyThemePreference(next);
 }
 
 themeSelect?.addEventListener('change', (event) => {
+  if (!event.target.value) return;
   const theme = event.target.value === 'light' ? 'light' : 'dark';
   try { localStorage.setItem(LOCAL_THEME, theme); } catch (_error) {}
+  document.cookie = `${LOCAL_THEME}=${theme}; Path=/; Max-Age=31536000; SameSite=Lax`;
   applyThemePreference(theme);
+  event.target.value = '';
 });
 
 languageSelect?.addEventListener('change', async (event) => {
@@ -3270,10 +3279,7 @@ const onLanguageShortcut = (event) => {
 
 const onThemeShortcut = (event) => {
   const key = String(event.key || '').toLowerCase();
-  if (key !== 't' || event.altKey || event.shiftKey) return;
-  const isMacShortcut = event.metaKey && !event.ctrlKey;
-  const isControlShortcut = event.ctrlKey && !event.metaKey;
-  if (!isMacShortcut && !isControlShortcut) return;
+  if (key !== 't' || !event.altKey || event.shiftKey || event.ctrlKey || event.metaKey) return;
   event.preventDefault();
   event.stopPropagation();
   toggleThemePreferenceShortcut();
@@ -3370,7 +3376,7 @@ function prepareInitialShell() {
     applyVideoToolsPageLayoutMode();
     restoreVideoToolsReturnSearchState();
     let themePreference = 'dark';
-    try { themePreference = localStorage.getItem(LOCAL_THEME) || 'dark'; } catch (_error) {}
+    try { themePreference = readThemeCookie() || localStorage.getItem(LOCAL_THEME) || 'dark'; } catch (_error) {}
     applyThemePreference(themePreference);
     currentLang = currentLang === 'tr' ? 'tr' : 'en';
     if (languageSelect) languageSelect.value = currentLang;
