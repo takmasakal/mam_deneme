@@ -149,7 +149,8 @@
 
   function installThemeShortcut() {
     document.addEventListener('keydown', function (event) {
-      if (String(event.key || '').toLowerCase() !== 't' || !event.altKey || event.shiftKey || event.ctrlKey || event.metaKey) return;
+      var isThemeKey = event.code === 'KeyT' || String(event.key || '').toLowerCase() === 't';
+      if (!isThemeKey || !event.altKey || event.shiftKey || event.ctrlKey || event.metaKey) return;
       event.preventDefault();
       setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
     }, true);
