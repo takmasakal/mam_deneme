@@ -8,7 +8,7 @@
     <script>
       (() => {
         try {
-          const cookieTheme = document.cookie.match(/(?:^|; )mam\.theme=([^;]*)/);
+          const cookieTheme = document.cookie.match(/(?:^|; )mam\.shared\.theme=([^;]*)/);
           const saved = (cookieTheme ? decodeURIComponent(cookieTheme[1]) : '') || localStorage.getItem('mam.theme') || 'dark';
           const system = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
           const theme = saved === 'system' ? system : (saved === 'light' ? 'light' : 'dark');
@@ -332,6 +332,6 @@
     <script src="/main-access-scope.js?v=20260701-upload-scope-1"></script>
     <script src="/main-advanced-search.js?v=20260927-saved-search-load-state-1"></script>
     <script src="/main-bootstrap.js?v=20260728-bootstrap-1"></script>
-    <script src="/main.js?v=20260928-theme-cookie-domain-5"></script>
+    <script src="/main.js?v=20260928-shared-theme-cookie-6"></script>
   </body>
 </html>
