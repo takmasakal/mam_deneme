@@ -1472,12 +1472,17 @@ function systemThemeValue() {
   }
 }
 
+function readThemeCookie() {
+  const match = document.cookie.match(/(?:^|; )mam\.theme=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
 function applyThemePreference(value) {
   const preference = resolveThemePreference(value);
   const theme = preference === 'system' ? systemThemeValue() : preference;
   document.documentElement.dataset.theme = theme;
   document.documentElement.dataset.themePreference = preference;
-  if (themeSelect && themeSelect.value !== preference) themeSelect.value = preference;
+  if (themeSelect) themeSelect.value = '';
 }
 
 
@@ -1485,13 +1490,14 @@ function toggleThemePreferenceShortcut() {
   const current = resolveThemePreference(document.documentElement.dataset.themePreference || localStorage.getItem(LOCAL_THEME) || 'dark');
   const next = current === 'light' ? 'dark' : 'light';
   try { localStorage.setItem(LOCAL_THEME, next); } catch (_error) {}
+  document.cookie = `${LOCAL_THEME}=${next}; Path=/; Max-Age=31536000; SameSite=Lax`;
   applyThemePreference(next);
 }
 
 function initThemePreference() {
   let preference = 'dark';
   try {
-    preference = resolveThemePreference(localStorage.getItem(LOCAL_THEME) || 'dark');
+    preference = resolveThemePreference(readThemeCookie() || localStorage.getItem(LOCAL_THEME) || 'dark');
   } catch (_error) {
     preference = 'dark';
   }
@@ -1499,7 +1505,7 @@ function initThemePreference() {
   try {
     const media = window.matchMedia?.('(prefers-color-scheme: light)');
     media?.addEventListener?.('change', () => {
-      if (resolveThemePreference(localStorage.getItem(LOCAL_THEME) || 'dark') === 'system') applyThemePreference('system');
+      if (resolveThemePreference(readThemeCookie() || localStorage.getItem(LOCAL_THEME) || 'dark') === 'system') applyThemePreference('system');
     });
   } catch (_error) {}
 }
@@ -3144,9 +3150,12 @@ clearSearchBtn?.addEventListener('click', async () => {
 });
 
 themeSelect?.addEventListener('change', (event) => {
+  if (!event.target.value) return;
   const preference = resolveThemePreference(event.target.value);
   try { localStorage.setItem(LOCAL_THEME, preference); } catch (_error) {}
+  document.cookie = `${LOCAL_THEME}=${preference}; Path=/; Max-Age=31536000; SameSite=Lax`;
   applyThemePreference(preference);
+  event.target.value = '';
 });
 
 languageSelect?.addEventListener('change', async (event) => {
@@ -3197,10 +3206,7 @@ const onLanguageShortcut = (event) => {
 
 const onThemeShortcut = (event) => {
   const key = String(event.key || '').toLowerCase();
-  if (key !== 't' || event.altKey || event.shiftKey) return;
-  const isMacShortcut = event.metaKey && !event.ctrlKey;
-  const isControlShortcut = event.ctrlKey && !event.metaKey;
-  if (!isMacShortcut && !isControlShortcut) return;
+  if (key !== 't' || !event.altKey || event.shiftKey || event.ctrlKey || event.metaKey) return;
   event.preventDefault();
   event.stopPropagation();
   toggleThemePreferenceShortcut();

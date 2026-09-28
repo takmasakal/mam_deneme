@@ -2,6 +2,8 @@
   'use strict';
 
   var COOKIE_NAME = 'mam.login.lang';
+  var THEME_COOKIE_NAME = 'mam.theme';
+  var THEME_KEY = 'mam.theme';
   var pageLoadedAt = Date.now();
 
   function normalize(value) {
@@ -48,7 +50,10 @@
   function bind() {
     if (ensureDefaultTurkishLocale()) return;
     moveHeaderIntoLoginCard();
+    styleBrand();
     installNativeLocaleSelect();
+    installThemeSelect();
+    installThemeShortcut();
 
     var locale = currentLocale();
     var rememberedLocale = cookieLocale();
@@ -69,6 +74,85 @@
     });
 
     installFreshLoginGuard();
+  }
+
+  function applyTheme(value) {
+    var theme = value === 'dark' ? 'dark' : 'light';
+    document.documentElement.dataset.theme = theme;
+  }
+
+  function storedTheme() {
+    var cookieMatch = document.cookie.match(new RegExp('(?:^|; )' + THEME_COOKIE_NAME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)'));
+    var cookieTheme = cookieMatch ? decodeURIComponent(cookieMatch[1]) : '';
+    try {
+      var localTheme = localStorage.getItem(THEME_KEY);
+      if (cookieTheme === 'dark' || cookieTheme === 'light') return cookieTheme;
+      return localTheme === 'dark' ? 'dark' : 'light';
+    } catch (_error) {
+      return cookieTheme === 'dark' ? 'dark' : 'light';
+    }
+  }
+
+  function setTheme(value) {
+    var theme = value === 'dark' ? 'dark' : 'light';
+    try { localStorage.setItem(THEME_KEY, theme); } catch (_error) {}
+    document.cookie = THEME_COOKIE_NAME + '=' + theme + '; Path=/; Max-Age=31536000; SameSite=Lax'
+      + (window.location.protocol === 'https:' ? '; Secure' : '') + cookieDomain();
+    applyTheme(theme);
+  }
+
+  function styleBrand() {
+    var brand = document.getElementById('kc-header-wrapper');
+    if (!brand || brand.querySelector('.mam-brand-prefix')) return;
+    brand.textContent = '';
+    var prefix = document.createElement('span');
+    prefix.className = 'mam-brand-prefix';
+    prefix.textContent = 'Met';
+    var suffix = document.createElement('span');
+    suffix.className = 'mam-brand-suffix';
+    suffix.textContent = 'MAM';
+    brand.appendChild(prefix);
+    brand.appendChild(suffix);
+  }
+
+  function installThemeSelect() {
+    var locale = document.getElementById('kc-locale');
+    var card = document.querySelector('.login-pf-page .card-pf') || document.querySelector('.card-pf');
+    if (!card || card.querySelector('.mam-theme-control')) return;
+    var control = document.createElement('label');
+    control.className = 'mam-theme-control';
+    control.setAttribute('aria-label', 'Tema');
+    var select = document.createElement('select');
+    select.className = 'mam-theme-select';
+    select.setAttribute('aria-label', 'Tema');
+    var prompt = document.createElement('option');
+    prompt.value = '';
+    prompt.textContent = 'Tema';
+    prompt.selected = true;
+    prompt.disabled = true;
+    select.appendChild(prompt);
+    [['light', 'Açık'], ['dark', 'Koyu']].forEach(function (item) {
+      var option = document.createElement('option');
+      option.value = item[0];
+      option.textContent = item[1];
+      select.appendChild(option);
+    });
+    select.addEventListener('change', function () {
+      if (select.value) setTheme(select.value);
+      select.value = '';
+    });
+    control.appendChild(select);
+    if (locale && locale.parentNode === card) locale.insertAdjacentElement('afterend', control);
+    else card.insertBefore(control, card.firstChild);
+    setTheme(storedTheme());
+  }
+
+  function installThemeShortcut() {
+    document.addEventListener('keydown', function (event) {
+      if (String(event.key || '').toLowerCase() !== 't' || !event.altKey || event.shiftKey || event.ctrlKey || event.metaKey) return;
+      event.preventDefault();
+      setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+    }, true);
   }
 
   function localeLabel(value, fallback) {

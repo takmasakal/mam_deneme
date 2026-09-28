@@ -1,0 +1,372 @@
+@import url('./mam.css');
+
+:root {
+  --metmam-login-red: #e60028;
+  --metmam-login-red-dark: #c90023;
+  --metmam-login-text: #182130;
+  --metmam-login-muted: #6f7989;
+  --metmam-login-border: #dfe4ec;
+  --metmam-login-surface: #ffffff;
+  --metmam-login-field: #f7f8fa;
+}
+
+html,
+body,
+body.login-pf,
+.login-pf body {
+  background: #f3f5f8 !important;
+  color: var(--metmam-login-text) !important;
+}
+
+.login-pf-page {
+  background:
+    radial-gradient(circle at 18% 14%, rgba(230, 0, 40, 0.08) 0%, rgba(230, 0, 40, 0.025) 32%, transparent 58%),
+    repeating-linear-gradient(to bottom, rgba(24, 33, 48, 0.025) 0, rgba(24, 33, 48, 0.025) 1px, transparent 1px, transparent 40px),
+    #f3f5f8 !important;
+}
+
+.mam-login-version {
+  color: #8a93a3 !important;
+}
+
+.card-pf,
+.login-pf-page .card-pf {
+  border: 1px solid var(--metmam-login-border) !important;
+  background: var(--metmam-login-surface) !important;
+  color: var(--metmam-login-text) !important;
+  box-shadow: 0 18px 46px rgba(18, 27, 40, 0.13) !important;
+}
+
+.card-pf::before,
+.login-pf-page .card-pf::before {
+  background: var(--metmam-login-red) !important;
+}
+
+#kc-header-wrapper {
+  color: var(--metmam-login-text) !important;
+}
+
+.mam-brand-accent {
+  color: var(--metmam-login-red) !important;
+}
+
+#kc-header-wrapper .mam-brand-prefix,
+#kc-header-wrapper .mam-brand-suffix {
+  display: inline-block !important;
+}
+
+#kc-header-wrapper .mam-brand-prefix {
+  color: var(--metmam-login-red) !important;
+}
+
+#kc-header-wrapper .mam-brand-suffix {
+  margin-left: 0 !important;
+  padding: 2px 8px 4px 5px !important;
+  border-radius: 8px !important;
+  background: var(--metmam-login-red) !important;
+  color: #ffffff !important;
+  line-height: 0.9 !important;
+}
+
+.mam-login-card-with-header #kc-header {
+  margin-top: 58px !important;
+}
+
+#kc-locale {
+  position: absolute !important;
+  top: 30px !important;
+  left: 18px !important;
+}
+
+.mam-theme-control {
+  position: absolute !important;
+  top: 30px !important;
+  right: 18px !important;
+  z-index: 10 !important;
+  margin: 0 !important;
+}
+
+.mam-theme-select {
+  appearance: auto !important;
+  -webkit-appearance: menulist !important;
+  min-height: 30px !important;
+  padding: 0 28px 0 10px !important;
+  border: 1px solid #cfd6e3 !important;
+  border-radius: 999px !important;
+  background: var(--metmam-login-field) !important;
+  color: var(--metmam-login-muted) !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+}
+
+.mam-theme-select:focus {
+  border-color: var(--metmam-login-red) !important;
+  box-shadow: 0 0 0 3px rgba(230, 0, 40, 0.13) !important;
+  outline: 0 !important;
+}
+
+#kc-form-wrapper .pf-c-form-control,
+#kc-form-wrapper .pf-v5-c-form-control,
+#kc-form-wrapper input[type='text'],
+#kc-form-wrapper input[type='email'],
+#kc-form-wrapper input[type='password'],
+#kc-form-wrapper input[type='tel'] {
+  border-color: #cfd6e3 !important;
+  background: var(--metmam-login-field) !important;
+  color: var(--metmam-login-text) !important;
+}
+
+#kc-form-wrapper .pf-c-form-control:focus,
+#kc-form-wrapper .pf-v5-c-form-control:focus,
+#kc-form-wrapper input[type='text']:focus,
+#kc-form-wrapper input[type='email']:focus,
+#kc-form-wrapper input[type='password']:focus,
+#kc-form-wrapper input[type='tel']:focus,
+#kc-form-wrapper input[type='text']:focus-visible,
+#kc-form-wrapper input[type='email']:focus-visible,
+#kc-form-wrapper input[type='password']:focus-visible,
+#kc-form-wrapper input[type='tel']:focus-visible,
+#username:focus,
+#username:focus-visible {
+  border-color: var(--metmam-login-red) !important;
+  box-shadow: 0 0 0 3px rgba(230, 0, 40, 0.13) !important;
+}
+
+#kc-form-wrapper .pf-c-form-control::placeholder,
+#kc-form-wrapper .pf-v5-c-form-control::placeholder,
+#kc-form-wrapper input::placeholder {
+  color: #929baa !important;
+}
+
+#kc-form-buttons input[type='submit'],
+#kc-form-buttons button[type='submit'],
+#kc-form-buttons .pf-c-button.pf-m-primary,
+#kc-form-buttons .pf-v5-c-button.pf-m-primary {
+  background: var(--metmam-login-red) !important;
+  color: #ffffff !important;
+  box-shadow: 0 9px 22px -10px rgba(230, 0, 40, 0.58) !important;
+}
+
+#kc-form-buttons input[type='submit']:hover,
+#kc-form-buttons button[type='submit']:hover,
+#kc-form-buttons .pf-c-button.pf-m-primary:hover,
+#kc-form-buttons .pf-v5-c-button.pf-m-primary:hover {
+  background: var(--metmam-login-red-dark) !important;
+  box-shadow: 0 11px 26px -10px rgba(230, 0, 40, 0.66) !important;
+}
+
+#kc-form-buttons input[type='submit']:focus-visible,
+#kc-form-buttons button[type='submit']:focus-visible,
+#kc-form-buttons .pf-c-button.pf-m-primary:focus-visible,
+#kc-form-buttons .pf-v5-c-button.pf-m-primary:focus-visible {
+  outline-color: var(--metmam-login-red) !important;
+}
+
+#kc-page-title,
+#kc-info-wrapper,
+#kc-form-options,
+#kc-form-options a,
+.pf-c-form__label-text,
+.pf-v5-c-form__label-text {
+  color: var(--metmam-login-text) !important;
+}
+
+#kc-page-title,
+#kc-form-options label,
+#kc-remember-me,
+#kc-form-login label {
+  color: var(--metmam-login-muted) !important;
+}
+
+#kc-form-options a,
+#kc-registration a,
+#kc-reset-password-form a,
+#kc-info-wrapper a {
+  color: var(--metmam-login-red) !important;
+}
+
+#kc-form-options input[type='checkbox'] {
+  accent-color: var(--metmam-login-red) !important;
+}
+
+.pf-c-input-group,
+.pf-v5-c-input-group,
+.pf-c-input-group__item,
+.pf-v5-c-input-group__item,
+.pf-c-input-group__item.pf-m-fill,
+.pf-v5-c-input-group__item.pf-m-fill {
+  border-color: #cfd6e3 !important;
+  background: var(--metmam-login-field) !important;
+}
+
+.pf-c-input-group button,
+.pf-v5-c-input-group button,
+#kc-form-wrapper button[aria-label],
+#kc-form-wrapper button[type='button'] {
+  border-left-color: #cfd6e3 !important;
+  background: var(--metmam-login-field) !important;
+  color: var(--metmam-login-text) !important;
+}
+
+#kc-locale,
+#kc-locale a,
+#kc-locale button {
+  color: var(--metmam-login-text) !important;
+}
+
+.mam-locale-select,
+#kc-locale-dropdown > a,
+#kc-current-locale-link,
+#kc-locale button {
+  border-color: #cfd6e3 !important;
+  background: var(--metmam-login-field) !important;
+  color: var(--metmam-login-muted) !important;
+}
+
+.mam-locale-select:focus {
+  border-color: var(--metmam-login-red) !important;
+  box-shadow: 0 0 0 3px rgba(230, 0, 40, 0.13) !important;
+}
+
+.mam-locale-select option,
+#kc-locale ul,
+#kc-locale-links {
+  border-color: var(--metmam-login-border) !important;
+  background: #ffffff !important;
+  color: var(--metmam-login-text) !important;
+}
+
+#kc-locale-dropdown > a:hover,
+#kc-current-locale-link:hover,
+#kc-locale button:hover {
+  border-color: var(--metmam-login-red) !important;
+  color: var(--metmam-login-red) !important;
+}
+
+#kc-locale li a,
+#kc-locale-links a {
+  color: var(--metmam-login-text) !important;
+}
+
+#kc-locale li a:hover,
+#kc-locale-links a:hover {
+  background: #fff1f4 !important;
+  color: var(--metmam-login-red) !important;
+}
+
+.alert-error,
+.pf-c-alert.pf-m-danger {
+  border-color: #f2a5b2 !important;
+  background: #fff0f3 !important;
+  color: #9e1730 !important;
+}
+
+html[data-theme='dark'],
+html[data-theme='dark'] body,
+html[data-theme='dark'] body.login-pf,
+html[data-theme='dark'] .login-pf body {
+  background: radial-gradient(circle at 18% 14%, #2b2f3a 0%, #1f2128 42%, #16181f 100%) !important;
+  color: #e7ebf2 !important;
+}
+
+html[data-theme='dark'] .login-pf-page {
+  background: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.018) 0, rgba(255, 255, 255, 0.018) 1px, transparent 1px, transparent 40px) !important;
+}
+
+html[data-theme='dark'] .card-pf,
+html[data-theme='dark'] .login-pf-page .card-pf {
+  border-color: transparent !important;
+  background: #2a2d36 !important;
+  color: #e7ebf2 !important;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.25) !important;
+}
+
+html[data-theme='dark'] .card-pf::before,
+html[data-theme='dark'] .login-pf-page .card-pf::before {
+  background: linear-gradient(90deg, #b9822a 0%, #e2a63b 45%, #e2a63b 55%, #b9822a 100%) !important;
+}
+
+html[data-theme='dark'] #kc-form-buttons input[type='submit'],
+html[data-theme='dark'] #kc-form-buttons button[type='submit'],
+html[data-theme='dark'] #kc-form-buttons .pf-c-button.pf-m-primary,
+html[data-theme='dark'] #kc-form-buttons .pf-v5-c-button.pf-m-primary {
+  background: #e2a63b !important;
+  color: #1f1706 !important;
+  box-shadow: 0 8px 20px -10px rgba(226, 166, 59, 0.55) !important;
+}
+
+html[data-theme='dark'] #kc-form-buttons input[type='submit']:hover,
+html[data-theme='dark'] #kc-form-buttons button[type='submit']:hover,
+html[data-theme='dark'] #kc-form-buttons .pf-c-button.pf-m-primary:hover,
+html[data-theme='dark'] #kc-form-buttons .pf-v5-c-button.pf-m-primary:hover {
+  background: #cf9333 !important;
+  box-shadow: 0 10px 24px -10px rgba(226, 166, 59, 0.65) !important;
+}
+
+html[data-theme='dark'] #kc-header-wrapper {
+  color: #ffffff !important;
+}
+
+html[data-theme='dark'] #kc-header-wrapper .mam-brand-prefix {
+  color: #e2a63b !important;
+}
+
+html[data-theme='dark'] #kc-header-wrapper .mam-brand-suffix {
+  background: transparent !important;
+  color: #ffffff !important;
+  padding: 0 !important;
+}
+
+html[data-theme='dark'] #kc-form-wrapper .pf-c-form-control,
+html[data-theme='dark'] #kc-form-wrapper .pf-v5-c-form-control,
+html[data-theme='dark'] #kc-form-wrapper input[type='text'],
+html[data-theme='dark'] #kc-form-wrapper input[type='email'],
+html[data-theme='dark'] #kc-form-wrapper input[type='password'],
+html[data-theme='dark'] #kc-form-wrapper input[type='tel'],
+html[data-theme='dark'] .pf-c-input-group,
+html[data-theme='dark'] .pf-v5-c-input-group,
+html[data-theme='dark'] .pf-c-input-group__item,
+html[data-theme='dark'] .pf-v5-c-input-group__item,
+html[data-theme='dark'] .pf-c-input-group__item.pf-m-fill,
+html[data-theme='dark'] .pf-v5-c-input-group__item.pf-m-fill,
+html[data-theme='dark'] .pf-c-input-group button,
+html[data-theme='dark'] .pf-v5-c-input-group button,
+html[data-theme='dark'] #kc-form-wrapper button[aria-label],
+html[data-theme='dark'] #kc-form-wrapper button[type='button'] {
+  border-color: #3a3f4b !important;
+  background: #23262e !important;
+  color: #e7ebf2 !important;
+}
+
+html[data-theme='dark'] #kc-page-title,
+html[data-theme='dark'] #kc-info-wrapper,
+html[data-theme='dark'] #kc-form-options,
+html[data-theme='dark'] .pf-c-form__label-text,
+html[data-theme='dark'] .pf-v5-c-form__label-text {
+  color: #e7ebf2 !important;
+}
+
+html[data-theme='dark'] #kc-page-title,
+html[data-theme='dark'] #kc-form-options label,
+html[data-theme='dark'] #kc-remember-me,
+html[data-theme='dark'] #kc-form-login label {
+  color: #aab1c1 !important;
+}
+
+html[data-theme='dark'] .mam-locale-select,
+html[data-theme='dark'] .mam-theme-select,
+html[data-theme='dark'] #kc-locale-dropdown > a,
+html[data-theme='dark'] #kc-current-locale-link,
+html[data-theme='dark'] #kc-locale button {
+  border-color: #3a3f4b !important;
+  background: #23262e !important;
+  color: #e7ebf2 !important;
+}
+
+html[data-theme='dark'] .mam-locale-select option,
+html[data-theme='dark'] .mam-theme-select option,
+html[data-theme='dark'] #kc-locale ul,
+html[data-theme='dark'] #kc-locale-links {
+  background: #1f2128 !important;
+  color: #ffffff !important;
+}

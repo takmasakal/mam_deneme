@@ -381,7 +381,7 @@ html[data-theme="light"] .danger {
 .theme-menu-row {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(110px, auto);
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   align-items: center;
   padding-top: 4px;
@@ -391,9 +391,19 @@ html[data-theme="light"] .danger {
 
 .theme-menu-row select {
   width: 100%;
+  min-width: 0;
   min-height: 32px;
   border-radius: 8px;
   padding: 4px 8px;
+}
+
+.user-box,
+.user-menu,
+.user-menu-actions,
+.theme-menu-row {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 html[data-theme="light"] .theme-menu-row {
@@ -1224,6 +1234,30 @@ html[data-theme="light"] body #panelIngest .user-box button#currentUserBtn {
   color: #182133 !important;
   border-color: #d4dae4 !important;
   box-shadow: none !important;
+}
+
+/* MetMAM light-mode brand: one continuous word with a boxed MAM suffix. */
+html[data-theme="light"] #panelIngest .app-brand {
+  display: inline-flex !important;
+  align-items: baseline !important;
+  justify-self: start !important;
+  gap: 0 !important;
+  white-space: nowrap !important;
+}
+
+html[data-theme="light"] #panelIngest .app-brand .metmam-prefix {
+  color: var(--mam-light-red, #e60028) !important;
+  background: transparent !important;
+}
+
+html[data-theme="light"] #panelIngest .app-brand .metmam-suffix {
+  display: inline-block !important;
+  margin-left: 0 !important;
+  padding: 2px 6px 3px 4px !important;
+  border-radius: 6px !important;
+  background: var(--mam-light-red, #e60028) !important;
+  color: #ffffff !important;
+  line-height: 0.9 !important;
 }
 
 /* Search-hit shortcuts shown in the detail column. */
