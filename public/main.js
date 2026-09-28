@@ -3205,8 +3205,8 @@ const onLanguageShortcut = (event) => {
 };
 
 const onThemeShortcut = (event) => {
-  const key = String(event.key || '').toLowerCase();
-  if (key !== 't' || !event.altKey || event.shiftKey || event.ctrlKey || event.metaKey) return;
+  const isThemeKey = event.code === 'KeyT' || String(event.key || '').toLowerCase() === 't';
+  if (!isThemeKey || !event.altKey || event.shiftKey || event.ctrlKey || event.metaKey) return;
   event.preventDefault();
   event.stopPropagation();
   toggleThemePreferenceShortcut();
