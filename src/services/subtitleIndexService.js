@@ -1,4 +1,5 @@
 const fs = require('fs');
+const crypto = require('crypto');
 
 function createSubtitleIndexService(deps = {}) {
   const {
@@ -20,6 +21,10 @@ function createSubtitleIndexService(deps = {}) {
       .split(/\s+/)
       .map((token) => token.trim())
       .filter((token) => token && /[\p{L}\p{N}]/u.test(token));
+  }
+
+  function subtitleTrackId(assetId, subtitleUrl) {
+    return crypto.createHash('md5').update(`${assetId}\u001f${subtitleUrl}`, 'utf8').digest('hex');
   }
 
   function fuzzySubtitleTokenMatch(queryToken, candidateToken) {
@@ -168,6 +173,7 @@ function createSubtitleIndexService(deps = {}) {
 
     const subtitleItems = getSubtitleItemsForAssetRow(row);
     const subtitleUrls = subtitleItems.map((item) => item.subtitleUrl).filter(Boolean);
+    const subtitleTrackIds = subtitleUrls.map((url) => subtitleTrackId(assetId, url));
     if (!subtitleUrls.length) {
       return { subtitleUrl: '', matches: [], didYouMean: '', fuzzyUsed: false, highlightQuery: String(query || '').trim() };
     }
@@ -183,12 +189,12 @@ function createSubtitleIndexService(deps = {}) {
         SELECT subtitle_url, seq, start_sec, end_sec, cue_text
         FROM asset_subtitle_cues
         WHERE asset_id = $1
-          AND subtitle_url = ANY($2::text[])
+          AND subtitle_track_id = ANY($2::text[])
           ${subtitleWhere.clauses.length ? `AND ${subtitleWhere.clauses.join(' AND ')}` : ''}
         ORDER BY start_sec ASC
         LIMIT $${subtitleWhere.nextIndex}
       `,
-      [assetId, subtitleUrls, ...subtitleWhere.params, safeLimit]
+      [assetId, subtitleTrackIds, ...subtitleWhere.params, safeLimit]
     );
     const exactMatches = result.rows.map((item) => mapSubtitleCueRow(item, query));
     if (exactMatches.length || parsedQuery.hasOperators) {
@@ -258,10 +264,14 @@ function createSubtitleIndexService(deps = {}) {
     }
 
     const urlsByAssetId = new Map();
+    const trackIdsByAssetId = new Map();
     assetRows.forEach((row) => {
       const assetId = String(row?.id || '').trim();
       const subtitleUrls = getSubtitleItemsForAssetRow(row).map((item) => item.subtitleUrl).filter(Boolean);
-      if (assetId && subtitleUrls.length) urlsByAssetId.set(assetId, subtitleUrls);
+      if (assetId && subtitleUrls.length) {
+        urlsByAssetId.set(assetId, subtitleUrls);
+        trackIdsByAssetId.set(assetId, subtitleUrls.map((url) => subtitleTrackId(assetId, url)));
+      }
     });
     if (!urlsByAssetId.size) {
       return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(query || '').trim() };
@@ -278,7 +288,7 @@ function createSubtitleIndexService(deps = {}) {
     }
 
     const assetIds = Array.from(urlsByAssetId.keys());
-    const activeUrls = Array.from(new Set(Array.from(urlsByAssetId.values()).flat()));
+    const activeTrackIds = Array.from(new Set(Array.from(trackIdsByAssetId.values()).flat()));
     const subtitleWhere = buildSubtitleCueSearchWhereSql({
       normColumn: 'norm_text',
       startIndex: 3,
@@ -291,7 +301,7 @@ function createSubtitleIndexService(deps = {}) {
                  ROW_NUMBER() OVER (PARTITION BY asset_id ORDER BY start_sec ASC) AS rn
           FROM asset_subtitle_cues
           WHERE asset_id = ANY($1::text[])
-            AND subtitle_url = ANY($2::text[])
+            AND subtitle_track_id = ANY($2::text[])
             ${subtitleWhere.clauses.length ? `AND ${subtitleWhere.clauses.join(' AND ')}` : ''}
         )
         SELECT asset_id, subtitle_url, seq, start_sec, end_sec, cue_text
@@ -299,7 +309,7 @@ function createSubtitleIndexService(deps = {}) {
         WHERE rn <= $${subtitleWhere.nextIndex}
         ORDER BY asset_id, start_sec ASC
       `,
-      [assetIds, activeUrls, ...subtitleWhere.params, cap]
+      [assetIds, activeTrackIds, ...subtitleWhere.params, cap]
     );
 
     exactResult.rows.forEach((row) => {
@@ -319,10 +329,10 @@ function createSubtitleIndexService(deps = {}) {
         SELECT asset_id, subtitle_url, seq, start_sec, end_sec, cue_text
         FROM asset_subtitle_cues
         WHERE asset_id = ANY($1::text[])
-          AND subtitle_url = ANY($2::text[])
+          AND subtitle_track_id = ANY($2::text[])
         ORDER BY asset_id, start_sec ASC
       `,
-      [assetIds, activeUrls]
+      [assetIds, activeTrackIds]
     );
     const activeCues = cueResult.rows.filter((row) => {
       const assetId = String(row.asset_id || '').trim();
@@ -388,46 +398,63 @@ function createSubtitleIndexService(deps = {}) {
     if (!assetId) return 0;
     const subtitleItems = getSubtitleItemsForAssetRow(row);
     if (!subtitleItems.length) {
-      await pool.query('DELETE FROM asset_subtitle_cues WHERE asset_id = $1', [assetId]);
+      await pool.query('DELETE FROM subtitle_tracks WHERE asset_id = $1', [assetId]);
       return 0;
     }
     const now = new Date().toISOString();
     let indexedCount = 0;
     let seq = 1;
 
-    await pool.query('DELETE FROM asset_subtitle_cues WHERE asset_id = $1', [assetId]);
+    await pool.query('DELETE FROM subtitle_tracks WHERE asset_id = $1', [assetId]);
 
     for (const item of subtitleItems) {
       const subtitlePath = publicUploadUrlToAbsolutePath(item.subtitleUrl);
       if (!subtitlePath || !fs.existsSync(subtitlePath)) continue;
       const raw = fs.readFileSync(subtitlePath, 'utf8');
       const cues = parseSubtitleCues(raw);
-      for (let idx = 0; idx < cues.length; idx += 1) {
-        const cue = cues[idx];
-        await pool.query(
-          `
-            INSERT INTO asset_subtitle_cues (
-              asset_id, subtitle_url, seq, start_sec, end_sec, cue_text, norm_text, confidence, source_engine, lang, created_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-          `,
-          [
-            assetId,
-            item.subtitleUrl,
-            seq,
-            cue.startSec,
-            cue.endSec,
-            cue.cueText,
-            normalizeSubtitleSearchText(cue.cueText),
-            1,
-            'whisper',
-            normalizeSubtitleLang(item.subtitleLang),
-            now
-          ]
-        );
-        seq += 1;
-        indexedCount += 1;
-      }
+      const trackId = subtitleTrackId(assetId, item.subtitleUrl);
+      const lang = normalizeSubtitleLang(item.subtitleLang);
+      await pool.query(
+        `
+          INSERT INTO subtitle_tracks (id, asset_id, subtitle_url, lang, source_engine, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $6)
+          ON CONFLICT (asset_id, subtitle_url) DO UPDATE
+          SET lang = EXCLUDED.lang,
+              source_engine = EXCLUDED.source_engine,
+              updated_at = EXCLUDED.updated_at
+        `,
+        [trackId, assetId, item.subtitleUrl, lang, 'whisper', now]
+      );
+      if (!cues.length) continue;
+      const seqValues = cues.map((_cue, idx) => seq + idx);
+      await pool.query(
+        `
+          INSERT INTO asset_subtitle_cues (
+            asset_id, subtitle_track_id, subtitle_url, seq, start_sec, end_sec,
+            cue_text, norm_text, confidence, source_engine, lang, created_at
+          )
+          SELECT $1, $2, $3, cue.seq, cue.start_sec, cue.end_sec,
+                 cue.cue_text, cue.norm_text, 1, $9, $10, $11
+          FROM UNNEST(
+            $4::int[], $5::float8[], $6::float8[], $7::text[], $8::text[]
+          ) AS cue(seq, start_sec, end_sec, cue_text, norm_text)
+        `,
+        [
+          assetId,
+          trackId,
+          item.subtitleUrl,
+          seqValues,
+          cues.map((cue) => cue.startSec),
+          cues.map((cue) => cue.endSec),
+          cues.map((cue) => cue.cueText),
+          cues.map((cue) => normalizeSubtitleSearchText(cue.cueText)),
+          'whisper',
+          lang,
+          now
+        ]
+      );
+      seq += cues.length;
+      indexedCount += cues.length;
     }
     return indexedCount;
   }
@@ -440,8 +467,8 @@ function createSubtitleIndexService(deps = {}) {
     let totalCount = 0;
     for (const item of subtitleItems) {
       const existing = await pool.query(
-        'SELECT COUNT(*)::int AS count FROM asset_subtitle_cues WHERE asset_id = $1 AND subtitle_url = $2',
-        [assetId, item.subtitleUrl]
+        'SELECT COUNT(*)::int AS count FROM asset_subtitle_cues WHERE subtitle_track_id = $1',
+        [subtitleTrackId(assetId, item.subtitleUrl)]
       );
       const count = Number(existing.rows?.[0]?.count || 0);
       if (count <= 0) return syncSubtitleCueIndexForAssetRow(row);
