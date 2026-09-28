@@ -2,7 +2,7 @@
   'use strict';
 
   var COOKIE_NAME = 'mam.login.lang';
-  var THEME_COOKIE_NAME = 'mam.shared.theme';
+  var THEME_COOKIE_NAME = 'belgelik.shared.theme';
   var THEME_KEY = 'mam.theme';
   var pageLoadedAt = Date.now();
 

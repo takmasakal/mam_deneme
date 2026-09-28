@@ -8,7 +8,7 @@
     <script>
       (() => {
         try {
-          const cookieTheme = document.cookie.match(/(?:^|; )mam\.shared\.theme=([^;]*)/);
+          const cookieTheme = document.cookie.match(/(?:^|; )belgelik\.shared\.theme=([^;]*)/);
           const saved = (cookieTheme ? decodeURIComponent(cookieTheme[1]) : '') || localStorage.getItem('mam.theme') || 'dark';
           document.documentElement.dataset.theme = saved === 'light' ? 'light' : 'dark';
           document.documentElement.dataset.themePreference = saved;
@@ -303,6 +303,6 @@
     <script src="/main-video-tools.js?v=20260927-belgelik-light-audio-1"></script>
     <script src="/main-player-bootstrap.js?v=20260901-audio-tools-1"></script>
     <script src="/main-bootstrap.js?v=20260729-bootstrap-1"></script>
-    <script src="/main.js?v=20260928-belgelik-shared-theme-5"></script>
+    <script src="/main.js?v=20260928-belgelik-theme-isolation-6"></script>
   </body>
 </html>
