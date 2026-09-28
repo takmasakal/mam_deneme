@@ -17,6 +17,7 @@ const {
 } = require('./permissions');
 const { createOfficeService } = require('./services/officeService');
 const { createSearchService } = require('./services/searchService');
+const { collectSearchableDcTexts } = require('./services/assetSearchTextService');
 const { createAssetDeletionService } = require('./services/assetDeletionService');
 const { createAssetAccessService } = require('./services/assetAccessService');
 const { createAssetEditLockService } = require('./services/assetEditLockService');
@@ -2008,18 +2009,7 @@ function parseTimedOcrSegments(content) {
 
 function collectAssetSearchTexts(row) {
   const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
-  const dcValues = Object.values(dc)
-    .filter((value) => value !== null && value !== undefined)
-    .flatMap((value) => {
-      if (Array.isArray(value)) {
-        return value.map((item) => {
-          if (item && typeof item === 'object') return Object.values(item).join(' ');
-          return String(item || '');
-        });
-      }
-      if (value && typeof value === 'object') return [Object.values(value).join(' ')];
-      return [String(value || '')];
-    });
+  const dcValues = collectSearchableDcTexts(dc);
   const cuts = Array.isArray(row?.cuts) ? row.cuts : [];
   const tags = Array.isArray(row?.tags) ? row.tags : [];
   return [
