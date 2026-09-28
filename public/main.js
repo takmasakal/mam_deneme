@@ -3206,14 +3206,14 @@ function applyThemePreference(value) {
 }
 
 function readThemeCookie() {
-  const match = document.cookie.match(/(?:^|; )mam\.theme=([^;]*)/);
+  const match = document.cookie.match(/(?:^|; )mam\.shared\.theme=([^;]*)/);
   return match ? decodeURIComponent(match[1]) : '';
 }
 
 function persistThemeCookie(value) {
   const sharedDomain = String(window.location.hostname || '').toLowerCase().endsWith('.trt.net.tr');
   const secure = window.location.protocol === 'https:' ? '; Secure' : '';
-  const baseCookie = `${LOCAL_THEME}=${value}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
+  const baseCookie = `mam.shared.theme=${value}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
   document.cookie = baseCookie;
   if (sharedDomain) document.cookie = `${baseCookie}; Domain=.trt.net.tr`;
 }
