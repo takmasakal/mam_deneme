@@ -2,6 +2,7 @@ const {
   reverseSearchToken,
   reverseSearchTokens
 } = require('./searchTokenService');
+const { collectSearchableDcTexts } = require('./assetSearchTextService');
 
 function createSearchService(deps) {
   const {
@@ -94,7 +95,7 @@ function createSearchService(deps) {
 
   function mapAssetSearchDoc(row, cutLabels = []) {
     const tags = Array.isArray(row.tags) ? row.tags.join(' ') : '';
-    const dc = JSON.stringify(row.dc_metadata || {});
+    const dc = collectSearchableDcTexts(row.dc_metadata).join(' ');
     const clips = (Array.isArray(cutLabels) ? cutLabels : []).map((label) => String(label || '')).join(' ');
     return {
       id: row.id,

@@ -4,6 +4,7 @@ const { validateFileRole } = require('../services/assetFileRoleService');
 const { parseMultipartUpload } = require('../services/multipartUploadParser');
 const { createAdvancedSearchService } = require('../services/advancedSearchService');
 const { createAssetListQueryService } = require('../services/assetListQueryService');
+const { buildSearchableDcSql } = require('../services/assetSearchTextService');
 
 const advancedSearchService = createAdvancedSearchService();
 
@@ -437,6 +438,7 @@ function registerAssetRoutes(app, deps) {
       const buildAssetTextWhere = (parsedQuery) => {
         const attachmentText = `COALESCE((SELECT string_agg(concat_ws(' ', av.label, av.note, av.snapshot_file_name), ' ') FROM asset_versions av WHERE av.asset_id = assets.id AND (av.action_type = 'attachment' OR av.snapshot_mime_type <> COALESCE((SELECT first_version.snapshot_mime_type FROM asset_versions first_version WHERE first_version.asset_id = assets.id ORDER BY first_version.created_at ASC, CASE WHEN first_version.label = 'v1' THEN 0 ELSE 1 END, first_version.version_id ASC LIMIT 1), assets.mime_type))), '')`;
         const searchableDescription = `concat_ws(' ', assets.description, ${attachmentText})`;
+        const searchableDc = buildSearchableDcSql('dc_metadata');
         const clauses = [];
         const params = [];
         const pushAssetQueryGroup = (term, options = {}) => {
@@ -450,7 +452,7 @@ function registerAssetRoutes(app, deps) {
               ${sqlTextFold('title')} ${negate ? '!~' : '~'} $${idx}
               ${joiner} ${sqlTextFold(searchableDescription)} ${negate ? '!~' : '~'} $${idx}
               ${joiner} ${sqlTextFold('owner')} ${negate ? '!~' : '~'} $${idx}
-              ${joiner} ${sqlTextFold("dc_metadata::text")} ${negate ? '!~' : '~'} $${idx}
+              ${joiner} ${sqlTextFold(searchableDc)} ${negate ? '!~' : '~'} $${idx}
               ${joiner} ${negate ? 'NOT ' : ''}EXISTS (
                 SELECT 1
                 FROM asset_cuts c
@@ -465,7 +467,7 @@ function registerAssetRoutes(app, deps) {
             ${sqlTextFold('title')} ${negate ? 'NOT LIKE' : 'LIKE'} $${idx}
             ${joiner} ${sqlTextFold(searchableDescription)} ${negate ? 'NOT LIKE' : 'LIKE'} $${idx}
             ${joiner} ${sqlTextFold('owner')} ${negate ? 'NOT LIKE' : 'LIKE'} $${idx}
-            ${joiner} ${sqlTextFold("dc_metadata::text")} ${negate ? 'NOT LIKE' : 'LIKE'} $${idx}
+            ${joiner} ${sqlTextFold(searchableDc)} ${negate ? 'NOT LIKE' : 'LIKE'} $${idx}
             ${joiner} ${negate ? 'NOT ' : ''}EXISTS (
               SELECT 1
               FROM asset_cuts c
@@ -486,7 +488,7 @@ function registerAssetRoutes(app, deps) {
               NOT (${sqlTextFold('title')} ~ $${idx})
               AND NOT (${sqlTextFold(searchableDescription)} ~ $${idx})
               AND NOT (${sqlTextFold('owner')} ~ $${idx})
-              AND NOT (${sqlTextFold("dc_metadata::text")} ~ $${idx})
+              AND NOT (${sqlTextFold(searchableDc)} ~ $${idx})
               AND NOT EXISTS (
                 SELECT 1
                 FROM asset_cuts c
@@ -503,7 +505,7 @@ function registerAssetRoutes(app, deps) {
                 ${sqlTextFold('title')} LIKE $${idx}
                 OR ${sqlTextFold(searchableDescription)} LIKE $${idx}
                 OR ${sqlTextFold('owner')} LIKE $${idx}
-                OR ${sqlTextFold("dc_metadata::text")} LIKE $${idx}
+                OR ${sqlTextFold(searchableDc)} LIKE $${idx}
                 OR EXISTS (
                   SELECT 1
                   FROM asset_cuts c
@@ -518,7 +520,7 @@ function registerAssetRoutes(app, deps) {
                 ${sqlTextFold('title')} ~ $${idx}
                 OR ${sqlTextFold(searchableDescription)} ~ $${idx}
                 OR ${sqlTextFold('owner')} ~ $${idx}
-                OR ${sqlTextFold("dc_metadata::text")} ~ $${idx}
+                OR ${sqlTextFold(searchableDc)} ~ $${idx}
                 OR EXISTS (
                   SELECT 1
                   FROM asset_cuts c
