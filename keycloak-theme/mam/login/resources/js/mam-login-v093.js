@@ -119,19 +119,21 @@
     var locale = document.getElementById('kc-locale');
     var card = document.querySelector('.login-pf-page .card-pf') || document.querySelector('.card-pf');
     if (!card || card.querySelector('.mam-theme-control')) return;
+    var language = currentLocale() || cookieLocale() || normalize(document.documentElement.lang) || 'tr';
+    var themeLabel = language === 'en' ? 'Theme' : 'Tema';
     var control = document.createElement('label');
     control.className = 'mam-theme-control';
-    control.setAttribute('aria-label', 'Tema');
+    control.setAttribute('aria-label', themeLabel);
     var select = document.createElement('select');
     select.className = 'mam-theme-select';
-    select.setAttribute('aria-label', 'Tema');
+    select.setAttribute('aria-label', themeLabel);
     var prompt = document.createElement('option');
     prompt.value = '';
-    prompt.textContent = 'Tema';
+    prompt.textContent = themeLabel;
     prompt.selected = true;
     prompt.disabled = true;
     select.appendChild(prompt);
-    [['light', 'Açık'], ['dark', 'Koyu']].forEach(function (item) {
+    (language === 'en' ? [['light', 'Light'], ['dark', 'Dark']] : [['light', 'Açık'], ['dark', 'Koyu']]).forEach(function (item) {
       var option = document.createElement('option');
       option.value = item[0];
       option.textContent = item[1];
