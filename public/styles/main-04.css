@@ -149,6 +149,16 @@
   bottom: 61px;
 }
 
+/* A pinned preview only needs playback and timeline controls. Editing tools
+   return when the video is unpinned. */
+#assetDetail.video-detail-mode.detail-video-pinned .detail-video-fixed .player-controls-box {
+  display: none !important;
+}
+
+#assetDetail.video-detail-mode.detail-video-pinned .detail-video-fixed .custom-player-bar {
+  bottom: 6px;
+}
+
 #assetDetail.video-detail-mode.detail-video-pinned.detail-video-show-overlay-controls .detail-video-fixed .custom-player-bar,
 #assetDetail.video-detail-mode.detail-video-pinned.detail-video-show-overlay-controls .detail-video-fixed .player-controls-box,
 #assetDetail.video-detail-mode.detail-video-pinned .detail-video-fixed:focus-within .custom-player-bar,
