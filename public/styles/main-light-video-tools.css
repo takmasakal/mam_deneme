@@ -544,3 +544,28 @@ html[data-theme="light"] #assetDetail .cut-item-actions .danger {
   color: #ffffff !important;
   border-color: var(--mam-light-red, #e60028) !important;
 }
+
+/* This file loads after main-light.css: keep third-column destructive actions red. */
+html[data-theme="light"] #assetDetail button.danger,
+html[data-theme="light"] #assetDetail button[id*="delete" i],
+html[data-theme="light"] #assetDetail button[class*="delete" i],
+html[data-theme="light"] #assetDetail button[class*="remove" i],
+html[data-theme="light"] #assetDetail button[data-cut-action="delete"],
+html[data-theme="light"] #assetDetail #clearMarksBtn,
+html[data-theme="light"] #assetDetail #moveToTrashBtn {
+  background: var(--mam-light-red, #e60028) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red, #e60028) !important;
+}
+
+html[data-theme="light"] #assetDetail button.danger:hover:not(:disabled),
+html[data-theme="light"] #assetDetail button[id*="delete" i]:hover:not(:disabled),
+html[data-theme="light"] #assetDetail button[class*="delete" i]:hover:not(:disabled),
+html[data-theme="light"] #assetDetail button[class*="remove" i]:hover:not(:disabled),
+html[data-theme="light"] #assetDetail button[data-cut-action="delete"]:hover:not(:disabled),
+html[data-theme="light"] #assetDetail #clearMarksBtn:hover:not(:disabled),
+html[data-theme="light"] #assetDetail #moveToTrashBtn:hover:not(:disabled) {
+  background: var(--mam-light-red-dark, #c90023) !important;
+  color: #ffffff !important;
+  border-color: var(--mam-light-red-dark, #c90023) !important;
+}

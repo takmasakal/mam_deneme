@@ -2055,6 +2055,68 @@ html[data-theme="light"] #panelIngest .user-menu-actions {
   row-gap: 6px !important;
 }
 
+/* Destructive actions use one unambiguous treatment throughout light mode. */
+html[data-theme="light"] button.danger,
+html[data-theme="light"] button.delete-btn,
+html[data-theme="light"] button.remove-btn,
+html[data-theme="light"] button[id*="delete" i],
+html[data-theme="light"] button[class*="delete" i],
+html[data-theme="light"] button[class*="remove" i],
+html[data-theme="light"] button[data-card-action="delete"],
+html[data-theme="light"] button[data-cut-action="delete"],
+html[data-theme="light"] #clearMarksBtn,
+html[data-theme="light"] #moveToTrashBtn {
+  background: var(--mam-light-red, #e60028) !important;
+  border-color: var(--mam-light-red, #e60028) !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] button.danger:hover:not(:disabled),
+html[data-theme="light"] button.delete-btn:hover:not(:disabled),
+html[data-theme="light"] button.remove-btn:hover:not(:disabled),
+html[data-theme="light"] button[id*="delete" i]:hover:not(:disabled),
+html[data-theme="light"] button[class*="delete" i]:hover:not(:disabled),
+html[data-theme="light"] button[class*="remove" i]:hover:not(:disabled),
+html[data-theme="light"] button[data-card-action="delete"]:hover:not(:disabled),
+html[data-theme="light"] button[data-cut-action="delete"]:hover:not(:disabled),
+html[data-theme="light"] #clearMarksBtn:hover:not(:disabled),
+html[data-theme="light"] #moveToTrashBtn:hover:not(:disabled) {
+  background: var(--mam-light-red-dark, #c90023) !important;
+  border-color: var(--mam-light-red-dark, #c90023) !important;
+  color: #ffffff !important;
+}
+
+/* Keep every destructive action equally clear in dark mode as well. */
+html[data-theme="dark"] button.danger,
+html[data-theme="dark"] button.delete-btn,
+html[data-theme="dark"] button.remove-btn,
+html[data-theme="dark"] button[id*="delete" i],
+html[data-theme="dark"] button[class*="delete" i],
+html[data-theme="dark"] button[class*="remove" i],
+html[data-theme="dark"] button[data-card-action="delete"],
+html[data-theme="dark"] button[data-cut-action="delete"],
+html[data-theme="dark"] #clearMarksBtn,
+html[data-theme="dark"] #moveToTrashBtn {
+  background: #c93646 !important;
+  border-color: #c93646 !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="dark"] button.danger:hover:not(:disabled),
+html[data-theme="dark"] button.delete-btn:hover:not(:disabled),
+html[data-theme="dark"] button.remove-btn:hover:not(:disabled),
+html[data-theme="dark"] button[id*="delete" i]:hover:not(:disabled),
+html[data-theme="dark"] button[class*="delete" i]:hover:not(:disabled),
+html[data-theme="dark"] button[class*="remove" i]:hover:not(:disabled),
+html[data-theme="dark"] button[data-card-action="delete"]:hover:not(:disabled),
+html[data-theme="dark"] button[data-cut-action="delete"]:hover:not(:disabled),
+html[data-theme="dark"] #clearMarksBtn:hover:not(:disabled),
+html[data-theme="dark"] #moveToTrashBtn:hover:not(:disabled) {
+  background: #a92b39 !important;
+  border-color: #a92b39 !important;
+  color: #ffffff !important;
+}
+
 /* Keep current-user button geometry identical to dark mode */
 html[data-theme="light"] body #panelIngest .user-box #currentUserBtn.current-user-btn,
 html[data-theme="light"] body #panelIngest .user-box button#currentUserBtn {
