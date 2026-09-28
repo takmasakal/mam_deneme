@@ -3206,16 +3206,15 @@ function applyThemePreference(value) {
 }
 
 function readThemeCookie() {
-  const match = document.cookie.match(/(?:^|; )belgelik\.shared\.theme=([^;]*)/);
+  const match = document.cookie.match(/(?:^|; )belgelik\.theme\.handoff\.v2=([^;]*)/);
   return match ? decodeURIComponent(match[1]) : '';
 }
 
 function persistThemeCookie(value) {
   const sharedDomain = String(window.location.hostname || '').toLowerCase().endsWith('.trt.net.tr');
   const secure = window.location.protocol === 'https:' ? '; Secure' : '';
-  const baseCookie = `belgelik.shared.theme=${value}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
-  document.cookie = baseCookie;
-  if (sharedDomain) document.cookie = `${baseCookie}; Domain=.trt.net.tr`;
+  const baseCookie = `belgelik.theme.handoff.v2=${value}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
+  document.cookie = sharedDomain ? `${baseCookie}; Domain=.trt.net.tr` : baseCookie;
 }
 
 function toggleThemePreferenceShortcut() {
