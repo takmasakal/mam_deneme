@@ -268,8 +268,20 @@ async function initDb() {
       updated_at TIMESTAMPTZ NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS subtitle_tracks (
+      id TEXT PRIMARY KEY,
+      asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+      subtitle_url TEXT NOT NULL,
+      lang TEXT NOT NULL DEFAULT '',
+      source_engine TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL,
+      UNIQUE (asset_id, subtitle_url)
+    );
+
     CREATE TABLE IF NOT EXISTS asset_subtitle_cues (
       asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+      subtitle_track_id TEXT NOT NULL,
       subtitle_url TEXT NOT NULL,
       seq INTEGER NOT NULL,
       start_sec DOUBLE PRECISION NOT NULL,
@@ -291,6 +303,37 @@ async function initDb() {
 
     ALTER TABLE asset_subtitle_cues
     ADD COLUMN IF NOT EXISTS lang TEXT NOT NULL DEFAULT '';
+
+    ALTER TABLE asset_subtitle_cues
+    ADD COLUMN IF NOT EXISTS subtitle_track_id TEXT;
+
+    INSERT INTO subtitle_tracks (id, asset_id, subtitle_url, lang, source_engine, created_at, updated_at)
+    SELECT MD5(asset_id || CHR(31) || subtitle_url), asset_id, subtitle_url,
+           MAX(lang), MAX(source_engine), MIN(created_at), MAX(created_at)
+    FROM asset_subtitle_cues
+    GROUP BY asset_id, subtitle_url
+    ON CONFLICT (asset_id, subtitle_url) DO UPDATE
+    SET lang = EXCLUDED.lang,
+        source_engine = EXCLUDED.source_engine,
+        updated_at = EXCLUDED.updated_at;
+
+    UPDATE asset_subtitle_cues
+    SET subtitle_track_id = MD5(asset_id || CHR(31) || subtitle_url)
+    WHERE subtitle_track_id IS NULL OR subtitle_track_id = '';
+
+    ALTER TABLE asset_subtitle_cues
+    ALTER COLUMN subtitle_track_id SET NOT NULL;
+
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'asset_subtitle_cues_track_fk'
+      ) THEN
+        ALTER TABLE asset_subtitle_cues
+        ADD CONSTRAINT asset_subtitle_cues_track_fk
+        FOREIGN KEY (subtitle_track_id) REFERENCES subtitle_tracks(id) ON DELETE CASCADE;
+      END IF;
+    END $$;
 
     CREATE TABLE IF NOT EXISTS asset_ocr_segments (
       asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
@@ -408,10 +451,12 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_asset_versions_asset_created ON asset_versions(asset_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_asset_versions_action ON asset_versions(action_type);
     CREATE INDEX IF NOT EXISTS idx_subtitle_cues_asset ON asset_subtitle_cues(asset_id);
-    CREATE INDEX IF NOT EXISTS idx_subtitle_cues_asset_url ON asset_subtitle_cues(asset_id, subtitle_url);
-    CREATE INDEX IF NOT EXISTS idx_subtitle_cues_asset_url_start ON asset_subtitle_cues(asset_id, subtitle_url, start_sec);
-    CREATE INDEX IF NOT EXISTS idx_subtitle_cues_norm ON asset_subtitle_cues(norm_text);
+    CREATE INDEX IF NOT EXISTS idx_subtitle_tracks_asset ON subtitle_tracks(asset_id);
+    CREATE INDEX IF NOT EXISTS idx_subtitle_cues_track_start ON asset_subtitle_cues(subtitle_track_id, start_sec);
     CREATE INDEX IF NOT EXISTS idx_subtitle_cues_norm_trgm ON asset_subtitle_cues USING GIN (norm_text gin_trgm_ops);
+    DROP INDEX IF EXISTS idx_subtitle_cues_asset_url;
+    DROP INDEX IF EXISTS idx_subtitle_cues_asset_url_start;
+    DROP INDEX IF EXISTS idx_subtitle_cues_norm;
     CREATE INDEX IF NOT EXISTS idx_ocr_segments_asset ON asset_ocr_segments(asset_id);
     CREATE INDEX IF NOT EXISTS idx_ocr_segments_asset_url ON asset_ocr_segments(asset_id, ocr_url);
     CREATE INDEX IF NOT EXISTS idx_ocr_segments_asset_url_start ON asset_ocr_segments(asset_id, ocr_url, start_sec);

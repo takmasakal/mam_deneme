@@ -866,10 +866,22 @@ function registerTextProcessingRoutes(app, deps) {
       try {
         await pool.query(
           `
-            UPDATE asset_subtitle_cues
-            SET lang = $3
+            UPDATE subtitle_tracks
+            SET lang = $3,
+                updated_at = NOW()
             WHERE asset_id = $1
               AND subtitle_url = $2
+          `,
+          [req.params.id, subtitleUrl, subtitleLang]
+        );
+        await pool.query(
+          `
+            UPDATE asset_subtitle_cues
+            SET lang = $3
+            WHERE subtitle_track_id = (
+              SELECT id FROM subtitle_tracks
+              WHERE asset_id = $1 AND subtitle_url = $2
+            )
           `,
           [req.params.id, subtitleUrl, subtitleLang]
         );

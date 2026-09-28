@@ -42,55 +42,70 @@ fs.writeFileSync(subtitlePathEnOld, [
 ].join('\n'));
 
 const cues = [];
+const tracks = [];
+let cueInsertQueries = 0;
 const pool = {
   async query(sql, params = []) {
     const compactSql = String(sql || '').replace(/\s+/g, ' ').trim();
-    if (compactSql.startsWith('DELETE FROM asset_subtitle_cues')) {
+    if (compactSql.startsWith('DELETE FROM subtitle_tracks')) {
+      const removedTrackIds = tracks.filter((row) => row.asset_id === params[0]).map((row) => row.id);
+      for (let idx = tracks.length - 1; idx >= 0; idx -= 1) {
+        if (tracks[idx].asset_id === params[0]) tracks.splice(idx, 1);
+      }
       for (let idx = cues.length - 1; idx >= 0; idx -= 1) {
-        if (cues[idx].asset_id === params[0]) cues.splice(idx, 1);
+        if (removedTrackIds.includes(cues[idx].subtitle_track_id)) cues.splice(idx, 1);
       }
       return { rowCount: 0, rows: [] };
     }
-    if (compactSql.startsWith('INSERT INTO asset_subtitle_cues')) {
-      if (cues.some((row) => row.asset_id === params[0] && row.seq === params[2])) {
-        throw new Error(`duplicate asset_subtitle_cues primary key: ${params[0]}:${params[2]}`);
-      }
-      cues.push({
-        asset_id: params[0],
-        subtitle_url: params[1],
-        seq: params[2],
-        start_sec: params[3],
-        end_sec: params[4],
-        cue_text: params[5],
-        norm_text: params[6],
-        source_engine: params[8],
-        lang: params[9]
-      });
+    if (compactSql.startsWith('INSERT INTO subtitle_tracks')) {
+      tracks.push({ id: params[0], asset_id: params[1], subtitle_url: params[2], lang: params[3] });
       return { rowCount: 1, rows: [] };
     }
+    if (compactSql.startsWith('INSERT INTO asset_subtitle_cues')) {
+      cueInsertQueries += 1;
+      const [assetId, trackId, subtitleUrl, seqValues, starts, ends, texts, norms, sourceEngine, lang] = params;
+      seqValues.forEach((seq, idx) => {
+        if (cues.some((row) => row.asset_id === assetId && row.seq === seq)) {
+          throw new Error(`duplicate asset_subtitle_cues primary key: ${assetId}:${seq}`);
+        }
+        cues.push({
+          asset_id: assetId,
+          subtitle_track_id: trackId,
+          subtitle_url: subtitleUrl,
+          seq,
+          start_sec: starts[idx],
+          end_sec: ends[idx],
+          cue_text: texts[idx],
+          norm_text: norms[idx],
+          source_engine: sourceEngine,
+          lang
+        });
+      });
+      return { rowCount: seqValues.length, rows: [] };
+    }
     if (compactSql.startsWith('SELECT COUNT(*)::int AS count FROM asset_subtitle_cues')) {
-      const count = cues.filter((row) => row.asset_id === params[0] && row.subtitle_url === params[1]).length;
+      const count = cues.filter((row) => row.subtitle_track_id === params[0]).length;
       return { rowCount: 1, rows: [{ count }] };
     }
     if (compactSql.includes('WITH matched AS')) {
-      const [assetIds, activeUrls, pattern, limit] = params;
+      const [assetIds, activeTrackIds, pattern, limit] = params;
       const needle = String(pattern || '').replace(/%/g, '');
       const rows = cues
-        .filter((row) => assetIds.includes(row.asset_id) && activeUrls.includes(row.subtitle_url))
+        .filter((row) => assetIds.includes(row.asset_id) && activeTrackIds.includes(row.subtitle_track_id))
         .filter((row) => row.norm_text.includes(needle))
         .slice(0, Number(limit) || 8);
       return { rowCount: rows.length, rows };
     }
     if (compactSql.startsWith('SELECT asset_id, subtitle_url, seq, start_sec, end_sec, cue_text FROM asset_subtitle_cues')) {
-      const [assetIds, activeUrls] = params;
-      const rows = cues.filter((row) => assetIds.includes(row.asset_id) && activeUrls.includes(row.subtitle_url));
+      const [assetIds, activeTrackIds] = params;
+      const rows = cues.filter((row) => assetIds.includes(row.asset_id) && activeTrackIds.includes(row.subtitle_track_id));
       return { rowCount: rows.length, rows };
     }
     if (compactSql.startsWith('SELECT subtitle_url, seq, start_sec, end_sec, cue_text FROM asset_subtitle_cues')) {
-      const [assetId, activeUrls, pattern, limit] = params;
+      const [assetId, activeTrackIds, pattern, limit] = params;
       const needle = String(pattern || '').replace(/%/g, '');
       const rows = cues
-        .filter((row) => row.asset_id === assetId && activeUrls.includes(row.subtitle_url))
+        .filter((row) => row.asset_id === assetId && activeTrackIds.includes(row.subtitle_track_id))
         .filter((row) => row.norm_text.includes(needle))
         .slice(0, Number(limit) || 20);
       return { rowCount: rows.length, rows };
@@ -219,6 +234,9 @@ const service = createSubtitleIndexService({
   const indexedCount = await service.syncSubtitleCueIndexForAssetRow(row);
   assert.strictEqual(indexedCount, 3, 'Subtitle cue index should include cues from every subtitle file');
   assert.strictEqual(cues.length, 3, 'Pool should receive inserted cues for active and inactive subtitles');
+  assert.strictEqual(tracks.length, 2, 'Each active subtitle file should have one track');
+  assert.strictEqual(cueInsertQueries, 2, 'Cue rows should be inserted once per track, not once per cue');
+  assert.ok(cues.every((cue) => cue.subtitle_track_id), 'Every cue should reference a subtitle track');
 
   const single = await service.searchSubtitleMatchesForAssetRow(row, 'istanbul', 20);
   assert.strictEqual(single.matches.length, 1, 'Expected one single-asset subtitle match');
