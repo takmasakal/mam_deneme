@@ -3959,8 +3959,15 @@ function runCommandCapture(cmd, args, options = {}) {
     p.on('error', (error) => {
       finish({ ok: false, code: -1, stdout, stderr: String(error.message || error), cancelled: isMediaJobCancelled(options?.jobId) });
     });
-    p.on('close', (code) => {
-      finish({ ok: code === 0, code: code ?? -1, stdout, stderr, cancelled: isMediaJobCancelled(options?.jobId) });
+    p.on('close', (code, signal) => {
+      finish({
+        ok: code === 0,
+        code: code ?? -1,
+        signal: signal || '',
+        stdout,
+        stderr,
+        cancelled: isMediaJobCancelled(options?.jobId)
+      });
     });
   });
 }
@@ -4037,9 +4044,20 @@ function stripBenignTranscriptionWarnings(value = '') {
 }
 
 function compactTranscriptionError(result) {
-  return stripBenignTranscriptionWarnings(`${String(result?.stderr || '')}\n${String(result?.stdout || '')}`)
+  const detail = stripBenignTranscriptionWarnings(`${String(result?.stderr || '')}\n${String(result?.stdout || '')}`)
+    .split(/\r?\n/)
+    .filter((line) => !/^MAM_PROGRESS[=:]/.test(String(line || '').trim()))
+    .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
+  if (detail) return detail;
+  if (result?.signal) {
+    return `Subtitle transcription process was terminated by ${result.signal}${result.signal === 'SIGKILL' ? ' (possible memory exhaustion)' : ''}.`;
+  }
+  if (Number.isFinite(Number(result?.code)) && Number(result.code) !== 0) {
+    return `Subtitle transcription process exited with code ${Number(result.code)}.`;
+  }
+  return '';
 }
 
 function countGeneratedSubtitleCues(outputPath) {
