@@ -2,7 +2,10 @@
 import argparse
 import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 
 from faster_whisper import WhisperModel
 
@@ -39,6 +42,8 @@ def fmt_ts(seconds: float) -> str:
 
 MAX_CUE_SECONDS = 5.5
 MAX_CUE_CHARS = 84
+LONG_MEDIA_THRESHOLD_SECONDS = 45 * 60
+TRANSCRIPTION_CHUNK_SECONDS = 20 * 60
 
 
 def _clean_token(token: str) -> str:
@@ -150,8 +155,11 @@ def _build_cues(segments):
 
 
 def write_vtt(path: str, segments) -> int:
+    return write_vtt_cues(path, _build_cues(segments))
+
+
+def write_vtt_cues(path: str, cues) -> int:
     cue_count = 0
-    cues = _build_cues(segments)
     with open(path, "w", encoding="utf-8") as f:
         f.write("WEBVTT\n\n")
         for start_sec, end_sec, text in cues:
@@ -163,6 +171,49 @@ def write_vtt(path: str, segments) -> int:
             f.write(text + "\n\n")
             cue_count += 1
     return cue_count
+
+
+def probe_duration(path: str) -> float:
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1", path,
+            ],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        return max(0.0, float((result.stdout or "0").strip() or 0.0))
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return 0.0
+
+
+def extract_audio_chunk(input_path: str, output_path: str, start: float, length: float) -> None:
+    result = subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-ss", str(max(0.0, start)), "-t", str(max(1.0, length)),
+            "-i", input_path, "-vn", "-ac", "1", "-ar", "16000",
+            "-c:a", "pcm_s16le", output_path,
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or "ffmpeg failed while preparing audio chunk").strip())
+
+
+def transcribe_segments(model, input_path: str, lang):
+    return model.transcribe(
+        input_path,
+        language=lang,
+        beam_size=5,
+        vad_filter=True,
+        word_timestamps=True,
+    )
 
 
 def main() -> int:
@@ -207,26 +258,48 @@ def main() -> int:
         lang = None
 
     print("MAM_PROGRESS=20 transcribing", file=sys.stderr, flush=True)
-    segments, info = model.transcribe(
-        in_path,
-        language=lang,
-        beam_size=5,
-        vad_filter=True,
-        word_timestamps=True
-    )
-
-    duration = max(0.0, float(getattr(info, "duration", 0.0) or 0.0))
-    collected = []
+    duration = probe_duration(in_path)
+    cues = []
     last_progress = 20
-    for segment in segments:
-        collected.append(segment)
-        end_sec = max(0.0, float(getattr(segment, "end", 0.0) or 0.0))
-        progress = min(88, 20 + int((end_sec / duration) * 68)) if duration > 0 else last_progress
-        if progress >= last_progress + 2:
-            last_progress = progress
-            print(f"MAM_PROGRESS={progress} transcribing", file=sys.stderr, flush=True)
+    detected_lang = lang
+
+    def collect_segments(source_path: str, offset: float, total_duration: float):
+        nonlocal last_progress, detected_lang
+        segments, info = transcribe_segments(model, source_path, detected_lang)
+        if detected_lang is None:
+            detected_lang = str(getattr(info, "language", "") or "").strip() or None
+        for segment in segments:
+            for start, end, text in _build_cues([segment]):
+                cues.append((start + offset, end + offset, text))
+            end_sec = offset + max(0.0, float(getattr(segment, "end", 0.0) or 0.0))
+            progress = min(88, 20 + int((end_sec / total_duration) * 68)) if total_duration > 0 else last_progress
+            if progress >= last_progress + 2:
+                last_progress = progress
+                print(f"MAM_PROGRESS={progress} transcribing", file=sys.stderr, flush=True)
+
+    try:
+        if duration >= LONG_MEDIA_THRESHOLD_SECONDS:
+            chunk_dir = tempfile.mkdtemp(prefix="mam-whisper-")
+            try:
+                offset = 0.0
+                chunk_index = 0
+                while offset < duration:
+                    chunk_length = min(float(TRANSCRIPTION_CHUNK_SECONDS), duration - offset)
+                    chunk_path = os.path.join(chunk_dir, f"chunk-{chunk_index:04d}.wav")
+                    extract_audio_chunk(in_path, chunk_path, offset, chunk_length)
+                    collect_segments(chunk_path, offset, duration)
+                    offset += chunk_length
+                    chunk_index += 1
+            finally:
+                shutil.rmtree(chunk_dir, ignore_errors=True)
+        else:
+            collect_segments(in_path, 0.0, duration)
+    except Exception as exc:
+        print(f"transcription_failed: {exc}", file=sys.stderr)
+        return 2
+
     print("MAM_PROGRESS=92 writing_subtitles", file=sys.stderr, flush=True)
-    cue_count = write_vtt(out_path, collected)
+    cue_count = write_vtt_cues(out_path, cues)
     print(f"ok cues={cue_count} output={out_path}")
     return 0
 
