@@ -16,7 +16,6 @@
       userPermissionsNextPage,
       userPermissionsPageInfo,
       ocrAdminSearchInput,
-      ocrDeleteFileCheck,
       ocrRecordsRows,
       ocrRecordsMsg,
       runOcrAdminSearchBtn,
@@ -704,11 +703,7 @@
           if (!confirm(t('ocr_confirm_delete'))) return;
           await api('/api/admin/ocr-records', {
             method: 'DELETE',
-            body: JSON.stringify({
-              assetId,
-              itemId,
-              deleteFile: Boolean(ocrDeleteFileCheck?.checked)
-            })
+            body: JSON.stringify({ assetId, itemId })
           });
           if (ocrRecordsMsg) ocrRecordsMsg.textContent = t('ocr_deleted');
           await loadOcrRecords();

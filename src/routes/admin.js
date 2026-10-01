@@ -2163,7 +2163,6 @@ app.delete('/api/admin/ocr-records', async (req, res) => {
     if (!gate) return null;
     const assetId = String(req.body?.assetId || '').trim();
     const itemId = String(req.body?.itemId || '').trim();
-    const deleteFile = Boolean(req.body?.deleteFile);
     if (!assetId || !itemId) return res.status(400).json({ error: 'assetId and itemId are required' });
 
     const rowResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
@@ -2171,10 +2170,10 @@ app.delete('/api/admin/ocr-records', async (req, res) => {
     const row = rowResult.rows[0];
     if (!canTextAdminViewAsset(row, gate)) return res.status(404).json({ error: 'Asset not found' });
     const dc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
-    const items = getOcrItemsFromDc(dc, row.updated_at || row.created_at || '');
-    const target = items.find((item) => String(item.id || '') === itemId);
+    const target = resolveAdminOcrItemForAssetRow(row, itemId).item;
     if (!target) return res.status(404).json({ error: 'OCR record not found' });
     const ocrKind = getOcrKind(target);
+    const targetUrl = String(target.ocrUrl || '').trim();
     const nextItems = getOcrItemsForKind(dc, ocrKind).filter((item) => String(item.id || '') !== itemId);
     const prevActiveUrl = String(ocrKind === 'photo' ? dc.photoOcrUrl || '' : dc.videoOcrUrl || '').trim();
     const updatedDc = applyOcrKindToDc(dc, ocrKind, nextItems, prevActiveUrl);
@@ -2184,14 +2183,29 @@ app.delete('/api/admin/ocr-records', async (req, res) => {
     );
     await pool.query(
       'DELETE FROM asset_ocr_segments WHERE asset_id = $1 AND ocr_url = $2',
-      [assetId, String(target.ocrUrl || '').trim()]
+      [assetId, targetUrl]
     );
-
-    if (deleteFile) {
-      const filePath = resolveOcrFilePath(target.ocrUrl);
-      if (filePath) cleanupAssetFiles([filePath]);
+    if (ocrKind === 'video' && targetUrl) {
+      await pool.query(
+        `DELETE FROM media_processing_jobs
+         WHERE asset_id = $1
+           AND job_type = 'video_ocr'
+           AND COALESCE(result_payload->>'resultUrl', '') = $2`,
+        [assetId, targetUrl]
+      );
+      for (const [jobId, job] of videoOcrJobs.entries()) {
+        if (String(job?.assetId || '') === assetId && String(job?.resultUrl || '').trim() === targetUrl) {
+          videoOcrJobs.delete(jobId);
+        }
+      }
     }
-    return res.json({ ok: true, removedFile: deleteFile });
+    const filePath = resolveOcrFilePath(targetUrl);
+    const cleanup = filePath ? cleanupAssetFiles([filePath]) : { removed: [], failed: [] };
+    if (cleanup.failed.length) {
+      console.error('admin-ocr-file-delete-failed', cleanup.failed);
+      return res.status(500).json({ error: 'OCR record was removed but its disk file could not be deleted' });
+    }
+    return res.json({ ok: true, removedFile: cleanup.removed.length > 0 });
   } catch (_error) {
     return res.status(500).json({ error: 'Failed to delete OCR record' });
   }

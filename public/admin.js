@@ -86,7 +86,6 @@ const identityMamGroupsRows = document.getElementById('identityMamGroupsRows');
 const identityGroupOptions = document.getElementById('identityGroupOptions');
 const identityUserOptions = document.getElementById('identityUserOptions');
 const ocrAdminSearchInput = document.getElementById('ocrAdminSearchInput');
-const ocrDeleteFileCheck = document.getElementById('ocrDeleteFileCheck');
 const ocrRecordsRows = document.getElementById('ocrRecordsRows');
 const ocrRecordsMsg = document.getElementById('ocrRecordsMsg');
 const runOcrAdminSearchBtn = document.getElementById('runOcrAdminSearchBtn');
@@ -705,7 +704,7 @@ let i18n = {
     ocr_lines: 'Lines',
     ocr_segments: 'Segments',
     ocr_edit: 'Save',
-    ocr_delete_db: 'Delete from DB',
+    ocr_delete_db: 'Delete',
     content_edit: 'Edit Content',
     content_save: 'Save Content',
     content_cancel: 'Cancel',
@@ -718,7 +717,7 @@ let i18n = {
     ocr_saved: 'OCR record saved.',
     ocr_deleted: 'OCR record deleted.',
     ocr_none: 'No OCR records found.',
-    ocr_confirm_delete: 'Delete this OCR record from database?',
+    ocr_confirm_delete: 'Delete this OCR record from the database and disk?',
     learned_corrections_title: 'Learned Corrections',
     learned_wrong: 'Wrong',
     learned_correct: 'Correct',
@@ -1245,7 +1244,7 @@ let i18n = {
     ocr_lines: 'Satır',
     ocr_segments: 'Segment',
     ocr_edit: 'Kaydet',
-    ocr_delete_db: 'DBden Sil',
+    ocr_delete_db: 'Sil',
     content_edit: 'İçeriği Düzenle',
     content_save: 'İçeriği Kaydet',
     content_cancel: 'İptal',
@@ -1258,7 +1257,7 @@ let i18n = {
     ocr_saved: 'OCR kaydı kaydedildi.',
     ocr_deleted: 'OCR kaydı silindi.',
     ocr_none: 'OCR kaydı bulunamadı.',
-    ocr_confirm_delete: 'Bu OCR kaydı veritabanından silinsin mi?',
+    ocr_confirm_delete: 'Bu OCR kaydı veritabanından ve diskten silinsin mi?',
     learned_corrections_title: 'Öğrenilmiş Düzeltmeler',
     learned_wrong: 'Yanlış',
     learned_correct: 'Doğru',
@@ -2896,7 +2895,6 @@ const adminRecordsModule = window.createAdminRecordsModule({
   userPermissionsNextPage: document.getElementById('userPermissionsNextPage'),
   userPermissionsPageInfo: document.getElementById('userPermissionsPageInfo'),
   ocrAdminSearchInput,
-  ocrDeleteFileCheck,
   ocrRecordsRows,
   ocrRecordsMsg,
   runOcrAdminSearchBtn,
