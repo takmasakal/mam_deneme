@@ -387,7 +387,7 @@
             <input type="text" class="ocr-label-input" value="${escapeHtml(first.ocrLabel || '')}" />
             <button type="button" class="ocr-content-btn">${escapeHtml(t('content_edit'))}</button>
             <button type="button" class="ocr-save-btn">${escapeHtml(t('ocr_edit'))}</button>
-            <button type="button" class="ocr-delete-btn">${escapeHtml(t('ocr_delete_db'))}</button>
+            <button type="button" class="ocr-delete-btn">${escapeHtml(t('ocr_delete'))}</button>
           </div>
         `;
       }).join('');

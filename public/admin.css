@@ -1042,17 +1042,17 @@ body {
   padding: 7px 10px;
 }
 
-.ocr-delete-btn {
-  background: #e60028;
-  border-color: #e60028;
-  color: #ffffff;
+button.ocr-delete-btn {
+  background: #e60028 !important;
+  border-color: #e60028 !important;
+  color: #ffffff !important;
 }
 
-.ocr-delete-btn:hover,
-.ocr-delete-btn:focus-visible {
-  background: #c90023;
-  border-color: #c90023;
-  color: #ffffff;
+button.ocr-delete-btn:hover,
+button.ocr-delete-btn:focus-visible {
+  background: #c90023 !important;
+  border-color: #c90023 !important;
+  color: #ffffff !important;
 }
 
 .subtitle-row {
