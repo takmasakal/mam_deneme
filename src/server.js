@@ -7022,6 +7022,7 @@ registerTextProcessingRoutes(app, {
   saveAssetPhotoOcrMetadata,
   publicUploadUrlToAbsolutePath,
   safeRmDir,
+  cleanupAssetFiles,
   SUBTITLES_DIR,
   syncSubtitleCueIndexForAssetRow,
   searchSubtitleMatchesForAssetRow,

@@ -754,8 +754,29 @@ function registerTextProcessingRoutes(app, deps) {
         'UPDATE assets SET dc_metadata = $2::jsonb, updated_at = $3 WHERE id = $1 RETURNING *',
         [req.params.id, JSON.stringify(updatedDc), new Date().toISOString()]
       );
-      const filePath = publicUploadUrlToAbsolutePath(String(target.ocrUrl || '').trim());
-      if (filePath && typeof cleanupAssetFiles === 'function') cleanupAssetFiles([filePath]);
+      const targetUrl = String(target.ocrUrl || '').trim();
+      await pool.query(
+        'DELETE FROM asset_ocr_segments WHERE asset_id = $1 AND ocr_url = $2',
+        [req.params.id, targetUrl]
+      );
+      await pool.query(
+        `DELETE FROM media_processing_jobs
+         WHERE asset_id = $1
+           AND job_type = 'video_ocr'
+           AND COALESCE(result_payload->>'resultUrl', '') = $2`,
+        [req.params.id, targetUrl]
+      );
+      for (const [jobId, job] of videoOcrJobs.entries()) {
+        if (String(job?.assetId || '') === String(req.params.id) && String(job?.resultUrl || '').trim() === targetUrl) {
+          videoOcrJobs.delete(jobId);
+        }
+      }
+      const filePath = publicUploadUrlToAbsolutePath(targetUrl);
+      const cleanup = filePath ? cleanupAssetFiles([filePath]) : { removed: [], failed: [] };
+      if (cleanup.failed.length) {
+        console.error(`Failed to delete OCR file for asset ${req.params.id}: ${cleanup.failed[0]?.message || 'unlink failed'}`);
+        return res.status(500).json({ error: 'OCR record was removed but its disk file could not be deleted' });
+      }
       return res.json({ ok: true, removed: target.ocrUrl || '', asset: mapAssetRow(updated.rows[0]) });
     } catch (error) {
       console.error(`Failed to remove OCR for asset ${req.params.id}: ${error?.message || error}`);

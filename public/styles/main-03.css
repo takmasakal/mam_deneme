@@ -719,13 +719,20 @@ video::-webkit-media-text-track-display * {
 }
 
 .fs-settings-btn {
+  display: inline-grid;
+  place-items: center;
   width: 34px;
   min-width: 34px;
   height: 34px;
+  min-height: 34px;
+  padding: 0;
   border-radius: 999px;
   border: 1px solid #87a0c7;
   background: rgba(23, 30, 44, 0.55);
   color: #eaf2ff;
+  font-size: 19px;
+  line-height: 1;
+  text-align: center;
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
@@ -754,8 +761,31 @@ video::-webkit-media-text-track-display * {
   display: flex;
   align-items: center;
   gap: 7px;
+  min-height: 18px;
+  margin: 0;
+  padding: 0;
   font-size: 12px;
+  line-height: 18px;
   color: #e7edf8;
+}
+
+.fs-settings-panel input[type="checkbox"] {
+  appearance: auto;
+  -webkit-appearance: checkbox;
+  box-sizing: border-box;
+  flex: 0 0 14px;
+  width: 14px !important;
+  min-width: 14px !important;
+  max-width: 14px !important;
+  height: 14px !important;
+  min-height: 14px !important;
+  max-height: 14px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 2px !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .fullscreen-overlay-mid {

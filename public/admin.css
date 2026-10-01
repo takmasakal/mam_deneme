@@ -1049,6 +1049,19 @@ body {
   padding: 7px 10px;
 }
 
+.ocr-delete-btn {
+  background: #e60028;
+  border-color: #e60028;
+  color: #ffffff;
+}
+
+.ocr-delete-btn:hover,
+.ocr-delete-btn:focus-visible {
+  background: #c90023;
+  border-color: #c90023;
+  color: #ffffff;
+}
+
 .subtitle-row {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) minmax(180px, 240px) minmax(170px, 220px) 78px auto auto auto auto;

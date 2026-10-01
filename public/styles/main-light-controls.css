@@ -191,3 +191,25 @@ html[data-theme="light"] .photo-ocr-modal #photoOcrExtractBtn:focus-visible {
   color: #ffffff !important;
   border-color: var(--mam-light-red-dark, #c90023) !important;
 }
+
+/* Fullscreen overlay settings: retain dark-theme geometry with readable light colors. */
+html[data-theme="light"] .fs-settings-btn {
+  background: rgba(230, 0, 40, 0.9) !important;
+  border-color: rgba(255, 255, 255, 0.86) !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] .fs-settings-panel {
+  background: rgba(255, 255, 255, 0.94) !important;
+  border-color: #cfd6e2 !important;
+  color: #182131 !important;
+  box-shadow: 0 8px 24px rgba(24, 33, 49, 0.24) !important;
+}
+
+html[data-theme="light"] .fs-settings-panel label {
+  color: #182131 !important;
+}
+
+html[data-theme="light"] .fs-settings-panel input[type="checkbox"] {
+  accent-color: var(--mam-light-red, #e60028) !important;
+}
