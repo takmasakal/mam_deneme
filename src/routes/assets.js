@@ -1583,6 +1583,7 @@ function registerAssetRoutes(app, deps) {
       );
   
       const asset = mapAssetRowForUser(row, loaded.accessContext);
+      const originalAssetThumbnailUrl = String(asset.thumbnailUrl || '').trim();
       asset.versionMimeType = versionsResult.rows[versionsResult.rows.length - 1]?.snapshot_mime_type || row.mime_type;
       asset.fileSizeBytes = await resolveAssetFileSize(row);
       const audioCandidate = isVideoCandidate({
@@ -1599,6 +1600,10 @@ function registerAssetRoutes(app, deps) {
         asset.audioStreamOptions = await getMediaAudioStreamOptions(playbackPath);
       }
       asset.versions = versionsResult.rows.map(mapVersionRow);
+      const originalVersion = [...asset.versions].reverse().find((version) => version.actionType !== 'attachment');
+      if (originalVersion && !String(originalVersion.snapshotThumbnailUrl || '').trim() && originalAssetThumbnailUrl) {
+        originalVersion.snapshotThumbnailUrl = originalAssetThumbnailUrl;
+      }
       asset.versions.forEach((version) => {
         version.fileRole = version.actionType === 'attachment' || String(version.snapshotMimeType || '').toLowerCase() !== String(asset.versionMimeType || '').toLowerCase() ? 'attachment' : 'version';
       });
