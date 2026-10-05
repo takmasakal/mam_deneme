@@ -2416,6 +2416,7 @@ function applyProxySuggestion(item) {
   const title = String(item.title || '').trim();
   const fileName = String(item.fileName || '').trim();
   proxyToolAssetName.value = title || fileName;
+  proxyToolAssetName.dataset.assetId = String(item.id || '').trim();
   hideProxySuggestions();
 }
 
@@ -4641,7 +4642,9 @@ runProxyToolBtn?.addEventListener('click', async () => {
   }
 
   const mode = String(proxyToolAction?.value || 'thumbnail').trim().toLowerCase();
+  const assetId = String(proxyToolAssetName?.dataset?.assetId || '').trim();
   const payload = { assetName, mode };
+  if (assetId) payload.assetId = assetId;
   if (mode === 'thumbnail') payload.timecode = String(proxyToolTimecode?.value || '').trim();
   if (mode === 'delete_asset') {
     const ok = confirm(t('proxy_tool_delete_confirm'));
@@ -4714,6 +4717,7 @@ proxyToolAssetName?.addEventListener('focus', () => {
 });
 
 proxyToolAssetName?.addEventListener('input', () => {
+  proxyToolAssetName.dataset.assetId = '';
   queueProxySuggestionRequest();
 });
 
