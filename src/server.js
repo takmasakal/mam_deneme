@@ -5959,21 +5959,36 @@ async function runProxyJob(jobId, options = {}) {
     for (const row of targets) {
       job.currentAssetId = row.id;
       job.processed += 1;
+      const persistedJobId = `${job.id}:${String(row.id)}`;
+      await upsertMediaProcessingJobSafe({
+        jobId: persistedJobId,
+        assetId: row.id,
+        jobType: 'proxy',
+        status: 'running',
+        progress: 0,
+        createdAt: job.createdAt,
+        startedAt: job.startedAt,
+        requestPayload: { batchJobId: job.id },
+        resultPayload: { progressPhase: 'transcoding' }
+      });
       const proxyStatus = String(row.proxy_status || '').trim().toLowerCase();
       const proxyStatusOk = !proxyStatus || ['ready', 'not_applicable'].includes(proxyStatus);
       if (proxyStatusOk && hasStoredFile(row.proxy_url, 'proxies') && hasStoredFile(row.thumbnail_url, 'thumbnails')) {
         job.skipped += 1;
+        await upsertMediaProcessingJobSafe({ jobId: persistedJobId, assetId: row.id, jobType: 'proxy', status: 'completed', progress: 100, createdAt: job.createdAt, startedAt: job.startedAt, finishedAt: new Date().toISOString(), requestPayload: { batchJobId: job.id }, resultPayload: { progressPhase: 'skipped', skipped: true } });
         continue;
       }
       try {
         await ensureVideoProxyAndThumbnail(row);
         job.generated += 1;
+        await upsertMediaProcessingJobSafe({ jobId: persistedJobId, assetId: row.id, jobType: 'proxy', status: 'completed', progress: 100, createdAt: job.createdAt, startedAt: job.startedAt, finishedAt: new Date().toISOString(), requestPayload: { batchJobId: job.id }, resultPayload: { progressPhase: 'completed' } });
       } catch (error) {
         job.failed += 1;
         job.errors.push({
           assetId: row.id,
           error: String(error.message || '').slice(0, 220)
         });
+        await upsertMediaProcessingJobSafe({ jobId: persistedJobId, assetId: row.id, jobType: 'proxy', status: 'failed', progress: 0, createdAt: job.createdAt, startedAt: job.startedAt, finishedAt: new Date().toISOString(), requestPayload: { batchJobId: job.id }, errorText: String(error.message || '').slice(0, 4000), resultPayload: { progressPhase: 'failed' } });
       }
     }
 

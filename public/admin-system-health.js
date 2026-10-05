@@ -70,6 +70,7 @@
       if (normalized === 'subtitle') return t('health_subtitle_jobs');
       if (normalized === 'video_ocr') return t('health_ocr_jobs');
       if (normalized === 'metadata_enrichment') return t('health_metadata_jobs');
+      if (normalized === 'proxy') return t('health_proxy_jobs');
       return normalized || '-';
     }
 
@@ -101,7 +102,8 @@
               ['all', t('health_job_filter_all_types')],
               ['subtitle', t('health_subtitle_jobs')],
               ['video_ocr', t('health_ocr_jobs')],
-              ['metadata_enrichment', t('health_metadata_jobs')]
+              ['metadata_enrichment', t('health_metadata_jobs')],
+              ['proxy', t('health_proxy_jobs')]
             ].map(([value, label]) => `<button type="button" class="mediaJobFilterOption${selectedValue === value ? ' is-selected' : ''}" data-filter-key="jobType" data-filter-value="${escapeHtml(value)}">${escapeHtml(label)}</button>`).join('')}
           </div>
         </details>`;
