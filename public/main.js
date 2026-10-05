@@ -2582,9 +2582,10 @@ const detailVersionActionsModule = window.createMainDetailVersionActions({
     const versionThumbnailUrl = String(version?.snapshotThumbnailUrl || '').trim();
     const versionId = String(version?.versionId || version?.version_id || '').trim();
     const isOriginalVersion = Boolean(versionId && versionId === String(asset?.originalVersionId || '').trim());
-    const posterUrl = versionThumbnailUrl
-      || (isOriginalVersion ? String(asset?.originalThumbnailUrl || '').trim() : '')
-      || String(asset?.thumbnailUrl || '').trim();
+    const assetThumbnailUrl = String(asset?.thumbnailUrl || '').trim();
+    const posterUrl = isOriginalVersion
+      ? (assetThumbnailUrl || String(asset?.originalThumbnailUrl || '').trim() || versionThumbnailUrl)
+      : (versionThumbnailUrl || assetThumbnailUrl);
     const effectiveMediaUrl = versionIsVideo && isOriginalVersion
       ? (String(asset?.proxyUrl || '').trim() || mediaUrl)
       : mediaUrl;
