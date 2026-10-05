@@ -2617,9 +2617,16 @@ const detailVersionActionsModule = window.createMainDetailVersionActions({
       activePlayerCleanup = null;
     }
     try { mediaEl.pause(); } catch (_error) {}
+    try { mediaEl.currentTime = 0; } catch (_error) {}
     mediaEl.removeAttribute('data-dash-manifest');
     mediaEl.dataset.versionId = String(version?.versionId || version?.version_id || '');
-    if (versionIsVideo && versionThumbnailUrl) mediaEl.setAttribute('poster', versionThumbnailUrl);
+    if (versionIsVideo) {
+      const posterUrl = versionThumbnailUrl || String(asset?.thumbnailUrl || '').trim();
+      if (posterUrl) mediaEl.setAttribute('poster', posterUrl);
+      else mediaEl.removeAttribute('poster');
+    }
+    mediaEl.removeAttribute('src');
+    mediaEl.load();
     mediaEl.src = mediaUrl;
     mediaEl.load();
     activePlayerCleanup = initAssetPlayer(previewAsset, assetDetail);
