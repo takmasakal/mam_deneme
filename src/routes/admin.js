@@ -98,6 +98,7 @@ function registerAdminRoutes(app, deps) {
     getIngestStoragePath,
     resolveAssetInputPath,
     buildArtifactPath,
+    generateVideoProxy,
     generateVideoThumbnail,
     summarizeFfmpegError,
     regenerateVideoThumbnailForAsset,
@@ -4008,10 +4009,102 @@ app.get('/api/admin/proxy-missing-scan', async (req, res) => {
         };
       })
       .filter((item) => item.missingProxy || item.missingThumbnail || item.badStatus);
-    return res.json({ items, count: items.length, scanned: result.rows.length });
+    const assetById = new Map(result.rows.map((row) => [String(row.id || ''), row]));
+    const visibleAssetIds = [...assetById.keys()].filter(Boolean);
+    const versionResult = visibleAssetIds.length
+      ? await pool.query(
+        `SELECT * FROM asset_versions WHERE asset_id = ANY($1::text[]) ORDER BY created_at DESC LIMIT 10000`,
+        [visibleAssetIds]
+      )
+      : { rows: [] };
+    const versionItems = versionResult.rows
+      .filter((version) => {
+        const asset = assetById.get(String(version.asset_id || ''));
+        return asset && isVideo({
+          ...asset,
+          mime_type: version.snapshot_mime_type || asset.mime_type,
+          file_name: version.snapshot_file_name || asset.file_name
+        }) && sourceFileExists({
+          source_path: version.snapshot_source_path,
+          media_url: version.snapshot_media_url
+        });
+      })
+      .map((version) => {
+        const asset = assetById.get(String(version.asset_id || ''));
+        const missingProxy = !storedFileExists(version.snapshot_media_url, 'proxies')
+          || !String(version.snapshot_media_url || '').toLowerCase().includes('/uploads/proxies/');
+        const missingThumbnail = !storedFileExists(version.snapshot_thumbnail_url, 'thumbnails');
+        return {
+          id: String(version.asset_id || ''),
+          itemKey: `${String(version.asset_id || '')}:${String(version.version_id || '')}`,
+          versionId: String(version.version_id || ''),
+          itemKind: 'version',
+          title: `${String(asset?.title || asset?.file_name || version.asset_id || '')} · ${String(version.label || version.version_id || '')}`,
+          fileName: String(version.snapshot_file_name || ''),
+          type: 'version',
+          assetFamily: 'video',
+          missingProxy,
+          missingThumbnail,
+          missingComponents: [missingThumbnail ? 'thumbnail' : '', missingProxy ? 'proxy' : ''].filter(Boolean),
+          badStatus: false,
+          inTrash: Boolean(asset?.deleted_at),
+          updatedAt: version.created_at
+        };
+      })
+      .filter((item) => item.missingProxy || item.missingThumbnail);
+    const allItems = [...items, ...versionItems];
+    return res.json({ items: allItems, count: allItems.length, scanned: result.rows.length + versionResult.rows.length });
   } catch (error) {
     console.error('Failed to scan missing proxy/thumbnail files:', error?.message || error);
     return res.status(500).json({ error: 'Failed to scan missing proxy/thumbnail files' });
+  }
+});
+
+app.post('/api/admin/version-derivatives/repair', async (req, res) => {
+  const generatedPaths = [];
+  try {
+    const gate = await requireProxyAdminRequest(req, res);
+    if (!gate) return;
+    const assetId = String(req.body?.assetId || '').trim();
+    const versionId = String(req.body?.versionId || '').trim();
+    if (!assetId || !versionId) return res.status(400).json({ error: 'assetId and versionId are required' });
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1 LIMIT 1', [assetId]);
+    const asset = assetResult.rows[0];
+    if (!asset || !canProxyAdminAccessAsset(asset, gate)) return res.status(404).json({ error: 'Asset not found' });
+    const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2 LIMIT 1', [assetId, versionId]);
+    const version = versionResult.rows[0];
+    if (!version) return res.status(404).json({ error: 'Version not found' });
+    let sourcePath = String(version.snapshot_source_path || '').trim();
+    if (!sourcePath || !fs.existsSync(sourcePath)) sourcePath = publicUploadUrlToAbsolutePath(String(version.snapshot_media_url || '').trim());
+    if (!sourcePath || !fs.existsSync(sourcePath)) return res.status(404).json({ error: 'Version source file is missing' });
+
+    let proxyUrl = String(version.snapshot_media_url || '').trim();
+    let thumbnailUrl = String(version.snapshot_thumbnail_url || '').trim();
+    const isOriginalSnapshot = sourcePath === String(asset.source_path || '').trim();
+    if (isOriginalSnapshot && hasStoredFile(asset.proxy_url, 'proxies')) proxyUrl = resolveStoredUrl(asset.proxy_url, 'proxies');
+    if (isOriginalSnapshot && hasStoredFile(asset.thumbnail_url, 'thumbnails')) thumbnailUrl = resolveStoredUrl(asset.thumbnail_url, 'thumbnails');
+    if (!hasStoredFile(proxyUrl, 'proxies') || !proxyUrl.toLowerCase().includes('/uploads/proxies/')) {
+      const proxyOut = buildArtifactPath('proxies', `${Date.now()}-${nanoid()}-version-proxy.mp4`, version.created_at || new Date());
+      generatedPaths.push(proxyOut.absolutePath);
+      await generateVideoProxy(sourcePath, proxyOut.absolutePath, { allowAudioFallback: true });
+      proxyUrl = proxyOut.publicUrl;
+    }
+    if (!hasStoredFile(thumbnailUrl, 'thumbnails')) {
+      const thumbOut = buildArtifactPath('thumbnails', `${Date.now()}-${nanoid()}-version-thumb.jpg`, version.created_at || new Date());
+      generatedPaths.push(thumbOut.absolutePath);
+      await generateVideoThumbnail(proxyUrl ? publicUploadUrlToAbsolutePath(proxyUrl) : sourcePath, thumbOut.absolutePath, { seekSeconds: 0 });
+      thumbnailUrl = thumbOut.publicUrl;
+    }
+    await pool.query(
+      'UPDATE asset_versions SET snapshot_media_url = $3, snapshot_thumbnail_url = $4 WHERE asset_id = $1 AND version_id = $2',
+      [assetId, versionId, proxyUrl, thumbnailUrl]
+    );
+    return res.json({ ok: true, assetId, versionId, proxyUrl, thumbnailUrl });
+  } catch (error) {
+    for (const filePath of generatedPaths) {
+      try { if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (_cleanupError) {}
+    }
+    return res.status(500).json({ error: `Failed to repair version derivatives: ${String(error?.message || error || '')}` });
   }
 });
 

@@ -2128,6 +2128,14 @@ function missingProxyGenerateMode(item = {}) {
 async function startMissingProxyRepair(item = {}) {
   const assetId = String(item.id || '').trim();
   if (!assetId) return;
+  const versionId = String(item.versionId || '').trim();
+  if (String(item.itemKind || '') === 'version' && versionId) {
+    await api('/api/admin/version-derivatives/repair', {
+      method: 'POST',
+      body: JSON.stringify({ assetId, versionId })
+    });
+    return;
+  }
   const mode = missingProxyGenerateMode(item);
   if (mode === 'proxy') {
     await startProxyJob({ includeTrash: includeTrash.checked, assetIds: [assetId] });
@@ -2142,10 +2150,10 @@ async function startMissingProxyRepair(item = {}) {
 async function startMissingProxyAutoRepair(items = []) {
   const repairItems = Array.isArray(items) ? items : [];
   const videoIds = repairItems
-    .filter((item) => missingProxyGenerateMode(item) === 'proxy')
+    .filter((item) => String(item.itemKind || '') !== 'version' && missingProxyGenerateMode(item) === 'proxy')
     .map((item) => String(item.id || '').trim())
     .filter(Boolean);
-  const directItems = repairItems.filter((item) => missingProxyGenerateMode(item) !== 'proxy');
+  const directItems = repairItems.filter((item) => String(item.itemKind || '') === 'version' || missingProxyGenerateMode(item) !== 'proxy');
   for (const item of directItems) {
     await startMissingProxyRepair(item);
   }
@@ -2196,10 +2204,10 @@ function renderMissingProxyRows(items = missingProxyItems) {
     </div>`;
   const body = rows.length
     ? rows.map((item) => `
-      <div class="proxy-missing-row" data-missing-proxy-row="${escapeHtml(item.id || '')}">
+      <div class="proxy-missing-row" data-missing-proxy-row="${escapeHtml(item.itemKey || item.id || '')}">
         <strong title="${escapeHtml(item.fileName || item.id || '')}">${escapeHtml(item.title || item.fileName || item.id || '')}</strong>
         <span>${escapeHtml(missingProxyComponentText(item))}</span>
-        <button type="button" class="proxy-missing-generate-btn" data-missing-proxy-generate="${escapeHtml(item.id || '')}">${escapeHtml(t('missing_proxy_generate'))}</button>
+        <button type="button" class="proxy-missing-generate-btn" data-missing-proxy-generate="${escapeHtml(item.itemKey || item.id || '')}">${escapeHtml(t('missing_proxy_generate'))}</button>
       </div>`).join('')
     : `<div class="empty proxy-missing-empty">${escapeHtml(t(missingProxyItems.length ? 'missing_proxy_filter_empty' : 'missing_proxy_scan_empty'))}</div>`;
   missingProxyRows.innerHTML = `<div class="proxy-missing-table">${header}${body}</div>`;
@@ -4640,15 +4648,15 @@ missingProxyRows?.addEventListener('change', (event) => {
 missingProxyRows?.addEventListener('click', async (event) => {
   const btn = event.target?.closest?.('[data-missing-proxy-generate]');
   if (!btn) return;
-  const assetId = String(btn.getAttribute('data-missing-proxy-generate') || '').trim();
-  const item = missingProxyItems.find((candidate) => String(candidate.id || '') === assetId);
-  if (!assetId || !item) return;
+  const itemKey = String(btn.getAttribute('data-missing-proxy-generate') || '').trim();
+  const item = missingProxyItems.find((candidate) => String(candidate.itemKey || candidate.id || '') === itemKey);
+  if (!itemKey || !item) return;
   btn.disabled = true;
   try {
     if (missingProxyScanState) missingProxyScanState.textContent = t('missing_proxy_single_generate_started');
     await startMissingProxyRepair(item);
     if (missingProxyScanState) missingProxyScanState.textContent = t('missing_proxy_single_generate_done');
-    missingProxyItems = missingProxyItems.filter((candidate) => String(candidate.id || '') !== assetId);
+    missingProxyItems = missingProxyItems.filter((candidate) => String(candidate.itemKey || candidate.id || '') !== itemKey);
     renderMissingProxyRows();
   } catch (error) {
     if (missingProxyScanState) missingProxyScanState.textContent = String(error?.message || t('missing_proxy_single_generate_failed'));

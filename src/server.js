@@ -6949,6 +6949,7 @@ registerAdminRoutes(app, {
   getIngestStoragePath,
   resolveAssetInputPath,
   buildArtifactPath,
+  generateVideoProxy,
   generateVideoThumbnail,
   regenerateVideoThumbnailForAsset,
   ensurePdfThumbnailForRow,
