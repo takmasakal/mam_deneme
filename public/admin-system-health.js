@@ -69,6 +69,8 @@
       const normalized = String(type || '').trim().toLowerCase();
       if (normalized === 'subtitle') return t('health_subtitle_jobs');
       if (normalized === 'video_ocr') return t('health_ocr_jobs');
+      if (normalized === 'metadata_enrichment') return t('health_metadata_jobs');
+      if (normalized === 'proxy') return t('health_proxy_jobs');
       return normalized || '-';
     }
 
@@ -99,7 +101,9 @@
             ${[
               ['all', t('health_job_filter_all_types')],
               ['subtitle', t('health_subtitle_jobs')],
-              ['video_ocr', t('health_ocr_jobs')]
+              ['video_ocr', t('health_ocr_jobs')],
+              ['metadata_enrichment', t('health_metadata_jobs')],
+              ['proxy', t('health_proxy_jobs')]
             ].map(([value, label]) => `<button type="button" class="mediaJobFilterOption${selectedValue === value ? ' is-selected' : ''}" data-filter-key="jobType" data-filter-value="${escapeHtml(value)}">${escapeHtml(label)}</button>`).join('')}
           </div>
         </details>`;
@@ -273,7 +277,7 @@
       ];
       const serviceList = serviceEntries.map(([, entry]) => entry);
       const upServices = serviceList.filter((entry) => Boolean(entry?.ok)).length;
-      const failedJobs = Number(jobs.proxyFailed || 0) + Number(jobs.subtitleFailed || 0) + Number(jobs.ocrFailed || 0);
+      const failedJobs = Number(jobs.proxyFailed || 0) + Number(jobs.subtitleFailed || 0) + Number(jobs.ocrFailed || 0) + Number(jobs.metadataFailed || 0);
       if (overviewSystemHealth) overviewSystemHealth.textContent = upServices === serviceList.length ? 'OK' : `${upServices}/${serviceList.length}`;
       if (overviewSystemHealthSub) overviewSystemHealthSub.textContent = `${upServices}/${serviceList.length} ${t('overview_uptime')}`;
       if (overviewOpenErrors) overviewOpenErrors.textContent = String(failedJobs);
@@ -295,7 +299,7 @@
       systemHealthRows.innerHTML = [
         `<div class="row"><strong>${escapeHtml(t('health_disk'))}</strong><span>${escapeHtml(t('health_uploads_size'))}: ${escapeHtml(humanBytes(disk.uploadsBytes))} | ${escapeHtml(t('health_uploads_files'))}: ${escapeHtml(String(disk.uploadsFiles || 0))} | ${escapeHtml(t('health_fs_free'))}: ${escapeHtml(humanBytes(disk.fsFreeBytes))} / ${escapeHtml(t('health_fs_total'))}: ${escapeHtml(humanBytes(disk.fsTotalBytes))}</span></div>`,
         `<div class="row health-services-row" data-health-section="services"><strong>${escapeHtml(t('health_services'))}</strong><div class="health-service-list">${serviceCards}</div></div>`,
-        `<div class="row"><strong>${escapeHtml(t('health_jobs'))}</strong><span>${escapeHtml(t('health_proxy_running'))}: ${escapeHtml(String(jobs.proxyRunning || 0))} | ${escapeHtml(t('health_subtitle_running'))}: ${escapeHtml(String(jobs.subtitleRunning || 0))} | ${escapeHtml(t('health_ocr_running'))}: ${escapeHtml(String(jobs.ocrRunning || 0))} | ${escapeHtml(t('health_proxy_failed'))}: ${escapeHtml(String(jobs.proxyFailed || 0))} | ${escapeHtml(t('health_subtitle_failed'))}: ${escapeHtml(String(jobs.subtitleFailed || 0))} | ${escapeHtml(t('health_ocr_failed'))}: ${escapeHtml(String(jobs.ocrFailed || 0))}</span></div>`,
+        `<div class="row"><strong>${escapeHtml(t('health_jobs'))}</strong><span>${escapeHtml(t('health_proxy_running'))}: ${escapeHtml(String(jobs.proxyRunning || 0))} | ${escapeHtml(t('health_subtitle_running'))}: ${escapeHtml(String(jobs.subtitleRunning || 0))} | ${escapeHtml(t('health_ocr_running'))}: ${escapeHtml(String(jobs.ocrRunning || 0))} | ${escapeHtml(t('health_metadata_running'))}: ${escapeHtml(String(jobs.metadataRunning || 0))} | ${escapeHtml(t('health_proxy_failed'))}: ${escapeHtml(String(jobs.proxyFailed || 0))} | ${escapeHtml(t('health_subtitle_failed'))}: ${escapeHtml(String(jobs.subtitleFailed || 0))} | ${escapeHtml(t('health_ocr_failed'))}: ${escapeHtml(String(jobs.ocrFailed || 0))} | ${escapeHtml(t('health_metadata_failed'))}: ${escapeHtml(String(jobs.metadataFailed || 0))}</span></div>`,
         `<div class="row"><strong>${escapeHtml(t('health_integrity'))}</strong><span>${escapeHtml(t('health_missing_proxy'))}: ${escapeHtml(String(integrity.missingProxy || 0))} | ${escapeHtml(t('health_missing_thumbnail'))}: ${escapeHtml(String(integrity.missingThumbnail || 0))} | ${escapeHtml(t('health_missing_subtitle'))}: ${escapeHtml(String(integrity.missingSubtitle || 0))} | ${escapeHtml(t('health_missing_ocr'))}: ${escapeHtml(String(integrity.missingOcr || 0))}</span></div>`
       ].join('');
       if (systemJobStatus) {

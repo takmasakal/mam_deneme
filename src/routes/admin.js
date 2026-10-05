@@ -3578,7 +3578,23 @@ app.get('/api/admin/system-health', async (req, res) => {
       const resultPayload = row.result_payload && typeof row.result_payload === 'object'
         ? row.result_payload
         : {};
-      const mapped = jobType === 'subtitle' ? mapSubtitleJobFromDbRow(row) : mapVideoOcrJobFromDbRow(row);
+      const mapped = jobType === 'subtitle'
+        ? mapSubtitleJobFromDbRow(row)
+        : jobType === 'video_ocr'
+          ? mapVideoOcrJobFromDbRow(row)
+          : {
+            jobId: String(row.job_id || ''),
+            assetId: String(row.asset_id || ''),
+            status: normalizeMediaJobStatus(row.status),
+            updatedAt: row.updated_at,
+            finishedAt: row.finished_at,
+            warning: String(resultPayload.warning || ''),
+            error: String(row.error_text || ''),
+            model: String(resultPayload.model || 'gemma3:4b'),
+            chunkCount: Number(resultPayload.chunkCount || 0)
+          };
+      const isMetadata = jobType === 'metadata_enrichment';
+      const isProxy = jobType === 'proxy';
       return {
         jobId: mapped.jobId,
         assetId: mapped.assetId,
@@ -3593,11 +3609,14 @@ app.get('/api/admin/system-health', async (req, res) => {
         finishedAt: mapped.finishedAt,
         warning: String(mapped.warning || ''),
         error: String(mapped.error || ''),
-        label: jobType === 'subtitle' ? String(mapped.subtitleLabel || '') : String(mapped.resultLabel || ''),
-        model: jobType === 'subtitle' ? String(mapped.model || '') : '',
+        label: isMetadata
+          ? 'auto-metadata'
+          : isProxy ? 'transcode/proxy' : jobType === 'subtitle' ? String(mapped.subtitleLabel || '') : String(mapped.resultLabel || ''),
+        model: isMetadata || jobType === 'subtitle' ? String(mapped.model || '') : '',
         engine: jobType === 'video_ocr' ? String(mapped.ocrEngine || '') : '',
         lineCount: jobType === 'video_ocr' ? Number(mapped.lineCount || 0) : 0,
-        segmentCount: jobType === 'video_ocr' ? Number(mapped.segmentCount || 0) : 0
+        segmentCount: jobType === 'video_ocr' ? Number(mapped.segmentCount || 0) : 0,
+        chunkCount: isMetadata ? Number(mapped.chunkCount || 0) : 0
       };
     };
     const settings = await getAdminSettings().catch(() => ({ mediaJobRetentionDays: 30 }));
@@ -3608,10 +3627,10 @@ app.get('/api/admin/system-health', async (req, res) => {
 
     const orphanedActiveJobs = await pool.query(
       `
-        SELECT job_id, job_type
+        SELECT job_id, job_type, request_payload
         FROM media_processing_jobs
         WHERE status IN ('running', 'queued')
-          AND job_type IN ('subtitle', 'video_ocr')
+          AND job_type IN ('subtitle', 'video_ocr', 'metadata_enrichment', 'proxy')
       `
     );
     const orphanedIds = orphanedActiveJobs.rows
@@ -3620,7 +3639,11 @@ app.get('/api/admin/system-health', async (req, res) => {
         const type = String(row.job_type || '');
         const inMemory = type === 'subtitle'
           ? subtitleJobs?.get(jobId)
-          : videoOcrJobs?.get(jobId);
+          : type === 'video_ocr'
+            ? videoOcrJobs?.get(jobId)
+            : type === 'proxy'
+              ? proxyJobs.get(String(row.request_payload?.batchJobId || jobId))
+              : metadataEnrichmentService?.hasJob?.(jobId);
         return !inMemory && !hasActiveMediaJobRuntime?.(jobId);
       })
       .map((row) => String(row.job_id || ''))
@@ -3648,7 +3671,7 @@ app.get('/api/admin/system-health', async (req, res) => {
       `
         SELECT job_type, status, COUNT(*)::int AS count
         FROM media_processing_jobs
-        WHERE job_type IN ('subtitle', 'video_ocr')
+        WHERE job_type IN ('subtitle', 'video_ocr', 'metadata_enrichment', 'proxy')
           AND updated_at >= NOW() - ($1::int * INTERVAL '1 day')
         GROUP BY job_type, status
       `,
@@ -3661,8 +3684,10 @@ app.get('/api/admin/system-health', async (req, res) => {
     });
     const subtitleRunning = (mediaCounts['subtitle:running'] || 0) + (mediaCounts['subtitle:queued'] || 0);
     const ocrRunning = (mediaCounts['video_ocr:running'] || 0) + (mediaCounts['video_ocr:queued'] || 0);
+    const metadataRunning = (mediaCounts['metadata_enrichment:running'] || 0) + (mediaCounts['metadata_enrichment:queued'] || 0);
     const subtitleFailed = mediaCounts['subtitle:failed'] || 0;
     const ocrFailed = mediaCounts['video_ocr:failed'] || 0;
+    const metadataFailed = mediaCounts['metadata_enrichment:failed'] || 0;
 
     const { totalBytes: uploadsBytes, totalFiles: uploadsFiles } = getDirSizeAndFiles(UPLOADS_DIR);
     const fsInfo = getFsFreeAndTotal(UPLOADS_DIR);
@@ -3700,7 +3725,7 @@ app.get('/api/admin/system-health', async (req, res) => {
         SELECT mpj.*, a.title AS asset_title
         FROM media_processing_jobs mpj
         LEFT JOIN assets a ON a.id = mpj.asset_id
-        WHERE mpj.job_type IN ('subtitle', 'video_ocr')
+        WHERE mpj.job_type IN ('subtitle', 'video_ocr', 'metadata_enrichment', 'proxy')
           AND mpj.updated_at >= NOW() - ($1::int * INTERVAL '1 day')
         ORDER BY mpj.updated_at DESC
         LIMIT 1000
@@ -3709,10 +3734,16 @@ app.get('/api/admin/system-health', async (req, res) => {
     );
     const recentJobs = {
       subtitle: { active: null, latestCompleted: null, latestFailed: null },
-      ocr: { active: null, latestCompleted: null, latestFailed: null }
+      ocr: { active: null, latestCompleted: null, latestFailed: null },
+      metadata: { active: null, latestCompleted: null, latestFailed: null },
+      proxy: { active: null, latestCompleted: null, latestFailed: null }
     };
     recentJobsResult.rows.forEach((row) => {
-      const typeKey = String(row.job_type || '') === 'video_ocr' ? 'ocr' : 'subtitle';
+      const typeKey = String(row.job_type || '') === 'video_ocr'
+        ? 'ocr'
+        : String(row.job_type || '') === 'metadata_enrichment'
+          ? 'metadata'
+          : String(row.job_type || '') === 'proxy' ? 'proxy' : 'subtitle';
       const status = normalizeMediaJobStatus(row.status);
       const summary = buildHealthMediaJobSummary(row);
       if (!summary) return;
@@ -3731,7 +3762,7 @@ app.get('/api/admin/system-health', async (req, res) => {
       .filter(Boolean)
       .map((job) => ({
         ...job,
-        cancelable: ['subtitle', 'video_ocr'].includes(String(job.jobType || ''))
+        cancelable: ['subtitle', 'video_ocr', 'metadata_enrichment'].includes(String(job.jobType || ''))
           && ['queued', 'running'].includes(String(job.status || ''))
       }));
     const payload = {
@@ -3745,9 +3776,11 @@ app.get('/api/admin/system-health', async (req, res) => {
         proxyRunning,
         subtitleRunning,
         ocrRunning,
+        metadataRunning,
         proxyFailed,
         subtitleFailed,
-        ocrFailed
+        ocrFailed,
+        metadataFailed
       },
       services: {
         app: { ok: true, status: 200 },
@@ -3795,7 +3828,11 @@ app.post('/api/admin/media-jobs/:jobId/cancel', async (req, res) => {
       return res.status(409).json({ error: 'Media job is not active' });
     }
     const jobType = String(row.job_type || '');
-    cancelMediaJobRuntime?.(jobId);
+    if (jobType === 'metadata_enrichment') {
+      await metadataEnrichmentService?.cancelJob?.(jobId);
+    } else {
+      cancelMediaJobRuntime?.(jobId);
+    }
     const inMemoryJob = jobType === 'subtitle'
       ? subtitleJobs?.get(jobId)
       : jobType === 'video_ocr'
