@@ -63,14 +63,26 @@ async function run() {
     workflow: ['draft']
   });
 
-  assert.deepStrictEqual(Object.keys(root.listeners).sort(), ['click', 'submit']);
+  assert.deepStrictEqual(Object.keys(root.listeners).sort(), ['change', 'click', 'invalid', 'submit']);
 
   module.bind(root, {
     asset: { id: 'asset-1', mediaUrl: '/uploads/original.mov', proxyUrl: '/uploads/proxy.mp4' },
     workflow: ['draft']
   });
-  assert.deepStrictEqual(root.removed.sort(), ['click', 'submit'], 'rebinding removes previous detail listeners');
-  assert.deepStrictEqual(Object.keys(root.listeners).sort(), ['click', 'submit'], 'replacement detail listeners remain active');
+  assert.deepStrictEqual(root.removed.sort(), ['change', 'click', 'invalid', 'submit'], 'rebinding removes previous detail listeners');
+  assert.deepStrictEqual(Object.keys(root.listeners).sort(), ['change', 'click', 'invalid', 'submit'], 'replacement detail listeners remain active');
+
+  const roleLabel = { textContent: '' };
+  const roleSelect = {
+    value: 'attachment',
+    matches: (selector) => selector === '#versionForm select[name="fileRole"]',
+    form: { querySelector: () => roleLabel }
+  };
+  root.listeners.change({ target: roleSelect });
+  assert.strictEqual(roleLabel.textContent, 'upload_file');
+  roleSelect.value = 'version';
+  root.listeners.change({ target: roleSelect });
+  assert.strictEqual(roleLabel.textContent, 'upload_version');
 
   const submitButton = { disabled: false };
   const editForm = {
@@ -121,9 +133,9 @@ async function run() {
   assert.strictEqual(apiCalls[3].url, '/api/assets/asset-1/ensure-proxy');
   assert.strictEqual(refreshCount, 4);
   for (const fileRole of ['attachment', 'version']) {
-    await root.listeners.submit({ target: { id: 'versionForm', fileRole }, preventDefault() {} });
+    await root.listeners.submit({ target: { id: 'versionForm', fileRole, elements: {} }, preventDefault() {} });
   }
-  assert.deepStrictEqual(notifications, ['Dosya eklendi', 'Versiyon eklendi']);
+  assert.deepStrictEqual(notifications, ['attachment_added', 'version_added']);
 
   console.log('main detail asset actions tests passed');
 }

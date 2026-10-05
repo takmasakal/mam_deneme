@@ -129,6 +129,20 @@ button:hover {
   display: inline-block;
 }
 
+.mam-action-spinner {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: mam-action-spin 0.75s linear infinite;
+}
+
+@keyframes mam-action-spin {
+  to { transform: rotate(360deg); }
+}
+
 .asset-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));

@@ -121,17 +121,34 @@
 
       const payload = serializeForm(form);
       const versionFile = form.elements?.versionFile?.files?.[0];
-      if (versionFile) {
-        payload.fileName = versionFile.name;
-        payload.mimeType = versionFile.type || 'application/octet-stream';
-        payload.fileData = await readFileAsBase64(versionFile);
+      const uploadButton = form.querySelector?.('[data-version-submit]');
+      const previousButtonContent = uploadButton?.innerHTML || '';
+      if (uploadButton) {
+        uploadButton.disabled = true;
+        uploadButton.setAttribute('aria-busy', 'true');
+        uploadButton.innerHTML = `<span class="mam-action-spinner" aria-hidden="true"></span><span class="mam-action-label">${t('uploading')}</span>`;
       }
-      await api(`/api/assets/${asset.id}/versions`, {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
-      showShortcutToast?.(payload.fileRole === 'attachment' ? t('attachment_added') : t('version_added'), { type: 'success' });
-      await refresh(asset, workflow);
+      try {
+        if (versionFile) {
+          payload.fileName = versionFile.name;
+          payload.mimeType = versionFile.type || 'application/octet-stream';
+          payload.fileData = await readFileAsBase64(versionFile);
+        }
+        await api(`/api/assets/${asset.id}/versions`, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        showShortcutToast?.(payload.fileRole === 'attachment' ? t('attachment_added') : t('version_added'), { type: 'success' });
+        await refresh(asset, workflow);
+      } catch (error) {
+        alertError(String(error?.message || t('upload_failed')));
+      } finally {
+        if (uploadButton?.isConnected) {
+          uploadButton.disabled = false;
+          uploadButton.removeAttribute('aria-busy');
+          uploadButton.innerHTML = previousButtonContent;
+        }
+      }
     }
 
     async function handleClick(event, asset, workflow) {
@@ -236,15 +253,25 @@
         input.setCustomValidity('');
         updateVersionFileName(input);
       };
+      const onVersionRoleChange = (event) => {
+        const select = event.target;
+        if (!select?.matches?.('#versionForm select[name="fileRole"]')) return;
+        const label = select.form?.querySelector('[data-version-submit-label]');
+        if (label) label.textContent = t(select.value === 'attachment' ? 'upload_file' : 'upload_version');
+      };
+      const onDetailChange = (event) => {
+        onVersionFileChange(event);
+        onVersionRoleChange(event);
+      };
       root.addEventListener('submit', onSubmit);
       root.addEventListener('click', onClick);
       root.addEventListener('invalid', onVersionFileInvalid, true);
-      root.addEventListener('change', onVersionFileChange);
+      root.addEventListener('change', onDetailChange);
       const cleanup = () => {
         root.removeEventListener('submit', onSubmit);
         root.removeEventListener('click', onClick);
         root.removeEventListener('invalid', onVersionFileInvalid, true);
-        root.removeEventListener('change', onVersionFileChange);
+        root.removeEventListener('change', onDetailChange);
         if (activeBindings.get(root) === cleanup) activeBindings.delete(root);
       };
       activeBindings.set(root, cleanup);

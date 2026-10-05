@@ -370,7 +370,7 @@
       const versionSection = canManageVersions ? `
         <section class="asset-file-add-container">
           <form id="versionForm" class="inline-grid">
-            <h4>${escapeHtml(t('add_file'))}</h4>
+            <h4>${escapeHtml(t('add_file_or_version'))}</h4>
             <select name="fileRole" aria-label="${escapeHtml(t('file_role'))}"><option value="version">${escapeHtml(t('new_version'))} (${escapeHtml(asset.versionMimeType || asset.mimeType || '')})</option><option value="attachment">${escapeHtml(t('attachment_file'))}</option></select>
             <input name="label" placeholder="${escapeHtml(t('ph_version_label'))}" />
             <input name="note" placeholder="${t('what_changed')}" />
@@ -379,7 +379,7 @@
               <span class="localized-file-input-button">${escapeHtml(t('choose_file'))}</span>
               <span class="localized-file-input-name" data-version-file-name>${escapeHtml(t('no_file_chosen'))}</span>
             </label>
-            <button type="submit" class="mam-action-btn mam-action-btn-file"><span class="mam-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M12 12v6m-3-3h6"/></svg></span><span class="mam-action-label">${escapeHtml(t('add_file'))}</span></button>
+            <button type="submit" class="mam-action-btn mam-action-btn-file" data-version-submit><span class="mam-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M12 12v6m-3-3h6"/></svg></span><span class="mam-action-label" data-version-submit-label>${escapeHtml(t('upload_version'))}</span></button>
           </form>
         </section>
 
