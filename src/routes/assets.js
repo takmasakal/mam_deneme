@@ -1570,6 +1570,8 @@ function registerAssetRoutes(app, deps) {
       if (originalVersion && !String(originalVersion.snapshotThumbnailUrl || '').trim() && originalAssetThumbnailUrl) {
         originalVersion.snapshotThumbnailUrl = originalAssetThumbnailUrl;
       }
+      asset.originalVersionId = String(originalVersion?.versionId || '').trim();
+      asset.originalThumbnailUrl = String(originalVersion?.snapshotThumbnailUrl || originalAssetThumbnailUrl).trim();
       asset.versions.forEach((version) => {
         version.fileRole = version.actionType === 'attachment' || String(version.snapshotMimeType || '').toLowerCase() !== String(asset.versionMimeType || '').toLowerCase() ? 'attachment' : 'version';
       });

@@ -4043,8 +4043,11 @@ app.get('/api/admin/proxy-missing-scan', async (req, res) => {
       .map((version) => {
         const asset = assetById.get(String(version.asset_id || ''));
         const actionType = String(version.action_type || '').trim().toLowerCase();
-        const missingProxy = !storedFileExists(version.snapshot_media_url, 'proxies')
-          || !String(version.snapshot_media_url || '').toLowerCase().includes('/uploads/proxies/');
+        const resolvedProxyUrl = typeof resolveStoredUrl === 'function'
+          ? resolveStoredUrl(version.snapshot_media_url, 'proxies')
+          : String(version.snapshot_media_url || '').trim();
+        const proxyUrlPointsToProxyFolder = /(?:^|\/)proxies\//i.test(String(resolvedProxyUrl || ''));
+        const missingProxy = !storedFileExists(version.snapshot_media_url, 'proxies') || !proxyUrlPointsToProxyFolder;
         const missingThumbnail = !storedFileExists(version.snapshot_thumbnail_url, 'thumbnails');
         return {
           id: String(version.asset_id || ''),

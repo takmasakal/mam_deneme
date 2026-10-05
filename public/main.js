@@ -2632,11 +2632,16 @@ const detailVersionActionsModule = window.createMainDetailVersionActions({
     if (!mediaUrl || !host) return false;
     let actualTag = String(mediaEl?.tagName || mediaEl?.localName || '').toUpperCase();
     const versionThumbnailUrl = String(version?.snapshotThumbnailUrl || '').trim();
+    const versionId = String(version?.versionId || version?.version_id || '').trim();
+    const isOriginalVersion = Boolean(versionId && versionId === String(asset?.originalVersionId || '').trim());
+    const posterUrl = versionThumbnailUrl
+      || (isOriginalVersion ? String(asset?.originalThumbnailUrl || '').trim() : '')
+      || String(asset?.thumbnailUrl || '').trim();
     const previewAsset = {
       ...asset,
       mediaUrl,
       proxyUrl: versionIsVideo ? mediaUrl : asset.proxyUrl,
-      thumbnailUrl: versionIsVideo ? (versionThumbnailUrl || asset.thumbnailUrl) : asset.thumbnailUrl
+      thumbnailUrl: versionIsVideo ? posterUrl : asset.thumbnailUrl
     };
     if (!mediaEl || actualTag !== expectedTag) {
       if (!versionIsVideo) return false;
@@ -2669,15 +2674,18 @@ const detailVersionActionsModule = window.createMainDetailVersionActions({
     try { mediaEl.pause(); } catch (_error) {}
     try { mediaEl.currentTime = 0; } catch (_error) {}
     mediaEl.removeAttribute('data-dash-manifest');
-    mediaEl.dataset.versionId = String(version?.versionId || version?.version_id || '');
+    mediaEl.dataset.versionId = versionId;
     if (versionIsVideo) {
-      const posterUrl = versionThumbnailUrl || String(asset?.thumbnailUrl || '').trim();
-      if (posterUrl) mediaEl.setAttribute('poster', posterUrl);
+      if (posterUrl) {
+        mediaEl.setAttribute('poster', posterUrl);
+        mediaEl.poster = posterUrl;
+      }
       else mediaEl.removeAttribute('poster');
     }
     mediaEl.removeAttribute('src');
     mediaEl.load();
     mediaEl.src = mediaUrl;
+    if (versionIsVideo && posterUrl) mediaEl.poster = posterUrl;
     mediaEl.load();
     activePlayerCleanup = initAssetPlayer(previewAsset, assetDetail);
     return true;
