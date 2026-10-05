@@ -94,6 +94,7 @@
         uploadButton.setAttribute('aria-busy', 'true');
         uploadButton.innerHTML = `<span class="mam-action-spinner" aria-hidden="true"></span><span class="mam-action-label">${t('uploading')}</span>`;
       }
+      global.mamVersionUploadCount = Math.max(0, Number(global.mamVersionUploadCount) || 0) + 1;
       try {
         if (versionFile) {
           payload.fileName = versionFile.name;
@@ -109,6 +110,7 @@
       } catch (error) {
         alertError(String(error?.message || t('upload_failed')));
       } finally {
+        global.mamVersionUploadCount = Math.max(0, (Number(global.mamVersionUploadCount) || 1) - 1);
         if (uploadButton?.isConnected) {
           uploadButton.disabled = false;
           uploadButton.removeAttribute('aria-busy');

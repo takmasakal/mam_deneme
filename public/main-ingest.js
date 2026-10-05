@@ -27,7 +27,7 @@
 
     function protectUploadNavigation() {
       document.addEventListener('click', (event) => {
-        if (!uploadInProgress) return;
+        if (!uploadInProgress && !(Number(global.mamVersionUploadCount) > 0)) return;
         const target = event.target;
         const link = target && typeof target.closest === 'function'
           ? target.closest('#adminMenuLink')
@@ -35,10 +35,13 @@
         if (!link) return;
         event.preventDefault();
         event.stopImmediatePropagation();
-        notifyUpload(t('upload_navigation_warning'), 'info');
+        if (!global.confirm(t('upload_admin_new_tab_confirm'))) return;
+        const adminWindow = global.open(link.href || '/admin.html', '_blank');
+        if (adminWindow) adminWindow.opener = null;
+        notifyUpload(t(adminWindow ? 'upload_admin_opened_new_tab' : 'upload_navigation_warning'), 'info');
       }, true);
       window.addEventListener('beforeunload', (event) => {
-        if (!uploadInProgress) return;
+        if (!uploadInProgress && !(Number(global.mamVersionUploadCount) > 0)) return;
         event.preventDefault();
         event.returnValue = '';
       });
