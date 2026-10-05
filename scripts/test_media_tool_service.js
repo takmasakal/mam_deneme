@@ -14,7 +14,8 @@ function run() {
   const withAudio = buildVideoProxyArgs('/in.mp4', '/out.mp4', {
     audioStreamCount: 3,
     width: 1920,
-    height: 1080
+    height: 1080,
+    metadataComment: 'MetMAM tarafından üretilen proxy'
   });
   assert(withAudio.includes('-map'));
   assert(withAudio.includes('0:v:0'));
@@ -23,6 +24,9 @@ function run() {
   assert(withAudio.includes('160k'));
   assert(!withAudio.includes('amerge'));
   assert(!withAudio.includes('-filter_complex'));
+  const metadataIndex = withAudio.indexOf('-metadata');
+  assert(metadataIndex >= 0);
+  assert.strictEqual(withAudio[metadataIndex + 1], 'comment=MetMAM tarafından üretilen proxy');
 
   const noAudio = buildVideoProxyArgs('/in.mp4', '/out.mp4', {
     includeAudio: false,

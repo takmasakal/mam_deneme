@@ -27,6 +27,7 @@ function buildVideoProxyArgs(inputPath, outputPath, options = {}) {
   const includeAudio = options.includeAudio !== false;
   const hasAudio = Number(options.audioStreamCount || 0) > 0;
   const scaleFilter = options.scaleFilter || buildProxyScaleFilter(options.width, options.height);
+  const metadataComment = String(options.metadataComment || '').replace(/[\r\n]+/g, ' ').trim();
   const args = [
     '-hide_banner',
     '-y',
@@ -67,6 +68,7 @@ function buildVideoProxyArgs(inputPath, outputPath, options = {}) {
     );
   }
 
+  if (metadataComment) args.push('-metadata', `comment=${metadataComment}`);
   args.push('-movflags', '+faststart', outputPath);
   return args;
 }
@@ -102,6 +104,7 @@ function createMediaToolService(options = {}) {
   const isMediaJobCancelled = typeof options.isMediaJobCancelled === 'function'
     ? options.isMediaJobCancelled
     : () => false;
+  const proxyMetadataComment = String(options.proxyMetadataComment || '').replace(/[\r\n]+/g, ' ').trim();
 
   function runCommandCapture(cmd, args, commandOptions = {}) {
     const env = commandOptions?.env ? { ...process.env, ...commandOptions.env } : process.env;
@@ -294,7 +297,8 @@ function createMediaToolService(options = {}) {
       await runFfmpeg(buildVideoProxyArgs(inputPath, outputPath, {
         includeAudio,
         audioStreamCount: audioStreams.length,
-        scaleFilter: proxyScaleFilter
+        scaleFilter: proxyScaleFilter,
+        metadataComment: proxyMetadataComment
       }));
     };
 

@@ -24,6 +24,7 @@ const { createAssetEditLockService } = require('./services/assetEditLockService'
 const { createImageDerivativeService } = require('./services/imageDerivativeService');
 const { createMetadataEnrichmentService } = require('./services/metadataEnrichmentService');
 const { createMediaToolService } = require('./services/mediaToolService');
+const uiTranslations = require('../public/i18n.json');
 const { createMediaArtifactService } = require('./services/mediaArtifactService');
 const { createBackupService } = require('./services/backupService');
 const { createKeycloakService } = require('./services/keycloakService');
@@ -95,6 +96,7 @@ const APP_BUILD_INFO = {
   buildDate: String(process.env.MAM_BUILD_DATE || 'unknown').trim() || 'unknown',
   nodeEnv: String(process.env.NODE_ENV || '').trim() || 'development'
 };
+const APP_DISPLAY_NAME = String(uiTranslations?.tr?.app_title || uiTranslations?.en?.app_title || '').trim() || 'MAM';
 const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || process.env.MAM_JSON_BODY_LIMIT || '1500mb';
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
 const PROXIES_DIR = path.join(UPLOADS_DIR, 'proxies');
@@ -145,7 +147,8 @@ const mediaToolService = createMediaToolService({
   fs,
   spawn,
   trackMediaJobProcess,
-  isMediaJobCancelled
+  isMediaJobCancelled,
+  proxyMetadataComment: `${APP_DISPLAY_NAME} tarafından üretilen proxy`
 });
 const {
   generateVideoProxy,
