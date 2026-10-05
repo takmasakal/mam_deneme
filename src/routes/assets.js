@@ -2089,6 +2089,11 @@ function registerAssetRoutes(app, deps) {
             mimeType: replacementMimeType,
             fileName: replacementFileName
           });
+        const isVideoReplacement = isVideoCandidate({
+          mimeType: replacementMimeType,
+          fileName: replacementFileName,
+          declaredType: fileRole === 'version' ? row.type : ''
+        });
         if (!replacementFileName) return res.status(400).json({ error: 'File name is required' });
         const original = await pool.query("SELECT snapshot_mime_type FROM asset_versions WHERE asset_id = $1 ORDER BY created_at ASC, CASE WHEN label = 'v1' THEN 0 ELSE 1 END, version_id ASC LIMIT 1", [row.id]);
         const versionMimeType = String(original.rows[0]?.snapshot_mime_type || row.mime_type || '').toLowerCase();
@@ -2129,9 +2134,18 @@ function registerAssetRoutes(app, deps) {
           inputPath: replacementPath,
           createdAt: new Date()
         }) : {};
-        const replacementProxyUrl = String(derivatives.proxyUrl || '').trim();
+        let replacementProxyUrl = String(derivatives.proxyUrl || '').trim();
         let replacementThumbnailUrl = String(derivatives.thumbnailUrl || replacementProxyUrl || '').trim();
-        if (!isImageReplacement) {
+        if (isVideoReplacement) {
+          const proxyOut = buildArtifactPath('proxies', `${Date.now()}-${nanoid()}-version-proxy.mp4`, new Date());
+          replacementArtifactPaths.push(proxyOut.absolutePath);
+          await generateVideoProxy(replacementPath, proxyOut.absolutePath, { allowAudioFallback: true });
+          replacementProxyUrl = proxyOut.publicUrl;
+          const thumb = buildArtifactPath('thumbnails', `${Date.now()}-${nanoid()}-version-thumb.jpg`, new Date());
+          replacementArtifactPaths.push(thumb.absolutePath);
+          await generateVideoThumbnail(proxyOut.absolutePath, thumb.absolutePath);
+          replacementThumbnailUrl = thumb.publicUrl;
+        } else if (!isImageReplacement) {
           const pdf = isPdfCandidate({ mimeType: replacementMimeType, fileName: replacementFileName });
           const thumb = buildArtifactPath('thumbnails', `${Date.now()}-${nanoid()}${pdf ? '.jpg' : '.svg'}`, new Date());
           replacementArtifactPaths.push(thumb.absolutePath);
@@ -2149,7 +2163,7 @@ function registerAssetRoutes(app, deps) {
           label: req.body.label?.trim() || `v${count + 1}`,
           note: req.body.note?.trim() || 'Version update',
           snapshot: {
-            snapshotMediaUrl: replacementMediaUrl,
+            snapshotMediaUrl: replacementProxyUrl || replacementMediaUrl,
             snapshotSourcePath: replacementPath,
             snapshotFileName: replacementFileName,
             snapshotMimeType: replacementMimeType,
