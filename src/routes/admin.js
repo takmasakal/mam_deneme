@@ -4020,7 +4020,18 @@ app.get('/api/admin/proxy-missing-scan', async (req, res) => {
     const versionItems = versionResult.rows
       .filter((version) => {
         const asset = assetById.get(String(version.asset_id || ''));
-        return asset && isVideo({
+        if (!asset) return false;
+        const actionType = String(version.action_type || '').trim().toLowerCase();
+        if (actionType === 'ingest' || actionType.endsWith('_original')) return false;
+        const versionSourcePath = String(version.snapshot_source_path || '').trim();
+        const assetSourcePath = String(asset.source_path || '').trim();
+        const versionMediaUrl = String(version.snapshot_media_url || '').trim();
+        const assetMediaUrl = String(asset.media_url || '').trim();
+        const sameSource = Boolean(versionSourcePath && assetSourcePath && path.resolve(versionSourcePath) === path.resolve(assetSourcePath));
+        const sameMedia = Boolean(versionMediaUrl && assetMediaUrl && versionMediaUrl === assetMediaUrl);
+        const originalSnapshot = sameSource || sameMedia;
+        if (originalSnapshot) return false;
+        return isVideo({
           ...asset,
           mime_type: version.snapshot_mime_type || asset.mime_type,
           file_name: version.snapshot_file_name || asset.file_name
@@ -4031,6 +4042,7 @@ app.get('/api/admin/proxy-missing-scan', async (req, res) => {
       })
       .map((version) => {
         const asset = assetById.get(String(version.asset_id || ''));
+        const actionType = String(version.action_type || '').trim().toLowerCase();
         const missingProxy = !storedFileExists(version.snapshot_media_url, 'proxies')
           || !String(version.snapshot_media_url || '').toLowerCase().includes('/uploads/proxies/');
         const missingThumbnail = !storedFileExists(version.snapshot_thumbnail_url, 'thumbnails');
@@ -4039,7 +4051,7 @@ app.get('/api/admin/proxy-missing-scan', async (req, res) => {
           itemKey: `${String(version.asset_id || '')}:${String(version.version_id || '')}`,
           versionId: String(version.version_id || ''),
           itemKind: 'version',
-          title: `${String(asset?.title || asset?.file_name || version.asset_id || '')} · ${String(version.label || version.version_id || '')}`,
+          title: `${String(asset?.title || asset?.file_name || version.asset_id || '')} · ${actionType === 'attachment' ? 'Ek dosya' : 'Versiyon'} · ${String(version.label || version.version_id || '')}`,
           fileName: String(version.snapshot_file_name || ''),
           type: 'version',
           assetFamily: 'video',
