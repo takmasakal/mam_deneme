@@ -2637,10 +2637,13 @@ const detailVersionActionsModule = window.createMainDetailVersionActions({
     const posterUrl = versionThumbnailUrl
       || (isOriginalVersion ? String(asset?.originalThumbnailUrl || '').trim() : '')
       || String(asset?.thumbnailUrl || '').trim();
+    const effectiveMediaUrl = versionIsVideo && isOriginalVersion
+      ? (String(asset?.proxyUrl || '').trim() || mediaUrl)
+      : mediaUrl;
     const previewAsset = {
       ...asset,
-      mediaUrl,
-      proxyUrl: versionIsVideo ? mediaUrl : asset.proxyUrl,
+      mediaUrl: effectiveMediaUrl,
+      proxyUrl: versionIsVideo ? effectiveMediaUrl : asset.proxyUrl,
       thumbnailUrl: versionIsVideo ? posterUrl : asset.thumbnailUrl
     };
     if (versionIsVideo || !mediaEl || actualTag !== expectedTag) {
@@ -2684,7 +2687,7 @@ const detailVersionActionsModule = window.createMainDetailVersionActions({
     }
     mediaEl.removeAttribute('src');
     mediaEl.load();
-    mediaEl.src = mediaUrl;
+    mediaEl.src = effectiveMediaUrl;
     if (versionIsVideo && posterUrl) mediaEl.poster = posterUrl;
     mediaEl.load();
     activePlayerCleanup = initAssetPlayer(previewAsset, assetDetail);
