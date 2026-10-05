@@ -2631,7 +2631,13 @@ const detailVersionActionsModule = window.createMainDetailVersionActions({
     const expectedTag = versionIsVideo ? 'VIDEO' : versionIsAudio ? 'AUDIO' : '';
     if (!mediaUrl || !host) return false;
     let actualTag = String(mediaEl?.tagName || mediaEl?.localName || '').toUpperCase();
-    const previewAsset = { ...asset, mediaUrl, proxyUrl: versionIsVideo ? mediaUrl : asset.proxyUrl };
+    const versionThumbnailUrl = String(version?.snapshotThumbnailUrl || '').trim();
+    const previewAsset = {
+      ...asset,
+      mediaUrl,
+      proxyUrl: versionIsVideo ? mediaUrl : asset.proxyUrl,
+      thumbnailUrl: versionIsVideo ? (versionThumbnailUrl || asset.thumbnailUrl) : asset.thumbnailUrl
+    };
     if (!mediaEl || actualTag !== expectedTag) {
       if (!versionIsVideo) return false;
       activePlayerCleanup?.();
@@ -2663,6 +2669,7 @@ const detailVersionActionsModule = window.createMainDetailVersionActions({
     try { mediaEl.pause(); } catch (_error) {}
     mediaEl.removeAttribute('data-dash-manifest');
     mediaEl.dataset.versionId = String(version?.versionId || version?.version_id || '');
+    if (versionIsVideo && versionThumbnailUrl) mediaEl.setAttribute('poster', versionThumbnailUrl);
     mediaEl.src = mediaUrl;
     mediaEl.load();
     activePlayerCleanup = initAssetPlayer(previewAsset, assetDetail);

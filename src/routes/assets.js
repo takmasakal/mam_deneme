@@ -1607,7 +1607,7 @@ function registerAssetRoutes(app, deps) {
       const original = await pool.query("SELECT snapshot_mime_type FROM asset_versions WHERE asset_id = $1 ORDER BY created_at ASC, CASE WHEN label = 'v1' THEN 0 ELSE 1 END, version_id ASC LIMIT 1", [req.params.id]);
       if (version.rows[0].action_type === 'attachment' || String(version.rows[0].snapshot_mime_type || '').toLowerCase() !== String(original.rows[0]?.snapshot_mime_type || loaded.row.mime_type || '').toLowerCase()) return res.status(400).json({ error: 'Ek dosyalar varsayılan yapılamaz' });
       await pool.query('UPDATE assets SET default_version_id = $1, updated_at = NOW() WHERE id = $2', [versionId, req.params.id]);
-      await recordAuditEvent?.(req, { action: 'asset.default_file_changed', targetType: 'asset', targetId: req.params.id, details: { versionId, previousVersionId: loaded.row.default_version_id || '' } });
+      await recordAuditEvent?.(req, { action: 'asset.default_file_changed', targetType: 'asset', targetId: req.params.id, targetTitle: String(loaded.row.title || loaded.row.file_name || req.params.id), details: { versionId, previousVersionId: loaded.row.default_version_id || '' } });
       res.json({ saved: true, defaultVersionId: versionId });
     } catch (_error) {
       res.status(500).json({ error: 'Failed to save default version' });
@@ -2143,7 +2143,7 @@ function registerAssetRoutes(app, deps) {
           replacementProxyUrl = proxyOut.publicUrl;
           const thumb = buildArtifactPath('thumbnails', `${Date.now()}-${nanoid()}-version-thumb.jpg`, new Date());
           replacementArtifactPaths.push(thumb.absolutePath);
-          await generateVideoThumbnail(proxyOut.absolutePath, thumb.absolutePath);
+          await generateVideoThumbnail(proxyOut.absolutePath, thumb.absolutePath, { seekSeconds: 0 });
           replacementThumbnailUrl = thumb.publicUrl;
         } else if (!isImageReplacement) {
           const pdf = isPdfCandidate({ mimeType: replacementMimeType, fileName: replacementFileName });
@@ -2213,6 +2213,18 @@ function registerAssetRoutes(app, deps) {
           dbClient.release();
         }
         await indexAssetToElastic(req.params.id).catch(() => {});
+        await recordAuditEvent?.(req, {
+          action: fileRole === 'attachment' ? 'asset.attachment_added' : 'asset.version_added',
+          targetType: 'asset',
+          targetId: req.params.id,
+          targetTitle: String(row.title || row.file_name || row.id),
+          details: {
+            versionId: version.versionId,
+            label: version.label,
+            fileName: version.snapshot.snapshotFileName,
+            mimeType: version.snapshot.snapshotMimeType
+          }
+        });
         return res.status(201).json(mapVersionRow({
           version_id: version.versionId,
           asset_id: req.params.id,
@@ -2380,6 +2392,18 @@ function registerAssetRoutes(app, deps) {
       if (typeof cleanupUnreferencedAssetFiles === 'function') {
         await cleanupUnreferencedAssetFiles(cleanupTargets, { assetId, versionId });
       }
+      const attachment = String(row.action_type || '').trim().toLowerCase() === 'attachment';
+      await recordAuditEvent?.(req, {
+        action: attachment ? 'asset.attachment_deleted' : 'asset.version_deleted',
+        targetType: 'asset',
+        targetId: assetId,
+        targetTitle: String(assetRow.title || assetRow.file_name || assetId),
+        details: {
+          versionId,
+          label: String(row.label || ''),
+          fileName: String(row.snapshot_file_name || '')
+        }
+      });
       return res.json({ deleted: true, versionId });
     } catch (_error) {
       return res.status(500).json({ error: 'Failed to delete version' });
@@ -2420,6 +2444,19 @@ function registerAssetRoutes(app, deps) {
         `,
         [assetId, versionId, nextLabel, nextNote]
       );
+      const attachment = String(row.action_type || '').trim().toLowerCase() === 'attachment';
+      await recordAuditEvent?.(req, {
+        action: attachment ? 'asset.attachment_updated' : 'asset.version_updated',
+        targetType: 'asset',
+        targetId: assetId,
+        targetTitle: String(assetRow.title || assetRow.file_name || assetId),
+        details: {
+          versionId,
+          previousLabel: String(row.label || ''),
+          label: nextLabel,
+          note: nextNote
+        }
+      });
       return res.json({ updated: true, version: mapVersionRow(updated.rows[0]) });
     } catch (_error) {
       return res.status(500).json({ error: 'Failed to update version' });
