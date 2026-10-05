@@ -2591,7 +2591,7 @@ const detailVersionActionsModule = window.createMainDetailVersionActions({
       proxyUrl: versionIsVideo ? mediaUrl : asset.proxyUrl,
       thumbnailUrl: versionIsVideo ? posterUrl : asset.thumbnailUrl
     };
-    if (!mediaEl || actualTag !== expectedTag) {
+    if (versionIsVideo || !mediaEl || actualTag !== expectedTag) {
       if (!versionIsVideo) return false;
       activePlayerCleanup?.();
       activePlayerCleanup = null;
