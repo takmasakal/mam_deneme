@@ -2016,16 +2016,14 @@ function registerAssetRoutes(app, deps) {
 
       const row = loaded.row;
       const incomingDcMetadata = sanitizeDcMetadata(body.dcMetadata);
-      const parsedDuration = Number(body.durationSeconds);
       const updated = {
         title: Object.prototype.hasOwnProperty.call(body, 'title') ? String(body.title) : row.title,
         description: Object.prototype.hasOwnProperty.call(body, 'description')
           ? String(body.description)
           : row.description,
         owner: Object.prototype.hasOwnProperty.call(body, 'owner') ? String(body.owner) : row.owner,
-        durationSeconds: Object.prototype.hasOwnProperty.call(body, 'durationSeconds')
-          ? (Number.isFinite(parsedDuration) ? parsedDuration : row.duration_seconds)
-          : row.duration_seconds,
+        // Duration is derived from the stored media and is not user-editable metadata.
+        durationSeconds: row.duration_seconds,
         sourcePath: Object.prototype.hasOwnProperty.call(body, 'sourcePath')
           ? String(body.sourcePath)
           : row.source_path,
