@@ -1,4 +1,5 @@
 const { normalizeExecutionMode } = require('./aiExecutionService');
+const { PROCESSING_TASKS } = require('./processingJobContract');
 
 const OPERATIONS = [
   'generateVideoProxy',
@@ -10,6 +11,11 @@ const OPERATIONS = [
   'runFfmpeg',
   'summarizeFfmpegError'
 ];
+const LOCAL_MEDIA_TASKS = Object.freeze([
+  PROCESSING_TASKS.VIDEO_PROXY,
+  PROCESSING_TASKS.VIDEO_PROBE,
+  PROCESSING_TASKS.MEDIA_TRANSCODE
+]);
 
 function createMediaOperationsService(options = {}) {
   const mode = normalizeExecutionMode(options.mode);
@@ -22,7 +28,7 @@ function createMediaOperationsService(options = {}) {
     mode,
     getCapabilities: () => typeof adapter.getCapabilities === 'function'
       ? adapter.getCapabilities()
-      : { mode, tasks: OPERATIONS.filter((name) => typeof adapter[name] === 'function') }
+      : { mode, tasks: [...LOCAL_MEDIA_TASKS] }
   };
   OPERATIONS.forEach((operation) => {
     service[operation] = (...args) => {
