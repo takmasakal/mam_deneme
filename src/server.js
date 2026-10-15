@@ -26,6 +26,7 @@ const { createMetadataEnrichmentService } = require('./services/metadataEnrichme
 const { createMediaToolService } = require('./services/mediaToolService');
 const { createAiExecutionService } = require('./services/aiExecutionService');
 const { createMediaOperationsService } = require('./services/mediaOperationsService');
+const { PROCESSING_TASKS } = require('./services/processingJobContract');
 const uiTranslations = require('../public/i18n.json');
 const { createMediaArtifactService } = require('./services/mediaArtifactService');
 const { createBackupService } = require('./services/backupService');
@@ -6360,7 +6361,7 @@ const metadataEnrichmentService = createMetadataEnrichmentService({
 const aiExecutionService = createAiExecutionService({
   mode: process.env.AI_EXECUTION_MODE || 'local',
   localAdapter: {
-    getCapabilities: () => ({ mode: 'local', tasks: ['subtitle.generate', 'subtitle.translate', 'video.ocr', 'photo.ocr', 'metadata.enrich'] }),
+    getCapabilities: () => ({ mode: 'local', tasks: [PROCESSING_TASKS.SUBTITLE_GENERATE, PROCESSING_TASKS.SUBTITLE_TRANSLATE, PROCESSING_TASKS.VIDEO_OCR, PROCESSING_TASKS.PHOTO_OCR, PROCESSING_TASKS.METADATA_ENRICH] }),
     queueSubtitleGeneration: queueSubtitleGenerationJob,
     queueSubtitleTranslation: queueSubtitleTranslationJob,
     queueVideoOcr: queueVideoOcrJob,
