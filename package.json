@@ -35,6 +35,7 @@
     "test:subtitle-index": "node scripts/test_subtitle_index_service.js",
     "test:text-asset-index": "node scripts/test_text_asset_index_service.js",
     "test:media-jobs": "node scripts/test_media_jobs.js",
+    "test:execution-services": "node scripts/test_execution_services.js",
     "sync-login-version": "node scripts/sync-login-version.js"
   },
   "dependencies": {

@@ -24,6 +24,8 @@ const { createAssetEditLockService } = require('./services/assetEditLockService'
 const { createImageDerivativeService } = require('./services/imageDerivativeService');
 const { createMetadataEnrichmentService } = require('./services/metadataEnrichmentService');
 const { createMediaToolService } = require('./services/mediaToolService');
+const { createAiExecutionService } = require('./services/aiExecutionService');
+const { createMediaOperationsService } = require('./services/mediaOperationsService');
 const uiTranslations = require('../public/i18n.json');
 const { createMediaArtifactService } = require('./services/mediaArtifactService');
 const { createBackupService } = require('./services/backupService');
@@ -143,12 +145,16 @@ const {
   isUploadArtifactPath,
   resolveStoredUrl
 } = mediaArtifactService;
-const mediaToolService = createMediaToolService({
+const localMediaOperationsAdapter = createMediaToolService({
   fs,
   spawn,
   trackMediaJobProcess,
   isMediaJobCancelled,
   proxyMetadataComment: `${APP_DISPLAY_NAME} tarafından üretilen proxy`
+});
+const mediaOperationsService = createMediaOperationsService({
+  mode: process.env.MEDIA_EXECUTION_MODE || 'local',
+  localAdapter: localMediaOperationsAdapter
 });
 const {
   generateVideoProxy,
@@ -158,7 +164,7 @@ const {
   probeMediaTechnicalInfo,
   runFfmpeg,
   summarizeFfmpegError
-} = mediaToolService;
+} = mediaOperationsService;
 app.use(express.json({ limit: JSON_BODY_LIMIT }));
 app.get('/api/health', (_req, res) => {
   res.json({
@@ -6337,6 +6343,20 @@ const metadataEnrichmentService = createMetadataEnrichmentService({
   getMediaJobConcurrencyLimit,
   getAiModelSettings: async () => (await getAdminSettings()).aiModels
 });
+const aiExecutionService = createAiExecutionService({
+  mode: process.env.AI_EXECUTION_MODE || 'local',
+  localAdapter: {
+    getCapabilities: () => ({
+      mode: 'local',
+      tasks: ['subtitle.generate', 'subtitle.translate', 'video.ocr', 'photo.ocr', 'metadata.enrich']
+    }),
+    queueSubtitleGeneration: queueSubtitleGenerationJob,
+    queueSubtitleTranslation: queueSubtitleTranslationJob,
+    queueVideoOcr: queueVideoOcrJob,
+    extractPhotoOcr: extractPhotoOcrToText,
+    queueMetadataEnrichment: (row) => metadataEnrichmentService.queueAsset(row)
+  }
+});
 const DOCUMENT_RIGHTS_ADMIN_GROUPS = String(process.env.MAM_DOCUMENT_ADMIN_GROUPS || 'dokadmin,dokyonet,dokyönet,dokyon,dokyön')
   .split(',')
   .map((value) => normalizeIdentityKey(value.replace(/^\/+/, '').trim()))
@@ -7024,6 +7044,7 @@ registerTextProcessingRoutes(app, {
   mapAssetRow,
   WHISPER_MODEL,
   normalizeSubtitleBackend,
+  aiExecutionService,
   queueSubtitleGenerationJob,
   queueSubtitleTranslationJob,
   subtitleJobs,

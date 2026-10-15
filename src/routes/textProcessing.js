@@ -32,6 +32,7 @@ function registerTextProcessingRoutes(app, deps) {
     mapAssetRow,
     WHISPER_MODEL,
     normalizeSubtitleBackend,
+    aiExecutionService,
     queueSubtitleGenerationJob,
     queueSubtitleTranslationJob,
     subtitleJobs,
@@ -61,6 +62,12 @@ function registerTextProcessingRoutes(app, deps) {
     getAdminSettings,
     nanoid
   } = deps;
+  const aiExecution = aiExecutionService || {
+    queueSubtitleGeneration: queueSubtitleGenerationJob,
+    queueSubtitleTranslation: queueSubtitleTranslationJob,
+    queueVideoOcr: queueVideoOcrJob,
+    extractPhotoOcr: extractPhotoOcrToText
+  };
 
   async function loadVisibleAssetRow(req, assetId) {
     const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
@@ -199,7 +206,7 @@ function registerTextProcessingRoutes(app, deps) {
       const subtitleBackend = normalizeSubtitleBackend(
         req.body?.subtitleBackend || (req.body?.useWhisperX ? 'whisperx' : 'whisper')
       );
-      const job = queueSubtitleGenerationJob(row, {
+      const job = aiExecution.queueSubtitleGeneration(row, {
         lang: subtitleLang,
         label: subtitleLabel,
         model,
@@ -245,7 +252,7 @@ function registerTextProcessingRoutes(app, deps) {
       if (modelConfig.enabled === false) {
         return res.status(400).json({ error: 'Subtitle translation model is disabled' });
       }
-      const job = queueSubtitleTranslationJob(row, {
+      const job = aiExecution.queueSubtitleTranslation(row, {
         sourceSubtitleUrl: req.body?.subtitleUrl,
         targetLang: req.body?.targetLang || 'tr',
         label: req.body?.label,
@@ -325,7 +332,7 @@ function registerTextProcessingRoutes(app, deps) {
       const safeLabel = sanitizeFileName(baseLabel.replace(/\.txt$/i, '')) || 'photo-ocr';
       const storedName = `${Date.now()}-${nanoid()}-${safeLabel}.txt`;
       const out = buildArtifactPath('ocr', storedName, row.created_at);
-      const result = await extractPhotoOcrToText(inputPath, out.absolutePath, { ocrLang });
+      const result = await aiExecution.extractPhotoOcr(inputPath, out.absolutePath, { ocrLang });
       const saved = await saveAssetPhotoOcrMetadata(req.params.id, row, {
         resultUrl: out.publicUrl,
         ocrLabel: safeLabel,
@@ -376,7 +383,7 @@ function registerTextProcessingRoutes(app, deps) {
         return res.status(400).json({ error: "OCR range is invalid. 'ocrEndSec' must be greater than 'ocrStartSec'." });
       }
   
-      const job = queueVideoOcrJob(row, {
+      const job = aiExecution.queueVideoOcr(row, {
         intervalSec: req.body?.intervalSec,
         ocrLang: req.body?.ocrLang,
         ocrPreset: req.body?.ocrPreset,
