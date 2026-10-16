@@ -59,11 +59,11 @@
       private: 'Private', owner_groups: 'Owner groups', selected_principals: 'Selected groups/users', public: 'Public',
       locked_only: 'Locked only', load: 'Load', asset_rights_subtitle: 'Visibility and read, edit, download, and upload policies',
       page_size: 'Page size', edit_policy: 'Edit policy', save_policy: 'Save policy', unlock: 'Release lock', locked_by: 'Locked by',
-      allowed_groups: 'Allowed groups', allowed_users: 'Allowed users', denied_groups: 'Denied groups', denied_users: 'Denied users',
-      edit_allowed_groups: 'Edit allowed groups', edit_allowed_users: 'Edit allowed users', edit_denied_groups: 'Edit denied groups',
+      allowed_groups: 'View groups', allowed_users: 'View users', denied_groups: 'Denied view groups', denied_users: 'Denied view users',
+      edit_allowed_groups: 'Edit groups', edit_allowed_users: 'Edit users', edit_denied_groups: 'Edit denied groups',
       edit_denied_users: 'Edit denied users', download_allowed_groups: 'Download allowed groups', download_allowed_users: 'Download allowed users',
-      download_denied_groups: 'Download denied groups', download_denied_users: 'Download denied users', upload_allowed_groups: 'Upload allowed groups',
-      upload_allowed_users: 'Upload allowed users', upload_denied_groups: 'Upload denied groups', upload_denied_users: 'Upload denied users',
+      download_denied_groups: 'Download denied groups', download_denied_users: 'Download denied users', upload_allowed_groups: 'Upload groups',
+      upload_allowed_users: 'Upload users', upload_denied_groups: 'Upload denied groups', upload_denied_users: 'Upload denied users',
       policy_saved: 'Access policy saved.', lock_released: 'Edit lock released.', unlock_confirm: 'Release this asset edit lock?', rights_empty: 'No matching rights records.',
       type_video: 'Video', type_audio: 'Audio', type_photo: 'Photo', type_document: 'Document', type_other: 'Other', rights_page_subtitle: 'Manage visibility and granular media access policies', rights_page_of: 'Page {page} of {pages} · {total} records',
       read_access: 'Read', edit_access: 'Edit', download_access: 'Download', upload_access: 'Upload', lock_status: 'Lock', policy_accessible: '{allowed} allowed · {denied} denied', unlocked: 'Available'
@@ -96,11 +96,11 @@
       private: 'Gizli', owner_groups: 'Sahip gruplar', selected_principals: 'Seçili grup/kullanıcılar', public: 'Herkese açık',
       locked_only: 'Yalnız kilitliler', load: 'Yükle', asset_rights_subtitle: 'Görünürlük ile okuma, düzenleme, indirme ve yükleme politikaları',
       page_size: 'Sayfa boyutu', edit_policy: 'Politikayı düzenle', save_policy: 'Politikayı kaydet', unlock: 'Kilidi kaldır', locked_by: 'Kilitleyen',
-      allowed_groups: 'İzinli gruplar', allowed_users: 'İzinli kullanıcılar', denied_groups: 'Engelli gruplar', denied_users: 'Engelli kullanıcılar',
-      edit_allowed_groups: 'Düzenlemeye izinli gruplar', edit_allowed_users: 'Düzenlemeye izinli kullanıcılar', edit_denied_groups: 'Düzenlemesi engelli gruplar',
-      edit_denied_users: 'Düzenlemesi engelli kullanıcılar', download_allowed_groups: 'İndirmeye izinli gruplar', download_allowed_users: 'İndirmeye izinli kullanıcılar',
-      download_denied_groups: 'İndirmesi engelli gruplar', download_denied_users: 'İndirmesi engelli kullanıcılar', upload_allowed_groups: 'Yüklemeye izinli gruplar',
-      upload_allowed_users: 'Yüklemeye izinli kullanıcılar', upload_denied_groups: 'Yüklemesi engelli gruplar', upload_denied_users: 'Yüklemesi engelli kullanıcılar',
+      allowed_groups: 'Görebilen gruplar', allowed_users: 'Görebilen kullanıcılar', denied_groups: 'Göremeyen gruplar', denied_users: 'Göremeyen kullanıcılar',
+      edit_allowed_groups: 'Değiştirebilen gruplar', edit_allowed_users: 'Değiştirebilen kullanıcılar', edit_denied_groups: 'Değiştiremeyen gruplar',
+      edit_denied_users: 'Değiştiremeyen kullanıcılar', download_allowed_groups: 'İndirebilen gruplar', download_allowed_users: 'İndirebilen kullanıcılar',
+      download_denied_groups: 'İndiremeyen gruplar', download_denied_users: 'İndiremeyen kullanıcılar', upload_allowed_groups: 'Yükleyebilen gruplar',
+      upload_allowed_users: 'Yükleyebilen kullanıcılar', upload_denied_groups: 'Yükleyemeyen gruplar', upload_denied_users: 'Yükleyemeyen kullanıcılar',
       policy_saved: 'Erişim politikası kaydedildi.', lock_released: 'Düzenleme kilidi kaldırıldı.', unlock_confirm: 'Bu varlığın düzenleme kilidi kaldırılsın mı?', rights_empty: 'Eşleşen yetki kaydı yok.',
       type_video: 'Video', type_audio: 'Ses', type_photo: 'Fotoğraf', type_document: 'Belge', type_other: 'Diğer', rights_page_subtitle: 'Görünürlük ve ayrıntılı medya erişim politikalarını yönetin', rights_page_of: 'Sayfa {page} / {pages} · {total} kayıt',
       read_access: 'Okuma', edit_access: 'Düzenleme', download_access: 'İndirme', upload_access: 'Yükleme', lock_status: 'Kilit', policy_accessible: '{allowed} izinli · {denied} engelli', unlocked: 'Kullanılabilir',
@@ -141,6 +141,12 @@
   let rightsPage = 1;
   let rightsPagination = { page: 1, totalPages: 1, total: 0 };
   let rightsOwnerGroupFilter = '';
+  let rightsSuggestionTimer = 0;
+  let rightsCanUseTypeMode = false;
+  let rightsGroupNames = null;
+  let rightsModeValue = 'asset';
+  let rightsLockedOnly = false;
+  let rightsGroupInput = null;
 
   const byId = (id) => document.getElementById(id);
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({
@@ -311,7 +317,7 @@
   };
 
   const parseRightsList = (value) => [...new Set(String(value || '').split(',').map((item) => item.trim()).filter(Boolean))];
-  const rightsMode = () => byId('assetRightsMode').value === 'type' ? 'type' : 'asset';
+  const rightsMode = () => rightsModeValue;
   const rightsTypeLabel = (value) => t(`type_${String(value || 'other').toLowerCase()}`);
 
   function rightsParams() {
@@ -321,7 +327,7 @@
     document.querySelectorAll('input[name="rightsType"]:checked').forEach((input) => params.append('typeGroup', input.value));
     if (byId('assetRightsVisibility').value) params.set('visibility', byId('assetRightsVisibility').value);
     if (rightsOwnerGroupFilter) params.set('ownerGroup', rightsOwnerGroupFilter);
-    if (byId('assetRightsLocked').checked) params.set('lockedOnly', '1');
+    if (rightsLockedOnly) params.set('lockedOnly', '1');
     return params;
   }
 
@@ -341,12 +347,14 @@
       const formId = `rights-form-${index}`;
       forms.push(`<form id="${formId}" class="rights-policy-form" data-id="${escapeHtml(id)}" data-type-group="${escapeHtml(typeGroup)}" data-mode="${mode}"></form>`);
       const isPrivate = mode === 'asset' && (item.visibility || 'private') === 'private';
-      const inputCell = (name, value) => `<td><label class="sr-only" for="${formId}-${name}">${escapeHtml(t(rightsFieldLabels[name]))}</label><input id="${formId}-${name}" form="${formId}" name="${name}" value="${escapeHtml((Array.isArray(value) ? value : []).join(', '))}" placeholder="${name.endsWith('Users') ? 'user@example.com' : 'group-a, group-b'}"${isPrivate ? ' readonly aria-readonly="true"' : ''} /></td>`;
+      const inputCell = (name, value) => `<td><label class="sr-only" for="${formId}-${name}">${escapeHtml(t(rightsFieldLabels[name]))}</label><input id="${formId}-${name}" form="${formId}" name="${name}" value="${escapeHtml((Array.isArray(value) ? value : []).join(', '))}" placeholder="${name.endsWith('Users') ? 'user@example.com' : 'group-a, group-b'}"${name.endsWith('Groups') ? ' list="assetRightsGroupOptions"' : ''}${isPrivate ? ' readonly aria-readonly="true"' : ''} /></td>`;
       const assetCells = mode === 'asset' ? `<td><select form="${formId}" name="visibility" data-rights-visibility>${['private','group','groups','public'].map((value) => `<option value="${value}"${item.visibility === value ? ' selected' : ''}>${escapeHtml(t(value === 'group' ? 'owner_groups' : value === 'groups' ? 'selected_principals' : value))}</option>`).join('')}</select></td>${inputCell('ownerGroups', item.ownerGroups)}` : '';
-      return `<tr class="rights-data-row${isPrivate ? ' is-private' : ''}" data-rights-row><td class="rights-name"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(mode === 'type' ? t('asset_types') : `${item.type || rightsTypeLabel(typeGroup)} · ${item.owner || item.fileName || id}`)}</small>${lockOwner ? `<span class="rights-lock">${escapeHtml(t('locked_by'))}: ${escapeHtml(lockOwner)}</span>` : ''}</td>${assetCells}${fields.map((name) => inputCell(name, item[name])).join('')}<td class="rights-table-actions">${mode === 'asset' && lockOwner ? `<button class="danger" type="button" data-unlock-id="${escapeHtml(id)}">${escapeHtml(t('unlock'))}</button>` : ''}<button class="primary-link button-reset" type="submit" form="${formId}">${escapeHtml(t('save'))}</button></td></tr>`;
+      return `<tr class="rights-data-row${isPrivate ? ' is-private' : ''}${item.inTrash ? ' is-trash' : ''}" data-rights-row><td class="rights-name"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(mode === 'type' ? t('asset_types') : `${item.type || rightsTypeLabel(typeGroup)} · ${item.owner || item.fileName || id}`)}</small>${lockOwner ? `<span class="rights-lock">${escapeHtml(t('locked_by'))}: ${escapeHtml(lockOwner)}</span>` : ''}</td>${assetCells}${fields.map((name) => inputCell(name, item[name])).join('')}<td class="rights-table-actions">${mode === 'asset' && lockOwner ? `<button class="danger" type="button" data-unlock-id="${escapeHtml(id)}">${escapeHtml(t('unlock'))}</button>` : ''}<button class="primary-link button-reset" type="submit" form="${formId}">${escapeHtml(t('save'))}</button></td></tr>`;
     }).join('') : `<tr><td colspan="${columns}" class="diagnostic-empty">${escapeHtml(t('rights_empty'))}</td></tr>`;
+    const modeSelect = `<select id="assetRightsMode" aria-label="${escapeHtml(t('rights_mode'))}"><option value="asset"${mode === 'asset' ? ' selected' : ''}>${escapeHtml(t('asset'))}</option>${rightsCanUseTypeMode ? `<option value="type"${mode === 'type' ? ' selected' : ''}>${escapeHtml(language === 'tr' ? 'Tür / yükleme' : 'Type / upload')}</option>` : ''}</select>`;
     const assetHeaders = mode === 'asset' ? `<th>${escapeHtml(t('visibility'))}</th><th><span>${escapeHtml(t('owner_groups'))}</span><input id="assetRightsOwnerGroupFilter" type="search" value="${escapeHtml(rightsOwnerGroupFilter)}" placeholder="${escapeHtml(t('owner_groups'))}" /></th>` : '';
-    byId('assetRightsRows').innerHTML = `${forms.join('')}<div class="rights-table-wrap"><table class="rights-table rights-matrix"><thead><tr><th>${escapeHtml(mode === 'type' ? t('asset_type') : t('asset'))}</th>${assetHeaders}${fields.map((name) => `<th>${escapeHtml(t(rightsFieldLabels[name]))}</th>`).join('')}<th>${escapeHtml(t('actions'))}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    const lockFilter = `<label class="rights-locked-filter"><input id="assetRightsLocked" type="checkbox"${rightsLockedOnly ? ' checked' : ''}${mode === 'type' ? ' disabled' : ''} /> ${escapeHtml(t('locked_only'))}</label>`;
+    byId('assetRightsRows').innerHTML = `${forms.join('')}<div class="rights-table-wrap"><table class="rights-table rights-matrix"><thead><tr><th><span>${escapeHtml(mode === 'type' ? t('asset_type') : t('asset'))}</span>${modeSelect}</th>${assetHeaders}${fields.map((name) => `<th>${escapeHtml(t(rightsFieldLabels[name]))}</th>`).join('')}<th>${lockFilter}</th></tr></thead><tbody>${rows}</tbody></table></div><datalist id="assetRightsGroupOptions">${(rightsGroupNames || []).map((name) => `<option value="${escapeHtml(name)}"></option>`).join('')}</datalist>`;
   }
 
   function updateRightsPager() {
@@ -360,8 +368,7 @@
 
   function syncRightsModeControls() {
     const typeMode = rightsMode() === 'type';
-    document.querySelectorAll('.rights-search, #assetRightsFilters fieldset, #assetRightsFilters > label:not(:first-child)').forEach((element) => {
-      if (!element.classList.contains('rights-locked') && !element.classList.contains('rights-search') && element.querySelector?.('#assetRightsMode')) return;
+    document.querySelectorAll('.rights-search, #assetRightsFilters fieldset, #assetRightsFilters > label').forEach((element) => {
       element.classList.toggle('is-disabled', typeMode);
       element.querySelectorAll('input, select').forEach((control) => { control.disabled = typeMode; });
     });
@@ -385,6 +392,61 @@
       byId('assetRightsMessage').textContent = String(error?.message || t('request_failed'));
     }
   }
+
+  async function prepareAssetRights() {
+    const [profile, groups] = await Promise.all([
+      api('/api/me').catch(() => ({})),
+      api('/api/admin/assets/access-groups').catch(() => ({}))
+    ]);
+    rightsCanUseTypeMode = Boolean(profile.isSuperAdmin || profile.canAccessAdmin || profile.isAdmin);
+    const names = new Set();
+    (groups.groups || []).forEach((group) => names.add(String(group.path || group.name || '').replace(/^\/+/, '')));
+    ['mamGroups', 'mamOnlyGroups'].forEach((key) => (groups[key] || []).forEach((name) => names.add(String(name || '').replace(/^\/+/, ''))));
+    (groups.groupAdmins || []).forEach((item) => names.add(String(item.groupName || item.group || '').replace(/^\/+/, '')));
+    rightsGroupNames = [...names].filter(Boolean).sort((a, b) => a.localeCompare(b));
+    await loadAssetRights();
+  }
+
+  async function requestRightsSuggestions() {
+    const query = byId('assetRightsSearch').value.trim();
+    const box = byId('assetRightsSuggestions');
+    if (query.length < 3 || rightsMode() === 'type') { box.hidden = true; return; }
+    try {
+      const items = await api(`/api/admin/assets/suggest?q=${encodeURIComponent(query)}&limit=8`);
+      box.innerHTML = (items || []).map((item) => `<button type="button" data-rights-suggestion="${escapeHtml(item.title || item.fileName || '')}"><strong>${escapeHtml(item.title || item.fileName || item.id)}</strong><small>${escapeHtml(item.type || '—')} · ${escapeHtml(item.fileName || '—')} · ${escapeHtml(item.inTrash ? 'trash' : 'active')}</small></button>`).join('');
+      box.hidden = !box.innerHTML;
+    } catch (_error) { box.hidden = true; }
+  }
+
+  function showRightsGroupSuggestions(input) {
+    if (!input || input.readOnly || !rightsGroupNames?.length) return;
+    const value = input.value;
+    const cursor = input.selectionStart ?? value.length;
+    const token = value.slice(0, cursor).split(',').pop().trim();
+    let box = byId('assetRightsGroupSuggestions');
+    if (!box) { box = document.createElement('div'); box.id = 'assetRightsGroupSuggestions'; box.className = 'v2-suggestions rights-group-suggestions'; document.body.appendChild(box); }
+    if (token.length < 3) { box.hidden = true; return; }
+    const selected = new Set(value.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean));
+    const matches = rightsGroupNames.filter((name) => name.toLowerCase().includes(token.toLowerCase()) && !selected.has(name.toLowerCase())).slice(0, 8);
+    if (!matches.length) { box.hidden = true; return; }
+    rightsGroupInput = input;
+    box.innerHTML = matches.map((name) => `<button type="button" data-group-name="${escapeHtml(name)}"><strong>${escapeHtml(name)}</strong></button>`).join('');
+    const rect = input.getBoundingClientRect();
+    box.style.left = `${Math.max(8, Math.min(global.innerWidth - 260, rect.left))}px`;
+    box.style.top = `${Math.min(global.innerHeight - 220, rect.bottom + 4)}px`;
+    box.style.width = `${Math.max(220, rect.width)}px`;
+    box.hidden = false;
+  }
+
+  document.addEventListener('click', (event) => {
+    const choice = event.target.closest('[data-group-name]');
+    if (!choice || !rightsGroupInput) return;
+    const parts = rightsGroupInput.value.split(',');
+    parts[parts.length - 1] = choice.dataset.groupName;
+    rightsGroupInput.value = parts.map((item) => item.trim()).filter(Boolean).join(', ');
+    byId('assetRightsGroupSuggestions').hidden = true;
+    rightsGroupInput.focus();
+  });
 
   function showError(error) {
     const element = byId('pageError');
@@ -489,8 +551,23 @@
     } catch (error) { byId('auditMessage').textContent = error.message; }
   });
   byId('assetRightsFilters').addEventListener('submit', (event) => { event.preventDefault(); rightsPage = 1; loadAssetRights(); });
-  byId('assetRightsMode').addEventListener('change', () => { rightsPage = 1; syncRightsModeControls(); loadAssetRights(); });
+  byId('assetRightsSearch').addEventListener('input', () => { clearTimeout(rightsSuggestionTimer); rightsSuggestionTimer = setTimeout(requestRightsSuggestions, 180); });
+  byId('assetRightsSearch').addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowDown') return;
+    const first = byId('assetRightsSuggestions').querySelector('button');
+    if (first && !byId('assetRightsSuggestions').hidden) { event.preventDefault(); first.focus(); }
+  });
+  byId('assetRightsSuggestions').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-rights-suggestion]');
+    if (!button) return;
+    byId('assetRightsSearch').value = button.dataset.rightsSuggestion;
+    byId('assetRightsSuggestions').hidden = true;
+    rightsPage = 1;
+    loadAssetRights();
+  });
   byId('assetRightsPageSize').addEventListener('change', () => { rightsPage = 1; loadAssetRights(); });
+  document.querySelectorAll('input[name="rightsType"]').forEach((input) => input.addEventListener('change', () => { rightsPage = 1; loadAssetRights(); }));
+  byId('assetRightsVisibility').addEventListener('change', () => { rightsPage = 1; loadAssetRights(); });
   byId('assetRightsPrev').addEventListener('click', () => { if (rightsPage > 1) { rightsPage -= 1; loadAssetRights(); } });
   byId('assetRightsNext').addEventListener('click', () => { if (rightsPage < Number(rightsPagination.totalPages || 1)) { rightsPage += 1; loadAssetRights(); } });
   byId('assetRightsRows').addEventListener('submit', async (event) => {
@@ -526,6 +603,20 @@
     finally { button.disabled = false; }
   });
   byId('assetRightsRows').addEventListener('change', (event) => {
+    if (event.target.id === 'assetRightsMode') {
+      rightsModeValue = event.target.value === 'type' && rightsCanUseTypeMode ? 'type' : 'asset';
+      rightsPage = 1;
+      syncRightsModeControls();
+      loadAssetRights();
+      return;
+    }
+    if (event.target.id === 'assetRightsLocked') { rightsLockedOnly = event.target.checked; rightsPage = 1; loadAssetRights(); return; }
+    if (event.target.id === 'assetRightsOwnerGroupFilter') {
+      rightsOwnerGroupFilter = event.target.value.trim();
+      rightsPage = 1;
+      loadAssetRights();
+      return;
+    }
     const select = event.target.closest('[data-rights-visibility]');
     if (!select) return;
     const row = select.closest('[data-rights-row]');
@@ -533,7 +624,14 @@
     row.classList.toggle('is-private', isPrivate);
     row.querySelectorAll('input[name]').forEach((input) => { input.readOnly = isPrivate; input.setAttribute('aria-readonly', String(isPrivate)); });
   });
+  byId('assetRightsRows').addEventListener('input', (event) => {
+    if (event.target.matches('input[name$="Groups"]')) showRightsGroupSuggestions(event.target);
+  });
+  byId('assetRightsRows').addEventListener('focusin', (event) => {
+    if (event.target.matches('input[name$="Groups"]')) showRightsGroupSuggestions(event.target);
+  });
   byId('assetRightsRows').addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && byId('assetRightsGroupSuggestions')) byId('assetRightsGroupSuggestions').hidden = true;
     if (event.key !== 'Enter' || event.target.id !== 'assetRightsOwnerGroupFilter') return;
     event.preventDefault();
     rightsOwnerGroupFilter = event.target.value.trim();
@@ -557,7 +655,7 @@
     applyLocalization();
     if (getActiveView() === 'diagnostics') refreshDiagnostics();
     else if (getActiveView() === 'audit') loadAuditView();
-    else if (getActiveView() === 'asset-rights') { syncRightsModeControls(); loadAssetRights(); }
+    else if (getActiveView() === 'asset-rights') { syncRightsModeControls(); prepareAssetRights(); }
     else refresh({ force: true });
   });
 })(window);

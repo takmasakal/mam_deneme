@@ -130,11 +130,9 @@
           <section class="rights-view" data-v2-view="asset-rights" hidden>
             <section class="v2-panel">
               <form id="assetRightsFilters" class="rights-toolbar">
-                <label><span data-v2-i18n="rights_mode">Rights mode</span><select id="assetRightsMode"><option value="asset" data-v2-i18n="individual_assets">Individual assets</option><option value="type" data-v2-i18n="asset_types">Asset types</option></select></label>
-                <label class="rights-search"><span data-v2-i18n="search_assets">Search assets</span><input id="assetRightsSearch" type="search" autocomplete="off" /></label>
+                <label class="rights-search"><span data-v2-i18n="search_assets">Search assets</span><input id="assetRightsSearch" type="search" autocomplete="off" /><div id="assetRightsSuggestions" class="v2-suggestions" hidden></div></label>
                 <fieldset><legend data-v2-i18n="asset_type">Asset type</legend><label><input type="checkbox" name="rightsType" value="video" /> Video</label><label><input type="checkbox" name="rightsType" value="audio" /> Audio</label><label><input type="checkbox" name="rightsType" value="photo" /> <span data-v2-i18n="photo">Photo</span></label><label><input type="checkbox" name="rightsType" value="document" /> <span data-v2-i18n="document">Document</span></label><label><input type="checkbox" name="rightsType" value="other" /> <span data-v2-i18n="other">Other</span></label></fieldset>
                 <label><span data-v2-i18n="visibility">Visibility</span><select id="assetRightsVisibility"><option value="" data-v2-i18n="all">All</option><option value="private" data-v2-i18n="private">Private</option><option value="group" data-v2-i18n="owner_groups">Owner groups</option><option value="groups" data-v2-i18n="selected_principals">Selected groups/users</option><option value="public" data-v2-i18n="public">Public</option></select></label>
-                <label class="rights-locked"><input id="assetRightsLocked" type="checkbox" /> <span data-v2-i18n="locked_only">Locked only</span></label>
                 <button class="primary-link button-reset" type="submit" data-v2-i18n="load">Load</button>
               </form>
             </section>
