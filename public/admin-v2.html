@@ -20,7 +20,7 @@
           <a href="/admin.html" data-classic-destination="overview"><span class="nav-icon" aria-hidden="true">⌂</span><span data-v2-i18n="overview">Overview</span></a>
           <a data-v2-view-link="health" href="/admin-v2"><span class="nav-icon" aria-hidden="true">⌁</span><span data-v2-i18n="system_health">System Health</span></a>
           <a data-v2-view-link="diagnostics" href="/admin-v2?view=diagnostics"><span class="nav-icon" aria-hidden="true">⌕</span><span data-v2-i18n="runtime_diagnostics">Diagnostics</span></a>
-          <a href="/admin.html" data-classic-destination="auditEvents"><span class="nav-icon" aria-hidden="true">▤</span><span data-v2-i18n="audit_history">Audit History</span></a>
+          <a data-v2-view-link="audit" href="/admin-v2?view=audit"><span class="nav-icon" aria-hidden="true">▤</span><span data-v2-i18n="audit_history">Audit History</span></a>
           <a href="/admin.html" data-classic-destination="assetRights"><span class="nav-icon" aria-hidden="true">◇</span><span data-v2-i18n="asset_rights">Asset Rights</span></a>
           <a href="/admin.html" data-classic-destination="documentRights"><span class="nav-icon" aria-hidden="true">▧</span><span data-v2-i18n="document_rights">Document Rights</span></a>
           <a href="/admin.html" data-classic-destination="metadata"><span class="nav-icon" aria-hidden="true">✣</span><span data-v2-i18n="metadata_generation">Metadata Generation</span></a>
@@ -101,6 +101,29 @@
             <section class="v2-panel" aria-labelledby="runtimeErrorsTitle">
               <div class="panel-heading"><div><h2 id="runtimeErrorsTitle" data-v2-i18n="runtime_errors">Runtime Errors</h2><p data-v2-i18n="runtime_errors_subtitle">Recent server-side failures captured by MetMAM</p></div></div>
               <div id="runtimeErrorRows" class="diagnostic-list"></div>
+            </section>
+          </section>
+
+          <section class="audit-view" data-v2-view="audit" hidden>
+            <section class="v2-panel">
+              <form id="auditFiltersForm" class="audit-toolbar">
+                <label><span data-v2-i18n="actor">Actor</span><input id="auditActorInput" type="search" autocomplete="off" /></label>
+                <label><span data-v2-i18n="action">Action</span><select id="auditActionSelect"><option value="" data-v2-i18n="all_actions">All actions</option><option value="asset.uploaded" data-v2-i18n="asset_uploaded">Asset uploaded</option><option value="asset.created" data-v2-i18n="asset_created">Asset created</option><option value="asset.updated" data-v2-i18n="asset_updated">Asset updated</option><option value="asset.trashed" data-v2-i18n="asset_trashed">Moved to trash</option><option value="asset.restored" data-v2-i18n="asset_restored">Asset restored</option><option value="asset.deleted" data-v2-i18n="asset_deleted">Permanently deleted</option><option value="asset.downloaded" data-v2-i18n="asset_downloaded">Asset downloaded</option></select></label>
+                <label class="audit-asset-field"><span data-v2-i18n="asset">Asset</span><input id="auditTargetInput" type="search" autocomplete="off" /><div id="auditTargetSuggestions" class="v2-suggestions" hidden></div></label>
+                <label><span data-v2-i18n="from_date">From</span><input id="auditFromInput" type="date" /></label>
+                <label><span data-v2-i18n="to_date">To</span><input id="auditToInput" type="date" /></label>
+                <div class="audit-actions"><button class="secondary-button" type="submit" data-v2-i18n="filter">Filter</button><button id="exportAuditBtn" class="secondary-button" type="button" data-v2-i18n="export_csv">Export CSV</button><button id="cleanupAuditBtn" class="danger" type="button" data-v2-i18n="delete_range">Delete Range</button></div>
+              </form>
+            </section>
+            <section class="v2-panel">
+              <div class="panel-heading"><div><h2 data-v2-i18n="audit_history">Audit History</h2><p data-v2-i18n="audit_history_subtitle">Recorded administrative and asset activity</p></div></div>
+              <div id="auditEventsRows" class="audit-list"></div>
+              <div class="v2-pager"><button id="auditPrevBtn" class="secondary-button" type="button" data-v2-i18n="previous">Previous</button><span id="auditPageInfo">—</span><button id="auditNextBtn" class="secondary-button" type="button" data-v2-i18n="next">Next</button></div>
+              <div id="auditMessage" class="inline-message" role="status"></div>
+            </section>
+            <section class="v2-panel retention-panel">
+              <div class="panel-heading"><div><h2 data-v2-i18n="retention">Retention</h2><p data-v2-i18n="retention_subtitle">Control how long operational records are kept</p></div></div>
+              <form id="retentionForm" class="retention-form"><label><span data-v2-i18n="audit_retention_days">Audit retention (days)</span><input id="auditRetentionDays" type="number" min="1" max="3650" required /></label><label><span data-v2-i18n="job_retention_days">Media-job retention (days)</span><input id="mediaJobRetentionDays" type="number" min="1" max="3650" required /></label><button class="primary-link button-reset" type="submit" data-v2-i18n="save">Save</button></form>
             </section>
           </section>
         </section>

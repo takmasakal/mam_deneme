@@ -43,7 +43,17 @@
       active_users_subtitle: 'Recently active authenticated sessions', runtime_errors: 'Runtime Errors',
       runtime_errors_subtitle: 'Recent server-side failures captured by MetMAM', diagnostics_empty: 'No records found.',
       last_seen: 'Last seen', last_request: 'Last request', ip_address: 'IP address', user_agent: 'User agent',
-      error_source: 'Source', error_status: 'Status', diagnostics_load_failed: 'Diagnostics could not be loaded.'
+      error_source: 'Source', error_status: 'Status', diagnostics_load_failed: 'Diagnostics could not be loaded.',
+      actor: 'Actor', action: 'Action', all_actions: 'All actions', asset: 'Asset', from_date: 'From', to_date: 'To', filter: 'Filter',
+      export_csv: 'Export CSV', delete_range: 'Delete Range', audit_history_subtitle: 'Recorded administrative and asset activity',
+      previous: 'Previous', next: 'Next', retention: 'Retention', retention_subtitle: 'Control how long operational records are kept',
+      audit_retention_days: 'Audit retention (days)', job_retention_days: 'Media-job retention (days)', save: 'Save',
+      asset_uploaded: 'Asset uploaded', asset_created: 'Asset created', asset_updated: 'Asset updated', asset_trashed: 'Moved to trash',
+      asset_restored: 'Asset restored', asset_deleted: 'Permanently deleted', asset_downloaded: 'Asset downloaded',
+      audit_page_subtitle: 'Search, export, and retain administrative activity', audit_empty: 'No audit events match these filters.',
+      page_of: 'Page {page} of {pages} · {total} events', retention_saved: 'Retention settings saved.',
+      audit_cleanup_dates: 'Choose a valid start and end date before deleting.', audit_cleanup_confirm: 'Permanently delete audit events in this date range?',
+      audit_cleanup_done: '{count} audit events deleted.', request_failed: 'Request failed'
     },
     tr: {
       overview: 'Genel Bakış', system_health: 'Sistem Sağlığı', runtime_diagnostics: 'Tanılama', audit_history: 'İşlem Geçmişi',
@@ -58,6 +68,16 @@
       runtime_errors_subtitle: 'MetMAM tarafından yakalanan son sunucu hataları', diagnostics_empty: 'Kayıt bulunamadı.',
       last_seen: 'Son görülme', last_request: 'Son istek', ip_address: 'IP adresi', user_agent: 'Kullanıcı aracısı',
       error_source: 'Kaynak', error_status: 'Durum', diagnostics_load_failed: 'Tanılama bilgileri yüklenemedi.',
+      actor: 'Kullanıcı', action: 'İşlem', all_actions: 'Tüm işlemler', asset: 'Varlık', from_date: 'Başlangıç', to_date: 'Bitiş', filter: 'Filtrele',
+      export_csv: 'CSV Aktar', delete_range: 'Aralığı Sil', audit_history_subtitle: 'Kaydedilmiş yönetim ve varlık hareketleri',
+      previous: 'Önceki', next: 'Sonraki', retention: 'Saklama Süresi', retention_subtitle: 'Operasyon kayıtlarının ne kadar tutulacağını yönetin',
+      audit_retention_days: 'Audit saklama süresi (gün)', job_retention_days: 'Medya görevi saklama süresi (gün)', save: 'Kaydet',
+      asset_uploaded: 'Varlık yüklendi', asset_created: 'Varlık oluşturuldu', asset_updated: 'Varlık güncellendi', asset_trashed: 'Çöpe taşındı',
+      asset_restored: 'Varlık geri yüklendi', asset_deleted: 'Kalıcı silindi', asset_downloaded: 'Varlık indirildi',
+      audit_page_subtitle: 'Yönetim hareketlerini arayın, dışa aktarın ve saklama süresini yönetin', audit_empty: 'Bu filtrelere uyan işlem kaydı yok.',
+      page_of: 'Sayfa {page} / {pages} · {total} kayıt', retention_saved: 'Saklama ayarları kaydedildi.',
+      audit_cleanup_dates: 'Silmeden önce geçerli bir başlangıç ve bitiş tarihi seçin.', audit_cleanup_confirm: 'Bu tarih aralığındaki işlem kayıtları kalıcı olarak silinsin mi?',
+      audit_cleanup_done: '{count} işlem kaydı silindi.', request_failed: 'İstek başarısız',
       overview_total_assets: 'Toplam varlık', overview_uptime: 'servis kullanılabilir', overview_failed_jobs: 'Başarısız görev',
       ffmpeg_ok: 'FFmpeg hazır', ffmpeg_fail: 'FFmpeg kullanılamıyor', ffprobe_ok: 'FFprobe hazır', ffprobe_fail: 'FFprobe kullanılamıyor',
       health_up: 'Hazır', health_down: 'Kullanılamıyor', health_service_app: 'Uygulama', health_service_postgres: 'PostgreSQL',
@@ -89,6 +109,9 @@
   };
   let translations = {};
   let language = localStorage.getItem('mamLanguage') || 'en';
+  let auditPage = 1;
+  let auditPagination = { page: 1, totalPages: 1, total: 0, limit: 50 };
+  let auditSuggestionTimer = 0;
 
   const byId = (id) => document.getElementById(id);
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({
@@ -139,13 +162,16 @@
       element.textContent = t(element.dataset.v2I18n);
     });
     const view = getActiveView();
-    byId('v2PageTitle').textContent = t(view === 'diagnostics' ? 'runtime_diagnostics' : 'system_health');
-    byId('v2PageSubtitle').textContent = t(view === 'diagnostics' ? 'diagnostics_page_subtitle' : 'health_page_subtitle');
+    const titleKey = view === 'diagnostics' ? 'runtime_diagnostics' : view === 'audit' ? 'audit_history' : 'system_health';
+    const subtitleKey = view === 'diagnostics' ? 'diagnostics_page_subtitle' : view === 'audit' ? 'audit_page_subtitle' : 'health_page_subtitle';
+    byId('v2PageTitle').textContent = t(titleKey);
+    byId('v2PageSubtitle').textContent = t(subtitleKey);
     document.title = `MetMAM Admin V2 — ${byId('v2PageTitle').textContent}`;
   }
 
   function getActiveView() {
-    return new URLSearchParams(global.location.search).get('view') === 'diagnostics' ? 'diagnostics' : 'health';
+    const requested = new URLSearchParams(global.location.search).get('view');
+    return requested === 'diagnostics' || requested === 'audit' ? requested : 'health';
   }
 
   function applyView() {
@@ -169,6 +195,76 @@
     } finally {
       byId('refreshDiagnosticsBtn').disabled = false;
     }
+  }
+
+  function auditParams(includeOffset = true, limit = 50) {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (includeOffset) params.set('offset', String((auditPage - 1) * limit));
+    [['actor','auditActorInput'],['action','auditActionSelect'],['target','auditTargetInput'],['from','auditFromInput'],['to','auditToInput']].forEach(([key,id]) => {
+      const value = String(byId(id).value || '').trim();
+      if (value) params.set(key, value);
+    });
+    return params;
+  }
+
+  function auditActionLabel(action) {
+    const map = {'asset.uploaded':'asset_uploaded','asset.created':'asset_created','asset.updated':'asset_updated','asset.trashed':'asset_trashed','asset.restored':'asset_restored','asset.deleted':'asset_deleted','asset.downloaded':'asset_downloaded'};
+    return t(map[action] || action);
+  }
+
+  function renderAuditEvents(events = []) {
+    byId('auditEventsRows').innerHTML = events.length ? events.map((event) => {
+      const title = event.targetTitle || event.targetId || event.targetType || '—';
+      const details = event.details && typeof event.details === 'object'
+        ? Object.entries(event.details).slice(0, 4).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : typeof value === 'object' ? JSON.stringify(value) : value}`).join(' · ')
+        : '';
+      return `<article class="audit-row"><time>${escapeHtml(formatDateTime(event.createdAt))}</time><strong>${escapeHtml(event.actor || 'unknown')}</strong><span>${escapeHtml(auditActionLabel(event.action))}</span><b>${escapeHtml(title)}</b>${details ? `<small>${escapeHtml(details)}</small>` : ''}</article>`;
+    }).join('') : `<div class="diagnostic-empty">${escapeHtml(t('audit_empty'))}</div>`;
+  }
+
+  function updateAuditPager() {
+    const page = Number(auditPagination.page || auditPage || 1);
+    const pages = Math.max(1, Number(auditPagination.totalPages || 1));
+    const total = Number(auditPagination.total || 0);
+    byId('auditPageInfo').textContent = t('page_of').replace('{page}', page).replace('{pages}', pages).replace('{total}', total);
+    byId('auditPrevBtn').disabled = page <= 1;
+    byId('auditNextBtn').disabled = page >= pages;
+  }
+
+  async function loadAuditEvents() {
+    byId('auditMessage').textContent = '';
+    try {
+      const data = await api(`/api/admin/audit-events?${auditParams().toString()}`);
+      auditPagination = data.pagination || auditPagination;
+      auditPage = Number(auditPagination.page || auditPage);
+      renderAuditEvents(data.events || []);
+      updateAuditPager();
+    } catch (error) {
+      byId('auditMessage').textContent = String(error?.message || t('request_failed'));
+    }
+  }
+
+  async function loadRetention() {
+    try {
+      const settings = await api('/api/admin/settings');
+      byId('auditRetentionDays').value = Number(settings.auditRetentionDays || 90);
+      byId('mediaJobRetentionDays').value = Number(settings.mediaJobRetentionDays || 30);
+    } catch (_error) {}
+  }
+
+  async function loadAuditView() {
+    await Promise.all([loadAuditEvents(), loadRetention()]);
+  }
+
+  async function requestAuditSuggestions() {
+    const query = byId('auditTargetInput').value.trim();
+    const box = byId('auditTargetSuggestions');
+    if (query.length < 3) { box.hidden = true; box.innerHTML = ''; return; }
+    try {
+      const items = await api(`/api/admin/assets/suggest?q=${encodeURIComponent(query)}&limit=8&includeTrash=1`);
+      box.innerHTML = (items || []).map((item) => `<button type="button" data-value="${escapeHtml(item.title || item.fileName || '')}"><strong>${escapeHtml(item.title || item.fileName || item.id)}</strong><small>${escapeHtml(item.type || '—')} · ${escapeHtml(item.fileName || '—')}</small></button>`).join('');
+      box.hidden = !box.innerHTML;
+    } catch (_error) { box.hidden = true; }
   }
 
   function showError(error) {
@@ -226,6 +322,53 @@
     refresh({ force: true, forceServer: true });
   });
   byId('refreshDiagnosticsBtn').addEventListener('click', refreshDiagnostics);
+  byId('auditFiltersForm').addEventListener('submit', (event) => { event.preventDefault(); auditPage = 1; loadAuditEvents(); });
+  byId('auditPrevBtn').addEventListener('click', () => { if (auditPage > 1) { auditPage -= 1; loadAuditEvents(); } });
+  byId('auditNextBtn').addEventListener('click', () => { if (auditPage < Number(auditPagination.totalPages || 1)) { auditPage += 1; loadAuditEvents(); } });
+  byId('auditTargetInput').addEventListener('input', () => { clearTimeout(auditSuggestionTimer); auditSuggestionTimer = setTimeout(requestAuditSuggestions, 180); });
+  byId('auditTargetSuggestions').addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-value]');
+    if (!button) return;
+    byId('auditTargetInput').value = button.dataset.value;
+    byId('auditTargetSuggestions').hidden = true;
+    auditPage = 1;
+    loadAuditEvents();
+  });
+  byId('exportAuditBtn').addEventListener('click', async () => {
+    const button = byId('exportAuditBtn');
+    button.disabled = true;
+    try {
+      const response = await fetch(`/api/admin/audit-events/export?${auditParams(false, 5000)}`, { credentials: 'same-origin' });
+      if (!response.ok) throw new Error(t('request_failed'));
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `audit-events-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) { byId('auditMessage').textContent = error.message; }
+    finally { button.disabled = false; }
+  });
+  byId('cleanupAuditBtn').addEventListener('click', async () => {
+    const from = byId('auditFromInput').value;
+    const to = byId('auditToInput').value;
+    if (!from || !to || from > to) { byId('auditMessage').textContent = t('audit_cleanup_dates'); return; }
+    if (!global.confirm(t('audit_cleanup_confirm'))) return;
+    try {
+      const result = await api('/api/admin/audit-events/cleanup', { method: 'POST', body: JSON.stringify({ from, to }) });
+      byId('auditMessage').textContent = t('audit_cleanup_done').replace('{count}', Number(result.deletedEvents || 0));
+      auditPage = 1;
+      await loadAuditEvents();
+    } catch (error) { byId('auditMessage').textContent = error.message; }
+  });
+  byId('retentionForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      await api('/api/admin/settings', { method: 'PATCH', body: JSON.stringify({ auditRetentionDays: Number(byId('auditRetentionDays').value), mediaJobRetentionDays: Number(byId('mediaJobRetentionDays').value) }) });
+      byId('auditMessage').textContent = t('retention_saved');
+    } catch (error) { byId('auditMessage').textContent = error.message; }
+  });
 
   byId('languageSelectAdmin').value = language;
   byId('languageSelectAdmin').addEventListener('change', async (event) => {
@@ -234,12 +377,14 @@
     applyLocalization();
     healthModule.rerender();
     if (getActiveView() === 'diagnostics') refreshDiagnostics();
+    if (getActiveView() === 'audit') loadAuditEvents();
   });
 
   applyView();
   loadTranslations().finally(() => {
     applyLocalization();
     if (getActiveView() === 'diagnostics') refreshDiagnostics();
+    else if (getActiveView() === 'audit') loadAuditView();
     else refresh({ force: true });
   });
 })(window);
