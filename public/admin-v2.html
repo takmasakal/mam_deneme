@@ -21,7 +21,7 @@
           <a data-v2-view-link="health" href="/admin-v2"><span class="nav-icon" aria-hidden="true">⌁</span><span data-v2-i18n="system_health">System Health</span></a>
           <a data-v2-view-link="diagnostics" href="/admin-v2?view=diagnostics"><span class="nav-icon" aria-hidden="true">⌕</span><span data-v2-i18n="runtime_diagnostics">Diagnostics</span></a>
           <a data-v2-view-link="audit" href="/admin-v2?view=audit"><span class="nav-icon" aria-hidden="true">▤</span><span data-v2-i18n="audit_history">Audit History</span></a>
-          <a href="/admin.html" data-classic-destination="assetRights"><span class="nav-icon" aria-hidden="true">◇</span><span data-v2-i18n="asset_rights">Asset Rights</span></a>
+          <a data-v2-view-link="asset-rights" href="/admin-v2?view=asset-rights"><span class="nav-icon" aria-hidden="true">◇</span><span data-v2-i18n="asset_rights">Asset Rights</span></a>
           <a href="/admin.html" data-classic-destination="documentRights"><span class="nav-icon" aria-hidden="true">▧</span><span data-v2-i18n="document_rights">Document Rights</span></a>
           <a href="/admin.html" data-classic-destination="metadata"><span class="nav-icon" aria-hidden="true">✣</span><span data-v2-i18n="metadata_generation">Metadata Generation</span></a>
           <a href="/admin.html" data-classic-destination="settings"><span class="nav-icon" aria-hidden="true">⚙</span><span data-v2-i18n="settings">Settings</span></a>
@@ -124,6 +124,25 @@
             <section class="v2-panel retention-panel">
               <div class="panel-heading"><div><h2 data-v2-i18n="retention">Retention</h2><p data-v2-i18n="retention_subtitle">Control how long operational records are kept</p></div></div>
               <form id="retentionForm" class="retention-form"><label><span data-v2-i18n="audit_retention_days">Audit retention (days)</span><input id="auditRetentionDays" type="number" min="1" max="3650" required /></label><label><span data-v2-i18n="job_retention_days">Media-job retention (days)</span><input id="mediaJobRetentionDays" type="number" min="1" max="3650" required /></label><button class="primary-link button-reset" type="submit" data-v2-i18n="save">Save</button></form>
+            </section>
+          </section>
+
+          <section class="rights-view" data-v2-view="asset-rights" hidden>
+            <section class="v2-panel">
+              <form id="assetRightsFilters" class="rights-toolbar">
+                <label><span data-v2-i18n="rights_mode">Rights mode</span><select id="assetRightsMode"><option value="asset" data-v2-i18n="individual_assets">Individual assets</option><option value="type" data-v2-i18n="asset_types">Asset types</option></select></label>
+                <label class="rights-search"><span data-v2-i18n="search_assets">Search assets</span><input id="assetRightsSearch" type="search" autocomplete="off" /></label>
+                <fieldset><legend data-v2-i18n="asset_type">Asset type</legend><label><input type="checkbox" name="rightsType" value="video" /> Video</label><label><input type="checkbox" name="rightsType" value="audio" /> Audio</label><label><input type="checkbox" name="rightsType" value="photo" /> <span data-v2-i18n="photo">Photo</span></label><label><input type="checkbox" name="rightsType" value="document" /> <span data-v2-i18n="document">Document</span></label><label><input type="checkbox" name="rightsType" value="other" /> <span data-v2-i18n="other">Other</span></label></fieldset>
+                <label><span data-v2-i18n="visibility">Visibility</span><select id="assetRightsVisibility"><option value="" data-v2-i18n="all">All</option><option value="private" data-v2-i18n="private">Private</option><option value="group" data-v2-i18n="owner_groups">Owner groups</option><option value="groups" data-v2-i18n="selected_principals">Selected groups/users</option><option value="public" data-v2-i18n="public">Public</option></select></label>
+                <label class="rights-locked"><input id="assetRightsLocked" type="checkbox" /> <span data-v2-i18n="locked_only">Locked only</span></label>
+                <button class="primary-link button-reset" type="submit" data-v2-i18n="load">Load</button>
+              </form>
+            </section>
+            <section class="v2-panel">
+              <div class="panel-heading"><div><h2 data-v2-i18n="asset_rights">Asset Rights</h2><p data-v2-i18n="asset_rights_subtitle">Visibility and read, edit, download, and upload policies</p></div></div>
+              <div id="assetRightsRows" class="rights-list"></div>
+              <div class="v2-pager"><label><span data-v2-i18n="page_size">Page size</span><select id="assetRightsPageSize"><option>20</option><option>50</option></select></label><button id="assetRightsPrev" class="secondary-button" type="button" data-v2-i18n="previous">Previous</button><span id="assetRightsPageInfo">—</span><button id="assetRightsNext" class="secondary-button" type="button" data-v2-i18n="next">Next</button></div>
+              <div id="assetRightsMessage" class="inline-message" role="status"></div>
             </section>
           </section>
         </section>
