@@ -153,6 +153,24 @@
       text-overflow: ellipsis;
     }
 
+    .pdf-readonly-banner {
+      position: absolute;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10000;
+      max-width: min(720px, calc(100% - 32px));
+      padding: 7px 12px;
+      border: 1px solid rgba(235, 94, 40, 0.55);
+      border-radius: 8px;
+      background: rgba(23, 28, 38, 0.92);
+      color: #ffd7c6;
+      font-size: 12px;
+      line-height: 1.35;
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+      pointer-events: none;
+    }
+
     #embedPdfContainer,
     #pdfViewerContainer {
       position: absolute;
@@ -812,6 +830,65 @@
         return toStrictBool(asset?.canEditAssetPdf, toStrictBool(asset?.canEditAsset, false));
       };
 
+      let pdfEditLockActive = false;
+      let pdfEditLockRefreshTimer = null;
+
+      const releasePdfEditLock = () => {
+        if (!pdfEditLockActive || !assetId) return;
+        pdfEditLockActive = false;
+        if (pdfEditLockRefreshTimer) {
+          clearInterval(pdfEditLockRefreshTimer);
+          pdfEditLockRefreshTimer = null;
+        }
+        try {
+          fetch(`/api/assets/${encodeURIComponent(assetId)}/edit-lock`, {
+            method: 'DELETE',
+            credentials: 'include',
+            keepalive: true
+          }).catch(() => {});
+        } catch (_error) {}
+      };
+
+      const acquirePdfEditLock = async () => {
+        if (!assetId) return true;
+        const response = await fetch(`/api/assets/${encodeURIComponent(assetId)}/edit-lock`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ purpose: 'pdf' })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const lock = payload?.lock && typeof payload.lock === 'object' ? payload.lock : {};
+          const lockName = String(lock.lockedByName || lock.lockedBy || '').trim();
+          const fallback = uiLang === 'tr'
+            ? 'Bu varlık başka bir kullanıcı tarafından düzenleniyor.'
+            : 'This asset is being edited by another user.';
+          if (payload?.code === 'asset_locked') {
+            if (lockName) {
+              throw new Error(uiLang === 'tr'
+                ? `${lockName} bu varlığı düzenliyor.`
+                : `${lockName} is editing this asset.`);
+            }
+            throw new Error(fallback);
+          }
+          throw new Error(String(payload?.error || fallback));
+        }
+        pdfEditLockActive = true;
+        if (pdfEditLockRefreshTimer) clearInterval(pdfEditLockRefreshTimer);
+        pdfEditLockRefreshTimer = setInterval(() => {
+          fetch(`/api/assets/${encodeURIComponent(assetId)}/edit-lock/refresh`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ purpose: 'pdf' })
+          }).catch(() => {});
+        }, 60000);
+        return true;
+      };
+
+      window.addEventListener('beforeunload', releasePdfEditLock);
+
       const taskToPromise = (task) => {
         if (!task) return Promise.reject(new Error('Task is not available'));
         if (typeof task.toPromise === 'function') return task.toPromise();
@@ -1312,27 +1389,47 @@
         if (!embedPdfContainer) return false;
         try {
           const canUsePdfAdvancedTools = await resolvePdfAdvancedPermission();
+          let canEditPdf = Boolean(canUsePdfAdvancedTools);
+          let readOnlyReason = '';
           let EmbedPDF = window.EmbedPDF || null;
           if (!EmbedPDF) {
             const mod = await import('/vendor/embedpdf/embedpdf.js');
             EmbedPDF = mod?.default || mod;
           }
           if (!EmbedPDF || typeof EmbedPDF.init !== 'function') return false;
+          if (canEditPdf) {
+            try {
+              await acquirePdfEditLock();
+            } catch (error) {
+              canEditPdf = false;
+              readOnlyReason = error?.message || (uiLang === 'tr'
+                ? 'Bu dosya başka bir kullanıcı tarafından düzenleniyor; salt okunur açıldı.'
+                : 'This file is being edited by another user; opened read-only.');
+            }
+          }
           topBar.style.display = 'none';
           textPreview.style.display = 'none';
           viewerContainer.style.display = 'none';
           errorBox.style.display = 'none';
           embedPdfContainer.style.display = 'block';
           embedPdfContainer.innerHTML = '';
+          document.getElementById('pdfReadonlyBanner')?.remove();
+          if (readOnlyReason) {
+            const banner = document.createElement('div');
+            banner.id = 'pdfReadonlyBanner';
+            banner.className = 'pdf-readonly-banner';
+            banner.textContent = readOnlyReason;
+            document.querySelector('.viewer-wrap')?.appendChild(banner);
+          }
           const embedInstance = EmbedPDF.init({
             type: 'container',
             target: embedPdfContainer,
             src: file,
             disabledCategories: Array.from(new Set([
               ...ALWAYS_DISABLED_CATEGORIES,
-              ...(canUsePdfAdvancedTools ? [] : NON_ADVANCED_DISABLED_CATEGORIES)
+              ...(canEditPdf ? [] : NON_ADVANCED_DISABLED_CATEGORIES)
             ])),
-            permissions: canUsePdfAdvancedTools
+            permissions: canEditPdf
               ? undefined
               : {
                   overrides: {
@@ -1342,7 +1439,7 @@
                   }
                 }
           });
-          if (!canUsePdfAdvancedTools) {
+          if (!canEditPdf) {
             try {
               const registry = await embedInstance.registry;
               const commandsCap = registry?.getPlugin?.('commands')?.provides?.();
@@ -1373,7 +1470,7 @@
           }
           await applyEmbedPdfTurkishLocale(embedInstance, embedPdfContainer);
           applyEmbedPdfTurkishUiPatch(embedPdfContainer);
-          const allowPdfSave = await resolvePdfSavePermission();
+          const allowPdfSave = canEditPdf && await resolvePdfSavePermission();
           mountPdfSaveActions(embedInstance, allowPdfSave);
           return true;
         } catch (_err) {
