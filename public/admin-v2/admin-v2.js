@@ -457,6 +457,44 @@
     byId('pageError').hidden = true;
   }
 
+  function continuePageScrollAtContainerEdge(container, event) {
+    if (!container || !event || event.defaultPrevented) return;
+    if (Math.abs(Number(event.deltaY || 0)) <= Math.abs(Number(event.deltaX || 0))) return;
+    const page = document.scrollingElement || document.documentElement;
+    if (!page || page.scrollHeight <= page.clientHeight) return;
+    const maxScrollTop = container.scrollHeight - container.clientHeight;
+    if (maxScrollTop <= 0) return;
+    const deltaY = Number(event.deltaY || 0);
+    const atTop = container.scrollTop <= 0;
+    const atBottom = container.scrollTop >= maxScrollTop - 1;
+    if ((deltaY < 0 && atTop) || (deltaY > 0 && atBottom)) {
+      event.preventDefault();
+      page.scrollTop += deltaY;
+    }
+  }
+
+  function flashSection(element) {
+    if (!element) return;
+    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    element.classList.add('admin-section-flash');
+    global.setTimeout(() => element.classList.remove('admin-section-flash'), 900);
+  }
+
+  async function openOverviewTarget(target) {
+    if (target === 'system-health') {
+      await refresh({ force: true });
+      flashSection(byId('systemHealthRows').querySelector('[data-health-section="services"]') || byId('systemHealthRows'));
+      return;
+    }
+    if (!['active-users', 'errors'].includes(target)) return;
+    const url = new URL(global.location.href);
+    url.searchParams.set('view', 'diagnostics');
+    global.history.pushState({}, '', url);
+    applyView();
+    await refreshDiagnostics();
+    flashSection(byId(target === 'active-users' ? 'activeUsersTitle' : 'runtimeErrorsTitle'));
+  }
+
   const healthModule = global.createAdminSystemHealthModule({
     api, t, escapeHtml, formatDateTime, renderRuntimeDiagnostics,
     elements: {
@@ -500,6 +538,20 @@
   byId('refreshHealthBtn').addEventListener('click', () => {
     healthModule.clear();
     refresh({ force: true, forceServer: true });
+  });
+  byId('systemHealthRows').addEventListener('wheel', (event) => continuePageScrollAtContainerEdge(byId('systemHealthRows'), event), { passive: false });
+  byId('systemJobStatus').addEventListener('wheel', (event) => {
+    const tableWrap = event.target.closest('.media-jobs-table-wrap');
+    if (tableWrap) continuePageScrollAtContainerEdge(tableWrap, event);
+  }, { passive: false });
+  document.querySelectorAll('[data-overview-target]').forEach((card) => {
+    const open = () => openOverviewTarget(card.dataset.overviewTarget).catch(showError);
+    card.addEventListener('click', open);
+    card.addEventListener('keydown', (event) => {
+      if (!['Enter', ' '].includes(event.key)) return;
+      event.preventDefault();
+      open();
+    });
   });
   byId('refreshDiagnosticsBtn').addEventListener('click', refreshDiagnostics);
   byId('auditFiltersForm').addEventListener('submit', (event) => { event.preventDefault(); auditPage = 1; loadAuditEvents(); });

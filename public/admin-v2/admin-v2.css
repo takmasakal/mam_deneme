@@ -60,6 +60,8 @@ a { color: inherit; }
 .v2-content:has(> .audit-view:not([hidden])) { padding: 6px 7px 9px; }
 .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
 .summary-item { min-height: 92px; padding: 18px 20px; display: flex; align-items: center; gap: 18px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius); background: rgba(14,23,34,.58); }
+.summary-item.is-clickable { cursor: pointer; transition: border-color .16s ease, background .16s ease, transform .16s ease; }.summary-item.is-clickable:hover, .summary-item.is-clickable:focus-visible { border-color: #53667b; background: rgba(17,28,41,.86); outline: none; transform: translateY(-1px); }
+.admin-section-flash { border-color: var(--v2-accent) !important; box-shadow: 0 0 0 2px rgba(245,184,61,.2); }
 .summary-icon { width: 34px; color: #d9e0e9; font-size: 27px; text-align: center; }
 .summary-item div > span { display: block; color: #b8c3d1; font-size: 13px; }
 .summary-item strong { display: block; margin-top: 5px; font-size: 23px; line-height: 1; font-variant-numeric: tabular-nums; }
