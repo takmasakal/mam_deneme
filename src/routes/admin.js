@@ -16,6 +16,7 @@ function registerAdminRoutes(app, deps) {
     subtitleJobs,
     videoOcrJobs,
     metadataEnrichmentService,
+    processingExecutionHealth,
     requireScopedAdminAccess,
     publicUploadUrlToAbsolutePath,
     reloadLearnedTurkishCorrectionsFromDb,
@@ -3713,11 +3714,13 @@ app.get('/api/admin/system-health', async (req, res) => {
       if (ocrAbs && !fs.existsSync(ocrAbs)) missingOcr += 1;
     });
 
-    const [postgresCheck, elasticCheck, keycloakCheck, oauth2ProxyCheck] = await Promise.all([
+    const [postgresCheck, elasticCheck, keycloakCheck, oauth2ProxyCheck, aiOperationsCheck, mediaOperationsCheck] = await Promise.all([
       pool.query('SELECT 1 AS ok').then(() => ({ ok: true, status: 200 })).catch(() => ({ ok: false, status: 0 })),
       checkHttpService('http://elasticsearch:9200'),
       checkHttpService('http://keycloak:8080/realms/mam'),
-      checkHttpService('http://oauth2-proxy:4180/ping')
+      checkHttpService('http://oauth2-proxy:4180/ping'),
+      Promise.resolve(processingExecutionHealth?.ai?.()).catch((error) => ({ ok: false, error: String(error?.message || error).slice(0, 240) })),
+      Promise.resolve(processingExecutionHealth?.media?.()).catch((error) => ({ ok: false, error: String(error?.message || error).slice(0, 240) }))
     ]);
 
     const recentJobsResult = await pool.query(
@@ -3787,7 +3790,9 @@ app.get('/api/admin/system-health', async (req, res) => {
         postgres: postgresCheck,
         elasticsearch: elasticCheck,
         keycloak: keycloakCheck,
-        oauth2Proxy: oauth2ProxyCheck
+        oauth2Proxy: oauth2ProxyCheck,
+        aiOperations: aiOperationsCheck || { ok: false },
+        mediaOperations: mediaOperationsCheck || { ok: false }
       },
       integrity: {
         missingProxy,

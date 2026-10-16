@@ -38,6 +38,11 @@ const PROCESSING_STORAGE_PRIMARY_ROOT =
 
 Bu varsayılan nedeniyle ortam değişkeni eklenmeden mevcut davranış değişmez.
 
+Geçici fakat API/worker arasında paylaşılması gereken işlem çıktıları için ayrıca
+`scratch` storage bulunur. `PROCESSING_STORAGE_SCRATCH_ROOT` tanımlı değilse
+`uploads/_processing` kullanılır. Altyazı öncesi seçili ses kanalı çıkarımı bu
+alana yazılır ve işlem tamamlandığında temizlenir.
+
 > Önemli: Bu aşamada storage adapter ve ProcessingJob sözleşmesi hazırlanmıştır;
 > mevcut AI/medya akışlarının tamamı henüz adapter üzerinden çalışmamaktadır.
 > Akışlar kademeli olarak geçirildikçe aşağıdaki yapılandırma worker iletişiminde
@@ -53,6 +58,7 @@ Değeri açıkça tanımlamak isterseniz uygulama servisine şunu ekleyin:
 ```yaml
 environment:
   PROCESSING_STORAGE_PRIMARY_ROOT: /app/uploads
+  PROCESSING_STORAGE_SCRATCH_ROOT: /app/uploads/_processing
 volumes:
   - ./uploads:/app/uploads
 ```
@@ -185,6 +191,27 @@ Storage anahtarları küçük harfle başlamalı; yalnızca küçük harf, rakam
 `-` içerebilir. Görev sözleşmesine erişim anahtarı, parola veya bağlantı parolası
 yazılmamalıdır.
 
+## Local/remote geçiş ayarları
+
+Varsayılan mod `local` olarak kalır. İleride worker hazır olduğunda taşınmış
+görevler aşağıdaki değişkenlerle HTTP adapter'a yönlendirilebilir:
+
+```text
+MEDIA_EXECUTION_MODE=remote
+MEDIA_OPERATIONS_URL=http://media-worker:8080
+MEDIA_OPERATIONS_TOKEN=...
+
+AI_EXECUTION_MODE=remote
+AI_OPERATIONS_URL=http://ai-worker:8080
+AI_OPERATIONS_TOKEN=...
+```
+
+Ortak token gerekiyorsa `PROCESSING_REMOTE_TOKEN`; polling ve zaman aşımı için
+`PROCESSING_REMOTE_POLL_INTERVAL_MS` ve `PROCESSING_REMOTE_TIMEOUT_MS`
+kullanılabilir. Geçiş döneminde yalnızca standart `execute(ProcessingJob)`
+hattına taşınmış görevler remote adapter'a gider; eski metotlar local adapter'da
+çalışmaya devam eder. Bu sayede görevler tek tek taşınabilir.
+
 ## İlgili dosyalar
 
 - `src/services/processingStorageService.js`: adlandırılmış köklerin adapter'ı
@@ -192,3 +219,10 @@ yazılmamalıdır.
 - `src/server.js`: `primary` storage başlangıç yapılandırması
 - `scripts/test_processing_storage_service.js`: adapter güvenlik testleri
 - `scripts/test_processing_job_contract.js`: görev/referans sözleşmesi testleri
+
+İsteğe bağlı aynı-sunucu worker denemesi için
+`docker-compose.processing-workers.yml` dosyası kullanılır. Ayrı sunucuya
+geçildiğinde servis komutları korunur; yalnızca API'deki worker URL'leri ve iki
+worker'ın `primary`/`scratch` mount hedefleri değiştirilir. API ve worker'ın aynı
+mantıksal dosyayı gördüğü, remote mod açılmadan önce küçük bir probe ve thumbnail
+göreviyle doğrulanmalıdır.

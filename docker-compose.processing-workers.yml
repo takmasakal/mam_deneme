@@ -1,0 +1,47 @@
+services:
+  media-operations-worker:
+    profiles: [processing-workers]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: npm run worker:media
+    environment:
+      PORT: 8090
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/mam_mvp
+      PROCESSING_WORKER_TOKEN: ${PROCESSING_WORKER_TOKEN:?PROCESSING_WORKER_TOKEN is required}
+      PROCESSING_WORKER_STORE: postgres
+      MEDIA_OPERATIONS_CONCURRENCY: ${MEDIA_OPERATIONS_CONCURRENCY:-1}
+      PROCESSING_STORAGE_PRIMARY_ROOT: /app/uploads
+      PROCESSING_STORAGE_SCRATCH_ROOT: /app/uploads/_processing
+    volumes:
+      - ./uploads:/app/uploads
+    ports:
+      - "8090:8090"
+    restart: unless-stopped
+
+  ai-operations-worker:
+    profiles: [processing-workers]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: npm run worker:ai
+    environment:
+      PORT: 8091
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/mam_mvp
+      PROCESSING_WORKER_TOKEN: ${PROCESSING_WORKER_TOKEN:?PROCESSING_WORKER_TOKEN is required}
+      PROCESSING_WORKER_STORE: postgres
+      AI_OPERATIONS_CONCURRENCY: ${AI_OPERATIONS_CONCURRENCY:-1}
+      PROCESSING_STORAGE_PRIMARY_ROOT: /app/uploads
+      PROCESSING_STORAGE_SCRATCH_ROOT: /app/uploads/_processing
+      AI_MODEL_CATALOG_JSON: ${AI_MODEL_CATALOG_JSON:-[]}
+      MAM_OFFLINE_MODE: "true"
+      MAM_MODEL_CACHE_DIR: /opt/mam-models
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    volumes:
+      - ./uploads:/app/uploads
+      - model_cache:/opt/mam-models
+    ports:
+      - "8091:8091"
+    restart: unless-stopped
