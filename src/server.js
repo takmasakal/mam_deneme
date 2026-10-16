@@ -26,7 +26,8 @@ const { createMetadataEnrichmentService } = require('./services/metadataEnrichme
 const { createMediaToolService } = require('./services/mediaToolService');
 const { createAiExecutionService } = require('./services/aiExecutionService');
 const { createMediaOperationsService } = require('./services/mediaOperationsService');
-const { PROCESSING_TASKS } = require('./services/processingJobContract');
+const { createProcessingJob, PROCESSING_TASKS } = require('./services/processingJobContract');
+const { createProcessingStorageService } = require('./services/processingStorageService');
 const uiTranslations = require('../public/i18n.json');
 const { createMediaArtifactService } = require('./services/mediaArtifactService');
 const { createBackupService } = require('./services/backupService');
@@ -111,6 +112,7 @@ const DEFAULT_BACKUP_DIR = process.env.MAM_BACKUP_DIR || path.join(UPLOADS_DIR, 
 const DEFAULT_RESTIC_REPOSITORY = process.env.RESTIC_REPOSITORY || '/mountvolume/backup/restic-repo';
 const OCR_FRAMES_DIR = path.join(OCR_DIR, '_frames');
 const OCR_FRAME_CACHE_DIR = path.join(OCR_FRAMES_DIR, '_cache');
+const PROCESSING_STORAGE_PRIMARY_ROOT = process.env.PROCESSING_STORAGE_PRIMARY_ROOT || UPLOADS_DIR;
 const OCR_FRAME_CACHE_ENABLED = String(process.env.OCR_FRAME_CACHE_ENABLE || 'false').trim().toLowerCase() === 'true';
 const OCR_FRAME_CACHE_TTL_DAYS = Math.max(1, Math.min(30, Number(process.env.OCR_FRAME_CACHE_TTL_DAYS) || 3));
 const MAM_OFFLINE_MODE = String(process.env.MAM_OFFLINE_MODE ?? 'true').trim().toLowerCase() !== 'false';
@@ -136,6 +138,10 @@ const mediaArtifactService = createMediaArtifactService({
   sanitizeFileName,
   nanoid
 });
+const processingStorageService = createProcessingStorageService({
+  defaultStorage: 'primary',
+  roots: { primary: PROCESSING_STORAGE_PRIMARY_ROOT }
+});
 const {
   artifactRoot,
   artifactFolder,
@@ -146,12 +152,25 @@ const {
   isUploadArtifactPath,
   resolveStoredUrl
 } = mediaArtifactService;
-const localMediaOperationsAdapter = createMediaToolService({
+const localMediaToolAdapter = createMediaToolService({
   fs,
   spawn,
   trackMediaJobProcess,
   isMediaJobCancelled,
   proxyMetadataComment: `${APP_DISPLAY_NAME} tarafından üretilen proxy`
+});
+const localMediaOperationsAdapter = Object.freeze({
+  ...localMediaToolAdapter,
+  execute: async (job) => {
+    if (job.task !== PROCESSING_TASKS.VIDEO_THUMBNAIL) {
+      throw new Error(`Local media operations adapter does not support task ${job.task}`);
+    }
+    if (!job.output) throw new Error('Video thumbnail output storage reference is required');
+    const inputPath = processingStorageService.resolve(job.input);
+    const outputPath = processingStorageService.resolve(job.output);
+    await generateVideoThumbnailLocal(inputPath, outputPath, job.options);
+    return Object.freeze({ status: 'completed', output: job.output });
+  }
 });
 const mediaOperationsService = createMediaOperationsService({
   mode: process.env.MEDIA_EXECUTION_MODE || 'local',
@@ -6015,7 +6034,7 @@ function resolvePlaybackInputPath(row) {
   return resolveAssetInputPath(row);
 }
 
-async function generateVideoThumbnail(inputPath, outputPath, options = {}) {
+async function generateVideoThumbnailLocal(inputPath, outputPath, options = {}) {
   const requestedSeek = Number(options?.seekSeconds);
   if (Number.isFinite(requestedSeek) && requestedSeek >= 0) {
     const duration = await getVideoDurationSeconds(inputPath);
@@ -6094,6 +6113,18 @@ async function generateVideoThumbnail(inputPath, outputPath, options = {}) {
     '4',
     outputPath
   ]);
+}
+
+async function generateVideoThumbnail(inputPath, outputPath, options = {}) {
+  const job = createProcessingJob({
+    application: APP_DISPLAY_NAME,
+    task: PROCESSING_TASKS.VIDEO_THUMBNAIL,
+    assetId: options.assetId || 'internal-video-thumbnail',
+    input: processingStorageService.toReference(inputPath),
+    output: processingStorageService.toReference(outputPath),
+    options
+  });
+  return mediaOperationsService.execute(job);
 }
 
 async function regenerateVideoThumbnailForAsset(row, options = {}) {

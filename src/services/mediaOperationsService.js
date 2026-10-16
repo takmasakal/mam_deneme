@@ -1,5 +1,9 @@
 const { normalizeExecutionMode } = require('./aiExecutionService');
-const { PROCESSING_TASKS } = require('./processingJobContract');
+const {
+  createProcessingJob,
+  PROCESSING_DOMAINS,
+  PROCESSING_TASKS
+} = require('./processingJobContract');
 
 const OPERATIONS = [
   'generateVideoProxy',
@@ -26,6 +30,16 @@ function createMediaOperationsService(options = {}) {
 
   const service = {
     mode,
+    execute: (job, context = {}) => {
+      const normalizedJob = createProcessingJob(job);
+      if (normalizedJob.domain !== PROCESSING_DOMAINS.MEDIA) {
+        throw new Error(`Media operations cannot run ${normalizedJob.domain} task ${normalizedJob.task}`);
+      }
+      if (typeof adapter.execute !== 'function') {
+        throw new Error('Media operations adapter does not support execute');
+      }
+      return adapter.execute(normalizedJob, context);
+    },
     getCapabilities: () => typeof adapter.getCapabilities === 'function'
       ? adapter.getCapabilities()
       : { mode, tasks: [...LOCAL_MEDIA_TASKS] }
