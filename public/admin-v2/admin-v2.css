@@ -116,6 +116,7 @@ a { color: inherit; }
 .v2-pager { min-height: 58px; padding: 10px 16px; display: flex; align-items: center; justify-content: center; gap: 14px; border-top: 1px solid var(--v2-border); }.v2-pager span { color: var(--v2-muted); font-size: 12px; }.inline-message { min-height: 20px; margin: 0 16px 12px; color: var(--v2-muted); font-size: 12px; }
 .retention-form { padding: 16px 18px; display: grid; grid-template-columns: 220px 240px auto; align-items: end; gap: 14px; }.button-reset { border: 0; cursor: pointer; justify-self: start; }
 .rights-view { display: grid; gap: 2px; }.rights-view[hidden] { display: none; }
+.rights-view > .v2-panel + .v2-panel { margin-top: 2px; }
 .rights-view > .v2-panel:first-child { position: relative; z-index: 12; overflow: visible; }
 .rights-view .panel-heading { min-height: 62px; padding: 11px 14px; gap: 10px; }
 .rights-toolbar { padding: 11px 12px; display: grid; grid-template-columns: minmax(280px, 1fr) max-content minmax(150px, 180px) auto; align-items: end; gap: 6px; }
