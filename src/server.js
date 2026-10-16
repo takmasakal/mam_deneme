@@ -28,6 +28,7 @@ const { createAiExecutionService } = require('./services/aiExecutionService');
 const { createMediaOperationsService } = require('./services/mediaOperationsService');
 const { createProcessingJob, PROCESSING_TASKS } = require('./services/processingJobContract');
 const { createProcessingStorageService } = require('./services/processingStorageService');
+const { createRemoteProcessingAdapter } = require('./services/remoteProcessingAdapter');
 const uiTranslations = require('../public/i18n.json');
 const { createMediaArtifactService } = require('./services/mediaArtifactService');
 const { createBackupService } = require('./services/backupService');
@@ -113,6 +114,7 @@ const DEFAULT_RESTIC_REPOSITORY = process.env.RESTIC_REPOSITORY || '/mountvolume
 const OCR_FRAMES_DIR = path.join(OCR_DIR, '_frames');
 const OCR_FRAME_CACHE_DIR = path.join(OCR_FRAMES_DIR, '_cache');
 const PROCESSING_STORAGE_PRIMARY_ROOT = process.env.PROCESSING_STORAGE_PRIMARY_ROOT || UPLOADS_DIR;
+const PROCESSING_STORAGE_SCRATCH_ROOT = process.env.PROCESSING_STORAGE_SCRATCH_ROOT || path.join(UPLOADS_DIR, '_processing');
 const OCR_FRAME_CACHE_ENABLED = String(process.env.OCR_FRAME_CACHE_ENABLE || 'false').trim().toLowerCase() === 'true';
 const OCR_FRAME_CACHE_TTL_DAYS = Math.max(1, Math.min(30, Number(process.env.OCR_FRAME_CACHE_TTL_DAYS) || 3));
 const MAM_OFFLINE_MODE = String(process.env.MAM_OFFLINE_MODE ?? 'true').trim().toLowerCase() !== 'false';
@@ -140,7 +142,10 @@ const mediaArtifactService = createMediaArtifactService({
 });
 const processingStorageService = createProcessingStorageService({
   defaultStorage: 'primary',
-  roots: { primary: PROCESSING_STORAGE_PRIMARY_ROOT }
+  roots: {
+    primary: PROCESSING_STORAGE_PRIMARY_ROOT,
+    scratch: PROCESSING_STORAGE_SCRATCH_ROOT
+  }
 });
 const {
   artifactRoot,
@@ -161,12 +166,12 @@ const localMediaToolAdapter = createMediaToolService({
 });
 const localMediaOperationsAdapter = Object.freeze({
   ...localMediaToolAdapter,
-  execute: async (job) => {
+  execute: async (job, context = {}) => {
     const inputPath = processingStorageService.resolve(job.input);
     if (job.task === PROCESSING_TASKS.VIDEO_THUMBNAIL) {
       if (!job.output) throw new Error('Video thumbnail output storage reference is required');
       const outputPath = processingStorageService.resolve(job.output);
-      await generateVideoThumbnailLocal(inputPath, outputPath, job.options);
+      await localMediaToolAdapter.generateVideoThumbnail(inputPath, outputPath, job.options);
       return Object.freeze({ status: 'completed', output: job.output, result: null });
     }
     if (job.task === PROCESSING_TASKS.VIDEO_PROXY) {
@@ -179,12 +184,28 @@ const localMediaOperationsAdapter = Object.freeze({
       const result = await localMediaToolAdapter.probeMediaTechnicalInfo(inputPath);
       return Object.freeze({ status: 'completed', output: null, result });
     }
+    if (job.task === PROCESSING_TASKS.AUDIO_EXTRACT) {
+      if (!job.output) throw new Error('Audio extract output storage reference is required');
+      const outputPath = processingStorageService.resolve(job.output);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      const result = await localMediaToolAdapter.extractAudio(inputPath, outputPath, job.options, context);
+      return Object.freeze({ status: 'completed', output: job.output, result });
+    }
     throw new Error(`Local media operations adapter does not support task ${job.task}`);
   }
 });
+const remoteMediaOperationsAdapter = String(process.env.MEDIA_OPERATIONS_URL || '').trim()
+  ? createRemoteProcessingAdapter({
+    baseUrl: process.env.MEDIA_OPERATIONS_URL,
+    token: process.env.MEDIA_OPERATIONS_TOKEN || process.env.PROCESSING_REMOTE_TOKEN,
+    pollIntervalMs: process.env.PROCESSING_REMOTE_POLL_INTERVAL_MS,
+    timeoutMs: process.env.PROCESSING_REMOTE_TIMEOUT_MS
+  })
+  : null;
 const mediaOperationsService = createMediaOperationsService({
   mode: process.env.MEDIA_EXECUTION_MODE || 'local',
-  localAdapter: localMediaOperationsAdapter
+  localAdapter: localMediaOperationsAdapter,
+  remoteAdapter: remoteMediaOperationsAdapter
 });
 const {
   getMediaAudioChannelCount,
@@ -4231,31 +4252,32 @@ async function prepareAudioInputForTranscription(inputPath, options = {}) {
   if (audioStreamIndex == null && audioChannelIndex == null) {
     return { path: inputPath, cleanup: () => {} };
   }
-  const tempPath = path.join('/tmp', `${Date.now()}-${nanoid()}-subtitle-audio.wav`);
-  const args = ['-y', '-i', inputPath];
-  if (audioStreamIndex != null) {
-    args.push('-map', `0:${audioStreamIndex}`);
-  } else {
-    args.push('-map', '0:a:0');
-  }
-  args.push('-vn');
-  if (audioChannelIndex != null && audioChannelIndex >= 1) {
-    const ffChannelIndex = Math.max(0, audioChannelIndex - 1);
-    args.push('-af', `pan=mono|c0=c${ffChannelIndex}`, '-ac', '1');
-  }
-  args.push('-c:a', 'pcm_s16le', tempPath);
+  const output = {
+    storage: 'scratch',
+    relativePath: `audio/${Date.now()}-${nanoid()}-subtitle-audio.wav`
+  };
+  const tempPath = processingStorageService.resolve(output);
   options.onProgress?.(8, 'preparing_audio');
-  const result = await runCommandCapture('ffmpeg', args, {
-    jobId: options.jobId,
-    onProgress: options.onProgress
+  const job = createProcessingJob({
+    application: APP_DISPLAY_NAME,
+    task: PROCESSING_TASKS.AUDIO_EXTRACT,
+    assetId: options.assetId || 'internal-subtitle-audio',
+    input: processingStorageService.toReference(inputPath),
+    output,
+    options: { audioStreamIndex, audioChannelIndex }
   });
-  if (!result.ok || !fs.existsSync(tempPath)) {
+  try {
+    await mediaOperationsService.execute(job, {
+      jobId: options.jobId,
+      onProgress: options.onProgress
+    });
+  } catch (error) {
     try {
       if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
     } catch (_error) {
       // ignore temp cleanup failure
     }
-    throw new Error(String(result.stderr || result.stdout || 'Failed to prepare selected audio for subtitle transcription'));
+    throw error;
   }
   return {
     path: tempPath,
@@ -6067,87 +6089,6 @@ function resolvePlaybackInputPath(row) {
   return resolveAssetInputPath(row);
 }
 
-async function generateVideoThumbnailLocal(inputPath, outputPath, options = {}) {
-  const requestedSeek = Number(options?.seekSeconds);
-  if (Number.isFinite(requestedSeek) && requestedSeek >= 0) {
-    const duration = await getVideoDurationSeconds(inputPath);
-    const maxSeek = duration > 0 ? Math.max(0, duration - 0.04) : requestedSeek;
-    const seek = Math.max(0, Math.min(requestedSeek, maxSeek));
-    try {
-      await runFfmpeg([
-        '-y',
-        '-i',
-        inputPath,
-        '-ss',
-        String(seek),
-        '-frames:v',
-        '1',
-        '-vf',
-        'scale=480:-1',
-        '-q:v',
-        '4',
-        outputPath
-      ]);
-      if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) return;
-    } catch (_error) {
-      // retry below with alternative seek ordering
-    }
-    await runFfmpeg([
-      '-y',
-      '-ss',
-      String(seek),
-      '-i',
-      inputPath,
-      '-frames:v',
-      '1',
-      '-vf',
-      'scale=480:-1',
-      '-q:v',
-      '4',
-      outputPath
-    ]);
-    if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) return;
-    throw new Error('Could not capture thumbnail at requested timecode');
-  }
-
-  try {
-    await runFfmpeg([
-      '-y',
-      '-i',
-      inputPath,
-      '-vf',
-      "select='gt(scene,0.3)',scale=480:-1",
-      '-frames:v',
-      '1',
-      '-q:v',
-      '4',
-      outputPath
-    ]);
-    if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
-      return;
-    }
-  } catch (_error) {
-    // Fallback path below.
-  }
-
-  const duration = await getVideoDurationSeconds(inputPath);
-  const seek = duration > 0 ? Math.max(1, Math.min(duration * 0.35, Math.max(1, duration - 1))) : 2;
-  await runFfmpeg([
-    '-y',
-    '-ss',
-    String(seek),
-    '-i',
-    inputPath,
-    '-frames:v',
-    '1',
-    '-vf',
-    'scale=480:-1',
-    '-q:v',
-    '4',
-    outputPath
-  ]);
-}
-
 async function generateVideoThumbnail(inputPath, outputPath, options = {}) {
   const job = createProcessingJob({
     application: APP_DISPLAY_NAME,
@@ -6410,6 +6351,14 @@ const metadataEnrichmentService = createMetadataEnrichmentService({
 });
 const aiExecutionService = createAiExecutionService({
   mode: process.env.AI_EXECUTION_MODE || 'local',
+  remoteAdapter: String(process.env.AI_OPERATIONS_URL || '').trim()
+    ? createRemoteProcessingAdapter({
+      baseUrl: process.env.AI_OPERATIONS_URL,
+      token: process.env.AI_OPERATIONS_TOKEN || process.env.PROCESSING_REMOTE_TOKEN,
+      pollIntervalMs: process.env.PROCESSING_REMOTE_POLL_INTERVAL_MS,
+      timeoutMs: process.env.PROCESSING_REMOTE_TIMEOUT_MS
+    })
+    : null,
   localAdapter: {
     getCapabilities: () => ({
       mode: 'local',
@@ -6990,6 +6939,10 @@ registerAdminRoutes(app, {
   subtitleJobs,
   videoOcrJobs,
   metadataEnrichmentService,
+  processingExecutionHealth: {
+    ai: () => aiExecutionService.health(),
+    media: () => mediaOperationsService.health()
+  },
   requireScopedAdminAccess,
   publicUploadUrlToAbsolutePath,
   reloadLearnedTurkishCorrectionsFromDb,

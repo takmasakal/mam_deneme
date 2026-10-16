@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const { spawn: defaultSpawn } = require('child_process');
 
 function parseFfprobeFraction(value) {
@@ -71,6 +72,50 @@ function buildVideoProxyArgs(inputPath, outputPath, options = {}) {
   if (metadataComment) args.push('-metadata', `comment=${metadataComment}`);
   args.push('-movflags', '+faststart', outputPath);
   return args;
+}
+
+function buildAudioExtractArgs(inputPath, outputPath, options = {}) {
+  const audioStreamIndex = options.audioStreamIndex != null && options.audioStreamIndex !== '' && Number.isInteger(Number(options.audioStreamIndex))
+    ? Number(options.audioStreamIndex)
+    : null;
+  const audioChannelIndex = options.audioChannelIndex != null && options.audioChannelIndex !== '' && Number.isInteger(Number(options.audioChannelIndex))
+    ? Number(options.audioChannelIndex)
+    : null;
+  const args = ['-y', '-i', inputPath];
+  args.push('-map', audioStreamIndex != null ? `0:${audioStreamIndex}` : '0:a:0', '-vn');
+  if (audioChannelIndex != null && audioChannelIndex >= 1) {
+    const ffChannelIndex = Math.max(0, audioChannelIndex - 1);
+    args.push('-af', `pan=mono|c0=c${ffChannelIndex}`, '-ac', '1');
+  }
+  args.push('-c:a', 'pcm_s16le', outputPath);
+  return args;
+}
+
+function buildMediaTranscodeArgs(inputPath, outputPath, options = {}) {
+  const profile = String(options.profile || '').trim().toLowerCase();
+  if (profile === 'video-h264') return ['-y', '-i', inputPath, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-movflags', '+faststart', outputPath];
+  if (profile === 'audio-wav') return ['-y', '-i', inputPath, '-vn', '-c:a', 'pcm_s16le', outputPath];
+  if (profile === 'image-jpeg') return ['-y', '-i', inputPath, '-frames:v', '1', '-vf', 'scale=min(2200\,iw):-2', '-q:v', '3', outputPath];
+  throw new Error(`Unsupported media transcode profile: ${profile || '(empty)'}`);
+}
+
+function buildOcrFrameExtractArgs(inputPath, outputPattern, options = {}) {
+  const intervalSec = Math.max(1, Math.min(30, Number(options.intervalSec) || 4));
+  const start = Number(options.startSec);
+  const end = Number(options.endSec);
+  const hasRange = Number.isFinite(start) && start >= 0 && Number.isFinite(end) && end > start;
+  const args = ['-hide_banner', '-loglevel', 'error', '-y'];
+  if (hasRange) args.push('-ss', start.toFixed(3));
+  args.push('-i', inputPath);
+  if (hasRange) args.push('-t', (end - start).toFixed(3));
+  args.push('-vf', `fps=1/${intervalSec},scale=min(2200\\,iw):-2`, '-q:v', '3', outputPattern);
+  return args;
+}
+
+function buildImageDerivativeArgs(inputPath, outputPath, options = {}) {
+  const maxSize = Math.max(64, Math.min(4096, Number(options.maxSize) || (options.kind === 'thumbnail' ? 480 : 1280)));
+  const quality = Math.max(2, Math.min(31, Number(options.quality) || (options.kind === 'thumbnail' ? 4 : 5)));
+  return ['-y', '-i', inputPath, '-frames:v', '1', '-vf', `scale=${maxSize}:${maxSize}:force_original_aspect_ratio=decrease`, '-q:v', String(quality), outputPath];
 }
 
 function summarizeFfmpegError(error) {
@@ -156,6 +201,28 @@ function createMediaToolService(options = {}) {
     return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
   }
 
+  async function generateVideoThumbnail(inputPath, outputPath, thumbnailOptions = {}) {
+    const requestedSeek = Number(thumbnailOptions.seekSeconds);
+    if (Number.isFinite(requestedSeek) && requestedSeek >= 0) {
+      const duration = await getVideoDurationSeconds(inputPath);
+      const seek = Math.max(0, Math.min(requestedSeek, duration > 0 ? Math.max(0, duration - 0.04) : requestedSeek));
+      try {
+        await runFfmpeg(['-y', '-i', inputPath, '-ss', String(seek), '-frames:v', '1', '-vf', 'scale=480:-1', '-q:v', '4', outputPath]);
+        if (fileSystem.existsSync(outputPath) && fileSystem.statSync(outputPath).size > 0) return;
+      } catch (_error) {}
+      await runFfmpeg(['-y', '-ss', String(seek), '-i', inputPath, '-frames:v', '1', '-vf', 'scale=480:-1', '-q:v', '4', outputPath]);
+      if (fileSystem.existsSync(outputPath) && fileSystem.statSync(outputPath).size > 0) return;
+      throw new Error('Could not capture thumbnail at requested timecode');
+    }
+    try {
+      await runFfmpeg(['-y', '-i', inputPath, '-vf', "select='gt(scene,0.3)',scale=480:-1", '-frames:v', '1', '-q:v', '4', outputPath]);
+      if (fileSystem.existsSync(outputPath) && fileSystem.statSync(outputPath).size > 0) return;
+    } catch (_error) {}
+    const duration = await getVideoDurationSeconds(inputPath);
+    const seek = duration > 0 ? Math.max(1, Math.min(duration * 0.35, Math.max(1, duration - 1))) : 2;
+    await runFfmpeg(['-y', '-ss', String(seek), '-i', inputPath, '-frames:v', '1', '-vf', 'scale=480:-1', '-q:v', '4', outputPath]);
+  }
+
   async function getMediaAudioStreams(inputPath) {
     if (!inputPath || !fileSystem.existsSync(inputPath)) return [];
     const probe = await runCommandCapture('ffprobe', [
@@ -237,6 +304,74 @@ function createMediaToolService(options = {}) {
     return Math.max(0, Number(streams[0]?.channels) || 0);
   }
 
+  async function extractAudio(inputPath, outputPath, extractOptions = {}, runtimeContext = {}) {
+    const args = buildAudioExtractArgs(inputPath, outputPath, extractOptions);
+    const result = await runCommandCapture('ffmpeg', args, {
+      jobId: runtimeContext.jobId,
+      onProgress: runtimeContext.onProgress
+    });
+    if (!result.ok || !fileSystem.existsSync(outputPath)) {
+      throw new Error(String(result.stderr || result.stdout || 'Failed to extract audio'));
+    }
+    return { format: 'wav', codec: 'pcm_s16le' };
+  }
+
+  async function transcodeMedia(inputPath, outputPath, transcodeOptions = {}) {
+    await runFfmpeg(buildMediaTranscodeArgs(inputPath, outputPath, transcodeOptions));
+    if (!fileSystem.existsSync(outputPath) || fileSystem.statSync(outputPath).size <= 0) throw new Error('Media transcode did not produce output');
+    return { profile: String(transcodeOptions.profile || '').trim().toLowerCase() };
+  }
+
+  async function extractOcrFrames(inputPath, outputDir, frameOptions = {}, runtimeContext = {}) {
+    fileSystem.mkdirSync(outputDir, { recursive: true });
+    const outputPattern = require('path').join(outputDir, 'frame-%06d.jpg');
+    const result = await runCommandCapture('ffmpeg', buildOcrFrameExtractArgs(inputPath, outputPattern, frameOptions), { jobId: runtimeContext.jobId, onProgress: runtimeContext.onProgress });
+    if (!result.ok) throw new Error(String(result.stderr || 'Could not sample video frames'));
+    const files = fileSystem.readdirSync(outputDir).filter((name) => /^frame-\d+\.jpg$/i.test(name)).sort();
+    return { frameCount: files.length, files };
+  }
+
+  async function generateImageDerivative(inputPath, outputPath, derivativeOptions = {}) {
+    await runFfmpeg(buildImageDerivativeArgs(inputPath, outputPath, derivativeOptions));
+    if (!fileSystem.existsSync(outputPath) || fileSystem.statSync(outputPath).size <= 0) throw new Error('Image derivative did not produce output');
+    return { kind: derivativeOptions.kind === 'thumbnail' ? 'thumbnail' : 'preview' };
+  }
+
+  async function renderPdfThumbnail(inputPath, outputPath) {
+    const outputBase = outputPath.replace(/\.(?:jpe?g|png)$/i, '');
+    const result = await runCommandCapture('pdftoppm', ['-f', '1', '-singlefile', '-jpeg', '-scale-to-x', '960', '-scale-to-y', '-1', inputPath, outputBase]);
+    const generated = `${outputBase}.jpg`;
+    if (!result.ok || !fileSystem.existsSync(generated) || fileSystem.statSync(generated).size <= 0) throw new Error(String(result.stderr || 'PDF thumbnail generation failed'));
+    if (generated !== outputPath) fileSystem.copyFileSync(generated, outputPath);
+    return { kind: 'document-thumbnail' };
+  }
+
+  async function generateDocumentPreview(inputPath, outputPath) {
+    if (/\.pdf$/i.test(inputPath)) {
+      fileSystem.copyFileSync(inputPath, outputPath);
+      return { kind: 'document-preview', format: 'pdf' };
+    }
+    const tempDir = fileSystem.mkdtempSync(path.join(path.dirname(outputPath), '.document-preview-'));
+    try {
+      const result = await runCommandCapture('libreoffice', ['--headless', '--convert-to', 'pdf', '--outdir', tempDir, inputPath], { env: { HOME: tempDir } });
+      const generated = path.join(tempDir, `${path.basename(inputPath, path.extname(inputPath))}.pdf`);
+      if (!result.ok || !fileSystem.existsSync(generated)) throw new Error(String(result.stderr || 'Document preview conversion failed'));
+      fileSystem.copyFileSync(generated, outputPath);
+      return { kind: 'document-preview', format: 'pdf' };
+    } finally { fileSystem.rmSync(tempDir, { recursive: true, force: true }); }
+  }
+
+  async function generateDocumentThumbnail(inputPath, outputPath) {
+    if (/\.pdf$/i.test(inputPath)) return renderPdfThumbnail(inputPath, outputPath);
+    const previewPath = `${outputPath}.preview.pdf`;
+    try {
+      await generateDocumentPreview(inputPath, previewPath);
+      return await renderPdfThumbnail(previewPath, outputPath);
+    } finally {
+      if (fileSystem.existsSync(previewPath)) fileSystem.rmSync(previewPath, { force: true });
+    }
+  }
+
   async function probeMediaTechnicalInfo(inputPath) {
     if (!inputPath || !fileSystem.existsSync(inputPath)) return { available: false };
     const probe = await runCommandCapture('ffprobe', [
@@ -292,13 +427,14 @@ function createMediaToolService(options = {}) {
     const sourceHeight = Number(technicalInfo?.video?.height || 0);
     const proxyScaleFilter = buildProxyScaleFilter(sourceWidth, sourceHeight);
     const allowAudioFallback = Boolean(generateOptions.allowAudioFallback);
+    const metadataComment = String(generateOptions.metadataComment || proxyMetadataComment).replace(/[\r\n]+/g, ' ').trim();
 
     const runProxy = async (includeAudio) => {
       await runFfmpeg(buildVideoProxyArgs(inputPath, outputPath, {
         includeAudio,
         audioStreamCount: audioStreams.length,
         scaleFilter: proxyScaleFilter,
-        metadataComment: proxyMetadataComment
+        metadataComment
       }));
     };
 
@@ -341,18 +477,29 @@ function createMediaToolService(options = {}) {
   return {
     buildProxyScaleFilter,
     buildVideoProxyArgs,
+    extractOcrFrames,
+    extractAudio,
+    generateDocumentPreview,
+    generateDocumentThumbnail,
+    generateImageDerivative,
     generateVideoProxy,
+    generateVideoThumbnail,
     getMediaAudioChannelCount,
     getMediaAudioStreamOptions,
     getMediaAudioStreams,
     getVideoDurationSeconds,
     probeMediaTechnicalInfo,
     runFfmpeg,
-    summarizeFfmpegError
+    summarizeFfmpegError,
+    transcodeMedia
   };
 }
 
 module.exports = {
+  buildAudioExtractArgs,
+  buildImageDerivativeArgs,
+  buildMediaTranscodeArgs,
+  buildOcrFrameExtractArgs,
   buildProxyScaleFilter,
   buildVideoProxyArgs,
   createMediaToolService,

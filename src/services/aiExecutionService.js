@@ -6,16 +6,20 @@ function normalizeExecutionMode(value) {
 
 function createAiExecutionService(options = {}) {
   const mode = normalizeExecutionMode(options.mode);
-  const adapter = mode === 'remote' ? options.remoteAdapter : options.localAdapter;
-  if (!adapter || typeof adapter !== 'object') {
+  const localAdapter = options.localAdapter;
+  const executionAdapter = mode === 'remote' ? options.remoteAdapter : localAdapter;
+  if (!localAdapter || typeof localAdapter !== 'object') {
+    throw new Error('AI local execution adapter is not configured');
+  }
+  if (!executionAdapter || typeof executionAdapter !== 'object') {
     throw new Error(`AI ${mode} execution adapter is not configured`);
   }
 
   function invoke(method, ...args) {
-    if (typeof adapter[method] !== 'function') {
+    if (typeof localAdapter[method] !== 'function') {
       throw new Error(`AI execution adapter does not support ${method}`);
     }
-    return adapter[method](...args);
+    return localAdapter[method](...args);
   }
 
   function execute(job, context = {}) {
@@ -23,15 +27,31 @@ function createAiExecutionService(options = {}) {
     if (normalizedJob.domain !== PROCESSING_DOMAINS.AI) {
       throw new Error(`AI execution cannot run ${normalizedJob.domain} task ${normalizedJob.task}`);
     }
-    return invoke('execute', normalizedJob, context);
+    if (typeof executionAdapter.execute !== 'function') throw new Error(`AI ${mode} execution adapter does not support execute`);
+    return executionAdapter.execute(normalizedJob, context);
+  }
+
+  function invokeStandard(method, ...args) {
+    if (typeof executionAdapter[method] !== 'function') throw new Error(`AI ${mode} execution adapter does not support ${method}`);
+    return executionAdapter[method](...args);
   }
 
   return Object.freeze({
     mode,
     execute,
-    getCapabilities: () => typeof adapter.getCapabilities === 'function'
-      ? adapter.getCapabilities()
+    submit: (job) => {
+      const normalizedJob = createProcessingJob(job);
+      if (normalizedJob.domain !== PROCESSING_DOMAINS.AI) throw new Error(`AI execution cannot run ${normalizedJob.domain} task ${normalizedJob.task}`);
+      return invokeStandard('submit', normalizedJob);
+    },
+    get: (jobId) => invokeStandard('get', String(jobId || '').trim()),
+    cancel: (jobId) => invokeStandard('cancel', String(jobId || '').trim()),
+    getCapabilities: () => typeof executionAdapter.getCapabilities === 'function'
+      ? executionAdapter.getCapabilities()
       : { mode, tasks: [] },
+    health: () => typeof executionAdapter.health === 'function'
+      ? executionAdapter.health()
+      : Promise.resolve({ ok: true, mode, service: 'ai-local' }),
     queueSubtitleGeneration: (row, jobOptions) => invoke('queueSubtitleGeneration', row, jobOptions),
     queueSubtitleTranslation: (row, jobOptions) => invoke('queueSubtitleTranslation', row, jobOptions),
     queueVideoOcr: (row, jobOptions) => invoke('queueVideoOcr', row, jobOptions),
