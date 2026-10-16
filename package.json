@@ -24,6 +24,7 @@
     "test:media-jobs": "node scripts/test_media_jobs.js",
     "test:execution-services": "node scripts/test_execution_services.js",
     "test:processing-job-contract": "node scripts/test_processing_job_contract.js",
+    "test:processing-storage-service": "node scripts/test_processing_storage_service.js",
     "sync-login-version": "node scripts/sync-login-version.js",
     "test:media-artifacts": "node scripts/test_media_artifact_service.js",
     "test:text-asset-index": "node scripts/test_text_asset_index_service.js",

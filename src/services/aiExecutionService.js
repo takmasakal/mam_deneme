@@ -1,3 +1,5 @@
+const { createProcessingJob, PROCESSING_DOMAINS } = require('./processingJobContract');
+
 function normalizeExecutionMode(value) {
   return String(value || '').trim().toLowerCase() === 'remote' ? 'remote' : 'local';
 }
@@ -10,8 +12,16 @@ function createAiExecutionService(options = {}) {
     if (typeof adapter[method] !== 'function') throw new Error(`AI execution adapter does not support ${method}`);
     return adapter[method](...args);
   }
+  function execute(job, context = {}) {
+    const normalizedJob = createProcessingJob(job);
+    if (normalizedJob.domain !== PROCESSING_DOMAINS.AI) {
+      throw new Error(`AI execution cannot run ${normalizedJob.domain} task ${normalizedJob.task}`);
+    }
+    return invoke('execute', normalizedJob, context);
+  }
   return Object.freeze({
     mode,
+    execute,
     getCapabilities: () => typeof adapter.getCapabilities === 'function' ? adapter.getCapabilities() : { mode, tasks: [] },
     queueSubtitleGeneration: (row, jobOptions) => invoke('queueSubtitleGeneration', row, jobOptions),
     queueSubtitleTranslation: (row, jobOptions) => invoke('queueSubtitleTranslation', row, jobOptions),
