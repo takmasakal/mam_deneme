@@ -140,6 +140,7 @@
   let auditSuggestionTimer = 0;
   let rightsPage = 1;
   let rightsPagination = { page: 1, totalPages: 1, total: 0 };
+  let rightsOwnerGroupFilter = '';
 
   const byId = (id) => document.getElementById(id);
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({
@@ -319,6 +320,7 @@
     if (query) params.set('q', query);
     document.querySelectorAll('input[name="rightsType"]:checked').forEach((input) => params.append('typeGroup', input.value));
     if (byId('assetRightsVisibility').value) params.set('visibility', byId('assetRightsVisibility').value);
+    if (rightsOwnerGroupFilter) params.set('ownerGroup', rightsOwnerGroupFilter);
     if (byId('assetRightsLocked').checked) params.set('lockedOnly', '1');
     return params;
   }
@@ -328,28 +330,23 @@
   }
 
   function renderRightsRows(items = [], mode = rightsMode()) {
-    const columns = mode === 'type' ? 7 : 8;
-    const policySummary = (item, prefix = '') => {
-      const allowedStem = prefix ? `${prefix}Allowed` : 'allowed';
-      const deniedStem = prefix ? `${prefix}Denied` : 'denied';
-      const allowed = ['Groups', 'Users'].reduce((total, suffix) => total + (Array.isArray(item[`${allowedStem}${suffix}`]) ? item[`${allowedStem}${suffix}`].length : 0), 0);
-      const denied = ['Groups', 'Users'].reduce((total, suffix) => total + (Array.isArray(item[`${deniedStem}${suffix}`]) ? item[`${deniedStem}${suffix}`].length : 0), 0);
-      return t('policy_accessible').replace('{allowed}', allowed).replace('{denied}', denied);
-    };
-    const rows = items.length ? items.map((item) => {
+    const fields = commonRightsFields.concat(mode === 'type' ? uploadRightsFields : []);
+    const columns = 1 + (mode === 'asset' ? 2 : 0) + fields.length + 1;
+    const forms = [];
+    const rows = items.length ? items.map((item, index) => {
       const id = item.id || item.typeGroup || item.type || '';
       const typeGroup = item.typeGroup || item.type || 'other';
       const title = mode === 'type' ? rightsTypeLabel(typeGroup) : (item.title || item.fileName || id);
-      const lockOwner = item.lockedBy || item.editLockedBy || item.lock?.actor || '';
-      const fields = commonRightsFields.concat(mode === 'type' ? uploadRightsFields : []);
-      const assetFields = mode === 'asset' ? `<div class="rights-policy-meta"><label><span>${escapeHtml(t('visibility'))}</span><select name="visibility">${['private','group','groups','public'].map((value) => `<option value="${value}"${item.visibility === value ? ' selected' : ''}>${escapeHtml(t(value === 'group' ? 'owner_groups' : value === 'groups' ? 'selected_principals' : value))}</option>`).join('')}</select></label>${renderRightsField('ownerGroups', item.ownerGroups)}</div>` : '';
-      const key = `${mode}-${id}`.replace(/[^a-zA-Z0-9_-]/g, '-');
-      const visibility = t(item.visibility === 'group' ? 'owner_groups' : item.visibility === 'groups' ? 'selected_principals' : item.visibility || 'private');
-      const dataRow = `<tr class="rights-data-row"><td class="rights-name"><strong>${escapeHtml(title)}</strong>${mode === 'asset' ? `<small>${escapeHtml(item.fileName || id)}</small>` : ''}</td><td><span class="rights-type">${escapeHtml(rightsTypeLabel(typeGroup))}</span></td>${mode === 'asset' ? `<td>${escapeHtml(visibility)}</td>` : ''}<td>${escapeHtml(policySummary(item))}</td><td>${escapeHtml(policySummary(item, 'edit'))}</td><td>${escapeHtml(policySummary(item, 'download'))}</td>${mode === 'type' ? `<td>${escapeHtml(policySummary(item, 'upload'))}</td>` : `<td>${lockOwner ? `<span class="rights-lock">${escapeHtml(lockOwner)}</span>` : `<span class="rights-available">${escapeHtml(t('unlocked'))}</span>`}</td>`}<td class="rights-table-actions"><button class="secondary-button" type="button" data-policy-toggle="${escapeHtml(key)}" aria-expanded="false">${escapeHtml(t('edit_policy'))}</button></td></tr>`;
-      const editRow = `<tr id="${escapeHtml(key)}" class="rights-edit-row" hidden><td colspan="${columns}"><form class="rights-policy-form" data-id="${escapeHtml(id)}" data-type-group="${escapeHtml(typeGroup)}" data-mode="${mode}">${assetFields}<div class="rights-policy-grid">${fields.map((name) => renderRightsField(name, item[name])).join('')}</div><div class="rights-policy-actions">${mode === 'asset' && lockOwner ? `<button class="danger" type="button" data-unlock-id="${escapeHtml(id)}">${escapeHtml(t('unlock'))}</button>` : ''}<button class="primary-link button-reset" type="submit">${escapeHtml(t('save_policy'))}</button></div></form></td></tr>`;
-      return dataRow + editRow;
+      const lockOwner = item.editLock?.lockedByName || item.editLock?.lockedBy || item.lockedBy || item.editLockedBy || item.lock?.actor || '';
+      const formId = `rights-form-${index}`;
+      forms.push(`<form id="${formId}" class="rights-policy-form" data-id="${escapeHtml(id)}" data-type-group="${escapeHtml(typeGroup)}" data-mode="${mode}"></form>`);
+      const isPrivate = mode === 'asset' && (item.visibility || 'private') === 'private';
+      const inputCell = (name, value) => `<td><label class="sr-only" for="${formId}-${name}">${escapeHtml(t(rightsFieldLabels[name]))}</label><input id="${formId}-${name}" form="${formId}" name="${name}" value="${escapeHtml((Array.isArray(value) ? value : []).join(', '))}" placeholder="${name.endsWith('Users') ? 'user@example.com' : 'group-a, group-b'}"${isPrivate ? ' readonly aria-readonly="true"' : ''} /></td>`;
+      const assetCells = mode === 'asset' ? `<td><select form="${formId}" name="visibility" data-rights-visibility>${['private','group','groups','public'].map((value) => `<option value="${value}"${item.visibility === value ? ' selected' : ''}>${escapeHtml(t(value === 'group' ? 'owner_groups' : value === 'groups' ? 'selected_principals' : value))}</option>`).join('')}</select></td>${inputCell('ownerGroups', item.ownerGroups)}` : '';
+      return `<tr class="rights-data-row${isPrivate ? ' is-private' : ''}" data-rights-row><td class="rights-name"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(mode === 'type' ? t('asset_types') : `${item.type || rightsTypeLabel(typeGroup)} · ${item.owner || item.fileName || id}`)}</small>${lockOwner ? `<span class="rights-lock">${escapeHtml(t('locked_by'))}: ${escapeHtml(lockOwner)}</span>` : ''}</td>${assetCells}${fields.map((name) => inputCell(name, item[name])).join('')}<td class="rights-table-actions">${mode === 'asset' && lockOwner ? `<button class="danger" type="button" data-unlock-id="${escapeHtml(id)}">${escapeHtml(t('unlock'))}</button>` : ''}<button class="primary-link button-reset" type="submit" form="${formId}">${escapeHtml(t('save'))}</button></td></tr>`;
     }).join('') : `<tr><td colspan="${columns}" class="diagnostic-empty">${escapeHtml(t('rights_empty'))}</td></tr>`;
-    byId('assetRightsRows').innerHTML = `<div class="rights-table-wrap"><table class="rights-table"><thead><tr><th>${escapeHtml(mode === 'type' ? t('asset_type') : t('asset'))}</th><th>${escapeHtml(t('asset_type'))}</th>${mode === 'asset' ? `<th>${escapeHtml(t('visibility'))}</th>` : ''}<th>${escapeHtml(t('read_access'))}</th><th>${escapeHtml(t('edit_access'))}</th><th>${escapeHtml(t('download_access'))}</th><th>${escapeHtml(mode === 'type' ? t('upload_access') : t('lock_status'))}</th><th><span class="sr-only">${escapeHtml(t('actions'))}</span></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    const assetHeaders = mode === 'asset' ? `<th>${escapeHtml(t('visibility'))}</th><th><span>${escapeHtml(t('owner_groups'))}</span><input id="assetRightsOwnerGroupFilter" type="search" value="${escapeHtml(rightsOwnerGroupFilter)}" placeholder="${escapeHtml(t('owner_groups'))}" /></th>` : '';
+    byId('assetRightsRows').innerHTML = `${forms.join('')}<div class="rights-table-wrap"><table class="rights-table rights-matrix"><thead><tr><th>${escapeHtml(mode === 'type' ? t('asset_type') : t('asset'))}</th>${assetHeaders}${fields.map((name) => `<th>${escapeHtml(t(rightsFieldLabels[name]))}</th>`).join('')}<th>${escapeHtml(t('actions'))}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
   function updateRightsPager() {
@@ -508,7 +505,7 @@
     const endpoint = mode === 'type'
       ? `/api/admin/asset-types/${encodeURIComponent(form.dataset.typeGroup)}/access`
       : `/api/admin/assets/${encodeURIComponent(form.dataset.id)}/access`;
-    const button = form.querySelector('button[type="submit"]');
+    const button = byId('assetRightsRows').querySelector(`button[type="submit"][form="${form.id}"]`);
     button.disabled = true;
     try {
       await api(endpoint, { method: 'PATCH', body: JSON.stringify(payload) });
@@ -518,16 +515,6 @@
     finally { button.disabled = false; }
   });
   byId('assetRightsRows').addEventListener('click', async (event) => {
-    const toggle = event.target.closest('[data-policy-toggle]');
-    if (toggle) {
-      const row = byId(toggle.dataset.policyToggle);
-      const willOpen = row.hidden;
-      byId('assetRightsRows').querySelectorAll('.rights-edit-row').forEach((item) => { item.hidden = true; });
-      byId('assetRightsRows').querySelectorAll('[data-policy-toggle]').forEach((item) => item.setAttribute('aria-expanded', 'false'));
-      row.hidden = !willOpen;
-      toggle.setAttribute('aria-expanded', String(willOpen));
-      return;
-    }
     const button = event.target.closest('[data-unlock-id]');
     if (!button || !global.confirm(t('unlock_confirm'))) return;
     button.disabled = true;
@@ -537,6 +524,21 @@
       byId('assetRightsMessage').textContent = t('lock_released');
     } catch (error) { byId('assetRightsMessage').textContent = String(error?.message || t('request_failed')); }
     finally { button.disabled = false; }
+  });
+  byId('assetRightsRows').addEventListener('change', (event) => {
+    const select = event.target.closest('[data-rights-visibility]');
+    if (!select) return;
+    const row = select.closest('[data-rights-row]');
+    const isPrivate = select.value === 'private';
+    row.classList.toggle('is-private', isPrivate);
+    row.querySelectorAll('input[name]').forEach((input) => { input.readOnly = isPrivate; input.setAttribute('aria-readonly', String(isPrivate)); });
+  });
+  byId('assetRightsRows').addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || event.target.id !== 'assetRightsOwnerGroupFilter') return;
+    event.preventDefault();
+    rightsOwnerGroupFilter = event.target.value.trim();
+    rightsPage = 1;
+    loadAssetRights();
   });
 
   byId('languageSelectAdmin').value = language;
