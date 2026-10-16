@@ -162,14 +162,24 @@ const localMediaToolAdapter = createMediaToolService({
 const localMediaOperationsAdapter = Object.freeze({
   ...localMediaToolAdapter,
   execute: async (job) => {
-    if (job.task !== PROCESSING_TASKS.VIDEO_THUMBNAIL) {
-      throw new Error(`Local media operations adapter does not support task ${job.task}`);
-    }
-    if (!job.output) throw new Error('Video thumbnail output storage reference is required');
     const inputPath = processingStorageService.resolve(job.input);
-    const outputPath = processingStorageService.resolve(job.output);
-    await generateVideoThumbnailLocal(inputPath, outputPath, job.options);
-    return Object.freeze({ status: 'completed', output: job.output });
+    if (job.task === PROCESSING_TASKS.VIDEO_THUMBNAIL) {
+      if (!job.output) throw new Error('Video thumbnail output storage reference is required');
+      const outputPath = processingStorageService.resolve(job.output);
+      await generateVideoThumbnailLocal(inputPath, outputPath, job.options);
+      return Object.freeze({ status: 'completed', output: job.output, result: null });
+    }
+    if (job.task === PROCESSING_TASKS.VIDEO_PROXY) {
+      if (!job.output) throw new Error('Video proxy output storage reference is required');
+      const outputPath = processingStorageService.resolve(job.output);
+      const result = await localMediaToolAdapter.generateVideoProxy(inputPath, outputPath, job.options);
+      return Object.freeze({ status: 'completed', output: job.output, result });
+    }
+    if (job.task === PROCESSING_TASKS.VIDEO_PROBE) {
+      const result = await localMediaToolAdapter.probeMediaTechnicalInfo(inputPath);
+      return Object.freeze({ status: 'completed', output: null, result });
+    }
+    throw new Error(`Local media operations adapter does not support task ${job.task}`);
   }
 });
 const mediaOperationsService = createMediaOperationsService({
@@ -177,14 +187,37 @@ const mediaOperationsService = createMediaOperationsService({
   localAdapter: localMediaOperationsAdapter
 });
 const {
-  generateVideoProxy,
   getMediaAudioChannelCount,
   getMediaAudioStreamOptions,
   getVideoDurationSeconds,
-  probeMediaTechnicalInfo,
   runFfmpeg,
   summarizeFfmpegError
 } = mediaOperationsService;
+
+async function generateVideoProxy(inputPath, outputPath, options = {}) {
+  const job = createProcessingJob({
+    application: APP_DISPLAY_NAME,
+    task: PROCESSING_TASKS.VIDEO_PROXY,
+    assetId: options.assetId || 'internal-video-proxy',
+    input: processingStorageService.toReference(inputPath),
+    output: processingStorageService.toReference(outputPath),
+    options
+  });
+  const execution = await mediaOperationsService.execute(job);
+  return execution.result;
+}
+
+async function probeMediaTechnicalInfo(inputPath, options = {}) {
+  const job = createProcessingJob({
+    application: APP_DISPLAY_NAME,
+    task: PROCESSING_TASKS.VIDEO_PROBE,
+    assetId: options.assetId || 'internal-video-probe',
+    input: processingStorageService.toReference(inputPath),
+    options
+  });
+  const execution = await mediaOperationsService.execute(job);
+  return execution.result;
+}
 app.use(express.json({ limit: JSON_BODY_LIMIT }));
 app.get('/api/health', (_req, res) => {
   res.json({
