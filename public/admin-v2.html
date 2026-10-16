@@ -88,18 +88,13 @@
           </section>
 
           <section class="diagnostics-view" data-v2-view="diagnostics" hidden>
-            <section class="diagnostics-summary" aria-label="Diagnostics summary">
-              <div><span data-v2-i18n="active_users">Active Users</span><strong id="diagnosticsActiveUserCount">—</strong></div>
-              <div><span data-v2-i18n="captured_errors">Captured Errors</span><strong id="diagnosticsErrorCount">—</strong></div>
-              <button id="refreshDiagnosticsBtn" class="secondary-button" type="button" data-v2-i18n="refresh">Refresh</button>
-            </section>
-            <section class="v2-panel" aria-labelledby="activeUsersTitle">
-              <div class="panel-heading"><div><h2 id="activeUsersTitle" data-v2-i18n="active_users">Active Users</h2><p data-v2-i18n="active_users_subtitle">Recently active authenticated sessions</p></div></div>
+            <section class="v2-panel diagnostics-panel" aria-labelledby="diagnosticsTitle">
+              <div class="diagnostics-head"><h2 id="diagnosticsTitle" data-v2-i18n="runtime_diagnostics">Diagnostics</h2><button id="refreshDiagnosticsBtn" class="secondary-button" type="button" data-v2-i18n="refresh">Refresh</button></div>
+              <h3 id="activeUsersTitle" data-v2-i18n="active_users">Active Users</h3>
               <div id="activeUsersRows" class="diagnostic-list"></div>
-            </section>
-            <section class="v2-panel" aria-labelledby="runtimeErrorsTitle">
-              <div class="panel-heading"><div><h2 id="runtimeErrorsTitle" data-v2-i18n="runtime_errors">Runtime Errors</h2><p data-v2-i18n="runtime_errors_subtitle">Recent server-side failures captured by MetMAM</p></div></div>
+              <h3 id="runtimeErrorsTitle" data-v2-i18n="runtime_errors">Runtime Errors</h3>
               <div id="runtimeErrorRows" class="diagnostic-list"></div>
+              <div id="diagnosticsMessage" class="inline-message" role="status"></div>
             </section>
           </section>
 

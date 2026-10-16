@@ -178,16 +178,14 @@
     const activeUsers = Array.isArray(payload.activeUsers) ? payload.activeUsers : [];
     const errors = Array.isArray(payload.errors) ? payload.errors : [];
     byId('overviewActiveUsers').textContent = String(activeUsers.length);
-    byId('diagnosticsActiveUserCount').textContent = String(activeUsers.length);
-    byId('diagnosticsErrorCount').textContent = String(errors.length);
     byId('activeUsersRows').innerHTML = activeUsers.length ? activeUsers.map((user) => {
       const actor = user.displayName || user.username || user.email || user.actor || 'unknown';
       const request = `${user.lastMethod || ''} ${user.lastPath || ''}`.trim() || '—';
-      return `<article class="diagnostic-row"><div class="diagnostic-row-head"><strong>${escapeHtml(actor)}</strong><time>${escapeHtml(formatDateTime(user.lastSeenAt))}</time></div><dl><div><dt>${escapeHtml(t('last_request'))}</dt><dd>${escapeHtml(request)}</dd></div><div><dt>${escapeHtml(t('ip_address'))}</dt><dd>${escapeHtml(user.ip || '—')}</dd></div>${user.userAgent ? `<div><dt>${escapeHtml(t('user_agent'))}</dt><dd>${escapeHtml(user.userAgent)}</dd></div>` : ''}</dl></article>`;
+      return `<article class="diagnostic-row"><strong>${escapeHtml(actor)}</strong><span>${escapeHtml(t('last_seen'))}: ${escapeHtml(formatDateTime(user.lastSeenAt))} | ${escapeHtml(t('last_request'))}: ${escapeHtml(request)} | ${escapeHtml(t('ip_address'))}: ${escapeHtml(user.ip || '—')}</span>${user.userAgent ? `<small>${escapeHtml(t('user_agent'))}: ${escapeHtml(user.userAgent)}</small>` : ''}</article>`;
     }).join('') : `<div class="diagnostic-empty">${escapeHtml(t('diagnostics_empty'))}</div>`;
     byId('runtimeErrorRows').innerHTML = errors.length ? errors.map((item) => {
       const path = `${item.method || ''} ${item.path || ''}`.trim();
-      return `<article class="diagnostic-row is-error"><div class="diagnostic-row-head"><strong>${escapeHtml(item.actor || 'system')}</strong><time>${escapeHtml(formatDateTime(item.createdAt))}</time></div><p>${escapeHtml(item.message || '—')}</p><dl><div><dt>${escapeHtml(t('error_source'))}</dt><dd>${escapeHtml(item.source || '—')}</dd></div>${item.status ? `<div><dt>${escapeHtml(t('error_status'))}</dt><dd>${escapeHtml(String(item.status))}</dd></div>` : ''}${path ? `<div><dt>HTTP</dt><dd>${escapeHtml(path)}</dd></div>` : ''}</dl>${item.stack ? `<details><summary>Stack</summary><pre>${escapeHtml(item.stack)}</pre></details>` : ''}</article>`;
+      return `<article class="diagnostic-row is-error"><strong>${escapeHtml(formatDateTime(item.createdAt))} · ${escapeHtml(item.actor || 'system')}</strong><span>${escapeHtml(t('error_source'))}: ${escapeHtml(item.source || '—')}${item.status ? ` | ${escapeHtml(t('error_status'))}: ${escapeHtml(String(item.status))}` : ''}${path ? ` | ${escapeHtml(path)}` : ''}</span><small>${escapeHtml(item.message || '—')}</small>${item.stack ? `<pre>${escapeHtml(item.stack)}</pre>` : ''}</article>`;
     }).join('') : `<div class="diagnostic-empty">${escapeHtml(t('diagnostics_empty'))}</div>`;
   }
 
@@ -222,11 +220,12 @@
 
   async function refreshDiagnostics() {
     hideError();
+    byId('diagnosticsMessage').textContent = '';
     byId('refreshDiagnosticsBtn').disabled = true;
     try {
       renderRuntimeDiagnostics(await api('/api/admin/runtime-diagnostics?limit=100'));
     } catch (error) {
-      showError(new Error(`${t('diagnostics_load_failed')} ${String(error?.message || '')}`.trim()));
+      byId('diagnosticsMessage').textContent = `${t('diagnostics_load_failed')} ${String(error?.message || '')}`.trim();
     } finally {
       byId('refreshDiagnosticsBtn').disabled = false;
     }
