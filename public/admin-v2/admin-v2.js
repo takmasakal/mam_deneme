@@ -253,7 +253,7 @@
       const details = event.details && typeof event.details === 'object'
         ? Object.entries(event.details).slice(0, 4).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : typeof value === 'object' ? JSON.stringify(value) : value}`).join(' · ')
         : '';
-      return `<article class="audit-row"><time>${escapeHtml(formatDateTime(event.createdAt))}</time><strong>${escapeHtml(event.actor || 'unknown')}</strong><span>${escapeHtml(auditActionLabel(event.action))}</span><b>${escapeHtml(title)}</b>${details ? `<small>${escapeHtml(details)}</small>` : ''}</article>`;
+      return `<article class="audit-row"><strong>${escapeHtml(formatDateTime(event.createdAt))} · ${escapeHtml(event.actor || 'unknown')}</strong><span>${escapeHtml(auditActionLabel(event.action))} · ${escapeHtml(title)}</span>${details ? `<small>${escapeHtml(details)}</small>` : ''}</article>`;
     }).join('') : `<div class="diagnostic-empty">${escapeHtml(t('audit_empty'))}</div>`;
   }
 
