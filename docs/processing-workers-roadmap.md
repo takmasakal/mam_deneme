@@ -4,6 +4,9 @@ Amaç, MetMAM ve Belgelik'in mevcut tek-sunucu davranışını korurken AI ve me
 işlerini ileride bağımsız sunucularda çalıştırabilmektir. Varsayılan çalışma modu
 tüm geçiş boyunca `local` kalır.
 
+Üretim akışlarını uzak worker'lara bağlamak için kalan ayrıntılı işler ve kabul
+kriterleri `docs/processing-remote-migration-backlog.md` dosyasında tutulur.
+
 ## Durum
 
 | Alan | Durum | Açıklama |
