@@ -17,24 +17,24 @@
         </a>
 
         <nav class="v2-nav">
-          <a href="/admin.html" data-classic-destination="overview"><span class="nav-icon" aria-hidden="true">⌂</span><span>Overview</span></a>
-          <a class="is-active" href="/admin-v2" aria-current="page"><span class="nav-icon" aria-hidden="true">⌁</span><span>System Health</span></a>
-          <a href="/admin.html" data-classic-destination="runtimeDiagnostics"><span class="nav-icon" aria-hidden="true">⌕</span><span>Diagnostics</span></a>
-          <a href="/admin.html" data-classic-destination="auditEvents"><span class="nav-icon" aria-hidden="true">▤</span><span>Audit History</span></a>
-          <a href="/admin.html" data-classic-destination="assetRights"><span class="nav-icon" aria-hidden="true">◇</span><span>Asset Rights</span></a>
-          <a href="/admin.html" data-classic-destination="documentRights"><span class="nav-icon" aria-hidden="true">▧</span><span>Document Rights</span></a>
-          <a href="/admin.html" data-classic-destination="metadata"><span class="nav-icon" aria-hidden="true">✣</span><span>Metadata Generation</span></a>
-          <a href="/admin.html" data-classic-destination="settings"><span class="nav-icon" aria-hidden="true">⚙</span><span>Settings</span></a>
+          <a href="/admin.html" data-classic-destination="overview"><span class="nav-icon" aria-hidden="true">⌂</span><span data-v2-i18n="overview">Overview</span></a>
+          <a data-v2-view-link="health" href="/admin-v2"><span class="nav-icon" aria-hidden="true">⌁</span><span data-v2-i18n="system_health">System Health</span></a>
+          <a data-v2-view-link="diagnostics" href="/admin-v2?view=diagnostics"><span class="nav-icon" aria-hidden="true">⌕</span><span data-v2-i18n="runtime_diagnostics">Diagnostics</span></a>
+          <a href="/admin.html" data-classic-destination="auditEvents"><span class="nav-icon" aria-hidden="true">▤</span><span data-v2-i18n="audit_history">Audit History</span></a>
+          <a href="/admin.html" data-classic-destination="assetRights"><span class="nav-icon" aria-hidden="true">◇</span><span data-v2-i18n="asset_rights">Asset Rights</span></a>
+          <a href="/admin.html" data-classic-destination="documentRights"><span class="nav-icon" aria-hidden="true">▧</span><span data-v2-i18n="document_rights">Document Rights</span></a>
+          <a href="/admin.html" data-classic-destination="metadata"><span class="nav-icon" aria-hidden="true">✣</span><span data-v2-i18n="metadata_generation">Metadata Generation</span></a>
+          <a href="/admin.html" data-classic-destination="settings"><span class="nav-icon" aria-hidden="true">⚙</span><span data-v2-i18n="settings">Settings</span></a>
         </nav>
 
-        <p class="v2-sidebar-note">Other sections currently open in Classic Admin while V2 is migrated page by page.</p>
+        <p class="v2-sidebar-note" data-v2-i18n="classic_fallback_note">Other sections currently open in Classic Admin while V2 is migrated page by page.</p>
       </aside>
 
       <main class="v2-main" id="mainContent">
         <header class="v2-topbar">
           <div>
-            <h1>System Health</h1>
-            <p>Infrastructure, processing services, and recent jobs</p>
+            <h1 id="v2PageTitle">System Health</h1>
+            <p id="v2PageSubtitle">Infrastructure, processing services, and recent jobs</p>
           </div>
           <div class="v2-topbar-actions">
             <label class="language-control">
@@ -44,48 +44,64 @@
                 <option value="tr">Türkçe</option>
               </select>
             </label>
-            <a class="text-link" href="/admin.html">Back to Classic Admin</a>
-            <a class="primary-link" href="/">Back to MAM <span aria-hidden="true">↗</span></a>
+            <a class="text-link" href="/admin.html" data-v2-i18n="back_to_classic">Back to Classic Admin</a>
+            <a class="primary-link" href="/"><span data-v2-i18n="back_to_mam">Back to MAM</span> <span aria-hidden="true">↗</span></a>
           </div>
         </header>
 
         <section class="v2-content" aria-live="polite">
           <div id="pageError" class="page-message is-error" role="alert" hidden></div>
 
-          <section class="summary-grid" aria-label="System summary">
+          <section class="summary-grid" aria-label="System summary" data-v2-view="health">
             <article class="summary-item">
               <span class="summary-icon" aria-hidden="true">▱</span>
-              <div><span>Active Assets</span><strong id="overviewActiveAssets">—</strong><small id="overviewTotalAssets">Loading</small></div>
+              <div><span data-v2-i18n="active_assets">Active Assets</span><strong id="overviewActiveAssets">—</strong><small id="overviewTotalAssets" data-v2-i18n="loading">Loading</small></div>
             </article>
             <article class="summary-item">
               <span class="summary-icon" aria-hidden="true">⌁</span>
-              <div><span>System Health</span><strong id="overviewSystemHealth">—</strong><small id="overviewSystemHealthSub">Loading</small></div>
+              <div><span data-v2-i18n="system_health">System Health</span><strong id="overviewSystemHealth">—</strong><small id="overviewSystemHealthSub" data-v2-i18n="loading">Loading</small></div>
             </article>
             <article class="summary-item">
               <span class="summary-icon" aria-hidden="true">△</span>
-              <div><span>Open Errors</span><strong id="overviewOpenErrors">—</strong><small id="overviewOpenErrorsSub">Loading</small></div>
+              <div><span data-v2-i18n="open_errors">Open Errors</span><strong id="overviewOpenErrors">—</strong><small id="overviewOpenErrorsSub" data-v2-i18n="loading">Loading</small></div>
             </article>
             <article class="summary-item">
               <span class="summary-icon" aria-hidden="true">◎</span>
-              <div><span>Active Users</span><strong id="overviewActiveUsers">—</strong><small>Recent window</small></div>
+              <div><span data-v2-i18n="active_users">Active Users</span><strong id="overviewActiveUsers">—</strong><small data-v2-i18n="recent_window">Recent window</small></div>
             </article>
           </section>
 
-          <section class="v2-panel health-panel" aria-labelledby="healthTitle">
+          <section class="v2-panel health-panel" aria-labelledby="healthTitle" data-v2-view="health">
             <div class="panel-heading">
-              <div><h2 id="healthTitle">Service Health</h2><p>Core services and infrastructure status</p></div>
-              <button id="refreshHealthBtn" class="secondary-button" type="button">Refresh</button>
+              <div><h2 id="healthTitle" data-v2-i18n="service_health">Service Health</h2><p data-v2-i18n="service_health_subtitle">Core services and infrastructure status</p></div>
+              <button id="refreshHealthBtn" class="secondary-button" type="button" data-v2-i18n="refresh">Refresh</button>
             </div>
             <div id="healthLoading" class="loading-state"><span class="spinner" aria-hidden="true"></span><span>Loading system health…</span></div>
             <div id="ffmpegHealth" class="ffmpeg-health" hidden></div>
             <div id="systemHealthRows" class="health-rows"></div>
           </section>
 
-          <section class="v2-panel jobs-panel" aria-labelledby="jobsTitle">
+          <section class="v2-panel jobs-panel" aria-labelledby="jobsTitle" data-v2-view="health">
             <div class="panel-heading jobs-heading">
-              <div><h2 id="jobsTitle">Recent Processing Jobs</h2><p>Latest asset processing jobs across the system</p></div>
+              <div><h2 id="jobsTitle" data-v2-i18n="recent_processing_jobs">Recent Processing Jobs</h2><p data-v2-i18n="recent_processing_jobs_subtitle">Latest asset processing jobs across the system</p></div>
             </div>
             <div id="systemJobStatus" class="system-job-status"></div>
+          </section>
+
+          <section class="diagnostics-view" data-v2-view="diagnostics" hidden>
+            <section class="diagnostics-summary" aria-label="Diagnostics summary">
+              <div><span data-v2-i18n="active_users">Active Users</span><strong id="diagnosticsActiveUserCount">—</strong></div>
+              <div><span data-v2-i18n="captured_errors">Captured Errors</span><strong id="diagnosticsErrorCount">—</strong></div>
+              <button id="refreshDiagnosticsBtn" class="secondary-button" type="button" data-v2-i18n="refresh">Refresh</button>
+            </section>
+            <section class="v2-panel" aria-labelledby="activeUsersTitle">
+              <div class="panel-heading"><div><h2 id="activeUsersTitle" data-v2-i18n="active_users">Active Users</h2><p data-v2-i18n="active_users_subtitle">Recently active authenticated sessions</p></div></div>
+              <div id="activeUsersRows" class="diagnostic-list"></div>
+            </section>
+            <section class="v2-panel" aria-labelledby="runtimeErrorsTitle">
+              <div class="panel-heading"><div><h2 id="runtimeErrorsTitle" data-v2-i18n="runtime_errors">Runtime Errors</h2><p data-v2-i18n="runtime_errors_subtitle">Recent server-side failures captured by MetMAM</p></div></div>
+              <div id="runtimeErrorRows" class="diagnostic-list"></div>
+            </section>
           </section>
         </section>
       </main>
