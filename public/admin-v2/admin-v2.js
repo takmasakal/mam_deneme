@@ -649,6 +649,15 @@
     if (getActiveView() === 'audit') loadAuditEvents();
     if (getActiveView() === 'asset-rights') loadAssetRights();
   });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'L' || !event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+    const target = event.target;
+    if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"]')) return;
+    byId('languageSelectAdmin').value = language === 'tr' ? 'en' : 'tr';
+    byId('languageSelectAdmin').dispatchEvent(new Event('change', { bubbles: true }));
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
 
   applyView();
   loadTranslations().finally(() => {
