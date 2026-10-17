@@ -539,10 +539,19 @@
     if (!identitySection || byId('userPermissionsRows')) return;
     const section = document.createElement('section');
     section.className = 'settings-record-section';
-    section.innerHTML = `<div class="settings-section-heading"><h3 data-v2-i18n="principal_settings">User / Group Settings</h3><div class="settings-principal-search"><select id="userPermissionsPrincipalType" aria-label="Principal type"><option value="user" data-v2-i18n="principal_type_user">User</option><option value="group" data-v2-i18n="principal_type_group">Group</option></select><input id="userPermissionsSearchInput" placeholder="Search user or group..." autocomplete="off" /><button id="userPermissionsSearchButton" class="secondary-button" type="button" data-v2-i18n="principal_search">Search</button></div></div><div id="userPermissionsRows" class="settings-admin-rows user-permissions-rows"></div><div class="v2-pager"><label><span data-v2-i18n="page_size">Page size</span><select id="userPermissionsPageSize"><option value="20">20</option><option value="50">50</option></select></label><button id="userPermissionsPrevPage" class="secondary-button" type="button" data-v2-i18n="previous">Previous</button><span id="userPermissionsPageInfo">-</span><button id="userPermissionsNextPage" class="secondary-button" type="button" data-v2-i18n="next">Next</button></div><div id="userPermissionsMsg" class="inline-message"></div>`;
+    section.innerHTML = `<h3 data-v2-i18n="principal_settings">User / Group Settings</h3><div class="settings-principal-toolbar"><select id="userPermissionsPrincipalType" aria-label="Principal type"><option value="user" data-v2-i18n="principal_type_user">User</option><option value="group" data-v2-i18n="principal_type_group">Group</option></select><input id="userPermissionsSearchInput" placeholder="Search user or group..." autocomplete="off" /><button id="userPermissionsSearchButton" class="secondary-button" type="button" data-v2-i18n="principal_search">Search</button></div><div id="userPermissionsRows" class="settings-admin-rows user-permissions-rows"></div><div class="v2-pager settings-principal-pager"><label><span data-v2-i18n="page_size">Page size</span><select id="userPermissionsPageSize"><option value="20">20</option><option value="50">50</option></select></label><button id="userPermissionsPrevPage" class="secondary-button" type="button" data-v2-i18n="previous">Previous</button><span id="userPermissionsPageInfo">-</span><button id="userPermissionsNextPage" class="secondary-button" type="button" data-v2-i18n="next">Next</button></div><div id="userPermissionsMsg" class="inline-message"></div>`;
     identitySection.before(section);
   }
   mountUserPermissionSettings();
+  function placeSessionSaveInsideBox() {
+    const form = byId('v2SessionSettingsForm');
+    const fieldset = form?.querySelector('fieldset');
+    const actions = form?.querySelector(':scope > .settings-actions');
+    if (!fieldset || !actions) return;
+    actions.classList.add('settings-session-save');
+    fieldset.append(actions);
+  }
+  placeSessionSaveInsideBox();
   let editingGroupAdminId = '';
   function mountGroupAdministratorSettings() {
     const rows = byId('v2GroupAdmins');
