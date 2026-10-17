@@ -154,6 +154,30 @@
     '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
   })[character]);
   const t = (key) => v2Translations?.[language]?.[key] || translations?.[language]?.[key] || fallbackTranslations[key] || key;
+  const settingsTurkishText = {
+    'Player':'Oynatıcı','Player Mode':'Oynatıcı Modu','Asset ingest':'Varlık ekleme','New asset default visibility':'Yeni varlık varsayılan görünürlüğü','Owner groups':'Sahip gruplar','Public':'Herkese açık','Hide':'Gizle','Allow creating assets without a file':'Dosyasız varlık oluşturmaya izin ver','Job concurrency':'Eşzamanlı görevler','Subtitle':'Altyazı','Video OCR':'Video OCR','Metadata':'Metadata','Thumbnail':'Küçük resim','Upload':'Yükleme','Download':'İndirme','Backup':'Yedekleme','Security':'Güvenlik','Require API token (non-SSO API access)':'API belirteci iste (SSO dışı API erişimi)','Accept Keycloak Bearer JWT (preferred for mobile)':'Keycloak Bearer JWT kabul et (mobil için önerilen)','API Token':'API Belirteci','OIDC Issuer URL':'OIDC Sağlayıcı URL’si','OIDC JWKS URL':'OIDC JWKS URL’si','OIDC Audience':'OIDC Hedef Kitlesi','Rotate Token':'Belirteci Yenile','Copy Token':'Belirteci Kopyala','Save Settings':'Ayarları Kaydet',
+    'Proxy Jobs':'Proxy Görevleri','Include trash':'Çöp kutusunu dahil et','Missing Proxy/Thumbnail Generation':'Eksik Proxy/Küçük Resim Üretimi','Scan assets for missing derivatives and generate only the missing component.':'Varlıklarda eksik türevleri tara ve yalnızca eksik bileşeni üret.','Scan Missing':'Eksikleri Tara','Generate All Proxies':'Tüm Proxyleri Üret','Asset Generation Tool':'Varlık Üretim Aracı','Asset Name':'Varlık Adı','Action':'İşlem','Generate Thumbnail':'Küçük Resim Üret','Generate Image Thumbnail':'Görsel Küçük Resmi Üret','Generate Image Preview':'Görsel Önizleme Üret','Generate Document Thumbnail':'Belge Küçük Resmi Üret','Generate Preview':'Önizleme Üret','Generate Proxy':'Proxy Üret','Thumbnail Timecode':'Küçük Resim Zaman Kodu','Run Action':'İşlemi Çalıştır','Recent Proxy Jobs':'Son Proxy Görevleri','Generate':'Üret',
+    'OCR Defaults':'OCR Varsayılanları','OCR Filters':'OCR Filtreleri','Advanced OCR mode default':'Gelişmiş OCR modu varsayılanı','Turkish offline correction default':'Türkçe çevrimdışı düzeltme varsayılanı','Blur filter default':'Bulanıklık filtresi varsayılanı','Ticker region mode default':'Kayan yazı bölge modu varsayılanı','Static overlay filter default':'Sabit kaplama filtresi varsayılanı','OCR Records':'OCR Kayıtları','Search OCR':'OCR Ara','Search':'Ara','Previous':'Önceki','Next':'Sonraki',
+    'Subtitle Display Settings':'Altyazı Görüntüleme Ayarları','Subtitle Style':'Altyazı Stili','Use custom overlay':'Özel kaplama kullan','Bottom offset (px)':'Alt boşluk (px)','Font size (px)':'Yazı boyutu (px)','Text color':'Metin rengi','Background color':'Arka plan rengi','Background opacity':'Arka plan saydamlığı','Left/right padding (px)':'Sol/sağ iç boşluk (px)','Max width (%)':'En fazla genişlik (%)','Custom overlay applies the complete style and match-highlighting configuration.':'Özel kaplama, tüm stil ve eşleşme vurgulama ayarlarını uygular.','Subtitle Records':'Altyazı Kayıtları','Search Subtitle':'Altyazı Ara','Delete file too':'Dosyayı da sil','Combined Subtitle + OCR Search':'Birleşik Altyazı + OCR Araması','Search Query':'Arama Sorgusu','Limit':'Sınır',
+    'Backup Settings':'Yedekleme Ayarları','Schedule':'Zamanlama','Enable daily backup':'Günlük yedeklemeyi etkinleştir','Backup directory':'Yedekleme dizini','Daily hour':'Günlük saat','Retention (days)':'Saklama süresi (gün)','Contents':'İçerik','MAM PostgreSQL dump':'MAM PostgreSQL dökümü','Keycloak PostgreSQL dump':'Keycloak PostgreSQL dökümü','Uploads archive (.tar.gz)':'Yüklemeler arşivi (.tar.gz)','Uploads incremental backup (restic)':'Yüklemelerin artımlı yedeği (restic)','Restic repository':'Restic deposu','Daily snapshots':'Günlük anlık görüntüler','Weekly snapshots':'Haftalık anlık görüntüler','Monthly snapshots':'Aylık anlık görüntüler','Run Backup Now':'Şimdi Yedekle','Permission Export / Import':'Yetki Dışa / İçe Aktarma','Asset rights':'Varlık yetkileri','User and group rights':'Kullanıcı ve grup yetkileri','Export':'Dışa Aktar','Import':'İçe Aktar','Delete':'Sil',
+    'Login Session Settings':'Oturum Açma Ayarları','Allow remember me':'Beni hatırla seçeneğine izin ver','Idle timeout (minutes)':'Boşta kalma süresi (dakika)','Maximum session (hours)':'En uzun oturum (saat)','Client idle timeout (minutes)':'İstemci boşta kalma süresi (dakika)','Client maximum session (hours)':'İstemci en uzun oturumu (saat)','Save Login Settings':'Oturum Ayarlarını Kaydet','Identity Overview':'Kimlik Genel Bakışı','Refresh':'Yenile','Search users':'Kullanıcı ara','Groups':'Gruplar','Users':'Kullanıcılar','Source':'Kaynak','MAM-only groups':'Yalnızca MAM grupları','Group Administrators':'Grup Yöneticileri','Managed group':'Yönetilen grup','Manager username':'Yönetici kullanıcı adı','Scope':'Kapsam','Text administration':'Metin yönetimi','Add':'Ekle','User / Group Settings':'Kullanıcı / Grup Ayarları','User':'Kullanıcı','Group':'Grup','Page size':'Sayfa boyutu'
+  };
+  const settingsTurkishPlaceholders = {'Type asset name':'Varlık adı yazın','asset, label, file...':'varlık, etiket, dosya...','asset, label, language...':'varlık, etiket, dil...','Type query...':'Sorgu yazın...','username, name, email...':'kullanıcı adı, ad, e-posta...','Search user or group...':'Kullanıcı veya grup ara...'};
+  settingsTurkishText['Token & OIDC'] = 'Belirteç ve OIDC';
+  const localizedSettingsNotice = (en, tr) => language === 'tr' ? tr : en;
+  function localizeSettingsText() {
+    document.querySelectorAll('.settings-view h2:not([data-v2-i18n]), .settings-view h3:not([data-v2-i18n]), .settings-view h4:not([data-v2-i18n]), .settings-view legend:not([data-v2-i18n]), .settings-view label > span:not([data-v2-i18n]), .settings-view button:not([data-v2-i18n]), .settings-view option:not([data-v2-i18n]), .settings-view strong:not([data-v2-i18n]), .settings-view p:not([data-v2-i18n])').forEach((element) => {
+      if (!element.dataset.v2SettingsEn) element.dataset.v2SettingsEn = String(element.textContent || '').trim();
+      const original = element.dataset.v2SettingsEn;
+      if (language === 'tr' && settingsTurkishText[original]) element.textContent = settingsTurkishText[original];
+      else if (language === 'en' && original) element.textContent = original;
+    });
+    document.querySelectorAll('.settings-view input[placeholder]').forEach((element) => {
+      if (!element.dataset.v2SettingsPlaceholderEn) element.dataset.v2SettingsPlaceholderEn = element.placeholder;
+      const original = element.dataset.v2SettingsPlaceholderEn;
+      element.placeholder = language === 'tr' ? (settingsTurkishPlaceholders[original] || original) : original;
+    });
+  }
   const formatDateTime = (value) => {
     if (!value) return '—';
     const date = new Date(value);
@@ -201,6 +225,7 @@
     byId('v2PageTitle').textContent = t(titleKey);
     byId('v2PageSubtitle').textContent = t(subtitleKey);
     document.title = `MetMAM Admin V2 — ${byId('v2PageTitle').textContent}`;
+    localizeSettingsText();
   }
 
   function getActiveView() {
@@ -489,6 +514,7 @@
     try {
       const result = await api('/api/admin/backups');
       target.innerHTML = (result.files || []).map((file) => `<div class="settings-record"><strong>${escapeHtml(file.fileName || '')}</strong><span>${escapeHtml(`${Math.max(0, Number(file.size) || 0)} B`)} · ${escapeHtml(formatDateTime(file.updatedAt))}</span><button class="danger-button" type="button" data-backup-delete="${escapeHtml(file.fileName || '')}">Delete</button></div>`).join('');
+      localizeSettingsText();
     } catch (error) { target.innerHTML = `<div class="diagnostic-empty">${escapeHtml(error.message)}</div>`; }
   }
 
@@ -534,6 +560,7 @@
     try {
       const jobs = await api('/api/admin/proxy-jobs');
       target.innerHTML = (jobs || []).map((job) => `<div class="settings-record"><strong>${escapeHtml(job.status || 'queued')}</strong><span>${escapeHtml(`${Number(job.processed || 0)} / ${Number(job.total || 0)}`)}</span><span>${escapeHtml(formatDateTime(job.updatedAt || job.createdAt))}</span></div>`).join('') || `<div class="diagnostic-empty">${escapeHtml(t('diagnostics_empty'))}</div>`;
+      localizeSettingsText();
     } catch (error) { target.innerHTML = `<div class="diagnostic-empty">${escapeHtml(error.message)}</div>`; }
   }
 
@@ -543,6 +570,7 @@
     const query = byId('v2ProxyIncludeTrash').checked ? '?includeTrash=1' : '';
     const result = await api(`/api/admin/proxy-missing-scan${query}`);
     rows.innerHTML = (result.items || []).map((item) => `<div class="settings-record"><strong>${escapeHtml(item.title || item.fileName || item.id)}</strong><span>${escapeHtml((item.missingComponents || []).join(' / '))}</span><button class="secondary-button" type="button" data-proxy-repair="${escapeHtml(item.id)}" data-proxy-mode="${escapeHtml(item.missingProxy ? 'proxy' : (item.assetFamily === 'document' ? 'document_thumbnail' : item.assetFamily === 'image' ? 'image_thumbnail' : 'thumbnail'))}">Generate</button></div>`).join('') || `<div class="diagnostic-empty">${escapeHtml(t('diagnostics_empty'))}</div>`;
+    localizeSettingsText();
   }
 
   async function loadV2Identity() {
@@ -553,11 +581,13 @@
     byId('v2IdentityGroups').innerHTML = groups.map((item) => `<div class="settings-record"><strong>${escapeHtml(item.path || item.name || '-')}</strong><span>${escapeHtml(item.realm || '-')}</span></div>`).join('');
     byId('v2IdentityUsers').innerHTML = users.map((item) => `<div class="settings-record"><strong>${escapeHtml(item.username || '-')}</strong><span>${escapeHtml(item.displayName || item.email || item.realm || '-')}</span></div>`).join('');
     byId('v2MamGroups').innerHTML = mamOnly.map((name) => `<div class="settings-record"><strong>${escapeHtml(name)}</strong><span>MAM DB</span></div>`).join('');
+    localizeSettingsText();
   }
 
   async function loadV2GroupAdmins() {
     const result = await api('/api/admin/group-admins');
     byId('v2GroupAdmins').innerHTML = (result.groupAdmins || []).map((item) => `<div class="settings-record"><strong>${escapeHtml(item.groupName || '-')}</strong><span>${escapeHtml(item.username || '-')} · ${escapeHtml((item.adminScopes || []).join(', '))}</span><button class="danger-button" type="button" data-group-admin-delete="${escapeHtml(item.id || '')}">Delete</button></div>`).join('');
+    localizeSettingsText();
   }
 
   function triggerJsonDownload(blob, fallback) {
@@ -827,40 +857,40 @@
   byId('v2SettingsForm').addEventListener('submit', async (event) => {
     event.preventDefault(); const form = event.currentTarget;
     const payload = { playerUiMode: form.elements.playerUiMode.value, newAssetDefaultVisibility: form.elements.newAssetDefaultVisibility.value, allowFilelessAssetCreation: form.elements.allowFilelessAssetCreation.checked, apiTokenEnabled: form.elements.apiTokenEnabled.checked, oidcBearerEnabled: form.elements.oidcBearerEnabled.checked, apiToken: form.elements.apiToken.value.trim(), oidcIssuerUrl: form.elements.oidcIssuerUrl.value.trim(), oidcJwksUrl: form.elements.oidcJwksUrl.value.trim(), oidcAudience: form.elements.oidcAudience.value.trim(), mediaJobConcurrency: { subtitle:numberValue(form,'mediaJobConcurrencySubtitle',1), videoOcr:numberValue(form,'mediaJobConcurrencyVideoOcr',1), proxy:numberValue(form,'mediaJobConcurrencyProxy',1), metadata:numberValue(form,'mediaJobConcurrencyMetadata',1), thumbnail:numberValue(form,'mediaJobConcurrencyThumbnail',2), upload:numberValue(form,'mediaJobConcurrencyUpload',3), download:numberValue(form,'mediaJobConcurrencyDownload',6), backup:numberValue(form,'mediaJobConcurrencyBackup',1) } };
-    try { await api('/api/admin/settings', { method:'PATCH', body:JSON.stringify(payload) }); settingsMessage('Settings saved.'); } catch (error) { settingsMessage(error.message); }
+    try { await api('/api/admin/settings', { method:'PATCH', body:JSON.stringify(payload) }); settingsMessage(localizedSettingsNotice('Settings saved.', 'Ayarlar kaydedildi.')); } catch (error) { settingsMessage(error.message); }
   });
   byId('v2OcrSettingsForm').addEventListener('submit', async (event) => {
     event.preventDefault(); const form = event.currentTarget; const payload = {};
     ['ocrDefaultAdvancedMode','ocrDefaultTurkishAiCorrect','ocrDefaultEnableBlurFilter','ocrDefaultEnableRegionMode','ocrDefaultIgnoreStaticOverlays'].forEach((name) => { payload[name] = form.elements[name].checked; });
-    try { await api('/api/admin/settings', { method:'PATCH', body:JSON.stringify(payload) }); settingsMessage('Settings saved.'); } catch (error) { settingsMessage(error.message); }
+    try { await api('/api/admin/settings', { method:'PATCH', body:JSON.stringify(payload) }); settingsMessage(localizedSettingsNotice('Settings saved.', 'Ayarlar kaydedildi.')); } catch (error) { settingsMessage(error.message); }
   });
   byId('v2SubtitleSettingsForm').addEventListener('submit', async (event) => {
     event.preventDefault(); const form = event.currentTarget; const subtitleStyle = { customOverlayEnabled:form.elements.customOverlay.checked, bottomOffset:numberValue(form,'bottomOffsetPx',56), fontSize:numberValue(form,'fontSizePx',24), textColor:form.elements.textColor.value, backgroundColor:form.elements.backgroundColor.value, backgroundOpacity:Number(form.elements.backgroundOpacity.value), horizontalPadding:numberValue(form,'horizontalPaddingPx',16), maxWidth:numberValue(form,'maxWidthPercent',82) };
-    try { await api('/api/admin/settings', { method:'PATCH', body:JSON.stringify({subtitleStyle}) }); settingsMessage('Settings saved.'); } catch (error) { settingsMessage(error.message); }
+    try { await api('/api/admin/settings', { method:'PATCH', body:JSON.stringify({subtitleStyle}) }); settingsMessage(localizedSettingsNotice('Settings saved.', 'Ayarlar kaydedildi.')); } catch (error) { settingsMessage(error.message); }
   });
   byId('v2BackupSettingsForm').addEventListener('submit', async (event) => {
-    event.preventDefault(); try { const current = await api('/api/admin/settings'); await api('/api/admin/settings', { method:'PATCH', body:JSON.stringify({...current, backup:readBackupForm()}) }); settingsMessage('Backup settings saved.'); await loadV2Backups(); } catch (error) { settingsMessage(error.message); }
+    event.preventDefault(); try { const current = await api('/api/admin/settings'); await api('/api/admin/settings', { method:'PATCH', body:JSON.stringify({...current, backup:readBackupForm()}) }); settingsMessage(localizedSettingsNotice('Backup settings saved.', 'Yedekleme ayarları kaydedildi.')); await loadV2Backups(); } catch (error) { settingsMessage(error.message); }
   });
   byId('v2RunBackup').addEventListener('click', async (event) => {
-    event.currentTarget.disabled = true; try { await api('/api/admin/backups/run', { method:'POST', body:JSON.stringify(readBackupForm()) }); settingsMessage('Backup completed.'); await loadV2Backups(); } catch (error) { settingsMessage(error.message); } finally { event.currentTarget.disabled = false; }
+    event.currentTarget.disabled = true; try { await api('/api/admin/backups/run', { method:'POST', body:JSON.stringify(readBackupForm()) }); settingsMessage(localizedSettingsNotice('Backup completed.', 'Yedekleme tamamlandı.')); await loadV2Backups(); } catch (error) { settingsMessage(error.message); } finally { event.currentTarget.disabled = false; }
   });
   byId('v2BackupFiles').addEventListener('click', async (event) => {
     const button = event.target.closest('[data-backup-delete]'); if (!button || !global.confirm('Delete this backup file?')) return;
-    button.disabled = true; try { await api(`/api/admin/backups/${encodeURIComponent(button.dataset.backupDelete)}`, { method:'DELETE' }); await loadV2Backups(); settingsMessage('Backup deleted.'); } catch (error) { settingsMessage(error.message); button.disabled = false; }
+    button.disabled = true; try { await api(`/api/admin/backups/${encodeURIComponent(button.dataset.backupDelete)}`, { method:'DELETE' }); await loadV2Backups(); settingsMessage(localizedSettingsNotice('Backup deleted.', 'Yedek silindi.')); } catch (error) { settingsMessage(error.message); button.disabled = false; }
   });
   document.querySelectorAll('[data-permission-export]').forEach((button) => button.addEventListener('click', async () => {
-    button.disabled = true; try { const kind = button.dataset.permissionExport === 'user-rights' ? 'principal-rights' : button.dataset.permissionExport; const response = await fetch(`/api/admin/permission-exports/${encodeURIComponent(kind)}`, { credentials:'same-origin' }); if (!response.ok) throw new Error('Export failed'); triggerJsonDownload(await response.blob(), `${kind}.json`); settingsMessage('Permission export downloaded.'); } catch (error) { settingsMessage(error.message); } finally { button.disabled = false; }
+    button.disabled = true; try { const kind = button.dataset.permissionExport === 'user-rights' ? 'principal-rights' : button.dataset.permissionExport; const response = await fetch(`/api/admin/permission-exports/${encodeURIComponent(kind)}`, { credentials:'same-origin' }); if (!response.ok) throw new Error(localizedSettingsNotice('Export failed', 'Dışa aktarma başarısız')); triggerJsonDownload(await response.blob(), `${kind}.json`); settingsMessage(localizedSettingsNotice('Permission export downloaded.', 'Yetki dışa aktarımı indirildi.')); } catch (error) { settingsMessage(error.message); } finally { button.disabled = false; }
   }));
   document.querySelectorAll('[data-permission-import]').forEach((button) => button.addEventListener('click', async () => {
-    const kind = button.dataset.permissionImport === 'user-rights' ? 'principal-rights' : button.dataset.permissionImport; const input = byId(kind === 'asset-rights' ? 'v2AssetRightsImport' : 'v2UserRightsImport'); const file = input.files?.[0]; if (!file) { settingsMessage('Choose a JSON file first.'); return; }
-    button.disabled = true; try { const payload = JSON.parse(await file.text()); await api(`/api/admin/permission-imports/${encodeURIComponent(kind)}`, { method:'POST', body:JSON.stringify(payload) }); settingsMessage('Permissions imported.'); } catch (error) { settingsMessage(error.message); } finally { button.disabled = false; }
+    const kind = button.dataset.permissionImport === 'user-rights' ? 'principal-rights' : button.dataset.permissionImport; const input = byId(kind === 'asset-rights' ? 'v2AssetRightsImport' : 'v2UserRightsImport'); const file = input.files?.[0]; if (!file) { settingsMessage(localizedSettingsNotice('Choose a JSON file first.', 'Önce bir JSON dosyası seçin.')); return; }
+    button.disabled = true; try { const payload = JSON.parse(await file.text()); await api(`/api/admin/permission-imports/${encodeURIComponent(kind)}`, { method:'POST', body:JSON.stringify(payload) }); settingsMessage(localizedSettingsNotice('Permissions imported.', 'Yetkiler içe aktarıldı.')); } catch (error) { settingsMessage(error.message); } finally { button.disabled = false; }
   }));
   byId('v2ScanMissingProxy').addEventListener('click', async (event) => { event.currentTarget.disabled = true; try { await scanV2MissingProxy(); } catch (error) { byId('v2ProxyStatus').textContent = error.message; } finally { event.currentTarget.disabled = false; } });
-  byId('v2GenerateAllProxy').addEventListener('click', async (event) => { event.currentTarget.disabled = true; try { await api('/api/admin/proxy-jobs', { method:'POST', body:JSON.stringify({ includeTrash:byId('v2ProxyIncludeTrash').checked }) }); byId('v2ProxyStatus').textContent = 'Proxy job started.'; await loadV2ProxyJobs(); } catch (error) { byId('v2ProxyStatus').textContent = error.message; } finally { event.currentTarget.disabled = false; } });
+  byId('v2GenerateAllProxy').addEventListener('click', async (event) => { event.currentTarget.disabled = true; try { await api('/api/admin/proxy-jobs', { method:'POST', body:JSON.stringify({ includeTrash:byId('v2ProxyIncludeTrash').checked }) }); byId('v2ProxyStatus').textContent = localizedSettingsNotice('Proxy job started.', 'Proxy görevi başlatıldı.'); await loadV2ProxyJobs(); } catch (error) { byId('v2ProxyStatus').textContent = error.message; } finally { event.currentTarget.disabled = false; } });
   byId('v2MissingProxyRows').addEventListener('click', async (event) => { const button = event.target.closest('[data-proxy-repair]'); if (!button) return; button.disabled = true; try { if (button.dataset.proxyMode === 'proxy') await api('/api/admin/proxy-jobs', { method:'POST', body:JSON.stringify({assetIds:[button.dataset.proxyRepair]}) }); else await api('/api/admin/proxy-tools/run', { method:'POST', body:JSON.stringify({assetId:button.dataset.proxyRepair, mode:button.dataset.proxyMode}) }); await scanV2MissingProxy(); } catch (error) { byId('v2ProxyStatus').textContent = error.message; button.disabled = false; } });
   byId('v2ProxyAssetName').addEventListener('input', async (event) => { const q = event.target.value.trim(); const box = byId('v2ProxySuggestions'); event.target.dataset.assetId = ''; if (q.length < 3) { box.hidden = true; return; } try { const rows = await api(`/api/admin/assets/suggest?q=${encodeURIComponent(q)}&limit=8&includeTrash=${byId('v2ProxyIncludeTrash').checked ? '1' : '0'}`); box.innerHTML = rows.map((item) => `<button type="button" data-proxy-suggestion-id="${escapeHtml(item.id)}" data-proxy-suggestion-name="${escapeHtml(item.title || item.fileName || item.id)}">${escapeHtml(item.title || item.fileName || item.id)}</button>`).join(''); box.hidden = !rows.length; } catch { box.hidden = true; } });
   byId('v2ProxySuggestions').addEventListener('click', (event) => { const button = event.target.closest('[data-proxy-suggestion-id]'); if (!button) return; byId('v2ProxyAssetName').value = button.dataset.proxySuggestionName; byId('v2ProxyAssetName').dataset.assetId = button.dataset.proxySuggestionId; event.currentTarget.hidden = true; });
-  byId('v2RunProxyTool').addEventListener('click', async (event) => { const name = byId('v2ProxyAssetName').value.trim(); if (!name) return; event.currentTarget.disabled = true; const payload = { assetName:name, assetId:byId('v2ProxyAssetName').dataset.assetId || undefined, mode:byId('v2ProxyAction').value, timecode:byId('v2ProxyTimecode').value.trim() }; try { const result = await api('/api/admin/proxy-tools/run', { method:'POST', body:JSON.stringify(payload) }); byId('v2ProxyStatus').textContent = `Completed: ${result.assetTitle || result.assetId}`; } catch (error) { byId('v2ProxyStatus').textContent = error.message; } finally { event.currentTarget.disabled = false; } });
+  byId('v2RunProxyTool').addEventListener('click', async (event) => { const name = byId('v2ProxyAssetName').value.trim(); if (!name) return; event.currentTarget.disabled = true; const payload = { assetName:name, assetId:byId('v2ProxyAssetName').dataset.assetId || undefined, mode:byId('v2ProxyAction').value, timecode:byId('v2ProxyTimecode').value.trim() }; try { const result = await api('/api/admin/proxy-tools/run', { method:'POST', body:JSON.stringify(payload) }); byId('v2ProxyStatus').textContent = `${localizedSettingsNotice('Completed', 'Tamamlandı')}: ${result.assetTitle || result.assetId}`; } catch (error) { byId('v2ProxyStatus').textContent = error.message; } finally { event.currentTarget.disabled = false; } });
   byId('v2RefreshIdentity').addEventListener('click', () => Promise.all([loadV2Identity(), loadV2GroupAdmins()]).catch((error) => settingsMessage(error.message)));
   byId('v2IdentityUserSearchBtn').addEventListener('click', () => loadV2Identity().catch((error) => settingsMessage(error.message)));
   byId('v2IdentityUserSearch').addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); loadV2Identity().catch((error) => settingsMessage(error.message)); } });
@@ -868,10 +898,10 @@
   byId('v2GroupAdmins').addEventListener('click', async (event) => { const button = event.target.closest('[data-group-admin-delete]'); if (!button || !global.confirm('Delete this group administrator?')) return; button.disabled = true; try { await api(`/api/admin/group-admins/${encodeURIComponent(button.dataset.groupAdminDelete)}`, {method:'DELETE'}); await loadV2GroupAdmins(); } catch (error) { settingsMessage(error.message); button.disabled = false; } });
   byId('v2SessionSettingsForm').addEventListener('submit', async (event) => {
     event.preventDefault(); const form = event.currentTarget; const authSession = { rememberMe:form.elements.rememberMe.checked, ssoIdleMinutes:numberValue(form,'ssoIdleMinutes',30), ssoMaxHours:numberValue(form,'ssoMaxHours',8), clientIdleMinutes:numberValue(form,'clientIdleMinutes',30), clientMaxHours:numberValue(form,'clientMaxHours',8) };
-    try { const result = await api('/api/admin/identity/session-settings', { method:'PATCH', body:JSON.stringify({authSession}) }); const saved = result.authSession || authSession; Object.entries(saved).forEach(([name,value]) => setFormValue(form,name,value)); settingsMessage('Login settings saved.'); } catch (error) { settingsMessage(error.message); }
+    try { const result = await api('/api/admin/identity/session-settings', { method:'PATCH', body:JSON.stringify({authSession}) }); const saved = result.authSession || authSession; Object.entries(saved).forEach(([name,value]) => setFormValue(form,name,value)); settingsMessage(localizedSettingsNotice('Login settings saved.', 'Oturum ayarları kaydedildi.')); } catch (error) { settingsMessage(error.message); }
   });
-  byId('v2RotateToken').addEventListener('click', async () => { try { const result = await api('/api/admin/api-token/rotate', { method:'POST', body:'{}' }); setFormValue(byId('v2SettingsForm'),'apiToken',result.apiToken || ''); settingsMessage('Token rotated.'); } catch (error) { settingsMessage(error.message); } });
-  byId('v2CopyToken').addEventListener('click', async () => { const token = byId('v2SettingsForm').elements.apiToken.value.trim(); if (!token) return; await navigator.clipboard.writeText(token); settingsMessage('Token copied.'); });
+  byId('v2RotateToken').addEventListener('click', async () => { try { const result = await api('/api/admin/api-token/rotate', { method:'POST', body:'{}' }); setFormValue(byId('v2SettingsForm'),'apiToken',result.apiToken || ''); settingsMessage(localizedSettingsNotice('Token rotated.', 'Belirteç yenilendi.')); } catch (error) { settingsMessage(error.message); } });
+  byId('v2CopyToken').addEventListener('click', async () => { const token = byId('v2SettingsForm').elements.apiToken.value.trim(); if (!token) return; await navigator.clipboard.writeText(token); settingsMessage(localizedSettingsNotice('Token copied.', 'Belirteç kopyalandı.')); });
 
   byId('languageSelectAdmin').value = language;
   byId('languageSelectAdmin').addEventListener('change', async (event) => {
