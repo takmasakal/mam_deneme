@@ -67,7 +67,7 @@
       policy_saved: 'Access policy saved.', lock_released: 'Edit lock released.', unlock_confirm: 'Release this asset edit lock?', rights_empty: 'No matching rights records.',
       type_video: 'Video', type_audio: 'Audio', type_photo: 'Photo', type_document: 'Document', type_other: 'Other', rights_page_subtitle: 'Manage visibility and granular media access policies', rights_page_of: 'Page {page} of {pages} · {total} records',
       read_access: 'Read', edit_access: 'Edit', download_access: 'Download', upload_access: 'Upload', lock_status: 'Lock', policy_accessible: '{allowed} allowed · {denied} denied', unlocked: 'Available',
-      settings_page_subtitle: 'Application, processing, security, backup, and session configuration', settings_sub_general: 'General', settings_sub_proxy: 'Proxy', settings_sub_ocr: 'OCR', settings_sub_subtitle: 'Subtitle', settings_sub_backup: 'Backup', settings_sub_users: 'Users'
+      settings_page_subtitle: 'Application, processing, security, backup, and session configuration', settings_sub_general: 'General', settings_sub_proxy: 'Proxy', settings_sub_ocr: 'OCR', settings_sub_subtitle: 'Subtitle', settings_sub_backup: 'Backup', settings_sub_users: 'Users', principal_settings: 'User / Group Settings', principal_type_user: 'User', principal_type_group: 'Group', principal_search: 'Search', page_size: 'Page size', previous: 'Previous', next: 'Next'
     },
     tr: {
       overview: 'Genel Bakış', system_health: 'Sistem Sağlığı', runtime_diagnostics: 'Tanılama', audit_history: 'İşlem Geçmişi',
@@ -131,7 +131,7 @@
       health_job_phase_loading_asset: 'Varlık yükleniyor', health_job_phase_summarizing_document: 'Belge özetleniyor',
       health_job_phase_generating_metadata: 'Metadata üretiliyor', health_job_phase_saving_metadata: 'Metadata kaydediliyor',
       health_job_phase_completed: 'Tamamlandı', health_job_phase_failed: 'Başarısız', health_job_phase_cancelled: 'İptal edildi',
-      health_job_phase_interrupted: 'Kesintiye uğradı', settings_page_subtitle: 'Uygulama, işleme, güvenlik, yedekleme ve oturum yapılandırması', settings_sub_general: 'Genel', settings_sub_proxy: 'Proxy', settings_sub_ocr: 'OCR', settings_sub_subtitle: 'Altyazı', settings_sub_backup: 'Yedekleme', settings_sub_users: 'Kullanıcılar'
+      health_job_phase_interrupted: 'Kesintiye uğradı', settings_page_subtitle: 'Uygulama, işleme, güvenlik, yedekleme ve oturum yapılandırması', settings_sub_general: 'Genel', settings_sub_proxy: 'Proxy', settings_sub_ocr: 'OCR', settings_sub_subtitle: 'Altyazı', settings_sub_backup: 'Yedekleme', settings_sub_users: 'Kullanıcılar', principal_settings: 'Kullanıcı / Grup Ayarları', principal_type_user: 'Kullanıcı', principal_type_group: 'Grup', principal_search: 'Ara', page_size: 'Sayfa boyutu', previous: 'Önceki', next: 'Sonraki'
     }
   };
   let translations = {};
@@ -488,8 +488,80 @@
     const target = byId('v2BackupFiles');
     try {
       const result = await api('/api/admin/backups');
-      target.innerHTML = (result.files || []).map((file) => `<div class="settings-record"><strong>${escapeHtml(file.fileName || '')}</strong><span>${escapeHtml(`${Math.max(0, Number(file.size) || 0)} B`)}</span><span>${escapeHtml(formatDateTime(file.updatedAt))}</span></div>`).join('');
+      target.innerHTML = (result.files || []).map((file) => `<div class="settings-record"><strong>${escapeHtml(file.fileName || '')}</strong><span>${escapeHtml(`${Math.max(0, Number(file.size) || 0)} B`)} · ${escapeHtml(formatDateTime(file.updatedAt))}</span><button class="danger-button" type="button" data-backup-delete="${escapeHtml(file.fileName || '')}">Delete</button></div>`).join('');
     } catch (error) { target.innerHTML = `<div class="diagnostic-empty">${escapeHtml(error.message)}</div>`; }
+  }
+
+  const highlightSuggestion = (value, query) => {
+    const text = String(value || '');
+    const needle = String(query || '').trim();
+    if (!needle) return escapeHtml(text);
+    const index = text.toLocaleLowerCase(language === 'tr' ? 'tr' : 'en').indexOf(needle.toLocaleLowerCase(language === 'tr' ? 'tr' : 'en'));
+    if (index < 0) return escapeHtml(text);
+    return `${escapeHtml(text.slice(0, index))}<mark>${escapeHtml(text.slice(index, index + needle.length))}</mark>${escapeHtml(text.slice(index + needle.length))}`;
+  };
+
+  async function openTextEditorModal({ title, content, onSave }) {
+    const next = global.prompt(title, String(content || ''));
+    if (next !== null && next !== String(content || '')) await onSave(next);
+  }
+
+  function mountUserPermissionSettings() {
+    const identitySection = byId('v2IdentitySummary')?.closest('.settings-record-section');
+    if (!identitySection || byId('userPermissionsRows')) return;
+    const section = document.createElement('section');
+    section.className = 'settings-record-section';
+    section.innerHTML = `<div class="settings-section-heading"><h3 data-v2-i18n="principal_settings">User / Group Settings</h3><div class="settings-principal-search"><select id="userPermissionsPrincipalType" aria-label="Principal type"><option value="user" data-v2-i18n="principal_type_user">User</option><option value="group" data-v2-i18n="principal_type_group">Group</option></select><input id="userPermissionsSearchInput" placeholder="Search user or group..." autocomplete="off" /><button id="userPermissionsSearchButton" class="secondary-button" type="button" data-v2-i18n="principal_search">Search</button></div></div><div id="userPermissionsRows" class="settings-admin-rows user-permissions-rows"></div><div class="v2-pager"><label><span data-v2-i18n="page_size">Page size</span><select id="userPermissionsPageSize"><option value="20">20</option><option value="50">50</option></select></label><button id="userPermissionsPrevPage" class="secondary-button" type="button" data-v2-i18n="previous">Previous</button><span id="userPermissionsPageInfo">-</span><button id="userPermissionsNextPage" class="secondary-button" type="button" data-v2-i18n="next">Next</button></div><div id="userPermissionsMsg" class="inline-message"></div>`;
+    identitySection.before(section);
+  }
+  mountUserPermissionSettings();
+
+  const recordsModule = global.createAdminRecordsModule({
+    api, t, escapeHtml, highlightSuggestion, openTextEditorModal,
+    userPermissionsSearchInput: byId('userPermissionsSearchInput'), userPermissionsPrincipalType: byId('userPermissionsPrincipalType'), userPermissionsSearchButton: byId('userPermissionsSearchButton'),
+    userPermissionsRows: byId('userPermissionsRows'), userPermissionsMsg: byId('userPermissionsMsg'), userPermissionsPageSize: byId('userPermissionsPageSize'),
+    userPermissionsPrevPage: byId('userPermissionsPrevPage'), userPermissionsNextPage: byId('userPermissionsNextPage'), userPermissionsPageInfo: byId('userPermissionsPageInfo'),
+    ocrAdminSearchInput: byId('ocrAdminSearchInput'), ocrRecordsRows: byId('ocrRecordsRows'), ocrRecordsMsg: byId('ocrRecordsMsg'),
+    runOcrAdminSearchBtn: byId('runOcrAdminSearchBtn'), ocrRecordsPrevPage: byId('ocrRecordsPrevPage'), ocrRecordsNextPage: byId('ocrRecordsNextPage'), ocrRecordsPageInfo: byId('ocrRecordsPageInfo'),
+    subtitleAdminSearchInput: byId('subtitleAdminSearchInput'), subtitleDeleteFileCheck: byId('subtitleDeleteFileCheck'), subtitleRecordsRows: byId('subtitleRecordsRows'), subtitleRecordsMsg: byId('subtitleRecordsMsg'),
+    subtitleRecordsPrevPage: byId('subtitleRecordsPrevPage'), subtitleRecordsNextPage: byId('subtitleRecordsNextPage'), subtitleRecordsPageInfo: byId('subtitleRecordsPageInfo'),
+    combinedSearchInput: byId('combinedSearchInput'), combinedSearchLimit: byId('combinedSearchLimit'), runCombinedSearchBtn: byId('runCombinedSearchBtn'), combinedSearchRows: byId('combinedSearchRows'), combinedSearchMsg: byId('combinedSearchMsg')
+  });
+  recordsModule.init();
+
+  async function loadV2ProxyJobs() {
+    const target = byId('v2ProxyJobs');
+    try {
+      const jobs = await api('/api/admin/proxy-jobs');
+      target.innerHTML = (jobs || []).map((job) => `<div class="settings-record"><strong>${escapeHtml(job.status || 'queued')}</strong><span>${escapeHtml(`${Number(job.processed || 0)} / ${Number(job.total || 0)}`)}</span><span>${escapeHtml(formatDateTime(job.updatedAt || job.createdAt))}</span></div>`).join('') || `<div class="diagnostic-empty">${escapeHtml(t('diagnostics_empty'))}</div>`;
+    } catch (error) { target.innerHTML = `<div class="diagnostic-empty">${escapeHtml(error.message)}</div>`; }
+  }
+
+  async function scanV2MissingProxy() {
+    const rows = byId('v2MissingProxyRows');
+    rows.innerHTML = `<div class="diagnostic-empty">${escapeHtml(t('loading'))}...</div>`;
+    const query = byId('v2ProxyIncludeTrash').checked ? '?includeTrash=1' : '';
+    const result = await api(`/api/admin/proxy-missing-scan${query}`);
+    rows.innerHTML = (result.items || []).map((item) => `<div class="settings-record"><strong>${escapeHtml(item.title || item.fileName || item.id)}</strong><span>${escapeHtml((item.missingComponents || []).join(' / '))}</span><button class="secondary-button" type="button" data-proxy-repair="${escapeHtml(item.id)}" data-proxy-mode="${escapeHtml(item.missingProxy ? 'proxy' : (item.assetFamily === 'document' ? 'document_thumbnail' : item.assetFamily === 'image' ? 'image_thumbnail' : 'thumbnail'))}">Generate</button></div>`).join('') || `<div class="diagnostic-empty">${escapeHtml(t('diagnostics_empty'))}</div>`;
+  }
+
+  async function loadV2Identity() {
+    const q = byId('v2IdentityUserSearch').value.trim();
+    const result = await api(`/api/admin/identity/overview${q.length >= 2 ? `?userQ=${encodeURIComponent(q)}` : ''}`);
+    const users = result.users || [], groups = result.groups || [], mamOnly = result.mamOnlyGroups || [];
+    byId('v2IdentitySummary').innerHTML = `<div><strong>${users.length}</strong><p>Users</p></div><div><strong>${groups.length}</strong><p>Groups</p></div><div><strong>${escapeHtml(result.source || '-')}</strong><p>Source</p></div>`;
+    byId('v2IdentityGroups').innerHTML = groups.map((item) => `<div class="settings-record"><strong>${escapeHtml(item.path || item.name || '-')}</strong><span>${escapeHtml(item.realm || '-')}</span></div>`).join('');
+    byId('v2IdentityUsers').innerHTML = users.map((item) => `<div class="settings-record"><strong>${escapeHtml(item.username || '-')}</strong><span>${escapeHtml(item.displayName || item.email || item.realm || '-')}</span></div>`).join('');
+    byId('v2MamGroups').innerHTML = mamOnly.map((name) => `<div class="settings-record"><strong>${escapeHtml(name)}</strong><span>MAM DB</span></div>`).join('');
+  }
+
+  async function loadV2GroupAdmins() {
+    const result = await api('/api/admin/group-admins');
+    byId('v2GroupAdmins').innerHTML = (result.groupAdmins || []).map((item) => `<div class="settings-record"><strong>${escapeHtml(item.groupName || '-')}</strong><span>${escapeHtml(item.username || '-')} · ${escapeHtml((item.adminScopes || []).join(', '))}</span><button class="danger-button" type="button" data-group-admin-delete="${escapeHtml(item.id || '')}">Delete</button></div>`).join('');
+  }
+
+  function triggerJsonDownload(blob, fallback) {
+    const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = fallback; link.click(); URL.revokeObjectURL(url);
   }
 
   function showError(error) {
@@ -742,7 +814,11 @@
     byId('settingsTabs').querySelectorAll('button').forEach((item) => item.classList.toggle('is-active', item === button));
     document.querySelectorAll('[data-settings-pane]').forEach((pane) => pane.classList.toggle('is-active', pane.dataset.settingsPane === tab));
     settingsMessage('');
+    if (tab === 'proxy') await loadV2ProxyJobs();
+    if (tab === 'ocr') await recordsModule.loadOcrRecords();
+    if (tab === 'subtitle') await recordsModule.loadSubtitleRecords();
     if (tab === 'backup') await loadV2Backups();
+    if (tab === 'users') await Promise.all([recordsModule.loadUserPermissions(), loadV2Identity(), loadV2GroupAdmins()]);
   });
   document.querySelectorAll('[data-settings-classic-tab]').forEach((link) => link.addEventListener('click', () => {
     sessionStorage.setItem('mamClassicAdminDestination', 'settings');
@@ -768,6 +844,28 @@
   byId('v2RunBackup').addEventListener('click', async (event) => {
     event.currentTarget.disabled = true; try { await api('/api/admin/backups/run', { method:'POST', body:JSON.stringify(readBackupForm()) }); settingsMessage('Backup completed.'); await loadV2Backups(); } catch (error) { settingsMessage(error.message); } finally { event.currentTarget.disabled = false; }
   });
+  byId('v2BackupFiles').addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-backup-delete]'); if (!button || !global.confirm('Delete this backup file?')) return;
+    button.disabled = true; try { await api(`/api/admin/backups/${encodeURIComponent(button.dataset.backupDelete)}`, { method:'DELETE' }); await loadV2Backups(); settingsMessage('Backup deleted.'); } catch (error) { settingsMessage(error.message); button.disabled = false; }
+  });
+  document.querySelectorAll('[data-permission-export]').forEach((button) => button.addEventListener('click', async () => {
+    button.disabled = true; try { const kind = button.dataset.permissionExport === 'user-rights' ? 'principal-rights' : button.dataset.permissionExport; const response = await fetch(`/api/admin/permission-exports/${encodeURIComponent(kind)}`, { credentials:'same-origin' }); if (!response.ok) throw new Error('Export failed'); triggerJsonDownload(await response.blob(), `${kind}.json`); settingsMessage('Permission export downloaded.'); } catch (error) { settingsMessage(error.message); } finally { button.disabled = false; }
+  }));
+  document.querySelectorAll('[data-permission-import]').forEach((button) => button.addEventListener('click', async () => {
+    const kind = button.dataset.permissionImport === 'user-rights' ? 'principal-rights' : button.dataset.permissionImport; const input = byId(kind === 'asset-rights' ? 'v2AssetRightsImport' : 'v2UserRightsImport'); const file = input.files?.[0]; if (!file) { settingsMessage('Choose a JSON file first.'); return; }
+    button.disabled = true; try { const payload = JSON.parse(await file.text()); await api(`/api/admin/permission-imports/${encodeURIComponent(kind)}`, { method:'POST', body:JSON.stringify(payload) }); settingsMessage('Permissions imported.'); } catch (error) { settingsMessage(error.message); } finally { button.disabled = false; }
+  }));
+  byId('v2ScanMissingProxy').addEventListener('click', async (event) => { event.currentTarget.disabled = true; try { await scanV2MissingProxy(); } catch (error) { byId('v2ProxyStatus').textContent = error.message; } finally { event.currentTarget.disabled = false; } });
+  byId('v2GenerateAllProxy').addEventListener('click', async (event) => { event.currentTarget.disabled = true; try { await api('/api/admin/proxy-jobs', { method:'POST', body:JSON.stringify({ includeTrash:byId('v2ProxyIncludeTrash').checked }) }); byId('v2ProxyStatus').textContent = 'Proxy job started.'; await loadV2ProxyJobs(); } catch (error) { byId('v2ProxyStatus').textContent = error.message; } finally { event.currentTarget.disabled = false; } });
+  byId('v2MissingProxyRows').addEventListener('click', async (event) => { const button = event.target.closest('[data-proxy-repair]'); if (!button) return; button.disabled = true; try { if (button.dataset.proxyMode === 'proxy') await api('/api/admin/proxy-jobs', { method:'POST', body:JSON.stringify({assetIds:[button.dataset.proxyRepair]}) }); else await api('/api/admin/proxy-tools/run', { method:'POST', body:JSON.stringify({assetId:button.dataset.proxyRepair, mode:button.dataset.proxyMode}) }); await scanV2MissingProxy(); } catch (error) { byId('v2ProxyStatus').textContent = error.message; button.disabled = false; } });
+  byId('v2ProxyAssetName').addEventListener('input', async (event) => { const q = event.target.value.trim(); const box = byId('v2ProxySuggestions'); event.target.dataset.assetId = ''; if (q.length < 3) { box.hidden = true; return; } try { const rows = await api(`/api/admin/assets/suggest?q=${encodeURIComponent(q)}&limit=8&includeTrash=${byId('v2ProxyIncludeTrash').checked ? '1' : '0'}`); box.innerHTML = rows.map((item) => `<button type="button" data-proxy-suggestion-id="${escapeHtml(item.id)}" data-proxy-suggestion-name="${escapeHtml(item.title || item.fileName || item.id)}">${escapeHtml(item.title || item.fileName || item.id)}</button>`).join(''); box.hidden = !rows.length; } catch { box.hidden = true; } });
+  byId('v2ProxySuggestions').addEventListener('click', (event) => { const button = event.target.closest('[data-proxy-suggestion-id]'); if (!button) return; byId('v2ProxyAssetName').value = button.dataset.proxySuggestionName; byId('v2ProxyAssetName').dataset.assetId = button.dataset.proxySuggestionId; event.currentTarget.hidden = true; });
+  byId('v2RunProxyTool').addEventListener('click', async (event) => { const name = byId('v2ProxyAssetName').value.trim(); if (!name) return; event.currentTarget.disabled = true; const payload = { assetName:name, assetId:byId('v2ProxyAssetName').dataset.assetId || undefined, mode:byId('v2ProxyAction').value, timecode:byId('v2ProxyTimecode').value.trim() }; try { const result = await api('/api/admin/proxy-tools/run', { method:'POST', body:JSON.stringify(payload) }); byId('v2ProxyStatus').textContent = `Completed: ${result.assetTitle || result.assetId}`; } catch (error) { byId('v2ProxyStatus').textContent = error.message; } finally { event.currentTarget.disabled = false; } });
+  byId('v2RefreshIdentity').addEventListener('click', () => Promise.all([loadV2Identity(), loadV2GroupAdmins()]).catch((error) => settingsMessage(error.message)));
+  byId('v2IdentityUserSearchBtn').addEventListener('click', () => loadV2Identity().catch((error) => settingsMessage(error.message)));
+  byId('v2IdentityUserSearch').addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); loadV2Identity().catch((error) => settingsMessage(error.message)); } });
+  byId('v2AddGroupAdmin').addEventListener('click', async (event) => { const groupName = byId('v2GroupAdminGroup').value.trim(), username = byId('v2GroupAdminUser').value.trim(); if (!groupName || !username) return; event.currentTarget.disabled = true; try { await api('/api/admin/group-admins', { method:'POST', body:JSON.stringify({groupName, username, adminScopes:[byId('v2GroupAdminScope').value], assetTypeGroups:[]}) }); byId('v2GroupAdminUser').value = ''; await loadV2GroupAdmins(); } catch (error) { settingsMessage(error.message); } finally { event.currentTarget.disabled = false; } });
+  byId('v2GroupAdmins').addEventListener('click', async (event) => { const button = event.target.closest('[data-group-admin-delete]'); if (!button || !global.confirm('Delete this group administrator?')) return; button.disabled = true; try { await api(`/api/admin/group-admins/${encodeURIComponent(button.dataset.groupAdminDelete)}`, {method:'DELETE'}); await loadV2GroupAdmins(); } catch (error) { settingsMessage(error.message); button.disabled = false; } });
   byId('v2SessionSettingsForm').addEventListener('submit', async (event) => {
     event.preventDefault(); const form = event.currentTarget; const authSession = { rememberMe:form.elements.rememberMe.checked, ssoIdleMinutes:numberValue(form,'ssoIdleMinutes',30), ssoMaxHours:numberValue(form,'ssoMaxHours',8), clientIdleMinutes:numberValue(form,'clientIdleMinutes',30), clientMaxHours:numberValue(form,'clientMaxHours',8) };
     try { const result = await api('/api/admin/identity/session-settings', { method:'PATCH', body:JSON.stringify({authSession}) }); const saved = result.authSession || authSession; Object.entries(saved).forEach(([name,value]) => setFormValue(form,name,value)); settingsMessage('Login settings saved.'); } catch (error) { settingsMessage(error.message); }
