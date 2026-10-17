@@ -164,7 +164,9 @@
   };
   const settingsTurkishPlaceholders = {'Type asset name':'Varlık adı yazın','asset, label, file...':'varlık, etiket, dosya...','asset, label, language...':'varlık, etiket, dil...','Type query...':'Sorgu yazın...','username, name, email...':'kullanıcı adı, ad, e-posta...','Search user or group...':'Kullanıcı veya grup ara...'};
   settingsTurkishText['Token & OIDC'] = 'Belirteç ve OIDC';
+  Object.assign(settingsTurkishText, {'Manager user/group':'Yönetici kullanıcı/grup','Asset type':'Varlık türü','Document rights':'Belge yetkileri','OCR / subtitle':'OCR / altyazı','Document':'Belge','Video':'Video','Audio':'Ses','Photo':'Fotoğraf','Other':'Diğer','All asset types':'Tüm varlık türleri','Edit':'Düzenle','Update':'Güncelle','Actions':'İşlemler','Created':'Oluşturulma'});
   const localizedSettingsNotice = (en, tr) => language === 'tr' ? tr : en;
+  const localizedSettingsLabel = (value) => language === 'tr' ? (settingsTurkishText[value] || value) : value;
   function localizeSettingsText() {
     document.querySelectorAll('.settings-view h2:not([data-v2-i18n]), .settings-view h3:not([data-v2-i18n]), .settings-view h4:not([data-v2-i18n]), .settings-view legend:not([data-v2-i18n]), .settings-view label > span:not([data-v2-i18n]), .settings-view button:not([data-v2-i18n]), .settings-view option:not([data-v2-i18n]), .settings-view strong:not([data-v2-i18n]), .settings-view p:not([data-v2-i18n])').forEach((element) => {
       if (!element.dataset.v2SettingsEn) element.dataset.v2SettingsEn = String(element.textContent || '').trim();
@@ -541,6 +543,14 @@
     identitySection.before(section);
   }
   mountUserPermissionSettings();
+  let editingGroupAdminId = '';
+  function mountGroupAdministratorSettings() {
+    const rows = byId('v2GroupAdmins');
+    const section = rows?.closest('.settings-record-section');
+    if (!section) return;
+    section.innerHTML = `<h3>Group Administrators</h3><div class="settings-group-admin-form"><label><span>Managed group</span><input id="v2GroupAdminGroup" placeholder="archive-team" list="v2IdentityGroupOptions" /></label><label><span>Manager user/group</span><input id="v2GroupAdminUser" placeholder="username" list="v2IdentityUserOptions" /></label><label><span>Scope</span><select id="v2GroupAdminScope"><option value="asset-rights">Asset rights</option><option value="document-rights">Document rights</option><option value="text-admin">OCR / subtitle</option></select></label><label class="settings-group-admin-types"><span>Asset type</span><span id="v2GroupAdminTypes" class="settings-type-checks" role="group"><label><input type="checkbox" value="document" /><span>Document</span></label><label><input type="checkbox" value="video" /><span>Video</span></label><label><input type="checkbox" value="audio" /><span>Audio</span></label><label><input type="checkbox" value="photo" /><span>Photo</span></label><label><input type="checkbox" value="other" /><span>Other</span></label></span></label><button id="v2AddGroupAdmin" class="primary-link button-reset" type="button">Add</button></div><datalist id="v2IdentityGroupOptions"></datalist><datalist id="v2IdentityUserOptions"></datalist><div id="v2GroupAdmins" class="settings-group-admin-table"></div><div id="v2GroupAdminsMessage" class="inline-message"></div>`;
+  }
+  mountGroupAdministratorSettings();
 
   const recordsModule = global.createAdminRecordsModule({
     api, t, escapeHtml, highlightSuggestion, openTextEditorModal,
@@ -581,12 +591,24 @@
     byId('v2IdentityGroups').innerHTML = groups.map((item) => `<div class="settings-record"><strong>${escapeHtml(item.path || item.name || '-')}</strong><span>${escapeHtml(item.realm || '-')}</span></div>`).join('');
     byId('v2IdentityUsers').innerHTML = users.map((item) => `<div class="settings-record"><strong>${escapeHtml(item.username || '-')}</strong><span>${escapeHtml(item.displayName || item.email || item.realm || '-')}</span></div>`).join('');
     byId('v2MamGroups').innerHTML = mamOnly.map((name) => `<div class="settings-record"><strong>${escapeHtml(name)}</strong><span>MAM DB</span></div>`).join('');
+    const groupNames = Array.from(new Set(groups.map((item) => String(item.path || item.name || '').trim()).concat(mamOnly).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+    byId('v2IdentityGroupOptions').innerHTML = groupNames.map((name) => `<option value="${escapeHtml(name)}"></option>`).join('');
+    byId('v2IdentityUserOptions').innerHTML = users.map((item) => String(item.username || '').trim()).filter(Boolean).sort((a, b) => a.localeCompare(b)).map((name) => `<option value="${escapeHtml(name)}"></option>`).join('');
     localizeSettingsText();
   }
 
   async function loadV2GroupAdmins() {
     const result = await api('/api/admin/group-admins');
-    byId('v2GroupAdmins').innerHTML = (result.groupAdmins || []).map((item) => `<div class="settings-record"><strong>${escapeHtml(item.groupName || '-')}</strong><span>${escapeHtml(item.username || '-')} · ${escapeHtml((item.adminScopes || []).join(', '))}</span><button class="danger-button" type="button" data-group-admin-delete="${escapeHtml(item.id || '')}">Delete</button></div>`).join('');
+    const scopeLabels = {'asset-rights':'Asset rights','document-rights':'Document rights','text-admin':'OCR / subtitle'};
+    const typeLabels = {document:'Document',video:'Video',audio:'Audio',photo:'Photo',other:'Other'};
+    const list = result.groupAdmins || [];
+    const header = `<div class="settings-group-admin-row is-header"><strong>Managed group</strong><strong>Manager user/group</strong><strong>Scope</strong><strong>Asset type</strong><strong>Created</strong><strong>Actions</strong></div>`;
+    const body = list.map((item) => {
+      const scopes = Array.isArray(item.adminScopes) && item.adminScopes.length ? item.adminScopes : ['asset-rights'];
+      const types = Array.isArray(item.assetTypeGroups) ? item.assetTypeGroups : [];
+      return `<div class="settings-group-admin-row"><strong>${escapeHtml(item.groupName || '-')}</strong><span>${escapeHtml(item.username || '-')}</span><span>${escapeHtml(scopes.map((value) => localizedSettingsLabel(scopeLabels[value] || value)).join(', '))}</span><span>${escapeHtml(types.length ? types.map((value) => localizedSettingsLabel(typeLabels[value] || value)).join(', ') : localizedSettingsLabel('All asset types'))}</span><span>${escapeHtml(formatDateTime(item.createdAt))}</span><span class="settings-group-admin-actions"><button class="secondary-button" type="button" data-group-admin-edit="${escapeHtml(item.id || '')}" data-group-name="${escapeHtml(item.groupName || '')}" data-username="${escapeHtml(item.username || '')}" data-scopes="${escapeHtml(JSON.stringify(scopes))}" data-types="${escapeHtml(JSON.stringify(types))}">Edit</button><button class="danger-button" type="button" data-group-admin-delete="${escapeHtml(item.id || '')}">Delete</button></span></div>`;
+    }).join('');
+    byId('v2GroupAdmins').innerHTML = list.length ? header + body : `<div class="diagnostic-empty">${escapeHtml(t('diagnostics_empty'))}</div>`;
     localizeSettingsText();
   }
 
@@ -894,8 +916,14 @@
   byId('v2RefreshIdentity').addEventListener('click', () => Promise.all([loadV2Identity(), loadV2GroupAdmins()]).catch((error) => settingsMessage(error.message)));
   byId('v2IdentityUserSearchBtn').addEventListener('click', () => loadV2Identity().catch((error) => settingsMessage(error.message)));
   byId('v2IdentityUserSearch').addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); loadV2Identity().catch((error) => settingsMessage(error.message)); } });
-  byId('v2AddGroupAdmin').addEventListener('click', async (event) => { const groupName = byId('v2GroupAdminGroup').value.trim(), username = byId('v2GroupAdminUser').value.trim(); if (!groupName || !username) return; event.currentTarget.disabled = true; try { await api('/api/admin/group-admins', { method:'POST', body:JSON.stringify({groupName, username, adminScopes:[byId('v2GroupAdminScope').value], assetTypeGroups:[]}) }); byId('v2GroupAdminUser').value = ''; await loadV2GroupAdmins(); } catch (error) { settingsMessage(error.message); } finally { event.currentTarget.disabled = false; } });
-  byId('v2GroupAdmins').addEventListener('click', async (event) => { const button = event.target.closest('[data-group-admin-delete]'); if (!button || !global.confirm('Delete this group administrator?')) return; button.disabled = true; try { await api(`/api/admin/group-admins/${encodeURIComponent(button.dataset.groupAdminDelete)}`, {method:'DELETE'}); await loadV2GroupAdmins(); } catch (error) { settingsMessage(error.message); button.disabled = false; } });
+  const selectedGroupAdminTypes = () => Array.from(byId('v2GroupAdminTypes').querySelectorAll('input:checked')).map((input) => input.value);
+  const setGroupAdminTypes = (values = []) => { const selected = new Set(values); byId('v2GroupAdminTypes').querySelectorAll('input').forEach((input) => { input.checked = selected.has(input.value); }); };
+  byId('v2AddGroupAdmin').addEventListener('click', async (event) => { const groupName = byId('v2GroupAdminGroup').value.trim(), username = byId('v2GroupAdminUser').value.trim(); if (!groupName || !username) { byId('v2GroupAdminsMessage').textContent = localizedSettingsNotice('Managed group and manager are required.', 'Yönetilen grup ve yönetici zorunludur.'); return; } event.currentTarget.disabled = true; try { const endpoint = editingGroupAdminId ? `/api/admin/group-admins/${encodeURIComponent(editingGroupAdminId)}` : '/api/admin/group-admins'; await api(endpoint, { method:editingGroupAdminId ? 'PATCH' : 'POST', body:JSON.stringify({groupName, username, adminScopes:[byId('v2GroupAdminScope').value], assetTypeGroups:selectedGroupAdminTypes()}) }); editingGroupAdminId = ''; byId('v2GroupAdminUser').value = ''; byId('v2GroupAdminGroup').value = ''; byId('v2GroupAdminScope').value = 'asset-rights'; setGroupAdminTypes([]); event.currentTarget.textContent = localizedSettingsNotice('Add', 'Ekle'); byId('v2GroupAdminsMessage').textContent = localizedSettingsNotice('Group administrator saved.', 'Grup yöneticisi kaydedildi.'); await loadV2GroupAdmins(); } catch (error) { byId('v2GroupAdminsMessage').textContent = error.message; } finally { event.currentTarget.disabled = false; } });
+  byId('v2GroupAdmins').addEventListener('click', async (event) => {
+    const edit = event.target.closest('[data-group-admin-edit]');
+    if (edit) { editingGroupAdminId = edit.dataset.groupAdminEdit; byId('v2GroupAdminGroup').value = edit.dataset.groupName || ''; byId('v2GroupAdminUser').value = edit.dataset.username || ''; let scopes = [], types = []; try { scopes = JSON.parse(edit.dataset.scopes || '[]'); types = JSON.parse(edit.dataset.types || '[]'); } catch {} byId('v2GroupAdminScope').value = scopes[0] || 'asset-rights'; setGroupAdminTypes(types); byId('v2AddGroupAdmin').textContent = localizedSettingsNotice('Update', 'Güncelle'); byId('v2GroupAdminGroup').focus(); return; }
+    const button = event.target.closest('[data-group-admin-delete]'); if (!button || !global.confirm(localizedSettingsNotice('Delete this group administrator?', 'Bu grup yöneticisi silinsin mi?'))) return; button.disabled = true; try { await api(`/api/admin/group-admins/${encodeURIComponent(button.dataset.groupAdminDelete)}`, {method:'DELETE'}); if (editingGroupAdminId === button.dataset.groupAdminDelete) editingGroupAdminId = ''; await loadV2GroupAdmins(); } catch (error) { byId('v2GroupAdminsMessage').textContent = error.message; button.disabled = false; }
+  });
   byId('v2SessionSettingsForm').addEventListener('submit', async (event) => {
     event.preventDefault(); const form = event.currentTarget; const authSession = { rememberMe:form.elements.rememberMe.checked, ssoIdleMinutes:numberValue(form,'ssoIdleMinutes',30), ssoMaxHours:numberValue(form,'ssoMaxHours',8), clientIdleMinutes:numberValue(form,'clientIdleMinutes',30), clientMaxHours:numberValue(form,'clientMaxHours',8) };
     try { const result = await api('/api/admin/identity/session-settings', { method:'PATCH', body:JSON.stringify({authSession}) }); const saved = result.authSession || authSession; Object.entries(saved).forEach(([name,value]) => setFormValue(form,name,value)); settingsMessage(localizedSettingsNotice('Login settings saved.', 'Oturum ayarları kaydedildi.')); } catch (error) { settingsMessage(error.message); }
