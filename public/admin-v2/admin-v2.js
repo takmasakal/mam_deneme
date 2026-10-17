@@ -66,7 +66,8 @@
       upload_allowed_users: 'Upload users', upload_denied_groups: 'Upload denied groups', upload_denied_users: 'Upload denied users',
       policy_saved: 'Access policy saved.', lock_released: 'Edit lock released.', unlock_confirm: 'Release this asset edit lock?', rights_empty: 'No matching rights records.',
       type_video: 'Video', type_audio: 'Audio', type_photo: 'Photo', type_document: 'Document', type_other: 'Other', rights_page_subtitle: 'Manage visibility and granular media access policies', rights_page_of: 'Page {page} of {pages} · {total} records',
-      read_access: 'Read', edit_access: 'Edit', download_access: 'Download', upload_access: 'Upload', lock_status: 'Lock', policy_accessible: '{allowed} allowed · {denied} denied', unlocked: 'Available'
+      read_access: 'Read', edit_access: 'Edit', download_access: 'Download', upload_access: 'Upload', lock_status: 'Lock', policy_accessible: '{allowed} allowed · {denied} denied', unlocked: 'Available',
+      settings_page_subtitle: 'Application, processing, security, backup, and session configuration'
     },
     tr: {
       overview: 'Genel Bakış', system_health: 'Sistem Sağlığı', runtime_diagnostics: 'Tanılama', audit_history: 'İşlem Geçmişi',
@@ -130,7 +131,7 @@
       health_job_phase_loading_asset: 'Varlık yükleniyor', health_job_phase_summarizing_document: 'Belge özetleniyor',
       health_job_phase_generating_metadata: 'Metadata üretiliyor', health_job_phase_saving_metadata: 'Metadata kaydediliyor',
       health_job_phase_completed: 'Tamamlandı', health_job_phase_failed: 'Başarısız', health_job_phase_cancelled: 'İptal edildi',
-      health_job_phase_interrupted: 'Kesintiye uğradı'
+      health_job_phase_interrupted: 'Kesintiye uğradı', settings_page_subtitle: 'Uygulama, işleme, güvenlik, yedekleme ve oturum yapılandırması'
     }
   };
   let translations = {};
@@ -195,8 +196,8 @@
       element.textContent = t(element.dataset.v2I18n);
     });
     const view = getActiveView();
-    const titleKey = view === 'diagnostics' ? 'runtime_diagnostics' : view === 'audit' ? 'audit_history' : view === 'asset-rights' ? 'asset_rights' : 'system_health';
-    const subtitleKey = view === 'diagnostics' ? 'diagnostics_page_subtitle' : view === 'audit' ? 'audit_page_subtitle' : view === 'asset-rights' ? 'rights_page_subtitle' : 'health_page_subtitle';
+    const titleKey = view === 'diagnostics' ? 'runtime_diagnostics' : view === 'audit' ? 'audit_history' : view === 'asset-rights' ? 'asset_rights' : view === 'settings' ? 'settings' : 'system_health';
+    const subtitleKey = view === 'diagnostics' ? 'diagnostics_page_subtitle' : view === 'audit' ? 'audit_page_subtitle' : view === 'asset-rights' ? 'rights_page_subtitle' : view === 'settings' ? 'settings_page_subtitle' : 'health_page_subtitle';
     byId('v2PageTitle').textContent = t(titleKey);
     byId('v2PageSubtitle').textContent = t(subtitleKey);
     document.title = `MetMAM Admin V2 — ${byId('v2PageTitle').textContent}`;
@@ -204,7 +205,7 @@
 
   function getActiveView() {
     const requested = new URLSearchParams(global.location.search).get('view');
-    return ['diagnostics', 'audit', 'asset-rights'].includes(requested) ? requested : 'health';
+    return ['diagnostics', 'audit', 'asset-rights', 'settings'].includes(requested) ? requested : 'health';
   }
 
   function applyView() {
@@ -446,6 +447,50 @@
     byId('assetRightsGroupSuggestions').hidden = true;
     rightsGroupInput.focus();
   });
+
+  const setFormValue = (form, name, value) => {
+    const field = form?.elements?.[name];
+    if (!field) return;
+    if (field.type === 'checkbox') field.checked = Boolean(value); else field.value = String(value ?? '');
+  };
+  const numberValue = (form, name, fallback) => Number(form?.elements?.[name]?.value) || fallback;
+  const settingsMessage = (value) => { byId('v2SettingsMessage').textContent = String(value || ''); };
+
+  function writeSettingsForms(settings = {}) {
+    const general = byId('v2SettingsForm');
+    ['playerUiMode','newAssetDefaultVisibility','allowFilelessAssetCreation','apiTokenEnabled','oidcBearerEnabled','apiToken','oidcIssuerUrl','oidcJwksUrl','oidcAudience'].forEach((name) => setFormValue(general, name, settings[name]));
+    const concurrency = settings.mediaJobConcurrency || {};
+    [['Subtitle','subtitle',1],['VideoOcr','videoOcr',1],['Proxy','proxy',1],['Metadata','metadata',1],['Thumbnail','thumbnail',2],['Upload','upload',3],['Download','download',6],['Backup','backup',1]].forEach(([suffix,key,fallback]) => setFormValue(general, `mediaJobConcurrency${suffix}`, Number(concurrency[key]) || fallback));
+    const ocr = byId('v2OcrSettingsForm');
+    ['ocrDefaultAdvancedMode','ocrDefaultTurkishAiCorrect','ocrDefaultEnableBlurFilter','ocrDefaultEnableRegionMode','ocrDefaultIgnoreStaticOverlays'].forEach((name) => setFormValue(ocr, name, settings[name]));
+    const subtitle = byId('v2SubtitleSettingsForm');
+    const style = settings.subtitleStyle || {};
+    setFormValue(subtitle, 'customOverlay', style.customOverlayEnabled !== false); setFormValue(subtitle, 'bottomOffsetPx', style.bottomOffset ?? 56); setFormValue(subtitle, 'fontSizePx', style.fontSize ?? 24); setFormValue(subtitle, 'textColor', style.textColor || '#ffffff'); setFormValue(subtitle, 'backgroundColor', style.backgroundColor || '#000000'); setFormValue(subtitle, 'backgroundOpacity', style.backgroundOpacity ?? .72); setFormValue(subtitle, 'horizontalPaddingPx', style.horizontalPadding ?? 16); setFormValue(subtitle, 'maxWidthPercent', style.maxWidth ?? 82);
+    const backup = byId('v2BackupSettingsForm');
+    const backupData = settings.backup || {};
+    ['enabled','directory','dailyHour','retentionDays','includeMamDb','includeKeycloakDb','includeUploadsArchive','includeUploadsRestic','resticRepository','resticKeepDaily','resticKeepWeekly','resticKeepMonthly'].forEach((name) => setFormValue(backup, name, backupData[name]));
+    const session = byId('v2SessionSettingsForm');
+    const auth = settings.authSession || {};
+    ['rememberMe','ssoIdleMinutes','ssoMaxHours','clientIdleMinutes','clientMaxHours'].forEach((name) => setFormValue(session, name, auth[name]));
+  }
+
+  async function loadV2Settings() {
+    settingsMessage('');
+    try { writeSettingsForms(await api('/api/admin/settings')); } catch (error) { settingsMessage(error.message); }
+  }
+
+  function readBackupForm() {
+    const form = byId('v2BackupSettingsForm');
+    return { enabled: form.elements.enabled.checked, directory: form.elements.directory.value.trim(), dailyHour: numberValue(form,'dailyHour',0), retentionDays: numberValue(form,'retentionDays',14), includeMamDb: form.elements.includeMamDb.checked, includeKeycloakDb: form.elements.includeKeycloakDb.checked, includeUploadsArchive: form.elements.includeUploadsArchive.checked, includeUploadsRestic: form.elements.includeUploadsRestic.checked, resticRepository: form.elements.resticRepository.value.trim(), resticKeepDaily: numberValue(form,'resticKeepDaily',14), resticKeepWeekly: numberValue(form,'resticKeepWeekly',8), resticKeepMonthly: numberValue(form,'resticKeepMonthly',12) };
+  }
+
+  async function loadV2Backups() {
+    const target = byId('v2BackupFiles');
+    try {
+      const result = await api('/api/admin/backups');
+      target.innerHTML = (result.files || []).map((file) => `<div class="settings-record"><strong>${escapeHtml(file.fileName || '')}</strong><span>${escapeHtml(`${Math.max(0, Number(file.size) || 0)} B`)}</span><span>${escapeHtml(formatDateTime(file.updatedAt))}</span></div>`).join('');
+    } catch (error) { target.innerHTML = `<div class="diagnostic-empty">${escapeHtml(error.message)}</div>`; }
+  }
 
   function showError(error) {
     const element = byId('pageError');
@@ -690,6 +735,46 @@
     loadAssetRights();
   });
 
+  byId('settingsTabs').addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-settings-tab]');
+    if (!button) return;
+    const tab = button.dataset.settingsTab;
+    byId('settingsTabs').querySelectorAll('button').forEach((item) => item.classList.toggle('is-active', item === button));
+    document.querySelectorAll('[data-settings-pane]').forEach((pane) => pane.classList.toggle('is-active', pane.dataset.settingsPane === tab));
+    settingsMessage('');
+    if (tab === 'backup') await loadV2Backups();
+  });
+  document.querySelectorAll('[data-settings-classic-tab]').forEach((link) => link.addEventListener('click', () => {
+    sessionStorage.setItem('mamClassicAdminDestination', 'settings');
+    sessionStorage.setItem('mamClassicSettingsTab', link.dataset.settingsClassicTab || 'general');
+  }));
+  byId('v2SettingsForm').addEventListener('submit', async (event) => {
+    event.preventDefault(); const form = event.currentTarget;
+    const payload = { playerUiMode: form.elements.playerUiMode.value, newAssetDefaultVisibility: form.elements.newAssetDefaultVisibility.value, allowFilelessAssetCreation: form.elements.allowFilelessAssetCreation.checked, apiTokenEnabled: form.elements.apiTokenEnabled.checked, oidcBearerEnabled: form.elements.oidcBearerEnabled.checked, apiToken: form.elements.apiToken.value.trim(), oidcIssuerUrl: form.elements.oidcIssuerUrl.value.trim(), oidcJwksUrl: form.elements.oidcJwksUrl.value.trim(), oidcAudience: form.elements.oidcAudience.value.trim(), mediaJobConcurrency: { subtitle:numberValue(form,'mediaJobConcurrencySubtitle',1), videoOcr:numberValue(form,'mediaJobConcurrencyVideoOcr',1), proxy:numberValue(form,'mediaJobConcurrencyProxy',1), metadata:numberValue(form,'mediaJobConcurrencyMetadata',1), thumbnail:numberValue(form,'mediaJobConcurrencyThumbnail',2), upload:numberValue(form,'mediaJobConcurrencyUpload',3), download:numberValue(form,'mediaJobConcurrencyDownload',6), backup:numberValue(form,'mediaJobConcurrencyBackup',1) } };
+    try { await api('/api/admin/settings', { method:'PATCH', body:JSON.stringify(payload) }); settingsMessage('Settings saved.'); } catch (error) { settingsMessage(error.message); }
+  });
+  byId('v2OcrSettingsForm').addEventListener('submit', async (event) => {
+    event.preventDefault(); const form = event.currentTarget; const payload = {};
+    ['ocrDefaultAdvancedMode','ocrDefaultTurkishAiCorrect','ocrDefaultEnableBlurFilter','ocrDefaultEnableRegionMode','ocrDefaultIgnoreStaticOverlays'].forEach((name) => { payload[name] = form.elements[name].checked; });
+    try { await api('/api/admin/settings', { method:'PATCH', body:JSON.stringify(payload) }); settingsMessage('Settings saved.'); } catch (error) { settingsMessage(error.message); }
+  });
+  byId('v2SubtitleSettingsForm').addEventListener('submit', async (event) => {
+    event.preventDefault(); const form = event.currentTarget; const subtitleStyle = { customOverlayEnabled:form.elements.customOverlay.checked, bottomOffset:numberValue(form,'bottomOffsetPx',56), fontSize:numberValue(form,'fontSizePx',24), textColor:form.elements.textColor.value, backgroundColor:form.elements.backgroundColor.value, backgroundOpacity:Number(form.elements.backgroundOpacity.value), horizontalPadding:numberValue(form,'horizontalPaddingPx',16), maxWidth:numberValue(form,'maxWidthPercent',82) };
+    try { await api('/api/admin/settings', { method:'PATCH', body:JSON.stringify({subtitleStyle}) }); settingsMessage('Settings saved.'); } catch (error) { settingsMessage(error.message); }
+  });
+  byId('v2BackupSettingsForm').addEventListener('submit', async (event) => {
+    event.preventDefault(); try { const current = await api('/api/admin/settings'); await api('/api/admin/settings', { method:'PATCH', body:JSON.stringify({...current, backup:readBackupForm()}) }); settingsMessage('Backup settings saved.'); await loadV2Backups(); } catch (error) { settingsMessage(error.message); }
+  });
+  byId('v2RunBackup').addEventListener('click', async (event) => {
+    event.currentTarget.disabled = true; try { await api('/api/admin/backups/run', { method:'POST', body:JSON.stringify(readBackupForm()) }); settingsMessage('Backup completed.'); await loadV2Backups(); } catch (error) { settingsMessage(error.message); } finally { event.currentTarget.disabled = false; }
+  });
+  byId('v2SessionSettingsForm').addEventListener('submit', async (event) => {
+    event.preventDefault(); const form = event.currentTarget; const authSession = { rememberMe:form.elements.rememberMe.checked, ssoIdleMinutes:numberValue(form,'ssoIdleMinutes',30), ssoMaxHours:numberValue(form,'ssoMaxHours',8), clientIdleMinutes:numberValue(form,'clientIdleMinutes',30), clientMaxHours:numberValue(form,'clientMaxHours',8) };
+    try { const result = await api('/api/admin/identity/session-settings', { method:'PATCH', body:JSON.stringify({authSession}) }); const saved = result.authSession || authSession; Object.entries(saved).forEach(([name,value]) => setFormValue(form,name,value)); settingsMessage('Login settings saved.'); } catch (error) { settingsMessage(error.message); }
+  });
+  byId('v2RotateToken').addEventListener('click', async () => { try { const result = await api('/api/admin/api-token/rotate', { method:'POST', body:'{}' }); setFormValue(byId('v2SettingsForm'),'apiToken',result.apiToken || ''); settingsMessage('Token rotated.'); } catch (error) { settingsMessage(error.message); } });
+  byId('v2CopyToken').addEventListener('click', async () => { const token = byId('v2SettingsForm').elements.apiToken.value.trim(); if (!token) return; await navigator.clipboard.writeText(token); settingsMessage('Token copied.'); });
+
   byId('languageSelectAdmin').value = language;
   byId('languageSelectAdmin').addEventListener('change', async (event) => {
     language = event.target.value === 'tr' ? 'tr' : 'en';
@@ -699,6 +784,7 @@
     if (getActiveView() === 'diagnostics') refreshDiagnostics();
     if (getActiveView() === 'audit') loadAuditEvents();
     if (getActiveView() === 'asset-rights') loadAssetRights();
+    if (getActiveView() === 'settings') loadV2Settings();
   });
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'L' || !event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
@@ -716,6 +802,7 @@
     if (getActiveView() === 'diagnostics') refreshDiagnostics();
     else if (getActiveView() === 'audit') loadAuditView();
     else if (getActiveView() === 'asset-rights') { syncRightsModeControls(); prepareAssetRights(); }
+    else if (getActiveView() === 'settings') loadV2Settings();
     else refresh({ force: true });
   });
 })(window);
