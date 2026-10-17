@@ -67,7 +67,7 @@
       policy_saved: 'Access policy saved.', lock_released: 'Edit lock released.', unlock_confirm: 'Release this asset edit lock?', rights_empty: 'No matching rights records.',
       type_video: 'Video', type_audio: 'Audio', type_photo: 'Photo', type_document: 'Document', type_other: 'Other', rights_page_subtitle: 'Manage visibility and granular media access policies', rights_page_of: 'Page {page} of {pages} · {total} records',
       read_access: 'Read', edit_access: 'Edit', download_access: 'Download', upload_access: 'Upload', lock_status: 'Lock', policy_accessible: '{allowed} allowed · {denied} denied', unlocked: 'Available',
-      settings_page_subtitle: 'Application, processing, security, backup, and session configuration'
+      settings_page_subtitle: 'Application, processing, security, backup, and session configuration', settings_sub_general: 'General', settings_sub_proxy: 'Proxy', settings_sub_ocr: 'OCR', settings_sub_subtitle: 'Subtitle', settings_sub_backup: 'Backup', settings_sub_users: 'Users'
     },
     tr: {
       overview: 'Genel Bakış', system_health: 'Sistem Sağlığı', runtime_diagnostics: 'Tanılama', audit_history: 'İşlem Geçmişi',
@@ -131,7 +131,7 @@
       health_job_phase_loading_asset: 'Varlık yükleniyor', health_job_phase_summarizing_document: 'Belge özetleniyor',
       health_job_phase_generating_metadata: 'Metadata üretiliyor', health_job_phase_saving_metadata: 'Metadata kaydediliyor',
       health_job_phase_completed: 'Tamamlandı', health_job_phase_failed: 'Başarısız', health_job_phase_cancelled: 'İptal edildi',
-      health_job_phase_interrupted: 'Kesintiye uğradı', settings_page_subtitle: 'Uygulama, işleme, güvenlik, yedekleme ve oturum yapılandırması'
+      health_job_phase_interrupted: 'Kesintiye uğradı', settings_page_subtitle: 'Uygulama, işleme, güvenlik, yedekleme ve oturum yapılandırması', settings_sub_general: 'Genel', settings_sub_proxy: 'Proxy', settings_sub_ocr: 'OCR', settings_sub_subtitle: 'Altyazı', settings_sub_backup: 'Yedekleme', settings_sub_users: 'Kullanıcılar'
     }
   };
   let translations = {};
