@@ -537,6 +537,19 @@
     return [hour, min, sec, frames].map((value) => String(value).padStart(2, '0')).join(':');
   }
 
+  function parseEditorTimecode(value = '') {
+    const match = String(value).trim().match(/^(\d{2}):(\d{2}):(\d{2})(?:([.,:])(\d{2,3}))?$/);
+    if (!match) return null;
+    const separator = match[4] || '';
+    const fraction = match[5] || '';
+    const fractionSeconds = fraction
+      ? separator === ':' && fraction.length <= 2
+        ? Number(fraction) / 25
+        : Number(fraction.padEnd(3, '0').slice(0, 3)) / 1000
+      : 0;
+    return (Number(match[1]) * 3600) + (Number(match[2]) * 60) + Number(match[3]) + fractionSeconds;
+  }
+
   function openTextEditorModal({ title, content, mediaUrl = '', previewMode = 'audio', onSave }) {
     return new Promise((resolve) => {
       const backdrop = document.createElement('div');
@@ -546,9 +559,10 @@
         : safeUrl && ['image','photo'].includes(mode) ? `<img class="v2-content-editor-media" src="${escapeHtml(safeUrl)}" alt="" />`
         : safeUrl ? `<audio class="v2-content-editor-audio" controls preload="metadata" src="${escapeHtml(safeUrl)}"></audio>` : '';
       backdrop.className = 'v2-content-editor-backdrop';
-      backdrop.innerHTML = `<section class="v2-content-editor" role="dialog" aria-modal="true" aria-label="${escapeHtml(title || 'Editor')}"><header><h3>${escapeHtml(title || 'Editor')}</h3><button class="v2-editor-close" type="button" aria-label="Close">×</button></header>${media ? `<div class="v2-content-editor-preview">${media}<span class="v2-editor-timecode">00:00:00:00</span></div>` : ''}<div class="v2-content-editor-toolbar"><input class="v2-editor-find" placeholder="${escapeHtml(t('find_label'))}" /><input class="v2-editor-replace" placeholder="${escapeHtml(t('replace_label'))}" /><button class="secondary-button v2-editor-find-next" type="button">${escapeHtml(t('find_next'))}</button><button class="secondary-button v2-editor-replace-all" type="button">${escapeHtml(t('replace_all'))}</button></div><div class="v2-content-editor-layout"><textarea class="v2-editor-area" spellcheck="false"></textarea><aside class="v2-editor-corrections"><h4>${escapeHtml(t('learned_corrections_title'))}</h4><input class="v2-editor-wrong" placeholder="${escapeHtml(t('learned_wrong_ph'))}" /><input class="v2-editor-correct" placeholder="${escapeHtml(t('learned_correct_ph'))}" /><div class="v2-editor-correction-actions"><button class="secondary-button v2-editor-use-selection" type="button">${escapeHtml(t('learned_use_selection'))}</button><button class="secondary-button v2-editor-add-correction" type="button">${escapeHtml(t('learned_add'))}</button></div><div class="v2-editor-correction-message"></div><div class="v2-editor-correction-rows"></div></aside></div><div class="v2-content-editor-status"></div><footer><button class="secondary-button v2-editor-cancel" type="button">${escapeHtml(t('content_cancel'))}</button><button class="primary-link button-reset v2-editor-save" type="button">${escapeHtml(t('content_save'))}</button></footer></section>`;
+      backdrop.innerHTML = `<section class="v2-content-editor" role="dialog" aria-modal="true" aria-label="${escapeHtml(title || 'Editor')}"><header><h3>${escapeHtml(title || 'Editor')}</h3><button class="v2-editor-close" type="button" aria-label="Close">×</button></header>${media ? `<div class="v2-content-editor-preview">${media}<span class="v2-editor-timecode">00:00:00:00</span></div>` : ''}<div class="v2-content-editor-toolbar"><input class="v2-editor-find" placeholder="${escapeHtml(t('find_label'))}" /><input class="v2-editor-replace" placeholder="${escapeHtml(t('replace_label'))}" /><button class="secondary-button v2-editor-find-next" type="button">${escapeHtml(t('find_next'))}</button><button class="secondary-button v2-editor-replace-all" type="button">${escapeHtml(t('replace_all'))}</button></div><div class="v2-content-editor-layout"><div class="v2-editor-text"><textarea class="v2-editor-area" aria-hidden="true" tabindex="-1"></textarea><div class="v2-editor-rich" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="false"></div></div><aside class="v2-editor-corrections"><h4>${escapeHtml(t('learned_corrections_title'))}</h4><input class="v2-editor-wrong" placeholder="${escapeHtml(t('learned_wrong_ph'))}" /><input class="v2-editor-correct" placeholder="${escapeHtml(t('learned_correct_ph'))}" /><div class="v2-editor-correction-actions"><button class="secondary-button v2-editor-use-selection" type="button">${escapeHtml(t('learned_use_selection'))}</button><button class="secondary-button v2-editor-add-correction" type="button">${escapeHtml(t('learned_add'))}</button></div><div class="v2-editor-correction-message"></div><div class="v2-editor-correction-rows"></div></aside></div><div class="v2-content-editor-status"></div><footer><button class="secondary-button v2-editor-cancel" type="button">${escapeHtml(t('content_cancel'))}</button><button class="primary-link button-reset v2-editor-save" type="button">${escapeHtml(t('content_save'))}</button></footer></section>`;
       document.body.append(backdrop);
       const area = backdrop.querySelector('.v2-editor-area');
+      const richArea = backdrop.querySelector('.v2-editor-rich');
       const status = backdrop.querySelector('.v2-content-editor-status');
       const correctionMessage = backdrop.querySelector('.v2-editor-correction-message');
       const correctionRows = backdrop.querySelector('.v2-editor-correction-rows');
@@ -556,36 +570,86 @@
       const timecode = backdrop.querySelector('.v2-editor-timecode');
       area.value = String(content || '');
       let findPosition = 0;
+      let findQuery = '';
+      const decorateText = (value) => escapeHtml(String(value || '')).replace(/\b\d{2}:\d{2}:\d{2}(?:[.,:]\d{2,3})?\b/g, (token) => `<span class="v2-editor-inline-tc" data-editor-timecode="${escapeHtml(token)}">${escapeHtml(token)}</span>`);
+      const renderEditor = (activeRange = null) => {
+        const source = String(area.value || '');
+        const start = Number(activeRange?.start);
+        const end = Number(activeRange?.end);
+        richArea.innerHTML = Number.isFinite(start) && Number.isFinite(end) && end > start
+          ? `${decorateText(source.slice(0, start))}<span class="v2-editor-find-hit">${decorateText(source.slice(start, end))}</span>${decorateText(source.slice(end))}`
+          : decorateText(source);
+      };
+      const syncSource = () => {
+        area.value = String(richArea.textContent || '').replace(/\r\n?/g, '\n');
+        findPosition = 0;
+        findQuery = '';
+      };
+      const insertText = (value) => {
+        const selection = window.getSelection?.();
+        if (!selection || !document.createRange) return;
+        let range = selection.rangeCount ? selection.getRangeAt(0) : null;
+        if (!range || !richArea.contains(range.commonAncestorContainer)) {
+          range = document.createRange(); range.selectNodeContents(richArea); range.collapse(false);
+        }
+        range.deleteContents();
+        const node = document.createTextNode(String(value || ''));
+        range.insertNode(node); range.setStartAfter(node); range.collapse(true);
+        selection.removeAllRanges(); selection.addRange(range); syncSource();
+      };
+      const selectEditorRange = (start, end) => {
+        const selection = window.getSelection?.();
+        if (!selection || !document.createTreeWalker || !document.createRange) return;
+        const walker = document.createTreeWalker(richArea, window.NodeFilter?.SHOW_TEXT || 4);
+        let offset = 0, startNode, endNode, startOffset = 0, endOffset = 0, node;
+        while ((node = walker.nextNode())) {
+          const next = offset + String(node.nodeValue || '').length;
+          if (!startNode && start <= next) { startNode = node; startOffset = Math.max(0, start - offset); }
+          if (end <= next) { endNode = node; endOffset = Math.max(0, end - offset); break; }
+          offset = next;
+        }
+        if (!startNode || !endNode) return;
+        const range = document.createRange(); range.setStart(startNode, startOffset); range.setEnd(endNode, endOffset);
+        richArea.focus({ preventScroll:true }); selection.removeAllRanges(); selection.addRange(range);
+      };
+      renderEditor();
       const close = (value = null) => { mediaElement?.pause?.(); backdrop.remove(); resolve(value); };
       const findNext = () => {
-        const query = backdrop.querySelector('.v2-editor-find').value;
+        const query = backdrop.querySelector('.v2-editor-find').value.trim();
         if (!query) return;
         const source = area.value.toLocaleLowerCase(language === 'tr' ? 'tr' : 'en');
         const needle = query.toLocaleLowerCase(language === 'tr' ? 'tr' : 'en');
+        if (needle !== findQuery) { findPosition = 0; findQuery = needle; }
         let index = source.indexOf(needle, findPosition); if (index < 0) index = source.indexOf(needle);
         if (index < 0) return;
-        area.focus(); area.setSelectionRange(index, index + query.length); findPosition = index + query.length;
+        renderEditor({start:index, end:index + query.length});
+        richArea.querySelector('.v2-editor-find-hit')?.scrollIntoView({block:'center', inline:'nearest'});
+        selectEditorRange(index, index + query.length); findPosition = index + query.length;
       };
       const replaceAll = () => {
         const query = backdrop.querySelector('.v2-editor-find').value; if (!query) return;
         const replacement = backdrop.querySelector('.v2-editor-replace').value;
-        area.value = area.value.replace(new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu'), replacement);
+        area.value = area.value.replace(new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu'), replacement); renderEditor();
       };
-      const applyCorrection = (wrong, correct) => { if (wrong) area.value = area.value.replace(new RegExp(String(wrong).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu'), String(correct || '')); };
+      const applyCorrection = (wrong, correct) => { if (wrong) { area.value = area.value.replace(new RegExp(String(wrong).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu'), String(correct || '')); renderEditor(); } };
       const renderCorrections = (entries = []) => { correctionRows.innerHTML = entries.map((item) => `<div class="v2-editor-correction-row" data-wrong="${escapeHtml(item.wrong || '')}" data-correct="${escapeHtml(item.correct || '')}"><span><strong>${escapeHtml(item.wrong || '')}</strong><small>${escapeHtml(item.correct || '')}</small></span><span><button class="secondary-button" data-correction-apply type="button">${escapeHtml(t('learned_apply'))}</button><button class="danger-button" data-correction-delete type="button">${escapeHtml(t('learned_delete'))}</button></span></div>`).join('') || `<div class="diagnostic-empty">${escapeHtml(t('learned_none'))}</div>`; };
       const loadCorrections = async () => { try { const result = await api('/api/admin/turkish-corrections'); renderCorrections(result.entries || []); } catch (error) { correctionMessage.textContent = error.message; } };
       backdrop.querySelector('.v2-editor-find-next').addEventListener('click', findNext);
       backdrop.querySelector('.v2-editor-find').addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); findNext(); } });
       backdrop.querySelector('.v2-editor-replace-all').addEventListener('click', replaceAll);
-      backdrop.querySelector('.v2-editor-use-selection').addEventListener('click', () => { const selected = area.value.slice(area.selectionStart, area.selectionEnd).trim(); if (selected) backdrop.querySelector('.v2-editor-wrong').value = selected; });
+      richArea.addEventListener('beforeinput', (event) => { if (event.inputType === 'insertParagraph' || event.inputType === 'insertLineBreak') { event.preventDefault(); insertText('\n'); } });
+      richArea.addEventListener('paste', (event) => { const text = event.clipboardData?.getData('text/plain'); if (typeof text === 'string') { event.preventDefault(); insertText(text); } });
+      richArea.addEventListener('input', syncSource);
+      richArea.addEventListener('click', (event) => { const target = event.target.closest('[data-editor-timecode]'); if (!target) return; const seconds = parseEditorTimecode(target.dataset.editorTimecode); if (!Number.isFinite(seconds)) return; richArea.querySelectorAll('.v2-editor-inline-tc').forEach((item) => item.classList.toggle('active', item === target)); if (mediaElement) mediaElement.currentTime = Math.max(0, seconds); if (timecode) timecode.textContent = formatEditorTimecode(seconds); });
+      backdrop.querySelector('.v2-editor-use-selection').addEventListener('click', () => { const selection = window.getSelection?.(); const selected = selection && richArea.contains(selection.anchorNode) ? selection.toString().trim() : ''; if (selected) backdrop.querySelector('.v2-editor-wrong').value = selected; });
       backdrop.querySelector('.v2-editor-add-correction').addEventListener('click', async () => { const wrong = backdrop.querySelector('.v2-editor-wrong').value.trim(), correct = backdrop.querySelector('.v2-editor-correct').value.trim(); if (!wrong || !correct) return; try { await api('/api/admin/turkish-corrections', { method:'POST', body:JSON.stringify({wrong, correct}) }); applyCorrection(wrong, correct); await loadCorrections(); } catch (error) { correctionMessage.textContent = error.message; } });
       correctionRows.addEventListener('click', async (event) => { const row = event.target.closest('.v2-editor-correction-row'); if (!row) return; if (event.target.closest('[data-correction-apply]')) applyCorrection(row.dataset.wrong, row.dataset.correct); if (event.target.closest('[data-correction-delete]')) { await api(`/api/admin/turkish-corrections?wrong=${encodeURIComponent(row.dataset.wrong)}`, {method:'DELETE'}); await loadCorrections(); } });
       mediaElement?.addEventListener('timeupdate', () => { if (timecode) timecode.textContent = formatEditorTimecode(mediaElement.currentTime); });
       backdrop.querySelector('.v2-editor-close').addEventListener('click', () => close(null));
       backdrop.querySelector('.v2-editor-cancel').addEventListener('click', () => close(null));
-      backdrop.querySelector('.v2-editor-save').addEventListener('click', async (event) => { event.currentTarget.disabled = true; try { status.textContent = `${t('loading')}...`; await onSave(String(area.value || '')); status.textContent = t('content_saved'); } catch (error) { status.textContent = error.message; } finally { event.currentTarget.disabled = false; } });
+      backdrop.querySelector('.v2-editor-save').addEventListener('click', async (event) => { event.currentTarget.disabled = true; try { syncSource(); status.textContent = `${t('loading')}...`; await onSave(String(area.value || '')); status.textContent = t('content_saved'); } catch (error) { status.textContent = error.message; } finally { event.currentTarget.disabled = false; } });
       backdrop.addEventListener('click', (event) => { if (event.target === backdrop) close(null); });
-      loadCorrections(); area.focus();
+      loadCorrections(); richArea.focus();
     });
   }
 
