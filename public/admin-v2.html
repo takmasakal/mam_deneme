@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MetMAM Admin V2 — System Health</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/admin-v2/admin-v2.css?v=20261018-audit-columns-1" />
+    <link rel="stylesheet" href="/admin-v2/admin-v2.css?v=20261018-single-page-titles-1" />
   </head>
   <body class="admin-v2">
     <a class="skip-link" href="#mainContent">Skip to content</a>
@@ -88,9 +88,8 @@
           </section>
 
           <section class="diagnostics-view" data-v2-view="diagnostics" hidden>
-            <section class="v2-panel diagnostics-panel" aria-labelledby="diagnosticsTitle">
-              <div class="diagnostics-head"><h2 id="diagnosticsTitle" data-v2-i18n="runtime_diagnostics">Diagnostics</h2><button id="refreshDiagnosticsBtn" class="secondary-button" type="button" data-v2-i18n="refresh">Refresh</button></div>
-              <h3 id="activeUsersTitle" data-v2-i18n="active_users">Active Users</h3>
+            <section class="v2-panel diagnostics-panel" aria-labelledby="activeUsersTitle">
+              <div class="diagnostics-head"><h3 id="activeUsersTitle" data-v2-i18n="active_users">Active Users</h3><button id="refreshDiagnosticsBtn" class="secondary-button" type="button" data-v2-i18n="refresh">Refresh</button></div>
               <div id="activeUsersRows" class="diagnostic-list"></div>
               <h3 id="runtimeErrorsTitle" data-v2-i18n="runtime_errors">Runtime Errors</h3>
               <div id="runtimeErrorRows" class="diagnostic-list"></div>
@@ -100,7 +99,6 @@
 
           <section class="audit-view" data-v2-view="audit" hidden>
             <section class="v2-panel">
-              <div class="panel-heading"><div><h2 data-v2-i18n="audit_history">Audit History</h2><p data-v2-i18n="audit_history_subtitle">Recorded administrative and asset activity</p></div></div>
               <form id="auditFiltersForm" class="audit-toolbar">
                 <label><span data-v2-i18n="actor">Actor</span><input id="auditActorInput" type="search" autocomplete="off" /></label>
                 <label><span data-v2-i18n="action">Action</span><select id="auditActionSelect"><option value="" data-v2-i18n="all_actions">All actions</option><option value="asset.uploaded" data-v2-i18n="asset_uploaded">Asset uploaded</option><option value="asset.created" data-v2-i18n="asset_created">Asset created</option><option value="asset.updated" data-v2-i18n="asset_updated">Asset updated</option><option value="asset.trashed" data-v2-i18n="asset_trashed">Moved to trash</option><option value="asset.restored" data-v2-i18n="asset_restored">Asset restored</option><option value="asset.deleted" data-v2-i18n="asset_deleted">Permanently deleted</option><option value="asset.downloaded" data-v2-i18n="asset_downloaded">Asset downloaded</option></select></label>
@@ -134,7 +132,6 @@
           </section>
 
           <section class="settings-view v2-panel" data-v2-view="settings" hidden>
-            <div class="settings-title"><h2 data-v2-i18n="settings">Settings</h2></div>
             <nav class="settings-tabs" id="settingsTabs" aria-label="Settings sections">
               <button class="is-active" type="button" data-settings-tab="general" data-v2-i18n="settings_sub_general">General</button><button type="button" data-settings-tab="proxy" data-v2-i18n="settings_sub_proxy">Proxy</button><button type="button" data-settings-tab="ocr" data-v2-i18n="settings_sub_ocr">OCR</button><button type="button" data-settings-tab="subtitle" data-v2-i18n="settings_sub_subtitle">Subtitle</button><button type="button" data-settings-tab="backup" data-v2-i18n="settings_sub_backup">Backup</button><button type="button" data-settings-tab="users" data-v2-i18n="settings_sub_users">Users</button>
             </nav>
