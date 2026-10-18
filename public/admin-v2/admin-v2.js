@@ -165,6 +165,7 @@
   const settingsTurkishPlaceholders = {'Type asset name':'Varlık adı yazın','asset, label, file...':'varlık, etiket, dosya...','asset, label, language...':'varlık, etiket, dil...','Type query...':'Sorgu yazın...','username, name, email...':'kullanıcı adı, ad, e-posta...','Search user or group...':'Kullanıcı veya grup ara...'};
   settingsTurkishText['Token & OIDC'] = 'Belirteç ve OIDC';
   Object.assign(settingsTurkishText, {'Manager user/group':'Yönetici kullanıcı/grup','Asset type':'Varlık türü','Document rights':'Belge yetkileri','OCR / subtitle':'OCR / altyazı','Document':'Belge','Video':'Video','Audio':'Ses','Photo':'Fotoğraf','Other':'Diğer','All asset types':'Tüm varlık türleri','Edit':'Düzenle','Update':'Güncelle','Actions':'İşlemler','Created':'Oluşturulma'});
+  Object.assign(settingsTurkishText, {'Scan Missing Manually':'Eksikleri Elle Tara','Scan Missing Automatically':'Eksikleri Otomatik Tara','Stop scan':'Taramayı Durdur'});
   const localizedSettingsNotice = (en, tr) => language === 'tr' ? tr : en;
   const localizedSettingsLabel = (value) => language === 'tr' ? (settingsTurkishText[value] || value) : value;
   function localizeSettingsText() {
@@ -539,17 +540,17 @@
     if (!identitySection || byId('userPermissionsRows')) return;
     const section = document.createElement('section');
     section.className = 'settings-record-section';
-    section.innerHTML = `<h3 data-v2-i18n="principal_settings">User / Group Settings</h3><div class="settings-principal-toolbar"><select id="userPermissionsPrincipalType" aria-label="Principal type"><option value="user" data-v2-i18n="principal_type_user">User</option><option value="group" data-v2-i18n="principal_type_group">Group</option></select><input id="userPermissionsSearchInput" placeholder="Search user or group..." autocomplete="off" /><button id="userPermissionsSearchButton" class="secondary-button" type="button" data-v2-i18n="principal_search">Search</button><div class="settings-principal-navigation"><label><span data-v2-i18n="page_size">Page size</span><select id="userPermissionsPageSize"><option value="20">20</option><option value="50">50</option></select></label><button id="userPermissionsPrevPage" class="secondary-button" type="button" data-v2-i18n="previous">Previous</button><button id="userPermissionsNextPage" class="secondary-button" type="button" data-v2-i18n="next">Next</button></div></div><div id="userPermissionsRows" class="settings-admin-rows user-permissions-rows"></div><div id="userPermissionsMsg" class="inline-message"></div>`;
+    section.innerHTML = `<h3 data-v2-i18n="principal_settings">User / Group Settings</h3><div class="settings-principal-toolbar"><select id="userPermissionsPrincipalType" aria-label="Principal type"><option value="user" data-v2-i18n="principal_type_user">User</option><option value="group" data-v2-i18n="principal_type_group">Group</option></select><input id="userPermissionsSearchInput" placeholder="Search user or group..." autocomplete="off" /><button id="userPermissionsSearchButton" class="secondary-button" type="button" data-v2-i18n="principal_search">Search</button></div><div id="userPermissionsRows" class="settings-admin-rows user-permissions-rows"></div><div id="userPermissionsMsg" class="inline-message"></div>`;
     identitySection.before(section);
   }
   mountUserPermissionSettings();
   function placeSessionSaveInsideBox() {
     const form = byId('v2SessionSettingsForm');
-    const fieldset = form?.querySelector('fieldset');
+    const parameters = form?.querySelector('fieldset .settings-number-grid');
     const actions = form?.querySelector(':scope > .settings-actions');
-    if (!fieldset || !actions) return;
+    if (!parameters || !actions) return;
     actions.classList.add('settings-session-save');
-    fieldset.append(actions);
+    parameters.append(actions);
   }
   placeSessionSaveInsideBox();
   let editingGroupAdminId = '';
@@ -583,13 +584,44 @@
     } catch (error) { target.innerHTML = `<div class="diagnostic-empty">${escapeHtml(error.message)}</div>`; }
   }
 
-  async function scanV2MissingProxy() {
+  async function scanV2MissingProxy({ autoGenerate = false } = {}) {
     const rows = byId('v2MissingProxyRows');
+    v2MissingProxyScanController?.abort();
+    v2MissingProxyScanController = new AbortController();
+    const signal = v2MissingProxyScanController.signal;
+    byId('v2ScanMissingProxy').disabled = true;
+    byId('v2GenerateAllProxy').disabled = true;
+    byId('v2StopMissingProxy').disabled = false;
     rows.innerHTML = `<div class="diagnostic-empty">${escapeHtml(t('loading'))}...</div>`;
     const query = byId('v2ProxyIncludeTrash').checked ? '?includeTrash=1' : '';
-    const result = await api(`/api/admin/proxy-missing-scan${query}`);
-    rows.innerHTML = (result.items || []).map((item) => `<div class="settings-record"><strong>${escapeHtml(item.title || item.fileName || item.id)}</strong><span>${escapeHtml((item.missingComponents || []).join(' / '))}</span><button class="secondary-button" type="button" data-proxy-repair="${escapeHtml(item.id)}" data-proxy-mode="${escapeHtml(item.missingProxy ? 'proxy' : (item.assetFamily === 'document' ? 'document_thumbnail' : item.assetFamily === 'image' ? 'image_thumbnail' : 'thumbnail'))}">Generate</button></div>`).join('') || `<div class="diagnostic-empty">${escapeHtml(t('diagnostics_empty'))}</div>`;
-    localizeSettingsText();
+    try {
+      const result = await api(`/api/admin/proxy-missing-scan${query}`, { signal });
+      const items = result.items || [];
+      rows.innerHTML = items.map((item) => `<div class="settings-record"><strong>${escapeHtml(item.title || item.fileName || item.id)}</strong><span>${escapeHtml((item.missingComponents || []).join(' / '))}</span><button class="secondary-button" type="button" data-proxy-repair="${escapeHtml(item.id)}" data-proxy-mode="${escapeHtml(v2MissingProxyMode(item))}">Generate</button></div>`).join('') || `<div class="diagnostic-empty">${escapeHtml(t('diagnostics_empty'))}</div>`;
+      localizeSettingsText();
+      if (autoGenerate && items.length) {
+        byId('v2ProxyStatus').textContent = localizedSettingsNotice(`Generating ${items.length} missing item(s)...`, `${items.length} eksik öğe üretiliyor...`);
+        const proxyItems = items.filter((item) => v2MissingProxyMode(item) === 'proxy');
+        const directItems = items.filter((item) => v2MissingProxyMode(item) !== 'proxy');
+        for (const item of directItems) {
+          if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+          await repairV2MissingProxy(item, signal);
+        }
+        if (proxyItems.length && !signal.aborted) {
+          await api('/api/admin/proxy-jobs', { method:'POST', body:JSON.stringify({ assetIds:proxyItems.map((item) => item.id), includeTrash:byId('v2ProxyIncludeTrash').checked }), signal });
+        }
+        byId('v2ProxyStatus').textContent = localizedSettingsNotice('Automatic generation completed.', 'Otomatik üretim tamamlandı.');
+        await loadV2ProxyJobs();
+      }
+    } catch (error) {
+      if (error?.name === 'AbortError') byId('v2ProxyStatus').textContent = localizedSettingsNotice('Scan stopped.', 'Tarama durduruldu.');
+      else throw error;
+    } finally {
+      byId('v2ScanMissingProxy').disabled = false;
+      byId('v2GenerateAllProxy').disabled = false;
+      byId('v2StopMissingProxy').disabled = true;
+      v2MissingProxyScanController = null;
+    }
   }
 
   async function loadV2Identity() {
@@ -623,6 +655,41 @@
 
   function triggerJsonDownload(blob, fallback) {
     const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = fallback; link.click(); URL.revokeObjectURL(url);
+  }
+
+  let v2MissingProxyScanController = null;
+  function mountMissingProxyActions() {
+    const scan = byId('v2ScanMissingProxy');
+    const auto = byId('v2GenerateAllProxy');
+    const actions = scan?.parentElement;
+    if (!scan || !auto || !actions || byId('v2StopMissingProxy')) return;
+    actions.classList.add('settings-proxy-scan-actions');
+    scan.textContent = 'Scan Missing Manually';
+    scan.className = 'settings-scan-button settings-scan-manual';
+    auto.textContent = 'Scan Missing Automatically';
+    auto.className = 'settings-scan-button settings-scan-auto';
+    const stop = document.createElement('button');
+    stop.id = 'v2StopMissingProxy';
+    stop.type = 'button';
+    stop.className = 'settings-scan-button settings-scan-stop';
+    stop.textContent = 'Stop scan';
+    stop.disabled = true;
+    actions.append(stop);
+    localizeSettingsText();
+  }
+  mountMissingProxyActions();
+
+  function v2MissingProxyMode(item = {}) {
+    if (item.missingProxy || item.badStatus || (item.missingComponents || []).includes('proxy')) return 'proxy';
+    if (item.assetFamily === 'document') return 'document_thumbnail';
+    if (item.assetFamily === 'image') return 'image_thumbnail';
+    return 'thumbnail';
+  }
+
+  async function repairV2MissingProxy(item, signal) {
+    const mode = v2MissingProxyMode(item);
+    if (mode === 'proxy') return api('/api/admin/proxy-jobs', { method:'POST', body:JSON.stringify({assetIds:[item.id]}), signal });
+    return api('/api/admin/proxy-tools/run', { method:'POST', body:JSON.stringify({assetId:item.id, mode}), signal });
   }
 
   function showError(error) {
@@ -916,8 +983,9 @@
     const kind = button.dataset.permissionImport === 'user-rights' ? 'principal-rights' : button.dataset.permissionImport; const input = byId(kind === 'asset-rights' ? 'v2AssetRightsImport' : 'v2UserRightsImport'); const file = input.files?.[0]; if (!file) { settingsMessage(localizedSettingsNotice('Choose a JSON file first.', 'Önce bir JSON dosyası seçin.')); return; }
     button.disabled = true; try { const payload = JSON.parse(await file.text()); await api(`/api/admin/permission-imports/${encodeURIComponent(kind)}`, { method:'POST', body:JSON.stringify(payload) }); settingsMessage(localizedSettingsNotice('Permissions imported.', 'Yetkiler içe aktarıldı.')); } catch (error) { settingsMessage(error.message); } finally { button.disabled = false; }
   }));
-  byId('v2ScanMissingProxy').addEventListener('click', async (event) => { event.currentTarget.disabled = true; try { await scanV2MissingProxy(); } catch (error) { byId('v2ProxyStatus').textContent = error.message; } finally { event.currentTarget.disabled = false; } });
-  byId('v2GenerateAllProxy').addEventListener('click', async (event) => { event.currentTarget.disabled = true; try { await api('/api/admin/proxy-jobs', { method:'POST', body:JSON.stringify({ includeTrash:byId('v2ProxyIncludeTrash').checked }) }); byId('v2ProxyStatus').textContent = localizedSettingsNotice('Proxy job started.', 'Proxy görevi başlatıldı.'); await loadV2ProxyJobs(); } catch (error) { byId('v2ProxyStatus').textContent = error.message; } finally { event.currentTarget.disabled = false; } });
+  byId('v2ScanMissingProxy').addEventListener('click', async () => { try { await scanV2MissingProxy({ autoGenerate:false }); } catch (error) { byId('v2ProxyStatus').textContent = error.message; } });
+  byId('v2GenerateAllProxy').addEventListener('click', async () => { try { await scanV2MissingProxy({ autoGenerate:true }); } catch (error) { byId('v2ProxyStatus').textContent = error.message; } });
+  byId('v2StopMissingProxy').addEventListener('click', () => { v2MissingProxyScanController?.abort(); });
   byId('v2MissingProxyRows').addEventListener('click', async (event) => { const button = event.target.closest('[data-proxy-repair]'); if (!button) return; button.disabled = true; try { if (button.dataset.proxyMode === 'proxy') await api('/api/admin/proxy-jobs', { method:'POST', body:JSON.stringify({assetIds:[button.dataset.proxyRepair]}) }); else await api('/api/admin/proxy-tools/run', { method:'POST', body:JSON.stringify({assetId:button.dataset.proxyRepair, mode:button.dataset.proxyMode}) }); await scanV2MissingProxy(); } catch (error) { byId('v2ProxyStatus').textContent = error.message; button.disabled = false; } });
   byId('v2ProxyAssetName').addEventListener('input', async (event) => { const q = event.target.value.trim(); const box = byId('v2ProxySuggestions'); event.target.dataset.assetId = ''; if (q.length < 3) { box.hidden = true; return; } try { const rows = await api(`/api/admin/assets/suggest?q=${encodeURIComponent(q)}&limit=8&includeTrash=${byId('v2ProxyIncludeTrash').checked ? '1' : '0'}`); box.innerHTML = rows.map((item) => `<button type="button" data-proxy-suggestion-id="${escapeHtml(item.id)}" data-proxy-suggestion-name="${escapeHtml(item.title || item.fileName || item.id)}">${escapeHtml(item.title || item.fileName || item.id)}</button>`).join(''); box.hidden = !rows.length; } catch { box.hidden = true; } });
   byId('v2ProxySuggestions').addEventListener('click', (event) => { const button = event.target.closest('[data-proxy-suggestion-id]'); if (!button) return; byId('v2ProxyAssetName').value = button.dataset.proxySuggestionName; byId('v2ProxyAssetName').dataset.assetId = button.dataset.proxySuggestionId; event.currentTarget.hidden = true; });
