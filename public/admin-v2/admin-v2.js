@@ -530,9 +530,63 @@
     return `${escapeHtml(text.slice(0, index))}<mark>${escapeHtml(text.slice(index, index + needle.length))}</mark>${escapeHtml(text.slice(index + needle.length))}`;
   };
 
-  async function openTextEditorModal({ title, content, onSave }) {
-    const next = global.prompt(title, String(content || ''));
-    if (next !== null && next !== String(content || '')) await onSave(next);
+  function formatEditorTimecode(seconds = 0) {
+    const totalFrames = Math.max(0, Math.round((Number(seconds) || 0) * 25));
+    const frames = totalFrames % 25; const totalSeconds = Math.floor(totalFrames / 25);
+    const sec = totalSeconds % 60; const min = Math.floor(totalSeconds / 60) % 60; const hour = Math.floor(totalSeconds / 3600);
+    return [hour, min, sec, frames].map((value) => String(value).padStart(2, '0')).join(':');
+  }
+
+  function openTextEditorModal({ title, content, mediaUrl = '', previewMode = 'audio', onSave }) {
+    return new Promise((resolve) => {
+      const backdrop = document.createElement('div');
+      const mode = String(previewMode || 'audio').toLowerCase();
+      const safeUrl = String(mediaUrl || '').trim();
+      const media = safeUrl && mode === 'video' ? `<video class="v2-content-editor-media" controls preload="metadata" src="${escapeHtml(safeUrl)}"></video>`
+        : safeUrl && ['image','photo'].includes(mode) ? `<img class="v2-content-editor-media" src="${escapeHtml(safeUrl)}" alt="" />`
+        : safeUrl ? `<audio class="v2-content-editor-audio" controls preload="metadata" src="${escapeHtml(safeUrl)}"></audio>` : '';
+      backdrop.className = 'v2-content-editor-backdrop';
+      backdrop.innerHTML = `<section class="v2-content-editor" role="dialog" aria-modal="true" aria-label="${escapeHtml(title || 'Editor')}"><header><h3>${escapeHtml(title || 'Editor')}</h3><button class="v2-editor-close" type="button" aria-label="Close">×</button></header>${media ? `<div class="v2-content-editor-preview">${media}<span class="v2-editor-timecode">00:00:00:00</span></div>` : ''}<div class="v2-content-editor-toolbar"><input class="v2-editor-find" placeholder="${escapeHtml(t('find_label'))}" /><input class="v2-editor-replace" placeholder="${escapeHtml(t('replace_label'))}" /><button class="secondary-button v2-editor-find-next" type="button">${escapeHtml(t('find_next'))}</button><button class="secondary-button v2-editor-replace-all" type="button">${escapeHtml(t('replace_all'))}</button></div><div class="v2-content-editor-layout"><textarea class="v2-editor-area" spellcheck="false"></textarea><aside class="v2-editor-corrections"><h4>${escapeHtml(t('learned_corrections_title'))}</h4><input class="v2-editor-wrong" placeholder="${escapeHtml(t('learned_wrong_ph'))}" /><input class="v2-editor-correct" placeholder="${escapeHtml(t('learned_correct_ph'))}" /><div class="v2-editor-correction-actions"><button class="secondary-button v2-editor-use-selection" type="button">${escapeHtml(t('learned_use_selection'))}</button><button class="secondary-button v2-editor-add-correction" type="button">${escapeHtml(t('learned_add'))}</button></div><div class="v2-editor-correction-message"></div><div class="v2-editor-correction-rows"></div></aside></div><div class="v2-content-editor-status"></div><footer><button class="secondary-button v2-editor-cancel" type="button">${escapeHtml(t('content_cancel'))}</button><button class="primary-link button-reset v2-editor-save" type="button">${escapeHtml(t('content_save'))}</button></footer></section>`;
+      document.body.append(backdrop);
+      const area = backdrop.querySelector('.v2-editor-area');
+      const status = backdrop.querySelector('.v2-content-editor-status');
+      const correctionMessage = backdrop.querySelector('.v2-editor-correction-message');
+      const correctionRows = backdrop.querySelector('.v2-editor-correction-rows');
+      const mediaElement = backdrop.querySelector('audio,video');
+      const timecode = backdrop.querySelector('.v2-editor-timecode');
+      area.value = String(content || '');
+      let findPosition = 0;
+      const close = (value = null) => { mediaElement?.pause?.(); backdrop.remove(); resolve(value); };
+      const findNext = () => {
+        const query = backdrop.querySelector('.v2-editor-find').value;
+        if (!query) return;
+        const source = area.value.toLocaleLowerCase(language === 'tr' ? 'tr' : 'en');
+        const needle = query.toLocaleLowerCase(language === 'tr' ? 'tr' : 'en');
+        let index = source.indexOf(needle, findPosition); if (index < 0) index = source.indexOf(needle);
+        if (index < 0) return;
+        area.focus(); area.setSelectionRange(index, index + query.length); findPosition = index + query.length;
+      };
+      const replaceAll = () => {
+        const query = backdrop.querySelector('.v2-editor-find').value; if (!query) return;
+        const replacement = backdrop.querySelector('.v2-editor-replace').value;
+        area.value = area.value.replace(new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu'), replacement);
+      };
+      const applyCorrection = (wrong, correct) => { if (wrong) area.value = area.value.replace(new RegExp(String(wrong).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu'), String(correct || '')); };
+      const renderCorrections = (entries = []) => { correctionRows.innerHTML = entries.map((item) => `<div class="v2-editor-correction-row" data-wrong="${escapeHtml(item.wrong || '')}" data-correct="${escapeHtml(item.correct || '')}"><span><strong>${escapeHtml(item.wrong || '')}</strong><small>${escapeHtml(item.correct || '')}</small></span><span><button class="secondary-button" data-correction-apply type="button">${escapeHtml(t('learned_apply'))}</button><button class="danger-button" data-correction-delete type="button">${escapeHtml(t('learned_delete'))}</button></span></div>`).join('') || `<div class="diagnostic-empty">${escapeHtml(t('learned_none'))}</div>`; };
+      const loadCorrections = async () => { try { const result = await api('/api/admin/turkish-corrections'); renderCorrections(result.entries || []); } catch (error) { correctionMessage.textContent = error.message; } };
+      backdrop.querySelector('.v2-editor-find-next').addEventListener('click', findNext);
+      backdrop.querySelector('.v2-editor-find').addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); findNext(); } });
+      backdrop.querySelector('.v2-editor-replace-all').addEventListener('click', replaceAll);
+      backdrop.querySelector('.v2-editor-use-selection').addEventListener('click', () => { const selected = area.value.slice(area.selectionStart, area.selectionEnd).trim(); if (selected) backdrop.querySelector('.v2-editor-wrong').value = selected; });
+      backdrop.querySelector('.v2-editor-add-correction').addEventListener('click', async () => { const wrong = backdrop.querySelector('.v2-editor-wrong').value.trim(), correct = backdrop.querySelector('.v2-editor-correct').value.trim(); if (!wrong || !correct) return; try { await api('/api/admin/turkish-corrections', { method:'POST', body:JSON.stringify({wrong, correct}) }); applyCorrection(wrong, correct); await loadCorrections(); } catch (error) { correctionMessage.textContent = error.message; } });
+      correctionRows.addEventListener('click', async (event) => { const row = event.target.closest('.v2-editor-correction-row'); if (!row) return; if (event.target.closest('[data-correction-apply]')) applyCorrection(row.dataset.wrong, row.dataset.correct); if (event.target.closest('[data-correction-delete]')) { await api(`/api/admin/turkish-corrections?wrong=${encodeURIComponent(row.dataset.wrong)}`, {method:'DELETE'}); await loadCorrections(); } });
+      mediaElement?.addEventListener('timeupdate', () => { if (timecode) timecode.textContent = formatEditorTimecode(mediaElement.currentTime); });
+      backdrop.querySelector('.v2-editor-close').addEventListener('click', () => close(null));
+      backdrop.querySelector('.v2-editor-cancel').addEventListener('click', () => close(null));
+      backdrop.querySelector('.v2-editor-save').addEventListener('click', async (event) => { event.currentTarget.disabled = true; try { status.textContent = `${t('loading')}...`; await onSave(String(area.value || '')); status.textContent = t('content_saved'); } catch (error) { status.textContent = error.message; } finally { event.currentTarget.disabled = false; } });
+      backdrop.addEventListener('click', (event) => { if (event.target === backdrop) close(null); });
+      loadCorrections(); area.focus();
+    });
   }
 
   function mountUserPermissionSettings() {
