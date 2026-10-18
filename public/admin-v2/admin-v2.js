@@ -1158,7 +1158,12 @@
     if (getActiveView() === 'diagnostics') refreshDiagnostics();
     if (getActiveView() === 'audit') loadAuditEvents();
     if (getActiveView() === 'asset-rights') loadAssetRights();
-    if (getActiveView() === 'settings') loadV2Settings();
+    if (getActiveView() === 'settings') {
+      await loadV2Settings();
+      const activeSettingsTab = byId('settingsTabs')?.querySelector('[data-settings-tab].is-active')?.dataset.settingsTab;
+      if (activeSettingsTab === 'ocr') await recordsModule.loadOcrRecords();
+      if (activeSettingsTab === 'subtitle') await recordsModule.loadSubtitleRecords();
+    }
   });
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'L' || !event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
