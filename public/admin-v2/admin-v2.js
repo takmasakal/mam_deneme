@@ -74,7 +74,7 @@
       ocr_none: 'No OCR records found.', ocr_confirm_delete: 'Delete this OCR record from the database and disk?',
       learned_corrections_title: 'Learned Corrections', learned_wrong_ph: 'wrong phrase...', learned_correct_ph: 'correct phrase...',
       learned_use_selection: 'Use selected text', learned_add: 'Add', learned_apply: 'Apply', learned_delete: 'Delete',
-      learned_none: 'No learned correction yet.'
+      learned_none: 'No learned correction yet.', page_info: 'Page {page} / {pages} ({total})'
     },
     tr: {
       overview: 'Genel Bakış', system_health: 'Sistem Sağlığı', runtime_diagnostics: 'Tanılama', audit_history: 'İşlem Geçmişi',
@@ -145,7 +145,7 @@
       ocr_none: 'OCR kaydı bulunamadı.', ocr_confirm_delete: 'Bu OCR kaydı veritabanından ve diskten silinsin mi?',
       learned_corrections_title: 'Öğrenilmiş Düzeltmeler', learned_wrong_ph: 'yanlış ifade...', learned_correct_ph: 'doğru ifade...',
       learned_use_selection: 'Seçili metni al', learned_add: 'Ekle', learned_apply: 'Uygula', learned_delete: 'Sil',
-      learned_none: 'Henüz öğrenilmiş düzeltme yok.'
+      learned_none: 'Henüz öğrenilmiş düzeltme yok.', page_info: 'Sayfa {page} / {pages} ({total})'
     }
   };
   let translations = {};
