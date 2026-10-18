@@ -678,6 +678,15 @@
     localizeSettingsText();
   }
   mountMissingProxyActions();
+  function compactAssetGenerationTool() {
+    const input = byId('v2ProxyAssetName');
+    const card = input?.closest('.settings-tool-card');
+    const actions = byId('v2RunProxyTool')?.closest('.settings-actions');
+    if (!card || !actions) return;
+    card.classList.add('settings-asset-tool');
+    actions.classList.add('settings-asset-tool-action');
+  }
+  compactAssetGenerationTool();
 
   function v2MissingProxyMode(item = {}) {
     if (item.missingProxy || item.badStatus || (item.missingComponents || []).includes('proxy')) return 'proxy';
