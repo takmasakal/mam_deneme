@@ -71,7 +71,8 @@
       ocr_records: 'OCR Records', ocr_search: 'Search OCR', ocr_search_run: 'Run Search', ocr_search_ph: 'asset name...',
       ocr_engine: 'Engine', ocr_lines: 'Lines', ocr_segments: 'Segments', ocr_edit: 'Save', ocr_delete: 'Delete',
       content_edit: 'Edit Content', ocr_saved: 'OCR record saved.', ocr_deleted: 'OCR record deleted.',
-      ocr_none: 'No OCR records found.', ocr_confirm_delete: 'Delete this OCR record from the database and disk?',
+      ocr_none: 'No OCR records found.', ocr_confirm_delete: 'Delete this OCR record from the database and disk?', metadata_page_subtitle: 'Configure AI models and generate descriptive metadata for assets',
+      metadata_model_settings: 'Metadata model', metadata_model_enabled: 'Enable metadata generation', metadata_model_provider: 'Provider', metadata_model_name: 'Model', metadata_model_base_url: 'Base URL', metadata_model_dir: 'Model directory', metadata_model_keep_alive: 'Keep alive', metadata_model_timeout: 'Timeout (ms)', subtitle_translation_model_settings: 'Subtitle translation model', subtitle_translation_model_enabled: 'Enable subtitle translation model', metadata_generate_later: 'Generate metadata later', metadata_generate_now: 'Generate Metadata', proxy_tool_asset_name: 'Asset Name', proxy_tool_asset_name_ph: 'Type asset name', save_settings: 'Save Settings', settings_saved: 'Settings saved.', metadata_asset_required: 'Choose an asset first.', metadata_generation_queued: 'Metadata generation queued.', metadata_generation_failed: 'Failed to queue metadata generation.',
       learned_corrections_title: 'Learned Corrections', learned_wrong_ph: 'wrong phrase...', learned_correct_ph: 'correct phrase...',
       learned_use_selection: 'Use selected text', learned_add: 'Add', learned_apply: 'Apply', learned_delete: 'Delete',
       learned_none: 'No learned correction yet.', page_info: 'Page {page} / {pages} ({total})'
@@ -142,7 +143,8 @@
       ocr_records: 'OCR Kayıtları', ocr_search: 'OCR Ara', ocr_search_run: 'Ara', ocr_search_ph: 'varlık adı...',
       ocr_engine: 'Motor', ocr_lines: 'Satır', ocr_segments: 'Segment', ocr_edit: 'Kaydet', ocr_delete: 'Sil',
       content_edit: 'İçeriği Düzenle', ocr_saved: 'OCR kaydı kaydedildi.', ocr_deleted: 'OCR kaydı silindi.',
-      ocr_none: 'OCR kaydı bulunamadı.', ocr_confirm_delete: 'Bu OCR kaydı veritabanından ve diskten silinsin mi?',
+      ocr_none: 'OCR kaydı bulunamadı.', ocr_confirm_delete: 'Bu OCR kaydı veritabanından ve diskten silinsin mi?', metadata_page_subtitle: 'Yapay zekâ modellerini yapılandırın ve varlıklar için açıklayıcı metadata üretin',
+      metadata_model_settings: 'Metadata modeli', metadata_model_enabled: 'Metadata üretimini etkinleştir', metadata_model_provider: 'Sağlayıcı', metadata_model_name: 'Model', metadata_model_base_url: 'Temel URL', metadata_model_dir: 'Model dizini', metadata_model_keep_alive: 'Canlı tutma', metadata_model_timeout: 'Zaman aşımı (ms)', subtitle_translation_model_settings: 'Altyazı çeviri modeli', subtitle_translation_model_enabled: 'Altyazı çeviri modelini etkinleştir', metadata_generate_later: 'Metadata’yı daha sonra üret', metadata_generate_now: 'Metadata Üret', proxy_tool_asset_name: 'Varlık Adı', proxy_tool_asset_name_ph: 'Varlık adı yazın', save_settings: 'Ayarları Kaydet', settings_saved: 'Ayarlar kaydedildi.', metadata_asset_required: 'Önce bir varlık seçin.', metadata_generation_queued: 'Metadata üretimi kuyruğa alındı.', metadata_generation_failed: 'Metadata üretimi kuyruğa alınamadı.',
       learned_corrections_title: 'Öğrenilmiş Düzeltmeler', learned_wrong_ph: 'yanlış ifade...', learned_correct_ph: 'doğru ifade...',
       learned_use_selection: 'Seçili metni al', learned_add: 'Ekle', learned_apply: 'Uygula', learned_delete: 'Sil',
       learned_none: 'Henüz öğrenilmiş düzeltme yok.', page_info: 'Sayfa {page} / {pages} ({total})'
@@ -162,6 +164,7 @@
   let rightsModeValue = 'asset';
   let rightsLockedOnly = false;
   let rightsGroupInput = null;
+  let metadataSuggestionTimer = 0;
 
   const byId = (id) => document.getElementById(id);
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({
@@ -236,9 +239,10 @@
     document.querySelectorAll('[data-v2-i18n]').forEach((element) => {
       element.textContent = t(element.dataset.v2I18n);
     });
+    document.querySelectorAll('[data-v2-placeholder]').forEach((element) => { element.placeholder = t(element.dataset.v2Placeholder); });
     const view = getActiveView();
-    const titleKey = view === 'diagnostics' ? 'runtime_diagnostics' : view === 'audit' ? 'audit_history' : view === 'asset-rights' ? 'asset_rights' : view === 'settings' ? 'settings' : 'system_health';
-    const subtitleKey = view === 'diagnostics' ? 'diagnostics_page_subtitle' : view === 'audit' ? 'audit_page_subtitle' : view === 'asset-rights' ? 'rights_page_subtitle' : view === 'settings' ? 'settings_page_subtitle' : 'health_page_subtitle';
+    const titleKey = view === 'diagnostics' ? 'runtime_diagnostics' : view === 'audit' ? 'audit_history' : view === 'asset-rights' ? 'asset_rights' : view === 'metadata' ? 'metadata_generation' : view === 'settings' ? 'settings' : 'system_health';
+    const subtitleKey = view === 'diagnostics' ? 'diagnostics_page_subtitle' : view === 'audit' ? 'audit_page_subtitle' : view === 'asset-rights' ? 'rights_page_subtitle' : view === 'metadata' ? 'metadata_page_subtitle' : view === 'settings' ? 'settings_page_subtitle' : 'health_page_subtitle';
     byId('v2PageTitle').textContent = t(titleKey);
     byId('v2PageSubtitle').textContent = t(subtitleKey);
     document.title = `MetMAM Admin V2 — ${byId('v2PageTitle').textContent}`;
@@ -247,7 +251,7 @@
 
   function getActiveView() {
     const requested = new URLSearchParams(global.location.search).get('view');
-    return ['diagnostics', 'audit', 'asset-rights', 'settings'].includes(requested) ? requested : 'health';
+    return ['diagnostics', 'audit', 'asset-rights', 'metadata', 'settings'].includes(requested) ? requested : 'health';
   }
 
   function applyView() {
@@ -514,11 +518,39 @@
     const session = byId('v2SessionSettingsForm');
     const auth = settings.authSession || {};
     ['rememberMe','ssoIdleMinutes','ssoMaxHours','clientIdleMinutes','clientMaxHours'].forEach((name) => setFormValue(session, name, auth[name]));
+    const metadataForm = byId('v2MetadataSettingsForm');
+    const aiModels = settings.aiModels || {};
+    const metadataModel = aiModels.metadata || {};
+    const translationModel = aiModels.subtitleTranslation || {};
+    setFormValue(metadataForm, 'metadataModelEnabled', metadataModel.enabled !== false);
+    setFormValue(metadataForm, 'metadataModelProvider', metadataModel.provider || 'ollama');
+    setFormValue(metadataForm, 'metadataModelName', metadataModel.model || 'gemma3:4b');
+    setFormValue(metadataForm, 'metadataModelBaseUrl', metadataModel.baseUrl || 'http://host.docker.internal:11434');
+    setFormValue(metadataForm, 'metadataModelDir', metadataModel.modelDir || '');
+    setFormValue(metadataForm, 'metadataModelKeepAlive', metadataModel.keepAlive || '10m');
+    setFormValue(metadataForm, 'metadataModelTimeoutMs', Number(metadataModel.timeoutMs) || 600000);
+    setFormValue(metadataForm, 'subtitleTranslationModelEnabled', Boolean(translationModel.enabled));
+    setFormValue(metadataForm, 'subtitleTranslationModelProvider', translationModel.provider || 'local-transformers');
+    setFormValue(metadataForm, 'subtitleTranslationModelName', translationModel.model || 'Helsinki-NLP/opus-mt-tc-big-en-tr');
+    setFormValue(metadataForm, 'subtitleTranslationModelDir', translationModel.modelDir || '/opt/mam-models/marian/opus-mt-tc-big-en-tr');
   }
 
   async function loadV2Settings() {
     settingsMessage('');
     try { writeSettingsForms(await api('/api/admin/settings')); } catch (error) { settingsMessage(error.message); }
+  }
+
+  async function loadMetadataSuggestions() {
+    const input = byId('v2MetadataAssetName');
+    const box = byId('v2MetadataSuggestions');
+    const query = input.value.trim();
+    input.dataset.assetId = '';
+    if (query.length < 3) { box.hidden = true; box.innerHTML = ''; return; }
+    try {
+      const rows = await api(`/api/admin/metadata/assets/suggest?q=${encodeURIComponent(query)}&limit=8&includeTrash=0`);
+      box.innerHTML = (rows || []).map((item) => `<button type="button" data-metadata-id="${escapeHtml(item.id)}" data-metadata-name="${escapeHtml(item.title || item.fileName || item.id)}"><strong>${highlightSuggestion(item.title || item.fileName || item.id, query)}</strong><small>${escapeHtml(item.type || '—')} · ${escapeHtml(item.fileName || '—')}</small></button>`).join('');
+      box.hidden = !box.innerHTML;
+    } catch (_error) { box.hidden = true; }
   }
 
   function readBackupForm() {
@@ -1089,6 +1121,29 @@
     if (tab === 'backup') await loadV2Backups();
     if (tab === 'users') await Promise.all([recordsModule.loadUserPermissions(), loadV2Identity(), loadV2GroupAdmins()]);
   });
+  byId('v2MetadataSettingsForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const aiModels = {
+      metadata: { enabled:form.elements.metadataModelEnabled.checked, provider:form.elements.metadataModelProvider.value, model:form.elements.metadataModelName.value.trim(), baseUrl:form.elements.metadataModelBaseUrl.value.trim(), modelDir:form.elements.metadataModelDir.value.trim(), keepAlive:form.elements.metadataModelKeepAlive.value.trim(), timeoutMs:numberValue(form,'metadataModelTimeoutMs',600000) },
+      subtitleTranslation: { enabled:form.elements.subtitleTranslationModelEnabled.checked, provider:form.elements.subtitleTranslationModelProvider.value, model:form.elements.subtitleTranslationModelName.value.trim(), modelDir:form.elements.subtitleTranslationModelDir.value.trim() }
+    };
+    const message = byId('v2MetadataMessage');
+    try { const current = await api('/api/admin/settings'); await api('/api/admin/settings', {method:'PATCH', body:JSON.stringify({...current, aiModels})}); message.textContent = t('settings_saved'); } catch (error) { message.textContent = error.message; }
+  });
+  byId('v2MetadataAssetName').addEventListener('input', () => { clearTimeout(metadataSuggestionTimer); metadataSuggestionTimer = setTimeout(loadMetadataSuggestions, 180); });
+  byId('v2MetadataAssetName').addEventListener('focus', loadMetadataSuggestions);
+  byId('v2MetadataSuggestions').addEventListener('click', (event) => { const button = event.target.closest('[data-metadata-id]'); if (!button) return; const input = byId('v2MetadataAssetName'); input.value = button.dataset.metadataName || ''; input.dataset.assetId = button.dataset.metadataId || ''; event.currentTarget.hidden = true; });
+  byId('v2GenerateMetadata').addEventListener('click', async (event) => {
+    const input = byId('v2MetadataAssetName');
+    const assetName = input.value.trim();
+    const assetId = input.dataset.assetId || '';
+    const message = byId('v2MetadataMessage');
+    if (!assetName && !assetId) { message.textContent = t('metadata_asset_required'); return; }
+    event.currentTarget.disabled = true;
+    message.textContent = `${t('loading')}...`;
+    try { const result = await api('/api/admin/metadata/generate', {method:'POST', body:JSON.stringify({assetId, assetName})}); message.textContent = `${t('metadata_generation_queued')} ${result.assetTitle || result.assetId || ''}`.trim(); } catch (error) { message.textContent = error.message || t('metadata_generation_failed'); } finally { event.currentTarget.disabled = false; }
+  });
   document.querySelectorAll('[data-settings-classic-tab]').forEach((link) => link.addEventListener('click', () => {
     sessionStorage.setItem('mamClassicAdminDestination', 'settings');
     sessionStorage.setItem('mamClassicSettingsTab', link.dataset.settingsClassicTab || 'general');
@@ -1158,6 +1213,7 @@
     if (getActiveView() === 'diagnostics') refreshDiagnostics();
     if (getActiveView() === 'audit') loadAuditEvents();
     if (getActiveView() === 'asset-rights') loadAssetRights();
+    if (getActiveView() === 'metadata') await loadV2Settings();
     if (getActiveView() === 'settings') {
       await loadV2Settings();
       const activeSettingsTab = byId('settingsTabs')?.querySelector('[data-settings-tab].is-active')?.dataset.settingsTab;
@@ -1181,6 +1237,7 @@
     if (getActiveView() === 'diagnostics') refreshDiagnostics();
     else if (getActiveView() === 'audit') loadAuditView();
     else if (getActiveView() === 'asset-rights') { syncRightsModeControls(); prepareAssetRights(); }
+    else if (getActiveView() === 'metadata') loadV2Settings();
     else if (getActiveView() === 'settings') loadV2Settings();
     else refresh({ force: true });
   });

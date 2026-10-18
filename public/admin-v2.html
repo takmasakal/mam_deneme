@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MetMAM Admin V2 — System Health</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/admin-v2/admin-v2.css?v=20261018-single-page-titles-2" />
+    <link rel="stylesheet" href="/admin-v2/admin-v2.css?v=20261018-metadata-view-1" />
   </head>
   <body class="admin-v2">
     <a class="skip-link" href="#mainContent">Skip to content</a>
@@ -22,7 +22,7 @@
           <a data-v2-view-link="diagnostics" href="/admin-v2?view=diagnostics"><span class="nav-icon" aria-hidden="true">⌕</span><span data-v2-i18n="runtime_diagnostics">Diagnostics</span></a>
           <a data-v2-view-link="audit" href="/admin-v2?view=audit"><span class="nav-icon" aria-hidden="true">▤</span><span data-v2-i18n="audit_history">Audit History</span></a>
           <a data-v2-view-link="asset-rights" href="/admin-v2?view=asset-rights"><span class="nav-icon" aria-hidden="true">◇</span><span data-v2-i18n="asset_rights">Asset Rights</span></a>
-          <a href="/admin.html" data-classic-destination="metadata"><span class="nav-icon" aria-hidden="true">✣</span><span data-v2-i18n="metadata_generation">Metadata Generation</span></a>
+          <a data-v2-view-link="metadata" href="/admin-v2?view=metadata"><span class="nav-icon" aria-hidden="true">✣</span><span data-v2-i18n="metadata_generation">Metadata Generation</span></a>
           <a data-v2-view-link="settings" href="/admin-v2?view=settings"><span class="nav-icon" aria-hidden="true">⚙</span><span data-v2-i18n="settings">Settings</span></a>
         </nav>
 
@@ -130,6 +130,15 @@
             </section>
           </section>
 
+          <section class="metadata-view v2-panel" data-v2-view="metadata" hidden>
+            <form id="v2MetadataSettingsForm" class="metadata-settings-form">
+              <fieldset><legend data-v2-i18n="metadata_model_settings">Metadata model</legend><label class="settings-toggle"><input type="checkbox" name="metadataModelEnabled" /><span data-v2-i18n="metadata_model_enabled">Enable metadata generation</span></label><div class="metadata-model-grid"><label><span data-v2-i18n="metadata_model_provider">Provider</span><select name="metadataModelProvider"><option value="ollama">Ollama</option><option value="local-transformers">Local Transformers</option><option value="openai">OpenAI</option></select></label><label><span data-v2-i18n="metadata_model_name">Model</span><input name="metadataModelName" placeholder="gemma3:4b" /></label><label><span data-v2-i18n="metadata_model_base_url">Base URL</span><input name="metadataModelBaseUrl" placeholder="http://host.docker.internal:11434" /></label><label><span data-v2-i18n="metadata_model_dir">Model directory</span><input name="metadataModelDir" placeholder="/app/models/metadata" /></label><label><span data-v2-i18n="metadata_model_keep_alive">Keep alive</span><input name="metadataModelKeepAlive" placeholder="10m" /></label><label><span data-v2-i18n="metadata_model_timeout">Timeout (ms)</span><input name="metadataModelTimeoutMs" type="number" min="30000" max="3600000" step="1000" /></label></div></fieldset>
+              <fieldset><legend data-v2-i18n="subtitle_translation_model_settings">Subtitle translation model</legend><label class="settings-toggle"><input type="checkbox" name="subtitleTranslationModelEnabled" /><span data-v2-i18n="subtitle_translation_model_enabled">Enable subtitle translation model</span></label><div class="metadata-model-grid is-compact"><label><span data-v2-i18n="metadata_model_provider">Provider</span><select name="subtitleTranslationModelProvider"><option value="local-transformers">Local Transformers</option><option value="ollama">Ollama</option><option value="openai">OpenAI</option></select></label><label><span data-v2-i18n="metadata_model_name">Model</span><input name="subtitleTranslationModelName" placeholder="Helsinki-NLP/opus-mt-tc-big-en-tr" /></label><label><span data-v2-i18n="metadata_model_dir">Model directory</span><input name="subtitleTranslationModelDir" placeholder="/opt/mam-models/marian/opus-mt-tc-big-en-tr" /></label></div></fieldset>
+              <div class="settings-actions"><button class="primary-link button-reset" type="submit" data-v2-i18n="save_settings">Save Settings</button></div>
+            </form>
+            <section class="metadata-generation-tool"><h3 data-v2-i18n="metadata_generate_later">Generate metadata later</h3><div class="metadata-generation-row"><label><span data-v2-i18n="proxy_tool_asset_name">Asset Name</span><input id="v2MetadataAssetName" autocomplete="off" data-v2-placeholder="proxy_tool_asset_name_ph" placeholder="Type asset name" /></label><button id="v2GenerateMetadata" class="primary-link button-reset" type="button" data-v2-i18n="metadata_generate_now">Generate Metadata</button></div><div id="v2MetadataSuggestions" class="settings-suggestions" hidden></div><div id="v2MetadataMessage" class="inline-message" role="status"></div></section>
+          </section>
+
           <section class="settings-view v2-panel" data-v2-view="settings" hidden>
             <nav class="settings-tabs" id="settingsTabs" aria-label="Settings sections">
               <button class="is-active" type="button" data-settings-tab="general" data-v2-i18n="settings_sub_general">General</button><button type="button" data-settings-tab="proxy" data-v2-i18n="settings_sub_proxy">Proxy</button><button type="button" data-settings-tab="ocr" data-v2-i18n="settings_sub_ocr">OCR</button><button type="button" data-settings-tab="subtitle" data-v2-i18n="settings_sub_subtitle">Subtitle</button><button type="button" data-settings-tab="backup" data-v2-i18n="settings_sub_backup">Backup</button><button type="button" data-settings-tab="users" data-v2-i18n="settings_sub_users">Users</button>
@@ -158,6 +167,6 @@
     <script src="/session-expiry.js?v=20260714-session-expiry-3"></script>
     <script src="/admin-system-health.js?v=20260803-media-job-filters-5"></script>
     <script src="/admin-records.js?v=20261018-content-status-1"></script>
-    <script src="/admin-v2/admin-v2.js?v=20261018-audit-columns-1"></script>
+    <script src="/admin-v2/admin-v2.js?v=20261018-metadata-view-1"></script>
   </body>
 </html>
