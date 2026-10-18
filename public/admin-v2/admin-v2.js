@@ -71,7 +71,10 @@
       ocr_records: 'OCR Records', ocr_search: 'Search OCR', ocr_search_run: 'Run Search', ocr_search_ph: 'asset name...',
       ocr_engine: 'Engine', ocr_lines: 'Lines', ocr_segments: 'Segments', ocr_edit: 'Save', ocr_delete: 'Delete',
       content_edit: 'Edit Content', ocr_saved: 'OCR record saved.', ocr_deleted: 'OCR record deleted.',
-      ocr_none: 'No OCR records found.', ocr_confirm_delete: 'Delete this OCR record from the database and disk?'
+      ocr_none: 'No OCR records found.', ocr_confirm_delete: 'Delete this OCR record from the database and disk?',
+      learned_corrections_title: 'Learned Corrections', learned_wrong_ph: 'wrong phrase...', learned_correct_ph: 'correct phrase...',
+      learned_use_selection: 'Use selected text', learned_add: 'Add', learned_apply: 'Apply', learned_delete: 'Delete',
+      learned_none: 'No learned correction yet.'
     },
     tr: {
       overview: 'Genel Bakış', system_health: 'Sistem Sağlığı', runtime_diagnostics: 'Tanılama', audit_history: 'İşlem Geçmişi',
@@ -139,7 +142,10 @@
       ocr_records: 'OCR Kayıtları', ocr_search: 'OCR Ara', ocr_search_run: 'Ara', ocr_search_ph: 'varlık adı...',
       ocr_engine: 'Motor', ocr_lines: 'Satır', ocr_segments: 'Segment', ocr_edit: 'Kaydet', ocr_delete: 'Sil',
       content_edit: 'İçeriği Düzenle', ocr_saved: 'OCR kaydı kaydedildi.', ocr_deleted: 'OCR kaydı silindi.',
-      ocr_none: 'OCR kaydı bulunamadı.', ocr_confirm_delete: 'Bu OCR kaydı veritabanından ve diskten silinsin mi?'
+      ocr_none: 'OCR kaydı bulunamadı.', ocr_confirm_delete: 'Bu OCR kaydı veritabanından ve diskten silinsin mi?',
+      learned_corrections_title: 'Öğrenilmiş Düzeltmeler', learned_wrong_ph: 'yanlış ifade...', learned_correct_ph: 'doğru ifade...',
+      learned_use_selection: 'Seçili metni al', learned_add: 'Ekle', learned_apply: 'Uygula', learned_delete: 'Sil',
+      learned_none: 'Henüz öğrenilmiş düzeltme yok.'
     }
   };
   let translations = {};
