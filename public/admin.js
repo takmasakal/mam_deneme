@@ -90,7 +90,6 @@ const ocrRecordsRows = document.getElementById('ocrRecordsRows');
 const ocrRecordsMsg = document.getElementById('ocrRecordsMsg');
 const runOcrAdminSearchBtn = document.getElementById('runOcrAdminSearchBtn');
 const subtitleAdminSearchInput = document.getElementById('subtitleAdminSearchInput');
-const subtitleDeleteFileCheck = document.getElementById('subtitleDeleteFileCheck');
 const subtitleRecordsRows = document.getElementById('subtitleRecordsRows');
 const subtitleRecordsMsg = document.getElementById('subtitleRecordsMsg');
 const combinedSearchInput = document.getElementById('combinedSearchInput');
@@ -760,7 +759,7 @@ let i18n = {
     subtitle_lang: 'Language',
     subtitle_set_active: 'Set Active',
     subtitle_save: 'Save',
-    subtitle_delete_db: 'Delete from DB',
+    subtitle_delete_db: 'Delete',
     subtitle_saved: 'Subtitle record saved.',
     subtitle_deleted: 'Subtitle record deleted.',
     subtitle_none: 'No subtitle records found.',
@@ -776,7 +775,7 @@ let i18n = {
     subtitle_horizontal_padding: 'Left/right padding (px)',
     subtitle_max_width: 'Max width (%)',
     subtitle_display_native_note: 'Custom overlay applies all style settings and enables match highlighting. Native browser subtitles only support limited font/color/background styling.',
-    subtitle_confirm_delete: 'Delete this subtitle record from database?',
+    subtitle_confirm_delete: 'Delete this subtitle record from the database and disk?',
     combined_search: 'Combined Subtitle + OCR Search',
     combined_search_query: 'Search Query',
     combined_search_query_ph: 'Type query...',
@@ -1320,7 +1319,7 @@ let i18n = {
     subtitle_lang: 'Dil',
     subtitle_set_active: 'Aktif Yap',
     subtitle_save: 'Kaydet',
-    subtitle_delete_db: 'DBden Sil',
+    subtitle_delete_db: 'Sil',
     subtitle_saved: 'Altyazı kaydı kaydedildi.',
     subtitle_deleted: 'Altyazı kaydı silindi.',
     subtitle_none: 'Altyazı kaydı bulunamadı.',
@@ -1336,7 +1335,7 @@ let i18n = {
     subtitle_horizontal_padding: 'Sağ/sol padding (px)',
     subtitle_max_width: 'Maksimum genişlik (%)',
     subtitle_display_native_note: 'Custom overlay tüm stil ayarlarını uygular ve eşleşme vurgusunu açar. Native tarayıcı altyazıları sadece sınırlı font/renk/arka plan stilini destekler.',
-    subtitle_confirm_delete: 'Bu altyazı kaydı veritabanından silinsin mi?',
+    subtitle_confirm_delete: 'Bu altyazı kaydı veritabanından ve diskten silinsin mi?',
     combined_search: 'Birleşik Altyazı + OCR Arama',
     combined_search_query: 'Arama Metni',
     combined_search_query_ph: 'Arama metni girin...',
@@ -2969,7 +2968,6 @@ const adminRecordsModule = window.createAdminRecordsModule({
   ocrRecordsNextPage: document.getElementById('ocrRecordsNextPage'),
   ocrRecordsPageInfo: document.getElementById('ocrRecordsPageInfo'),
   subtitleAdminSearchInput,
-  subtitleDeleteFileCheck,
   subtitleRecordsRows,
   subtitleRecordsMsg,
   subtitleRecordsPrevPage: document.getElementById('subtitleRecordsPrevPage'),

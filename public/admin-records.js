@@ -23,7 +23,6 @@
       ocrRecordsNextPage,
       ocrRecordsPageInfo,
       subtitleAdminSearchInput,
-      subtitleDeleteFileCheck,
       subtitleRecordsRows,
       subtitleRecordsMsg,
       subtitleRecordsPrevPage,
@@ -667,6 +666,7 @@
             } catch (_error) {
               mediaUrl = '';
             }
+            if (ocrRecordsMsg) ocrRecordsMsg.textContent = '';
             await openTextEditorModal({
               title: `${t('ocr_records')} - ${rowEl.querySelector('.ocr-row-main strong')?.textContent || assetId}`,
               content: String(readResult.content || ''),
@@ -740,6 +740,7 @@
             } catch (_error) {
               mediaUrl = '';
             }
+            if (subtitleRecordsMsg) subtitleRecordsMsg.textContent = '';
             await openTextEditorModal({
               title: `${t('subtitle_records')} - ${rowEl.querySelector('.subtitle-row-main strong')?.textContent || assetId}`,
               content: String(readResult.content || ''),
@@ -789,7 +790,7 @@
             body: JSON.stringify({
               assetId,
               itemId,
-              deleteFile: Boolean(subtitleDeleteFileCheck?.checked)
+              deleteFile: true
             })
           });
           if (subtitleRecordsMsg) subtitleRecordsMsg.textContent = t('subtitle_deleted');
