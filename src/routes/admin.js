@@ -1,5 +1,6 @@
 const { createMetadataAdminAccessService } = require('../services/metadataAdminAccessService');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { nanoid } = require('nanoid');
 const {
@@ -7,6 +8,40 @@ const {
   resolveSubtitleActiveByLang,
   setActiveSubtitleForLanguage
 } = require('../services/subtitleSelectionService');
+
+function readCpuTimes() {
+  return os.cpus().reduce((totals, cpu) => {
+    const times = cpu.times || {};
+    const total = Object.values(times).reduce((sum, value) => sum + (Number(value) || 0), 0);
+    return {
+      idle: totals.idle + (Number(times.idle) || 0),
+      total: totals.total + total
+    };
+  }, { idle: 0, total: 0 });
+}
+
+let previousCpuTimes = readCpuTimes();
+
+function collectServerResources() {
+  const currentCpuTimes = readCpuTimes();
+  const totalDelta = Math.max(0, currentCpuTimes.total - previousCpuTimes.total);
+  const idleDelta = Math.max(0, currentCpuTimes.idle - previousCpuTimes.idle);
+  previousCpuTimes = currentCpuTimes;
+  const totalMemoryBytes = Math.max(0, Number(os.totalmem()) || 0);
+  const freeMemoryBytes = Math.max(0, Number(os.freemem()) || 0);
+  const usedMemoryBytes = Math.max(0, totalMemoryBytes - freeMemoryBytes);
+  const processMemory = process.memoryUsage();
+  return {
+    cpuUsagePercent: totalDelta > 0 ? Math.max(0, Math.min(100, ((totalDelta - idleDelta) / totalDelta) * 100)) : 0,
+    cpuCount: os.cpus().length,
+    loadAverage: os.loadavg().map((value) => Math.max(0, Number(value) || 0)),
+    totalMemoryBytes,
+    usedMemoryBytes,
+    memoryUsagePercent: totalMemoryBytes > 0 ? Math.max(0, Math.min(100, (usedMemoryBytes / totalMemoryBytes) * 100)) : 0,
+    processRssBytes: Math.max(0, Number(processMemory.rss) || 0),
+    processHeapUsedBytes: Math.max(0, Number(processMemory.heapUsed) || 0)
+  };
+}
 
 function registerAdminRoutes(app, deps) {
   const {
@@ -3784,6 +3819,7 @@ app.get('/api/admin/system-health', async (req, res) => {
           && ['queued', 'running'].includes(String(job.status || ''))
       }));
     const payload = {
+      resources: collectServerResources(),
       disk: {
         uploadsBytes,
         uploadsFiles,
