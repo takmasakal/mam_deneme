@@ -22,7 +22,7 @@ function readCpuTimes() {
 
 let previousCpuTimes = readCpuTimes();
 
-function collectServerResources() {
+async function collectServerResources(commandRunner) {
   const currentCpuTimes = readCpuTimes();
   const totalDelta = Math.max(0, currentCpuTimes.total - previousCpuTimes.total);
   const idleDelta = Math.max(0, currentCpuTimes.idle - previousCpuTimes.idle);
@@ -31,6 +31,32 @@ function collectServerResources() {
   const freeMemoryBytes = Math.max(0, Number(os.freemem()) || 0);
   const usedMemoryBytes = Math.max(0, totalMemoryBytes - freeMemoryBytes);
   const processMemory = process.memoryUsage();
+  let gpu = { available: false, count: 0, names: [], usagePercent: 0, usedMemoryBytes: 0, totalMemoryBytes: 0 };
+  if (typeof commandRunner === 'function') {
+    const result = await commandRunner('nvidia-smi', [
+      '--query-gpu=name,utilization.gpu,memory.used,memory.total',
+      '--format=csv,noheader,nounits'
+    ]).catch(() => ({ ok: false, stdout: '' }));
+    if (result?.ok) {
+      const devices = String(result.stdout || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+        const fields = line.split(',').map((value) => value.trim());
+        const totalMemoryMiB = Number(fields.pop()) || 0;
+        const usedMemoryMiB = Number(fields.pop()) || 0;
+        const usagePercent = Number(fields.pop()) || 0;
+        return { name: fields.join(', ') || 'NVIDIA GPU', usagePercent, usedMemoryMiB, totalMemoryMiB };
+      });
+      if (devices.length) {
+        gpu = {
+          available: true,
+          count: devices.length,
+          names: devices.map((device) => device.name),
+          usagePercent: Math.max(...devices.map((device) => device.usagePercent)),
+          usedMemoryBytes: devices.reduce((sum, device) => sum + device.usedMemoryMiB, 0) * 1024 * 1024,
+          totalMemoryBytes: devices.reduce((sum, device) => sum + device.totalMemoryMiB, 0) * 1024 * 1024
+        };
+      }
+    }
+  }
   return {
     cpuUsagePercent: totalDelta > 0 ? Math.max(0, Math.min(100, ((totalDelta - idleDelta) / totalDelta) * 100)) : 0,
     cpuCount: os.cpus().length,
@@ -39,7 +65,8 @@ function collectServerResources() {
     usedMemoryBytes,
     memoryUsagePercent: totalMemoryBytes > 0 ? Math.max(0, Math.min(100, (usedMemoryBytes / totalMemoryBytes) * 100)) : 0,
     processRssBytes: Math.max(0, Number(processMemory.rss) || 0),
-    processHeapUsedBytes: Math.max(0, Number(processMemory.heapUsed) || 0)
+    processHeapUsedBytes: Math.max(0, Number(processMemory.heapUsed) || 0),
+    gpu
   };
 }
 
@@ -3819,7 +3846,7 @@ app.get('/api/admin/system-health', async (req, res) => {
           && ['queued', 'running'].includes(String(job.status || ''))
       }));
     const payload = {
-      resources: collectServerResources(),
+      resources: await collectServerResources(runCommandCapture),
       disk: {
         uploadsBytes,
         uploadsFiles,
