@@ -245,7 +245,7 @@
     const subtitleKey = view === 'diagnostics' ? 'diagnostics_page_subtitle' : view === 'audit' ? 'audit_page_subtitle' : view === 'asset-rights' ? 'rights_page_subtitle' : view === 'metadata' ? 'metadata_page_subtitle' : view === 'settings' ? 'settings_page_subtitle' : 'health_page_subtitle';
     byId('v2PageTitle').textContent = t(titleKey);
     byId('v2PageSubtitle').textContent = t(subtitleKey);
-    document.title = `MetMAM Admin V2 — ${byId('v2PageTitle').textContent}`;
+    document.title = `MetMAM Admin — ${byId('v2PageTitle').textContent}`;
     localizeSettingsText();
   }
 

@@ -339,7 +339,7 @@
           <b>${escapeHtml(humanBytes(resources.processRssBytes))} / ${escapeHtml(humanBytes(resources.processHeapUsedBytes))}</b>
         </div>`;
       systemHealthRows.innerHTML = [
-        global.document?.body?.classList?.contains('admin-v2')
+        global.document?.body?.classList?.contains('admin-page')
           ? `<div class="row health-resources-row"><strong>${escapeHtml(t('health_resources'))}</strong><div class="health-resource-list">${resourceCards}</div></div>`
           : '',
         `<div class="row health-services-row" data-health-section="services"><strong>${escapeHtml(t('health_services'))}</strong><div class="health-service-list">${serviceCards}</div></div>`,

@@ -250,7 +250,7 @@ app.get('/api/health', (_req, res) => {
   });
 });
 app.get('/admin', (_req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'admin-v2.html'));
+  res.sendFile(path.join(__dirname, '..', 'public', 'admin.html'));
 });
 app.get(['/admin.html', '/admin-v2'], (req, res) => {
   const query = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
