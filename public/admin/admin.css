@@ -46,6 +46,7 @@ a { color: inherit; }
 .v2-sidebar-note { margin: auto 22px 0; color: var(--v2-subtle); font-size: 11px; line-height: 1.55; }
 
 .v2-main, .v2-content { min-width: 0; max-width: 100%; }
+.admin-access-pending .v2-nav, .admin-access-pending .v2-content { visibility: hidden; }
 .v2-topbar { min-height: 88px; padding: 18px 34px 17px; border-bottom: 1px solid var(--v2-border); display: flex; align-items: center; justify-content: space-between; gap: 24px; }
 .v2-topbar h1 { margin: 0; font-size: 28px; line-height: 1.15; letter-spacing: -.035em; }
 .v2-topbar p, .panel-heading p { margin: 4px 0 0; color: var(--v2-muted); }

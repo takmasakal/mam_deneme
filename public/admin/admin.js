@@ -169,6 +169,7 @@
   let translations = {};
   const savedLanguage = readSharedLanguageCookie() || localStorage.getItem(MAIN_LANGUAGE_KEY) || localStorage.getItem(LEGACY_ADMIN_LANGUAGE_KEY);
   let language = savedLanguage === 'tr' ? 'tr' : 'en';
+  let adminPermissions = null;
   persistSharedLanguage(language);
   let auditPage = 1;
   let auditPagination = { page: 1, totalPages: 1, total: 0, limit: 50 };
@@ -267,19 +268,78 @@
     localizeSettingsText();
   }
 
+  function canUseFullAdmin() {
+    return Boolean(adminPermissions?.isSuperAdmin || adminPermissions?.canAccessAdmin || adminPermissions?.isAdmin);
+  }
+
+  function allowedAdminViews() {
+    if (!adminPermissions) return [];
+    const allowed = [];
+    if (canUseFullAdmin()) allowed.push('health', 'diagnostics', 'audit');
+    if (adminPermissions.canAccessAssetRightsAdmin || canUseFullAdmin()) allowed.push('asset-rights');
+    if (adminPermissions.canAccessMetadataAdmin || canUseFullAdmin()) allowed.push('metadata');
+    if (adminPermissions.canAccessTextAdmin || canUseFullAdmin()) allowed.push('settings');
+    return allowed;
+  }
+
   function getActiveView() {
-    const requested = new URLSearchParams(global.location.search).get('view');
-    return ['diagnostics', 'audit', 'asset-rights', 'metadata', 'settings'].includes(requested) ? requested : 'health';
+    const requested = new URLSearchParams(global.location.search).get('view') || 'health';
+    const allowed = allowedAdminViews();
+    return allowed.includes(requested) ? requested : (allowed[0] || '');
+  }
+
+  function applyAdminAccess() {
+    const allowed = allowedAdminViews();
+    const view = getActiveView();
+    byId('v2MetadataSettingsForm').hidden = Boolean(adminPermissions?.canAccessMetadataAdmin && !canUseFullAdmin());
+    document.querySelectorAll('[data-v2-view-link]').forEach((link) => {
+      const permitted = allowed.includes(link.dataset.v2ViewLink);
+      link.hidden = !permitted;
+      link.setAttribute('aria-hidden', String(!permitted));
+      if (!permitted) link.setAttribute('tabindex', '-1'); else link.removeAttribute('tabindex');
+    });
+    const requested = new URLSearchParams(global.location.search).get('view') || 'health';
+    if (view && view !== requested) {
+      const url = new URL(global.location.href);
+      if (view === 'health') url.searchParams.delete('view'); else url.searchParams.set('view', view);
+      global.history.replaceState({}, '', url);
+    }
+
+    const scopedTextOnly = Boolean(adminPermissions?.canAccessTextAdmin && !canUseFullAdmin());
+    document.querySelectorAll('[data-settings-tab]').forEach((button) => {
+      const permitted = !scopedTextOnly || ['proxy', 'ocr', 'subtitle'].includes(button.dataset.settingsTab);
+      button.hidden = !permitted;
+      button.setAttribute('aria-hidden', String(!permitted));
+      if (!permitted) button.setAttribute('tabindex', '-1'); else button.removeAttribute('tabindex');
+    });
+    if (scopedTextOnly) {
+      ['ocr', 'subtitle'].forEach((tab) => {
+        const form = byId(tab === 'ocr' ? 'v2OcrSettingsForm' : 'v2SubtitleSettingsForm');
+        form?.querySelectorAll(':scope > h3, :scope > fieldset, :scope > .settings-actions').forEach((element) => { element.hidden = true; });
+      });
+      const activeTab = byId('settingsTabs').querySelector('[data-settings-tab].is-active');
+      if (!activeTab || activeTab.hidden) {
+        byId('settingsTabs').querySelector('[data-settings-tab]:not([hidden])')?.click();
+      }
+    }
+    if (!allowed.length) {
+      byId('pageError').textContent = localizedSettingsNotice('No admin sections are assigned to your account.', 'Hesabınıza yönetim bölümü atanmamış.');
+      byId('pageError').hidden = false;
+    } else {
+      byId('pageError').hidden = true;
+    }
+    document.body.classList.remove('admin-access-pending');
   }
 
   function applyView() {
     const view = getActiveView();
-    document.querySelectorAll('[data-v2-view]').forEach((element) => { element.hidden = element.dataset.v2View !== view; });
+    document.querySelectorAll('[data-v2-view]').forEach((element) => { element.hidden = !view || element.dataset.v2View !== view; });
     document.querySelectorAll('[data-v2-view-link]').forEach((link) => {
       const active = link.dataset.v2ViewLink === view;
       link.classList.toggle('is-active', active);
       if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
     });
+    applyAdminAccess();
     applyLocalization();
   }
 
@@ -1221,9 +1281,9 @@
     if (getActiveView() === 'diagnostics') refreshDiagnostics();
     if (getActiveView() === 'audit') loadAuditEvents();
     if (getActiveView() === 'asset-rights') loadAssetRights();
-    if (getActiveView() === 'metadata') await loadV2Settings();
+    if (getActiveView() === 'metadata' && canUseFullAdmin()) await loadV2Settings();
     if (getActiveView() === 'settings') {
-      await loadV2Settings();
+      if (canUseFullAdmin()) await loadV2Settings();
       const activeSettingsTab = byId('settingsTabs')?.querySelector('[data-settings-tab].is-active')?.dataset.settingsTab;
       if (activeSettingsTab === 'ocr') await recordsModule.loadOcrRecords();
       if (activeSettingsTab === 'subtitle') await recordsModule.loadSubtitleRecords();
@@ -1239,14 +1299,22 @@
     event.stopPropagation();
   }, true);
 
-  applyView();
-  loadTranslations().finally(() => {
+  (async () => {
+    try { adminPermissions = await api('/api/me'); } catch (_error) { adminPermissions = {}; }
+    applyView();
+    await loadTranslations();
     applyLocalization();
     if (getActiveView() === 'diagnostics') refreshDiagnostics();
     else if (getActiveView() === 'audit') loadAuditView();
     else if (getActiveView() === 'asset-rights') { syncRightsModeControls(); prepareAssetRights(); }
-    else if (getActiveView() === 'metadata') loadV2Settings();
-    else if (getActiveView() === 'settings') loadV2Settings();
-    else refresh({ force: true });
-  });
+    else if (getActiveView() === 'metadata' && canUseFullAdmin()) loadV2Settings();
+    else if (getActiveView() === 'settings') {
+      if (canUseFullAdmin()) loadV2Settings();
+      const tab = byId('settingsTabs').querySelector('[data-settings-tab].is-active:not([hidden])')?.dataset.settingsTab;
+      if (tab === 'proxy') loadV2ProxyJobs();
+      if (tab === 'ocr') recordsModule.loadOcrRecords();
+      if (tab === 'subtitle') recordsModule.loadSubtitleRecords();
+    }
+    else if (getActiveView() === 'health') refresh({ force: true });
+  })();
 })(window);
