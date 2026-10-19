@@ -35,8 +35,7 @@
     en: {
       system_health: 'System Health', runtime_diagnostics: 'Diagnostics', audit_history: 'Audit History',
       asset_rights: 'Asset Rights', document_rights: 'Document Rights', metadata_generation: 'Metadata Generation', settings: 'Settings',
-      classic_fallback_note: 'Other sections currently open in Classic Admin while V2 is migrated page by page.',
-      back_to_classic: 'Back to Classic Admin', back_to_mam: 'Back to MAM', active_assets: 'Active Assets', open_errors: 'Open Errors',
+      back_to_mam: 'Back to MAM', active_assets: 'Active Assets', open_errors: 'Open Errors',
       active_users: 'Active Users', recent_window: 'Recent window', loading: 'Loading', refresh: 'Refresh', service_health: 'Service Health',
       service_health_subtitle: 'Core services and infrastructure status', recent_processing_jobs: 'Recent Processing Jobs',
       recent_processing_jobs_subtitle: 'Latest asset processing jobs across the system', health_page_subtitle: 'Infrastructure, processing services, and recent jobs',
@@ -81,8 +80,7 @@
     tr: {
       system_health: 'Sistem Sağlığı', runtime_diagnostics: 'Tanılama', audit_history: 'İşlem Geçmişi',
       asset_rights: 'Varlık Yetkileri', document_rights: 'Belge Yetkileri', metadata_generation: 'Metadata Üretimi', settings: 'Ayarlar',
-      classic_fallback_note: 'Diğer bölümler V2 geçişi tamamlanana kadar Klasik Yönetim ekranında açılır.',
-      back_to_classic: 'Klasik Yönetime Dön', back_to_mam: "MAM'e Dön", active_assets: 'Aktif Varlıklar', open_errors: 'Açık Hatalar',
+      back_to_mam: "MAM'e Dön", active_assets: 'Aktif Varlıklar', open_errors: 'Açık Hatalar',
       active_users: 'Aktif Kullanıcılar', recent_window: 'Yakın zaman aralığı', loading: 'Yükleniyor', refresh: 'Yenile', service_health: 'Servis Sağlığı',
       service_health_subtitle: 'Temel servisler ve altyapı durumu', recent_processing_jobs: 'Son İşleme Görevleri',
       recent_processing_jobs_subtitle: 'Sistemdeki son varlık işleme görevleri', health_page_subtitle: 'Altyapı, işleme servisleri ve son görevler',
@@ -949,12 +947,6 @@
     }
   }
 
-  document.querySelectorAll('[data-classic-destination]').forEach((link) => {
-    link.addEventListener('click', () => {
-      sessionStorage.setItem('mamClassicAdminDestination', link.dataset.classicDestination || '');
-    });
-  });
-
   byId('refreshHealthBtn').addEventListener('click', () => {
     healthModule.clear();
     refresh({ force: true, forceServer: true });
@@ -1146,10 +1138,6 @@
     message.textContent = `${t('loading')}...`;
     try { const result = await api('/api/admin/metadata/generate', {method:'POST', body:JSON.stringify({assetId, assetName})}); message.textContent = `${t('metadata_generation_queued')} ${result.assetTitle || result.assetId || ''}`.trim(); } catch (error) { message.textContent = error.message || t('metadata_generation_failed'); } finally { event.currentTarget.disabled = false; }
   });
-  document.querySelectorAll('[data-settings-classic-tab]').forEach((link) => link.addEventListener('click', () => {
-    sessionStorage.setItem('mamClassicAdminDestination', 'settings');
-    sessionStorage.setItem('mamClassicSettingsTab', link.dataset.settingsClassicTab || 'general');
-  }));
   byId('v2SettingsForm').addEventListener('submit', async (event) => {
     event.preventDefault(); const form = event.currentTarget;
     const payload = { playerUiMode: form.elements.playerUiMode.value, newAssetDefaultVisibility: form.elements.newAssetDefaultVisibility.value, allowFilelessAssetCreation: form.elements.allowFilelessAssetCreation.checked, apiTokenEnabled: form.elements.apiTokenEnabled.checked, oidcBearerEnabled: form.elements.oidcBearerEnabled.checked, apiToken: form.elements.apiToken.value.trim(), oidcIssuerUrl: form.elements.oidcIssuerUrl.value.trim(), oidcJwksUrl: form.elements.oidcJwksUrl.value.trim(), oidcAudience: form.elements.oidcAudience.value.trim(), mediaJobConcurrency: { subtitle:numberValue(form,'mediaJobConcurrencySubtitle',1), videoOcr:numberValue(form,'mediaJobConcurrencyVideoOcr',1), proxy:numberValue(form,'mediaJobConcurrencyProxy',1), metadata:numberValue(form,'mediaJobConcurrencyMetadata',1), thumbnail:numberValue(form,'mediaJobConcurrencyThumbnail',2), upload:numberValue(form,'mediaJobConcurrencyUpload',3), download:numberValue(form,'mediaJobConcurrencyDownload',6), backup:numberValue(form,'mediaJobConcurrencyBackup',1) } };

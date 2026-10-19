@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MetMAM Admin V2 — System Health</title>
+    <title>MetMAM Admin — System Health</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/admin-v2/admin-v2.css?v=20261019-server-resources-2" />
   </head>
@@ -11,21 +11,20 @@
     <a class="skip-link" href="#mainContent">Skip to content</a>
     <div class="v2-shell">
       <aside class="v2-sidebar" aria-label="Admin navigation">
-        <a class="v2-brand" href="/admin-v2" aria-label="MetMAM Admin V2">
+        <a class="v2-brand" href="/admin" aria-label="MetMAM Admin">
           <span class="v2-brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
           <span><strong>MetMAM</strong><small>Admin</small></span>
         </a>
 
         <nav class="v2-nav">
-          <a data-v2-view-link="health" href="/admin-v2"><span class="nav-icon" aria-hidden="true">⌁</span><span data-v2-i18n="system_health">System Health</span></a>
-          <a data-v2-view-link="diagnostics" href="/admin-v2?view=diagnostics"><span class="nav-icon" aria-hidden="true">⌕</span><span data-v2-i18n="runtime_diagnostics">Diagnostics</span></a>
-          <a data-v2-view-link="audit" href="/admin-v2?view=audit"><span class="nav-icon" aria-hidden="true">▤</span><span data-v2-i18n="audit_history">Audit History</span></a>
-          <a data-v2-view-link="asset-rights" href="/admin-v2?view=asset-rights"><span class="nav-icon" aria-hidden="true">◇</span><span data-v2-i18n="asset_rights">Asset Rights</span></a>
-          <a data-v2-view-link="metadata" href="/admin-v2?view=metadata"><span class="nav-icon" aria-hidden="true">✣</span><span data-v2-i18n="metadata_generation">Metadata Generation</span></a>
-          <a data-v2-view-link="settings" href="/admin-v2?view=settings"><span class="nav-icon" aria-hidden="true">⚙</span><span data-v2-i18n="settings">Settings</span></a>
+          <a data-v2-view-link="health" href="/admin"><span class="nav-icon" aria-hidden="true">⌁</span><span data-v2-i18n="system_health">System Health</span></a>
+          <a data-v2-view-link="diagnostics" href="/admin?view=diagnostics"><span class="nav-icon" aria-hidden="true">⌕</span><span data-v2-i18n="runtime_diagnostics">Diagnostics</span></a>
+          <a data-v2-view-link="audit" href="/admin?view=audit"><span class="nav-icon" aria-hidden="true">▤</span><span data-v2-i18n="audit_history">Audit History</span></a>
+          <a data-v2-view-link="asset-rights" href="/admin?view=asset-rights"><span class="nav-icon" aria-hidden="true">◇</span><span data-v2-i18n="asset_rights">Asset Rights</span></a>
+          <a data-v2-view-link="metadata" href="/admin?view=metadata"><span class="nav-icon" aria-hidden="true">✣</span><span data-v2-i18n="metadata_generation">Metadata Generation</span></a>
+          <a data-v2-view-link="settings" href="/admin?view=settings"><span class="nav-icon" aria-hidden="true">⚙</span><span data-v2-i18n="settings">Settings</span></a>
         </nav>
 
-        <p class="v2-sidebar-note" data-v2-i18n="classic_fallback_note">Other sections currently open in Classic Admin while V2 is migrated page by page.</p>
       </aside>
 
       <main class="v2-main" id="mainContent">
@@ -42,7 +41,6 @@
                 <option value="tr">Türkçe</option>
               </select>
             </label>
-            <a class="text-link" href="/admin.html" data-v2-i18n="back_to_classic">Back to Classic Admin</a>
             <a class="primary-link" href="/"><span data-v2-i18n="back_to_mam">Back to MAM</span> <span aria-hidden="true">↗</span></a>
           </div>
         </header>
@@ -166,6 +164,6 @@
     <script src="/session-expiry.js?v=20260714-session-expiry-3"></script>
     <script src="/admin-system-health.js?v=20261019-server-resources-2"></script>
     <script src="/admin-records.js?v=20261018-content-status-1"></script>
-    <script src="/admin-v2/admin-v2.js?v=20261019-remove-overview-1"></script>
+    <script src="/admin-v2/admin-v2.js?v=20261019-admin-cutover-1"></script>
   </body>
 </html>

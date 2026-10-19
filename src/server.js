@@ -250,10 +250,11 @@ app.get('/api/health', (_req, res) => {
   });
 });
 app.get('/admin', (_req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'admin.html'));
-});
-app.get('/admin-v2', (_req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'admin-v2.html'));
+});
+app.get(['/admin.html', '/admin-v2'], (req, res) => {
+  const query = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+  res.redirect(308, `/admin${query}`);
 });
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/uploads', secureUploadAssetAccess);
@@ -553,7 +554,7 @@ const runtimeErrorLogs = [];
 const activeUserSessions = new Map();
 const MAX_RUNTIME_ERROR_LOGS = 300;
 const ACTIVE_USER_TTL_MS = Math.max(60, Number(process.env.ACTIVE_USER_TTL_SECONDS) || 900) * 1000;
-const ACTIVE_USER_TRACK_PATH_PREFIXES = ['/api/', '/admin.html', '/admin-v2'];
+const ACTIVE_USER_TRACK_PATH_PREFIXES = ['/api/', '/admin'];
 const ACTIVE_USER_SKIP_PATH_PREFIXES = [
   '/api/logout-url',
   '/api/assets/',
