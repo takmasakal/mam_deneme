@@ -150,8 +150,26 @@
       learned_none: 'Henüz öğrenilmiş düzeltme yok.', page_info: 'Sayfa {page} / {pages} ({total})'
     }
   };
+  const MAIN_LANGUAGE_KEY = 'mam.lang';
+  const LEGACY_ADMIN_LANGUAGE_KEY = 'mamLanguage';
+  const LOGIN_LANGUAGE_COOKIE = 'mam.login.lang';
+  function readSharedLanguageCookie() {
+    const entry = document.cookie.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${LOGIN_LANGUAGE_COOKIE}=`));
+    const value = entry ? decodeURIComponent(entry.slice(LOGIN_LANGUAGE_COOKIE.length + 1)).toLowerCase().split('-')[0] : '';
+    return value === 'tr' || value === 'en' ? value : '';
+  }
+  function persistSharedLanguage(value) {
+    const normalized = value === 'tr' ? 'tr' : 'en';
+    localStorage.setItem(MAIN_LANGUAGE_KEY, normalized);
+    localStorage.removeItem(LEGACY_ADMIN_LANGUAGE_KEY);
+    const host = String(global.location.hostname || '').toLowerCase();
+    const domain = host.endsWith('.trt.net.tr') ? '; Domain=.trt.net.tr' : '';
+    document.cookie = `${LOGIN_LANGUAGE_COOKIE}=${normalized}; Path=/; Max-Age=31536000; SameSite=Lax${global.location.protocol === 'https:' ? '; Secure' : ''}${domain}`;
+  }
   let translations = {};
-  let language = localStorage.getItem('mamLanguage') || 'en';
+  const savedLanguage = readSharedLanguageCookie() || localStorage.getItem(MAIN_LANGUAGE_KEY) || localStorage.getItem(LEGACY_ADMIN_LANGUAGE_KEY);
+  let language = savedLanguage === 'tr' ? 'tr' : 'en';
+  persistSharedLanguage(language);
   let auditPage = 1;
   let auditPagination = { page: 1, totalPages: 1, total: 0, limit: 50 };
   let auditSuggestionTimer = 0;
@@ -1197,7 +1215,7 @@
   byId('languageSelectAdmin').value = language;
   byId('languageSelectAdmin').addEventListener('change', async (event) => {
     language = event.target.value === 'tr' ? 'tr' : 'en';
-    localStorage.setItem('mamLanguage', language);
+    persistSharedLanguage(language);
     applyLocalization();
     healthModule.rerender();
     if (getActiveView() === 'diagnostics') refreshDiagnostics();
