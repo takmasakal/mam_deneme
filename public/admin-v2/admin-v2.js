@@ -33,7 +33,7 @@
   };
   const v2Translations = {
     en: {
-      overview: 'Overview', system_health: 'System Health', runtime_diagnostics: 'Diagnostics', audit_history: 'Audit History',
+      system_health: 'System Health', runtime_diagnostics: 'Diagnostics', audit_history: 'Audit History',
       asset_rights: 'Asset Rights', document_rights: 'Document Rights', metadata_generation: 'Metadata Generation', settings: 'Settings',
       classic_fallback_note: 'Other sections currently open in Classic Admin while V2 is migrated page by page.',
       back_to_classic: 'Back to Classic Admin', back_to_mam: 'Back to MAM', active_assets: 'Active Assets', open_errors: 'Open Errors',
@@ -79,7 +79,7 @@
       learned_none: 'No learned correction yet.', page_info: 'Page {page} / {pages} ({total})'
     },
     tr: {
-      overview: 'Genel Bakış', system_health: 'Sistem Sağlığı', runtime_diagnostics: 'Tanılama', audit_history: 'İşlem Geçmişi',
+      system_health: 'Sistem Sağlığı', runtime_diagnostics: 'Tanılama', audit_history: 'İşlem Geçmişi',
       asset_rights: 'Varlık Yetkileri', document_rights: 'Belge Yetkileri', metadata_generation: 'Metadata Üretimi', settings: 'Ayarlar',
       classic_fallback_note: 'Diğer bölümler V2 geçişi tamamlanana kadar Klasik Yönetim ekranında açılır.',
       back_to_classic: 'Klasik Yönetime Dön', back_to_mam: "MAM'e Dön", active_assets: 'Aktif Varlıklar', open_errors: 'Açık Hatalar',
