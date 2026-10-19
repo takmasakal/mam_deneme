@@ -23,7 +23,6 @@
       ocrRecordsNextPage,
       ocrRecordsPageInfo,
       subtitleAdminSearchInput,
-      subtitleDeleteFileCheck,
       subtitleRecordsRows,
       subtitleRecordsMsg,
       subtitleRecordsPrevPage,
@@ -159,7 +158,8 @@
           { key: 'pdf.advanced', legacyField: 'pdfAdvancedTools', labelKey: 'perm_pdf_advanced' },
           { key: 'metadata.admin', legacyField: 'metadataAdminAccess', labelKey: 'perm_metadata_admin' },
           { key: 'text.admin', legacyField: 'textAdminAccess', labelKey: 'perm_text_admin' },
-          { key: 'document.rights.admin', legacyField: 'documentRightsAdminAccess', labelKey: 'perm_document_rights_admin' }
+          { key: 'document.rights.admin', legacyField: 'documentRightsAdminAccess', labelKey: 'perm_document_rights_admin' },
+          { key: 'advanced.search', legacyField: 'advancedSearchAccess', labelKey: 'perm_advanced_search' }
         ];
       if (!list.length) {
         userPermissionsRows.innerHTML = `<div class="empty">${escapeHtml(t(getUserPermissionSearchQuery().length >= 2 ? 'user_search_no_match' : 'user_search_required'))}</div>`;
@@ -358,7 +358,6 @@
           groups.set(assetId, {
             assetId,
             assetTitle: String(item.assetTitle || item.fileName || item.assetId || '').trim(),
-            assetType: String(item.type || '').trim().toLowerCase(),
             items: []
           });
         }
@@ -450,6 +449,7 @@
           groups.set(assetId, {
             assetId,
             assetTitle: String(item.assetTitle || item.fileName || item.assetId || '').trim(),
+            assetType: String(item.type || '').trim().toLowerCase(),
             items: []
           });
         }
@@ -468,10 +468,9 @@
         const first = group.items[0] || {};
         const firstLabel = String(first.subtitleLabel || '').trim();
         const firstLang = String(first.subtitleLang || 'tr').trim() || 'tr';
-        const assetType = String(group.assetType || first.type || '').trim().toLowerCase();
-        const audioRow = assetType === 'audio' || assetType === 'sound';
+        const mediaClass = group.assetType === 'audio' ? 'subtitle-row-audio' : 'subtitle-row-video';
         return `
-          <div class="row subtitle-row ${audioRow ? 'subtitle-row-audio' : 'subtitle-row-video'}" data-asset-id="${escapeHtml(group.assetId)}" data-asset-type="${escapeHtml(assetType)}">
+          <div class="row subtitle-row ${mediaClass}" data-asset-id="${escapeHtml(group.assetId)}" data-asset-type="${escapeHtml(group.assetType)}">
             <div class="subtitle-row-main">
               <strong>${escapeHtml(group.assetTitle || group.assetId)}</strong>
               <span class="subtitle-selected-meta">${escapeHtml(firstLabel || 'subtitle')} | ${escapeHtml(t('subtitle_lang'))}: ${escapeHtml(firstLang)}${first.active ? ' | ACTIVE' : ''}</span>
@@ -667,6 +666,7 @@
             } catch (_error) {
               mediaUrl = '';
             }
+            if (ocrRecordsMsg) ocrRecordsMsg.textContent = '';
             await openTextEditorModal({
               title: `${t('ocr_records')} - ${rowEl.querySelector('.ocr-row-main strong')?.textContent || assetId}`,
               content: String(readResult.content || ''),
@@ -740,6 +740,7 @@
             } catch (_error) {
               mediaUrl = '';
             }
+            if (subtitleRecordsMsg) subtitleRecordsMsg.textContent = '';
             await openTextEditorModal({
               title: `${t('subtitle_records')} - ${rowEl.querySelector('.subtitle-row-main strong')?.textContent || assetId}`,
               content: String(readResult.content || ''),
@@ -789,7 +790,7 @@
             body: JSON.stringify({
               assetId,
               itemId,
-              deleteFile: Boolean(subtitleDeleteFileCheck?.checked)
+              deleteFile: true
             })
           });
           if (subtitleRecordsMsg) subtitleRecordsMsg.textContent = t('subtitle_deleted');

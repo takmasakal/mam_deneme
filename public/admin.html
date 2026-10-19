@@ -3,861 +3,167 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MAM Admin</title>
+    <title>Belgelik Admin — System Health</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=20260424-seek-preview-1" />
-    <link rel="stylesheet" href="/admin.css?v=20261001-ocr-delete-button-2" />
+    <link rel="stylesheet" href="/admin/admin.css?v=20261019-danger-outline-1" />
   </head>
-  <body>
-    <main class="admin-wrap">
-      <aside class="admin-sidebar">
-        <div class="admin-brand">
-          <span class="admin-brand-mark">M</span>
-          <div>
-            <strong>MAM Admin</strong>
-            <small>Control Center</small>
-          </div>
-        </div>
-        <nav class="admin-tabs" id="adminTabs">
-          <button type="button" class="admin-tab active" data-tab="apiHelp" data-i18n="api_help_doc_title">API Help Document</button>
-          <button type="button" class="admin-tab" data-tab="systemHealth" data-i18n="system_health">System Health</button>
-          <button type="button" class="admin-tab" data-tab="runtimeDiagnostics" data-i18n="runtime_diagnostics">Tanı</button>
-          <button type="button" class="admin-tab" data-tab="auditEvents" data-i18n="audit_events">İşlem Geçmişi</button>
-          <button type="button" class="admin-tab" data-tab="assetRights" data-i18n="asset_rights">Asset Rights</button>
-          <button type="button" class="admin-tab" data-tab="documentRights" data-i18n="document_rights">Document Rights</button>
-          <button type="button" class="admin-tab" data-tab="metadata" data-i18n="metadata_generation">Metadata Generation</button>
-          <button type="button" class="admin-tab" data-tab="settings" data-i18n="settings">Settings</button>
+  <body class="admin-page">
+    <a class="skip-link" href="#mainContent">Skip to content</a>
+    <div class="v2-shell">
+      <aside class="v2-sidebar" aria-label="Admin navigation">
+        <a class="v2-brand" href="/admin" aria-label="Belgelik Admin">
+          <span class="v2-brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span><strong>Belgelik</strong><small>Admin</small></span>
+        </a>
+
+        <nav class="v2-nav">
+          <a data-v2-view-link="health" href="/admin"><span class="nav-icon" aria-hidden="true">⌁</span><span data-v2-i18n="system_health">System Health</span></a>
+          <a data-v2-view-link="diagnostics" href="/admin?view=diagnostics"><span class="nav-icon" aria-hidden="true">⌕</span><span data-v2-i18n="runtime_diagnostics">Diagnostics</span></a>
+          <a data-v2-view-link="audit" href="/admin?view=audit"><span class="nav-icon" aria-hidden="true">▤</span><span data-v2-i18n="audit_history">Audit History</span></a>
+          <a data-v2-view-link="asset-rights" href="/admin?view=asset-rights"><span class="nav-icon" aria-hidden="true">◇</span><span data-v2-i18n="asset_rights">Asset Rights</span></a>
+          <a data-v2-view-link="metadata" href="/admin?view=metadata"><span class="nav-icon" aria-hidden="true">✣</span><span data-v2-i18n="metadata_generation">Metadata Generation</span></a>
+          <a data-v2-view-link="settings" href="/admin?view=settings"><span class="nav-icon" aria-hidden="true">⚙</span><span data-v2-i18n="settings">Settings</span></a>
         </nav>
+
       </aside>
 
-      <section class="admin-main">
-        <header class="admin-header">
+      <main class="v2-main" id="mainContent">
+        <header class="v2-topbar">
           <div>
-            <h1 data-i18n="system_overview">System Overview</h1>
-            <p data-i18n="admin_subtitle">Proxy generation and system health.</p>
+            <h1 id="v2PageTitle">System Health</h1>
+            <p id="v2PageSubtitle">Infrastructure, processing services, and recent jobs</p>
           </div>
-          <div class="admin-actions">
-            <select id="languageSelectAdmin">
-              <option value="en">English</option>
-              <option value="tr">Türkçe</option>
-            </select>
-            <a href="/" class="back-link" data-i18n="back_to_mam">Back to MAM</a>
+          <div class="v2-topbar-actions">
+            <label class="language-control">
+              <span class="sr-only">Language</span>
+              <select id="languageSelectAdmin" aria-label="Language">
+                <option value="en">English</option>
+                <option value="tr">Türkçe</option>
+              </select>
+            </label>
+            <a class="primary-link" href="/"><span data-v2-i18n="back_to_mam">Back to Belgelik</span> <span aria-hidden="true">↗</span></a>
           </div>
         </header>
 
-        <section class="admin-overview">
-          <article class="overview-card">
-            <span data-i18n="overview_active_assets">Active Assets</span>
-            <strong id="overviewActiveAssets">-</strong>
-            <small id="overviewTotalAssets">-</small>
-          </article>
-          <article class="overview-card is-clickable" role="button" tabindex="0" data-overview-target="system-health">
-            <span data-i18n="overview_system_health">System Health</span>
-            <strong id="overviewSystemHealth">-</strong>
-            <small id="overviewSystemHealthSub">-</small>
-          </article>
-          <article class="overview-card is-warning is-clickable" role="button" tabindex="0" data-overview-target="errors">
-            <span data-i18n="overview_open_errors">Open Errors</span>
-            <strong id="overviewOpenErrors">-</strong>
-            <small id="overviewOpenErrorsSub">-</small>
-          </article>
-          <article class="overview-card is-clickable" role="button" tabindex="0" data-overview-target="active-users">
-            <span data-i18n="overview_active_users">Active Users</span>
-            <strong id="overviewActiveUsers">-</strong>
-            <small data-i18n="overview_recent_window">Recent window</small>
-          </article>
+        <section class="v2-content" aria-live="polite">
+          <div id="pageError" class="page-message is-error" role="alert" hidden></div>
+
+          <section class="summary-grid" aria-label="System summary" data-v2-view="health">
+            <article class="summary-item">
+              <span class="summary-icon" aria-hidden="true">▱</span>
+              <div><span data-v2-i18n="active_assets">Active Assets</span><strong id="overviewActiveAssets">—</strong><small id="overviewTotalAssets" data-v2-i18n="loading">Loading</small></div>
+            </article>
+            <article class="summary-item is-clickable" role="button" tabindex="0" data-overview-target="system-health">
+              <span class="summary-icon" aria-hidden="true">⌁</span>
+              <div><span data-v2-i18n="system_health">System Health</span><strong id="overviewSystemHealth">—</strong><small id="overviewSystemHealthSub" data-v2-i18n="loading">Loading</small></div>
+            </article>
+            <article class="summary-item is-clickable" role="button" tabindex="0" data-overview-target="errors">
+              <span class="summary-icon" aria-hidden="true">△</span>
+              <div><span data-v2-i18n="open_errors">Open Errors</span><strong id="overviewOpenErrors">—</strong><small id="overviewOpenErrorsSub" data-v2-i18n="loading">Loading</small></div>
+            </article>
+            <article class="summary-item is-clickable" role="button" tabindex="0" data-overview-target="active-users">
+              <span class="summary-icon" aria-hidden="true">◎</span>
+              <div><span data-v2-i18n="active_users">Active Users</span><strong id="overviewActiveUsers">—</strong><small data-v2-i18n="recent_window">Recent window</small></div>
+            </article>
+          </section>
+
+          <section class="v2-panel health-panel" aria-labelledby="healthTitle" data-v2-view="health">
+            <div class="panel-heading">
+              <div><h2 id="healthTitle" data-v2-i18n="service_health">Service Health</h2><p data-v2-i18n="service_health_subtitle">Core services and infrastructure status</p></div>
+              <button id="refreshHealthBtn" class="secondary-button" type="button" data-v2-i18n="refresh">Refresh</button>
+            </div>
+            <div id="healthLoading" class="loading-state"><span class="spinner" aria-hidden="true"></span><span>Loading system health…</span></div>
+            <div id="ffmpegHealth" class="ffmpeg-health" hidden></div>
+            <div id="systemHealthRows" class="health-rows"></div>
+          </section>
+
+          <section class="v2-panel jobs-panel" aria-labelledby="jobsTitle" data-v2-view="health">
+            <div class="panel-heading jobs-heading">
+              <div><h2 id="jobsTitle" data-v2-i18n="recent_processing_jobs">Recent Processing Jobs</h2><p data-v2-i18n="recent_processing_jobs_subtitle">Latest asset processing jobs across the system</p></div>
+            </div>
+            <div id="systemJobStatus" class="system-job-status"></div>
+          </section>
+
+          <section class="diagnostics-view" data-v2-view="diagnostics" hidden>
+            <section class="v2-panel diagnostics-panel" aria-labelledby="activeUsersTitle">
+              <div class="diagnostics-head"><h3 id="activeUsersTitle" data-v2-i18n="active_users">Active Users</h3><button id="refreshDiagnosticsBtn" class="secondary-button" type="button" data-v2-i18n="refresh">Refresh</button></div>
+              <div id="activeUsersRows" class="diagnostic-list"></div>
+              <h3 id="runtimeErrorsTitle" data-v2-i18n="runtime_errors">Runtime Errors</h3>
+              <div id="runtimeErrorRows" class="diagnostic-list"></div>
+              <div id="diagnosticsMessage" class="inline-message" role="status"></div>
+            </section>
+          </section>
+
+          <section class="audit-view" data-v2-view="audit" hidden>
+            <section class="v2-panel">
+              <form id="auditFiltersForm" class="audit-toolbar">
+                <label><span data-v2-i18n="actor">Actor</span><input id="auditActorInput" type="search" autocomplete="off" /></label>
+                <label><span data-v2-i18n="action">Action</span><select id="auditActionSelect"><option value="" data-v2-i18n="all_actions">All actions</option><option value="asset.uploaded" data-v2-i18n="asset_uploaded">Asset uploaded</option><option value="asset.created" data-v2-i18n="asset_created">Asset created</option><option value="asset.updated" data-v2-i18n="asset_updated">Asset updated</option><option value="asset.trashed" data-v2-i18n="asset_trashed">Moved to trash</option><option value="asset.restored" data-v2-i18n="asset_restored">Asset restored</option><option value="asset.deleted" data-v2-i18n="asset_deleted">Permanently deleted</option><option value="asset.downloaded" data-v2-i18n="asset_downloaded">Asset downloaded</option></select></label>
+                <label class="audit-asset-field"><span data-v2-i18n="asset">Asset</span><input id="auditTargetInput" type="search" autocomplete="off" /><div id="auditTargetSuggestions" class="v2-suggestions" hidden></div></label>
+                <label><span data-v2-i18n="from_date">From</span><input id="auditFromInput" type="date" /></label>
+                <label><span data-v2-i18n="to_date">To</span><input id="auditToInput" type="date" /></label>
+                <div class="audit-actions"><button class="secondary-button" type="submit" data-v2-i18n="filter">Filter</button><button id="exportAuditBtn" class="secondary-button" type="button" data-v2-i18n="export_csv">Export CSV</button><button id="cleanupAuditBtn" class="danger" type="button" data-v2-i18n="delete_range">Delete Range</button></div>
+              </form>
+              <div id="auditEventsRows" class="audit-list"></div>
+              <div class="v2-pager"><button id="auditPrevBtn" class="secondary-button" type="button" data-v2-i18n="previous">Previous</button><span id="auditPageInfo">—</span><button id="auditNextBtn" class="secondary-button" type="button" data-v2-i18n="next">Next</button></div>
+              <div id="auditMessage" class="inline-message" role="status"></div>
+              <form id="retentionForm" class="retention-form"><fieldset><legend data-v2-i18n="retention">Retention</legend><label><span data-v2-i18n="audit_retention_days">Audit retention (days)</span><input id="auditRetentionDays" type="number" min="1" max="3650" required /></label><label><span data-v2-i18n="job_retention_days">Media-job retention (days)</span><input id="mediaJobRetentionDays" type="number" min="1" max="3650" required /></label><button class="primary-link button-reset" type="submit" data-v2-i18n="save">Save</button></fieldset></form>
+            </section>
+          </section>
+
+          <section class="rights-view" data-v2-view="asset-rights" hidden>
+            <section class="v2-panel">
+              <form id="assetRightsFilters" class="rights-toolbar">
+                <label class="rights-search"><span data-v2-i18n="search_assets">Search assets</span><input id="assetRightsSearch" type="search" autocomplete="off" /><div id="assetRightsSuggestions" class="v2-suggestions" hidden></div></label>
+                <fieldset><legend data-v2-i18n="asset_type">Asset type</legend><label><input type="checkbox" name="rightsType" value="video" /> Video</label><label><input type="checkbox" name="rightsType" value="audio" /> Audio</label><label><input type="checkbox" name="rightsType" value="photo" /> <span data-v2-i18n="photo">Photo</span></label><label><input type="checkbox" name="rightsType" value="document" /> <span data-v2-i18n="document">Document</span></label><label><input type="checkbox" name="rightsType" value="other" /> <span data-v2-i18n="other">Other</span></label></fieldset>
+                <label><span data-v2-i18n="visibility">Visibility</span><select id="assetRightsVisibility"><option value="" data-v2-i18n="all">All</option><option value="private" data-v2-i18n="private">Private</option><option value="group" data-v2-i18n="owner_groups">Owner groups</option><option value="groups" data-v2-i18n="selected_principals">Selected groups/users</option><option value="public" data-v2-i18n="public">Public</option></select></label>
+                <button class="primary-link button-reset" type="submit" data-v2-i18n="load">Load</button>
+              </form>
+            </section>
+            <section class="v2-panel">
+              <div id="assetRightsRows" class="rights-list"></div>
+              <div class="v2-pager"><label><span data-v2-i18n="page_size">Page size</span><select id="assetRightsPageSize"><option>20</option><option>50</option></select></label><button id="assetRightsPrev" class="secondary-button" type="button" data-v2-i18n="previous">Previous</button><span id="assetRightsPageInfo">—</span><button id="assetRightsNext" class="secondary-button" type="button" data-v2-i18n="next">Next</button></div>
+              <div id="assetRightsMessage" class="inline-message" role="status"></div>
+            </section>
+          </section>
+
+          <section class="metadata-view v2-panel" data-v2-view="metadata" hidden>
+            <form id="v2MetadataSettingsForm" class="metadata-settings-form">
+              <fieldset><legend data-v2-i18n="metadata_model_settings">Metadata model</legend><label class="settings-toggle"><input type="checkbox" name="metadataModelEnabled" /><span data-v2-i18n="metadata_model_enabled">Enable metadata generation</span></label><div class="metadata-model-grid"><label><span data-v2-i18n="metadata_model_provider">Provider</span><select name="metadataModelProvider"><option value="ollama">Ollama</option><option value="local-transformers">Local Transformers</option><option value="openai">OpenAI</option></select></label><label><span data-v2-i18n="metadata_model_name">Model</span><input name="metadataModelName" placeholder="gemma3:4b" /></label><label><span data-v2-i18n="metadata_model_base_url">Base URL</span><input name="metadataModelBaseUrl" placeholder="http://host.docker.internal:11434" /></label><label><span data-v2-i18n="metadata_model_dir">Model directory</span><input name="metadataModelDir" placeholder="/app/models/metadata" /></label><label><span data-v2-i18n="metadata_model_keep_alive">Keep alive</span><input name="metadataModelKeepAlive" placeholder="10m" /></label><label><span data-v2-i18n="metadata_model_timeout">Timeout (ms)</span><input name="metadataModelTimeoutMs" type="number" min="30000" max="3600000" step="1000" /></label></div></fieldset>
+              <fieldset><legend data-v2-i18n="subtitle_translation_model_settings">Subtitle translation model</legend><label class="settings-toggle"><input type="checkbox" name="subtitleTranslationModelEnabled" /><span data-v2-i18n="subtitle_translation_model_enabled">Enable subtitle translation model</span></label><div class="metadata-model-grid is-compact"><label><span data-v2-i18n="metadata_model_provider">Provider</span><select name="subtitleTranslationModelProvider"><option value="local-transformers">Local Transformers</option><option value="ollama">Ollama</option><option value="openai">OpenAI</option></select></label><label><span data-v2-i18n="metadata_model_name">Model</span><input name="subtitleTranslationModelName" placeholder="Helsinki-NLP/opus-mt-tc-big-en-tr" /></label><label><span data-v2-i18n="metadata_model_dir">Model directory</span><input name="subtitleTranslationModelDir" placeholder="/opt/mam-models/marian/opus-mt-tc-big-en-tr" /></label></div></fieldset>
+              <div class="settings-actions"><button class="metadata-outline-button" type="submit" data-v2-i18n="save_settings">Save Settings</button></div>
+            </form>
+            <section class="metadata-generation-tool"><h3 data-v2-i18n="metadata_generate_later">Generate metadata later</h3><div class="metadata-generation-row"><label><span data-v2-i18n="proxy_tool_asset_name">Asset Name</span><input id="v2MetadataAssetName" autocomplete="off" data-v2-placeholder="proxy_tool_asset_name_ph" placeholder="Type asset name" /></label><button id="v2GenerateMetadata" class="metadata-outline-button" type="button" data-v2-i18n="metadata_generate_now">Generate Metadata</button></div><div id="v2MetadataSuggestions" class="settings-suggestions" hidden></div><div id="v2MetadataMessage" class="inline-message" role="status"></div></section>
+          </section>
+
+          <section class="settings-view v2-panel" data-v2-view="settings" hidden>
+            <nav class="settings-tabs" id="settingsTabs" aria-label="Settings sections">
+              <button class="is-active" type="button" data-settings-tab="general" data-v2-i18n="settings_sub_general">General</button><button type="button" data-settings-tab="proxy" data-v2-i18n="settings_sub_proxy">Proxy</button><button type="button" data-settings-tab="ocr" data-v2-i18n="settings_sub_ocr">OCR</button><button type="button" data-settings-tab="subtitle" data-v2-i18n="settings_sub_subtitle">Subtitle</button><button type="button" data-settings-tab="backup" data-v2-i18n="settings_sub_backup">Backup</button><button type="button" data-settings-tab="users" data-v2-i18n="settings_sub_users">Users</button>
+            </nav>
+            <div class="settings-body">
+              <form id="v2SettingsForm" class="settings-pane is-active" data-settings-pane="general">
+                <fieldset><legend>Player</legend><label><span>Player Mode</span><select name="playerUiMode"><option value="vidstack">Vidstack</option><option value="mpegdash">MPEG-DASH (dash.js)</option></select></label></fieldset>
+                <fieldset><legend>Asset ingest</legend><label><span>New asset default visibility</span><select name="newAssetDefaultVisibility"><option value="owner_groups">Owner groups</option><option value="public">Public</option><option value="private">Hide</option></select></label><label class="settings-toggle"><input type="checkbox" name="allowFilelessAssetCreation" /><span>Allow creating assets without a file</span></label></fieldset>
+                <fieldset><legend>Job concurrency</legend><div class="settings-number-grid"><label><span>Subtitle</span><input name="mediaJobConcurrencySubtitle" type="number" min="1" max="8" /></label><label><span>Video OCR</span><input name="mediaJobConcurrencyVideoOcr" type="number" min="1" max="8" /></label><label><span>Proxy</span><input name="mediaJobConcurrencyProxy" type="number" min="1" max="8" /></label><label><span>Metadata</span><input name="mediaJobConcurrencyMetadata" type="number" min="1" max="8" /></label><label><span>Thumbnail</span><input name="mediaJobConcurrencyThumbnail" type="number" min="1" max="8" /></label><label><span>Upload</span><input name="mediaJobConcurrencyUpload" type="number" min="1" max="16" /></label><label><span>Download</span><input name="mediaJobConcurrencyDownload" type="number" min="1" max="32" /></label><label><span>Backup</span><input name="mediaJobConcurrencyBackup" type="number" min="1" max="4" /></label></div></fieldset>
+                <fieldset><legend>Security</legend><label class="settings-toggle"><input type="checkbox" name="apiTokenEnabled" /><span>Require API token (non-SSO API access)</span></label><label class="settings-toggle"><input type="checkbox" name="oidcBearerEnabled" /><span>Accept Keycloak Bearer JWT (preferred for mobile)</span></label></fieldset>
+                <fieldset><legend>Token &amp; OIDC</legend><label><span>API Token</span><input name="apiToken" autocomplete="off" /></label><label><span>OIDC Issuer URL</span><input name="oidcIssuerUrl" /></label><label><span>OIDC JWKS URL</span><input name="oidcJwksUrl" /></label><label><span>OIDC Audience</span><input name="oidcAudience" /></label><div class="settings-actions"><button id="v2RotateToken" class="secondary-button" type="button">Rotate Token</button><button id="v2CopyToken" class="secondary-button" type="button">Copy Token</button></div></fieldset>
+                <div class="settings-actions"><button class="primary-link button-reset" type="submit">Save Settings</button></div>
+              </form>
+              <section class="settings-pane" data-settings-pane="proxy"><div class="settings-section-heading"><h3>Proxy Jobs</h3><label class="settings-toggle"><input id="v2ProxyIncludeTrash" type="checkbox" /><span>Include trash</span></label></div><section class="settings-tool-card"><h3>Missing Proxy/Thumbnail Generation</h3><p>Scan assets for missing derivatives and generate only the missing component.</p><div class="settings-actions settings-actions-start"><button id="v2ScanMissingProxy" class="primary-link button-reset" type="button">Scan Missing</button><button id="v2GenerateAllProxy" class="secondary-button" type="button">Generate All Proxies</button></div><div id="v2MissingProxyRows" class="settings-records"></div></section><section class="settings-tool-card"><h3>Asset Generation Tool</h3><div class="settings-tool-grid"><label><span>Asset Name</span><input id="v2ProxyAssetName" placeholder="Type asset name" autocomplete="off" /></label><label><span>Action</span><select id="v2ProxyAction"><option value="thumbnail">Generate Thumbnail</option><option value="image_thumbnail">Generate Image Thumbnail</option><option value="image_preview">Generate Image Preview</option><option value="document_thumbnail">Generate Document Thumbnail</option><option value="preview">Generate Preview</option><option value="proxy">Generate Proxy</option></select></label><label><span>Thumbnail Timecode</span><input id="v2ProxyTimecode" placeholder="00:00:12:10 or 12.4" /></label></div><div id="v2ProxySuggestions" class="settings-suggestions" hidden></div><div class="settings-actions"><button id="v2RunProxyTool" class="primary-link button-reset" type="button">Run Action</button></div><div id="v2ProxyStatus" class="inline-message"></div></section><section class="settings-record-section"><h3>Recent Proxy Jobs</h3><div id="v2ProxyJobs" class="settings-records"></div></section></section>
+              <form id="v2OcrSettingsForm" class="settings-pane" data-settings-pane="ocr"><h3>OCR Defaults</h3><fieldset><legend>OCR Filters</legend><label class="settings-toggle"><input name="ocrDefaultAdvancedMode" type="checkbox" /><span>Advanced OCR mode default</span></label><label class="settings-toggle"><input name="ocrDefaultTurkishAiCorrect" type="checkbox" /><span>Turkish offline correction default</span></label><label class="settings-toggle"><input name="ocrDefaultEnableBlurFilter" type="checkbox" /><span>Blur filter default</span></label><label class="settings-toggle"><input name="ocrDefaultEnableRegionMode" type="checkbox" /><span>Ticker region mode default</span></label><label class="settings-toggle"><input name="ocrDefaultIgnoreStaticOverlays" type="checkbox" /><span>Static overlay filter default</span></label></fieldset><div class="settings-actions"><button class="primary-link button-reset" type="submit">Save Settings</button></div><section class="settings-record-section"><h3>OCR Records</h3><div class="settings-search-row"><label><span>Search OCR</span><input id="ocrAdminSearchInput" placeholder="asset name..." /></label><button id="runOcrAdminSearchBtn" class="primary-link button-reset" type="button">Run Search</button></div><div class="v2-pager"><button id="ocrRecordsPrevPage" class="secondary-button" type="button">Prev</button><span id="ocrRecordsPageInfo">-</span><button id="ocrRecordsNextPage" class="secondary-button" type="button">Next</button></div><div id="ocrRecordsRows" class="settings-admin-rows"></div><div id="ocrRecordsMsg" class="inline-message"></div></section></form>
+              <form id="v2SubtitleSettingsForm" class="settings-pane" data-settings-pane="subtitle"><h3>Subtitle Display Settings</h3><fieldset><legend>Subtitle Style</legend><div class="settings-number-grid"><label class="settings-toggle"><input name="customOverlay" type="checkbox" /><span>Use custom overlay</span></label><label><span>Bottom offset (px)</span><input name="bottomOffsetPx" type="number" min="0" max="240" /></label><label><span>Font size (px)</span><input name="fontSizePx" type="number" min="12" max="64" /></label><label><span>Text color</span><input name="textColor" type="color" /></label><label><span>Background color</span><input name="backgroundColor" type="color" /></label><label><span>Background opacity</span><input name="backgroundOpacity" type="number" min="0" max="1" step="0.05" /></label><label><span>Left/right padding (px)</span><input name="horizontalPaddingPx" type="number" min="0" max="80" /></label><label><span>Max width (%)</span><input name="maxWidthPercent" type="number" min="35" max="100" /></label></div><p class="settings-help">Custom overlay applies the complete style and match-highlighting configuration.</p></fieldset><div class="settings-actions"><button class="primary-link button-reset" type="submit">Save Settings</button></div><section class="settings-record-section"><h3>Subtitle Records</h3><div class="settings-search-row"><label><span>Search Subtitle</span><input id="subtitleAdminSearchInput" placeholder="asset, label, language..." /></label></div><div class="v2-pager"><button id="subtitleRecordsPrevPage" class="secondary-button" type="button">Previous</button><span id="subtitleRecordsPageInfo">-</span><button id="subtitleRecordsNextPage" class="secondary-button" type="button">Next</button></div><div id="subtitleRecordsRows" class="settings-admin-rows"></div><div id="subtitleRecordsMsg" class="inline-message"></div></section><section class="settings-record-section"><h3>Combined Subtitle + OCR Search</h3><div class="settings-search-row"><label><span>Search Query</span><input id="combinedSearchInput" placeholder="Type query..." /></label><label class="settings-compact-field"><span>Limit</span><input id="combinedSearchLimit" type="number" min="10" max="500" value="120" /></label><button id="runCombinedSearchBtn" class="secondary-button" type="button">Search</button></div><div id="combinedSearchRows" class="settings-admin-rows"></div><div id="combinedSearchMsg" class="inline-message"></div></section></form>
+              <form id="v2BackupSettingsForm" class="settings-pane" data-settings-pane="backup"><h3>Backup Settings</h3><fieldset><legend>Schedule</legend><label class="settings-toggle"><input name="enabled" type="checkbox" /><span>Enable daily backup</span></label><label><span>Backup directory</span><input name="directory" /></label><div class="settings-number-grid"><label><span>Daily hour</span><input name="dailyHour" type="number" min="0" max="23" /></label><label><span>Retention (days)</span><input name="retentionDays" type="number" min="1" max="3650" /></label></div></fieldset><fieldset><legend>Contents</legend><label class="settings-toggle"><input name="includeMamDb" type="checkbox" /><span>MAM PostgreSQL dump</span></label><label class="settings-toggle"><input name="includeKeycloakDb" type="checkbox" /><span>Keycloak PostgreSQL dump</span></label><label class="settings-toggle"><input name="includeUploadsArchive" type="checkbox" /><span>Uploads archive (.tar.gz)</span></label><label class="settings-toggle"><input name="includeUploadsRestic" type="checkbox" /><span>Uploads incremental backup (restic)</span></label><label><span>Restic repository</span><input name="resticRepository" /></label><div class="settings-number-grid"><label><span>Daily snapshots</span><input name="resticKeepDaily" type="number" min="1" /></label><label><span>Weekly snapshots</span><input name="resticKeepWeekly" type="number" min="1" /></label><label><span>Monthly snapshots</span><input name="resticKeepMonthly" type="number" min="1" /></label></div></fieldset><div class="settings-actions"><button class="primary-link button-reset" type="submit">Save Settings</button><button id="v2RunBackup" class="secondary-button" type="button">Run Backup Now</button></div><fieldset><legend>Permission Export / Import</legend><div class="settings-permission-row"><strong>Asset rights</strong><input id="v2AssetRightsImport" type="file" accept="application/json,.json" /><span class="settings-actions"><button class="secondary-button" type="button" data-permission-export="asset-rights">Export</button><button class="secondary-button" type="button" data-permission-import="asset-rights">Import</button></span></div><div class="settings-permission-row"><strong>User and group rights</strong><input id="v2UserRightsImport" type="file" accept="application/json,.json" /><span class="settings-actions"><button class="secondary-button" type="button" data-permission-export="user-rights">Export</button><button class="secondary-button" type="button" data-permission-import="user-rights">Import</button></span></div></fieldset><div id="v2BackupFiles" class="settings-records"></div></form>
+              <form id="v2SessionSettingsForm" class="settings-pane" data-settings-pane="users"><fieldset><legend>Login Session Settings</legend><label class="settings-toggle"><input name="rememberMe" type="checkbox" /><span>Allow remember me</span></label><div class="settings-number-grid"><label><span>Idle timeout (minutes)</span><input name="ssoIdleMinutes" type="number" min="1" max="1440" /></label><label><span>Maximum session (hours)</span><input name="ssoMaxHours" type="number" min="1" max="720" /></label><label><span>Client idle timeout (minutes)</span><input name="clientIdleMinutes" type="number" min="1" max="1440" /></label><label><span>Client maximum session (hours)</span><input name="clientMaxHours" type="number" min="1" max="720" /></label></div></fieldset><div class="settings-actions"><button class="primary-link button-reset" type="submit">Save Login Settings</button></div><section class="settings-record-section"><div class="settings-section-heading"><h3>Identity Overview</h3><button id="v2RefreshIdentity" class="secondary-button" type="button">Refresh</button></div><div class="settings-search-row"><label><span>Search users</span><input id="v2IdentityUserSearch" placeholder="username, name, email..." /></label><button id="v2IdentityUserSearchBtn" class="secondary-button" type="button">Search</button></div><div id="v2IdentitySummary" class="settings-identity-grid"></div><div class="settings-identity-columns"><div><h4>Groups</h4><div id="v2IdentityGroups" class="settings-records"></div></div><div><h4>Users</h4><div id="v2IdentityUsers" class="settings-records"></div></div><div><h4>MAM-only groups</h4><div id="v2MamGroups" class="settings-records"></div></div></div></section><section class="settings-record-section"><h3>Group Administrators</h3><div class="settings-group-admin-form"><label><span>Managed group</span><input id="v2GroupAdminGroup" /></label><label><span>Manager username</span><input id="v2GroupAdminUser" /></label><label><span>Scope</span><select id="v2GroupAdminScope"><option value="asset-rights">Asset rights</option><option value="text-admin">Text administration</option></select></label><button id="v2AddGroupAdmin" class="primary-link button-reset" type="button">Add</button></div><div id="v2GroupAdmins" class="settings-records"></div></section></form>
+              <div id="v2SettingsMessage" class="inline-message" role="status"></div>
+            </div>
+          </section>
         </section>
-
-        <section class="admin-panels">
-        <article class="admin-card admin-panel active" data-panel="apiHelp">
-          <h2 data-i18n="api_help_doc_title">API Help Document</h2>
-          <div id="apiGuideDoc" class="api-guide-doc"></div>
-        </article>
-
-        <article class="admin-card admin-panel" data-panel="systemHealth">
-          <h2 data-i18n="system_health">System Health</h2>
-          <div id="ffmpegHealth" class="empty" data-i18n="loading">Loading...</div>
-          <div id="systemHealthRows" class="rows"></div>
-          <div id="systemJobStatus" class="system-job-status"></div>
-        </article>
-
-        <article class="admin-card admin-panel" data-panel="runtimeDiagnostics">
-          <div class="admin-section-head">
-            <h2 data-i18n="runtime_diagnostics">Tanı</h2>
-            <button id="refreshRuntimeDiagnosticsBtn" type="button" data-i18n="refresh">Yenile</button>
-          </div>
-          <h3 id="activeUsersSectionTitle" data-i18n="active_users">Anlık Kullanıcılar</h3>
-          <div id="activeUsersRows" class="rows"></div>
-          <h3 id="runtimeErrorsSectionTitle" data-i18n="error_logs">Hata Logları</h3>
-          <div id="runtimeErrorRows" class="rows"></div>
-          <div id="runtimeDiagnosticsMsg" class="admin-note"></div>
-        </article>
-
-        <article class="admin-card admin-panel" data-panel="auditEvents">
-          <h2 data-i18n="audit_events">İşlem Geçmişi</h2>
-          <div class="proxy-tool-grid records-toolbar audit-events-toolbar">
-            <label>
-              <span data-i18n="audit_filter_actor">Kullanıcı</span>
-              <input id="auditActorInput" type="text" />
-            </label>
-            <label>
-              <span data-i18n="audit_filter_action">İşlem</span>
-              <select id="auditActionSelect">
-                <option value="" data-i18n="audit_filter_action_all">Tümü</option>
-                <option value="asset.uploaded" data-i18n="audit_action_asset_uploaded">Varlık yüklendi</option>
-                <option value="asset.created" data-i18n="audit_action_asset_created">Varlık oluşturuldu</option>
-                <option value="asset.updated" data-i18n="audit_action_asset_updated">Varlık güncellendi</option>
-                <option value="asset.trashed" data-i18n="audit_action_asset_trashed">Çöpe taşındı</option>
-                <option value="asset.restored" data-i18n="audit_action_asset_restored">Geri yüklendi</option>
-                <option value="asset.deleted" data-i18n="audit_action_asset_deleted">Kalıcı silindi</option>
-                <option value="asset.downloaded" data-i18n="audit_action_asset_downloaded">Varlık indirildi</option>
-              </select>
-            </label>
-            <label class="audit-target-field">
-              <span data-i18n="audit_filter_target">Varlık</span>
-              <input id="auditTargetInput" type="text" />
-              <div id="auditTargetSuggestList" class="proxy-suggest hidden"></div>
-            </label>
-            <label>
-              <span data-i18n="audit_filter_from">Başlangıç</span>
-              <input id="auditFromInput" type="date" />
-            </label>
-            <label>
-              <span data-i18n="audit_filter_to">Bitiş</span>
-              <input id="auditToInput" type="date" />
-            </label>
-            <div class="proxy-tool-actions">
-              <button id="runAuditSearchBtn" type="button" data-i18n="audit_filter_run">Filtrele</button>
-              <button id="exportAuditEventsBtn" type="button" data-i18n="audit_export_excel">Excel'e aktar</button>
-              <button id="cleanupAuditEventsBtn" class="danger" type="button" data-i18n="audit_cleanup">Audit sil</button>
-            </div>
-          </div>
-          <div id="auditEventsRows" class="rows"></div>
-          <div class="admin-pager" id="auditEventsPager">
-            <button id="auditEventsPrevPage" type="button" data-i18n="prev_page">Prev</button>
-            <span id="auditEventsPageInfo">Page 1 / 1 (0)</span>
-            <button id="auditEventsNextPage" type="button" data-i18n="next_page">Next</button>
-          </div>
-          <div id="auditEventsMsg" class="admin-note"></div>
-          <fieldset class="settings-group">
-            <legend data-i18n="settings_group_audit">Audit Log</legend>
-            <label>
-              <span data-i18n="audit_retention_days">Log saklama süresi (gün)</span>
-              <input form="settingsForm" name="auditRetentionDays" type="number" min="1" max="3650" step="1" />
-            </label>
-            <label>
-              <span data-i18n="media_job_retention_days">Son medya işleri saklama süresi (gün)</span>
-              <input form="settingsForm" name="mediaJobRetentionDays" type="number" min="1" max="3650" step="1" />
-            </label>
-          </fieldset>
-        </article>
-
-        <article class="admin-card admin-panel" data-panel="assetRights">
-          <h2 data-i18n="asset_rights">Asset Rights</h2>
-          <div class="proxy-tool-grid records-toolbar asset-rights-toolbar">
-            <label>
-              <span data-i18n="asset_rights_search">Asset Search</span>
-              <input id="assetRightsSearchInput" type="text" autocomplete="off" />
-              <div id="assetRightsSuggestList" class="proxy-suggest hidden"></div>
-            </label>
-            <fieldset class="asset-rights-type-filters" aria-label="Asset type filters">
-              <legend data-i18n="asset_rights_type_filter">Type</legend>
-              <label><input type="checkbox" name="assetRightsType" value="video" /> <span data-i18n="asset_type_video">Video</span></label>
-              <label><input type="checkbox" name="assetRightsType" value="audio" /> <span data-i18n="asset_type_audio">Audio</span></label>
-              <label><input type="checkbox" name="assetRightsType" value="photo" /> <span data-i18n="asset_type_photo">Photo</span></label>
-              <label><input type="checkbox" name="assetRightsType" value="document" /> <span data-i18n="asset_type_document">Doc</span></label>
-              <label><input type="checkbox" name="assetRightsType" value="other" /> <span data-i18n="asset_type_other">Other</span></label>
-            </fieldset>
-            <label class="asset-rights-visibility-filter">
-              <span data-i18n="asset_rights_visibility_filter">Visibility</span>
-              <select id="assetRightsVisibilityFilter">
-                <option value="" data-i18n="asset_rights_visibility_all">All</option>
-                <option value="private" data-i18n="visibility_private">Hide</option>
-                <option value="group" data-i18n="visibility_group">Owner groups</option>
-                <option value="groups" data-i18n="visibility_groups">Selected groups/users</option>
-                <option value="public" data-i18n="visibility_public">Public</option>
-              </select>
-            </label>
-            <div class="proxy-tool-actions asset-rights-load-action">
-              <button id="assetRightsSearchBtn" type="button" data-i18n="asset_rights_load">Load</button>
-            </div>
-          </div>
-          <div id="assetRightsRows" class="rows"></div>
-          <div class="admin-pager" id="assetRightsPager">
-            <label>
-              <span data-i18n="page_size">Page size</span>
-              <select id="assetRightsPageSize">
-                <option value="20">20</option>
-                <option value="50">50</option>
-              </select>
-            </label>
-            <button id="assetRightsPrevPage" type="button" data-i18n="prev_page">Prev</button>
-            <span id="assetRightsPageInfo">-</span>
-            <button id="assetRightsNextPage" type="button" data-i18n="next_page">Next</button>
-          </div>
-          <div id="assetRightsMsg" class="admin-note"></div>
-        </article>
-
-        <article class="admin-card admin-panel" data-panel="documentRights">
-          <h2 data-i18n="document_rights">Document Rights</h2>
-          <div class="proxy-tool-grid records-toolbar asset-rights-toolbar">
-            <label>
-              <span data-i18n="asset_rights_search">Asset Search</span>
-              <input id="documentRightsSearchInput" type="text" autocomplete="off" />
-            </label>
-            <div class="proxy-tool-actions asset-rights-load-action">
-              <button id="documentRightsSearchBtn" type="button" data-i18n="asset_rights_load">Load</button>
-            </div>
-            <label class="asset-rights-locked-filter document-rights-locked-filter">
-              <input id="documentRightsLockedOnlyCheck" type="checkbox" />
-              <span data-i18n="asset_rights_locked_items">Locked</span>
-            </label>
-          </div>
-          <div id="documentRightsRows" class="rows"></div>
-          <div class="admin-pager" id="documentRightsPager">
-            <label>
-              <span data-i18n="page_size">Page size</span>
-              <select id="documentRightsPageSize">
-                <option value="20">20</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-              </select>
-            </label>
-            <button id="documentRightsPrevPage" type="button" data-i18n="prev_page">Prev</button>
-            <span id="documentRightsPageInfo">-</span>
-            <button id="documentRightsNextPage" type="button" data-i18n="next_page">Next</button>
-          </div>
-          <div id="documentRightsMsg" class="admin-note"></div>
-        </article>
-
-        <article class="admin-card admin-panel" data-panel="metadata">
-          <h2 data-i18n="metadata_generation">Metadata Generation</h2>
-          <form id="metadataSettingsForm" class="stack">
-            <fieldset class="settings-group">
-              <legend data-i18n="metadata_model_settings">Metadata model</legend>
-              <label class="toggle-row">
-                <input type="checkbox" name="metadataModelEnabled" />
-                <span data-i18n="metadata_model_enabled">Enable metadata generation</span>
-              </label>
-              <div class="settings-inline-grid ai-model-grid">
-                <label>
-                  <span data-i18n="metadata_model_provider">Provider</span>
-                  <select name="metadataModelProvider">
-                    <option value="ollama">Ollama</option>
-                    <option value="local-transformers">Local Transformers</option>
-                    <option value="openai">OpenAI</option>
-                  </select>
-                </label>
-                <label>
-                  <span data-i18n="metadata_model_name">Model</span>
-                  <input name="metadataModelName" placeholder="gemma3:4b" />
-                </label>
-                <label>
-                  <span data-i18n="metadata_model_base_url">Base URL</span>
-                  <input name="metadataModelBaseUrl" placeholder="http://host.docker.internal:11434" />
-                </label>
-                <label>
-                  <span data-i18n="metadata_model_dir">Model directory</span>
-                  <input name="metadataModelDir" placeholder="/app/models/metadata" />
-                </label>
-                <label>
-                  <span data-i18n="metadata_model_keep_alive">Keep alive</span>
-                  <input name="metadataModelKeepAlive" placeholder="10m" />
-                </label>
-                <label>
-                  <span data-i18n="metadata_model_timeout">Timeout (ms)</span>
-                  <input name="metadataModelTimeoutMs" type="number" min="30000" max="3600000" step="1000" />
-                </label>
-              </div>
-            </fieldset>
-            <fieldset class="settings-group">
-              <legend data-i18n="subtitle_translation_model_settings">Subtitle translation model</legend>
-              <label class="toggle-row">
-                <input type="checkbox" name="subtitleTranslationModelEnabled" />
-                <span data-i18n="subtitle_translation_model_enabled">Enable subtitle translation model</span>
-              </label>
-              <div class="settings-inline-grid ai-model-grid">
-                <label>
-                  <span data-i18n="metadata_model_provider">Provider</span>
-                  <select name="subtitleTranslationModelProvider">
-                    <option value="local-transformers">Local Transformers</option>
-                    <option value="ollama">Ollama</option>
-                    <option value="openai">OpenAI</option>
-                  </select>
-                </label>
-                <label>
-                  <span data-i18n="metadata_model_name">Model</span>
-                  <input name="subtitleTranslationModelName" placeholder="Helsinki-NLP/opus-mt-tc-big-en-tr" />
-                </label>
-                <label>
-                  <span data-i18n="metadata_model_dir">Model directory</span>
-                  <input name="subtitleTranslationModelDir" placeholder="/opt/mam-models/marian/opus-mt-tc-big-en-tr" />
-                </label>
-              </div>
-            </fieldset>
-            <div class="settings-submit-row">
-              <button type="submit" data-i18n="save_settings">Save Settings</button>
-            </div>
-          </form>
-          <div id="metadataSettingsMsg" class="admin-note"></div>
-
-          <div class="proxy-tool-box">
-            <h3 data-i18n="metadata_generate_later">Generate metadata later</h3>
-            <div class="proxy-tool-grid">
-              <label class="proxy-tool-asset-field">
-                <span data-i18n="proxy_tool_asset_name">Asset Name</span>
-                <input id="metadataToolAssetName" type="text" autocomplete="off" data-i18n-placeholder="proxy_tool_asset_name_ph" placeholder="Type asset name" />
-                <div id="metadataToolSuggestList" class="proxy-suggest hidden"></div>
-              </label>
-            </div>
-            <div class="proxy-tool-actions">
-              <button id="runMetadataToolBtn" type="button" data-i18n="metadata_generate_now">Generate Metadata</button>
-            </div>
-            <div id="metadataToolMsg" class="admin-note"></div>
-          </div>
-        </article>
-
-        <article class="admin-card admin-panel" data-panel="settings">
-          <h2 data-i18n="settings">Settings</h2>
-          <nav class="settings-subtabs" id="settingsSubtabs">
-            <button type="button" class="settings-subtab active" data-settings-tab="general" data-i18n="settings_sub_general">General</button>
-            <button type="button" class="settings-subtab" data-settings-tab="proxy" data-i18n="settings_sub_proxy">Proxy</button>
-            <button type="button" class="settings-subtab" data-settings-tab="ocr" data-i18n="settings_sub_ocr">OCR</button>
-            <button type="button" class="settings-subtab" data-settings-tab="subtitle" data-i18n="settings_sub_subtitle">Subtitle</button>
-            <button type="button" class="settings-subtab" data-settings-tab="backup" data-i18n="settings_sub_backup">Backup</button>
-            <button type="button" class="settings-subtab" data-settings-tab="users" data-i18n="settings_sub_users">Users</button>
-          </nav>
-
-          <section class="settings-subpanel active" data-settings-panel="general">
-            <form id="settingsForm" class="stack">
-              <fieldset class="settings-group">
-                <legend data-i18n="settings_group_player">Player</legend>
-                <label>
-                  <span data-i18n="player_mode">Player Mode</span>
-                  <select name="playerUiMode" id="playerUiModeSelect">
-                    <option value="vidstack" data-i18n="player_mode_vidstack">Vidstack</option>
-                    <option value="mpegdash" data-i18n="player_mode_mpegdash">MPEG-DASH (dash.js)</option>
-                  </select>
-                </label>
-              </fieldset>
-
-              <fieldset class="settings-group">
-                <legend data-i18n="settings_group_ingest">Asset ingest</legend>
-                <label>
-                  <span data-i18n="new_asset_default_visibility">New asset default visibility</span>
-                  <select name="newAssetDefaultVisibility">
-                    <option value="owner_groups" data-i18n="new_asset_visibility_owner_groups">Owner groups</option>
-                    <option value="public" data-i18n="visibility_public">Public</option>
-                    <option value="private" data-i18n="visibility_private">Hide</option>
-                  </select>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" name="allowFilelessAssetCreation" />
-                  <span data-i18n="allow_fileless_asset_creation">Allow creating assets without a file</span>
-                </label>
-              </fieldset>
-
-              <fieldset class="settings-group">
-                <legend data-i18n="settings_group_job_concurrency">Job concurrency</legend>
-                <div class="settings-inline-grid">
-                  <label>
-                    <span data-i18n="job_concurrency_subtitle">Subtitle</span>
-                    <input name="mediaJobConcurrencySubtitle" type="number" min="1" max="8" step="1" />
-                  </label>
-                  <label>
-                    <span data-i18n="job_concurrency_video_ocr">Video OCR</span>
-                    <input name="mediaJobConcurrencyVideoOcr" type="number" min="1" max="8" step="1" />
-                  </label>
-                  <label>
-                    <span data-i18n="job_concurrency_proxy">Proxy</span>
-                    <input name="mediaJobConcurrencyProxy" type="number" min="1" max="8" step="1" />
-                  </label>
-                  <label>
-                    <span data-i18n="job_concurrency_metadata">Metadata</span>
-                    <input name="mediaJobConcurrencyMetadata" type="number" min="1" max="8" step="1" />
-                  </label>
-                  <label>
-                    <span data-i18n="job_concurrency_thumbnail">Thumbnail</span>
-                    <input name="mediaJobConcurrencyThumbnail" type="number" min="1" max="8" step="1" />
-                  </label>
-                  <label>
-                    <span data-i18n="job_concurrency_upload">Upload</span>
-                    <input name="mediaJobConcurrencyUpload" type="number" min="1" max="16" step="1" />
-                  </label>
-                  <label>
-                    <span data-i18n="job_concurrency_download">Download</span>
-                    <input name="mediaJobConcurrencyDownload" type="number" min="1" max="32" step="1" />
-                  </label>
-                  <label>
-                    <span data-i18n="job_concurrency_backup">Backup</span>
-                    <input name="mediaJobConcurrencyBackup" type="number" min="1" max="4" step="1" />
-                  </label>
-                </div>
-              </fieldset>
-
-              <fieldset class="settings-group">
-                <legend data-i18n="settings_group_security">Security</legend>
-                <label class="toggle-row">
-                  <input type="checkbox" name="apiTokenEnabled" />
-                  <span data-i18n="api_token_enabled">Require API token (non-SSO API access)</span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" name="oidcBearerEnabled" />
-                  <span data-i18n="oidc_bearer_enabled">Accept Keycloak Bearer JWT (preferred for mobile)</span>
-                </label>
-              </fieldset>
-
-              <fieldset class="settings-group">
-                <legend data-i18n="settings_group_identity">Token & OIDC</legend>
-                <label>
-                  <span data-i18n="api_token">API Token</span>
-                  <input name="apiToken" id="apiTokenInput" data-i18n-placeholder="api_token_placeholder" placeholder="Generate token first" />
-                </label>
-                <label>
-                  <span data-i18n="oidc_issuer_url">OIDC Issuer URL</span>
-                  <input name="oidcIssuerUrl" id="oidcIssuerUrlInput" data-i18n-placeholder="oidc_issuer_url_ph" placeholder="http://keycloak:8080/realms/mam" />
-                </label>
-                <label>
-                  <span data-i18n="oidc_jwks_url">OIDC JWKS URL</span>
-                  <input name="oidcJwksUrl" id="oidcJwksUrlInput" data-i18n-placeholder="oidc_jwks_url_ph" placeholder="http://keycloak:8080/realms/mam/protocol/openid-connect/certs" />
-                </label>
-                <label>
-                  <span data-i18n="oidc_audience">OIDC Audience (optional, comma separated)</span>
-                  <input name="oidcAudience" id="oidcAudienceInput" data-i18n-placeholder="oidc_audience_ph" placeholder="mam-web,account" />
-                </label>
-                <div class="token-actions">
-                  <button id="rotateApiTokenBtn" type="button" data-i18n="rotate_token">Rotate Token</button>
-                  <button id="copyApiTokenBtn" type="button" data-i18n="copy_token">Copy Token</button>
-                </div>
-              </fieldset>
-
-              <fieldset class="settings-group">
-                <legend data-i18n="settings_group_docs">Documentation</legend>
-                <div class="api-help" id="apiHelpBox"></div>
-              </fieldset>
-
-              <div class="settings-submit-row">
-                <button type="submit" data-i18n="save_settings">Save Settings</button>
-              </div>
-            </form>
-            <div id="settingsMsg" class="admin-note"></div>
-          </section>
-
-          <section class="settings-subpanel" data-settings-panel="proxy">
-            <h3 data-i18n="proxy_jobs">Proxy Jobs</h3>
-            <div class="proxy-job-actions proxy-job-options">
-              <label><input type="checkbox" id="includeTrash" /> <span data-i18n="include_trash">Include trash</span></label>
-            </div>
-            <div class="proxy-tool-box proxy-missing-tool">
-              <h3 data-i18n="missing_proxy_tool_title">Missing Proxy/Thumbnail Generation</h3>
-              <p class="admin-note" data-i18n="missing_proxy_tool_desc">Scan for video assets with missing proxy or thumbnail files, then generate only the missing component.</p>
-              <div class="proxy-missing-actions">
-                <button id="scanMissingProxyBtn" type="button" class="proxy-missing-scan-btn" data-i18n="scan_missing_proxies_manual">Scan Missing Manually</button>
-                <button id="autoScanMissingProxyBtn" type="button" class="proxy-missing-scan-btn" data-i18n="scan_missing_proxies_auto">Scan Missing Automatically</button>
-                <button id="cancelMissingProxyScanBtn" type="button" class="proxy-missing-scan-btn secondary" data-i18n="stop_scan">Stop scan</button>
-              </div>
-              <div id="missingProxyScanState" class="admin-note"></div>
-              <div id="missingProxyRows" class="proxy-missing-rows"></div>
-            </div>
-            <div id="proxyJobState" class="admin-note"></div>
-            <div class="progress-wrap"><div id="proxyProgress" class="progress-bar"></div></div>
-            <div id="proxyJobErrors" class="rows"></div>
-
-            <div class="proxy-tool-box">
-              <h3 data-i18n="proxy_tool_title">Asset Generation Tool</h3>
-              <div class="proxy-tool-grid">
-                <label class="proxy-tool-asset-field">
-                  <span data-i18n="proxy_tool_asset_name">Asset Name</span>
-                  <input id="proxyToolAssetName" type="text" autocomplete="off" data-i18n-placeholder="proxy_tool_asset_name_ph" placeholder="Type asset name" />
-                  <div id="proxyToolSuggestList" class="proxy-suggest hidden"></div>
-                </label>
-                <label>
-                  <span data-i18n="proxy_tool_action">Action</span>
-                  <select id="proxyToolAction">
-                    <option value="thumbnail" data-i18n="proxy_tool_action_thumbnail">Generate Thumbnail</option>
-                    <option value="image_thumbnail" data-i18n="proxy_tool_action_image_thumbnail">Generate Image Thumbnail</option>
-                    <option value="image_preview" data-i18n="proxy_tool_action_image_preview">Generate Image Preview</option>
-                    <option value="document_thumbnail" data-i18n="proxy_tool_action_document_thumbnail">Generate Document Thumbnail</option>
-                    <option value="preview" data-i18n="proxy_tool_action_preview">Generate Preview</option>
-                    <option value="proxy" data-i18n="proxy_tool_action_proxy">Generate Proxy</option>
-                    <option value="replace_asset" data-i18n="proxy_tool_action_replace_asset">Replace Asset File (Keep Metadata)</option>
-                    <option value="delete_asset" data-i18n="proxy_tool_action_delete_asset">Delete Asset</option>
-                  </select>
-                </label>
-                <label id="proxyToolTimecodeWrap">
-                  <span data-i18n="proxy_tool_timecode">Thumbnail Timecode</span>
-                  <input id="proxyToolTimecode" type="text" data-i18n-placeholder="proxy_tool_timecode_ph" placeholder="00:00:12:10 or 12.4" />
-                </label>
-                <label id="proxyToolReplaceFileWrap" class="hidden proxy-tool-file-field">
-                  <span data-i18n="proxy_tool_replace_file">New Asset File</span>
-                  <span class="admin-localized-file-input">
-                    <input id="proxyToolReplaceFile" type="file" />
-                    <span class="admin-localized-file-input-button" data-i18n="choose_file">Choose file</span>
-                    <span id="proxyToolReplaceFileName" class="admin-localized-file-input-name" data-i18n="no_file_chosen">No file chosen</span>
-                  </span>
-                </label>
-              </div>
-              <div class="proxy-tool-actions">
-                <button id="runProxyToolBtn" type="button" data-i18n="proxy_tool_run">Run Action</button>
-              </div>
-              <div id="proxyToolMsg" class="admin-note"></div>
-            </div>
-          </section>
-
-          <section class="settings-subpanel" data-settings-panel="ocr">
-            <h3 data-i18n="ocr_defaults">OCR Defaults</h3>
-            <form id="ocrSettingsForm" class="stack">
-              <fieldset class="settings-group">
-                <legend data-i18n="ocr_filters">OCR Filters</legend>
-                <label class="toggle-row">
-                  <input id="ocrDefaultAdvancedMode" type="checkbox" />
-                  <span data-i18n="ocr_default_advanced_mode">Advanced OCR mode default</span>
-                </label>
-                <label class="toggle-row">
-                  <input id="ocrDefaultTurkishAiCorrect" type="checkbox" />
-                  <span data-i18n="ocr_default_turkish_ai_correct">Turkish offline correction default</span>
-                </label>
-                <label class="toggle-row">
-                  <input id="ocrDefaultEnableBlurFilter" type="checkbox" />
-                  <span data-i18n="ocr_default_blur_filter">Blur filter default</span>
-                </label>
-                <label class="toggle-row">
-                  <input id="ocrDefaultEnableRegionMode" type="checkbox" />
-                  <span data-i18n="ocr_default_region_mode">Ticker region mode default</span>
-                </label>
-                <label class="toggle-row">
-                  <input id="ocrDefaultIgnoreStaticOverlays" type="checkbox" />
-                  <span data-i18n="ocr_default_static_overlay_filter">Static overlay filter default</span>
-                </label>
-              </fieldset>
-              <div class="settings-submit-row">
-                <button type="submit" data-i18n="save_settings">Save Settings</button>
-              </div>
-            </form>
-            <div id="ocrSettingsMsg" class="admin-note"></div>
-
-            <h3 data-i18n="ocr_records">OCR Records</h3>
-            <div class="proxy-tool-grid records-toolbar">
-              <label>
-                <span data-i18n="ocr_search">Search OCR</span>
-                <input id="ocrAdminSearchInput" type="text" data-i18n-placeholder="ocr_search_ph" placeholder="asset, label, file..." />
-              </label>
-              <div class="proxy-tool-actions ocr-search-actions">
-                <button id="runOcrAdminSearchBtn" type="button" data-i18n="ocr_search_run">Run Search</button>
-              </div>
-            </div>
-            <div class="admin-pager" id="ocrRecordsPager">
-              <button id="ocrRecordsPrevPage" type="button" data-i18n="prev_page">Prev</button>
-              <span id="ocrRecordsPageInfo">-</span>
-              <button id="ocrRecordsNextPage" type="button" data-i18n="next_page">Next</button>
-            </div>
-            <div id="ocrRecordsRows" class="rows"></div>
-            <div id="ocrRecordsMsg" class="admin-note"></div>
-          </section>
-
-          <section class="settings-subpanel" data-settings-panel="subtitle">
-            <h3 data-i18n="subtitle_display_settings">Subtitle Display Settings</h3>
-            <form id="subtitleSettingsForm" class="stack">
-              <fieldset class="settings-group">
-                <legend data-i18n="subtitle_display_style">Subtitle Style</legend>
-                <div class="subtitle-style-grid">
-                  <label class="toggle-row subtitle-style-toggle">
-                    <input id="subtitleCustomOverlayCheck" type="checkbox" />
-                    <span data-i18n="subtitle_custom_overlay">Use custom overlay</span>
-                  </label>
-                  <label>
-                    <span data-i18n="subtitle_bottom_offset">Bottom offset (px)</span>
-                    <input id="subtitleBottomOffsetInput" type="number" min="0" max="240" step="1" />
-                  </label>
-                  <label>
-                    <span data-i18n="subtitle_font_size">Font size (px)</span>
-                    <input id="subtitleFontSizeInput" type="number" min="12" max="64" step="1" />
-                  </label>
-                  <label class="subtitle-color-field">
-                    <span data-i18n="subtitle_text_color">Text color</span>
-                    <input id="subtitleTextColorInput" type="color" />
-                    <span id="subtitleTextColorValue" class="subtitle-color-value">#ffffff</span>
-                  </label>
-                  <label class="subtitle-color-field">
-                    <span data-i18n="subtitle_background_color">Background color</span>
-                    <input id="subtitleBackgroundColorInput" type="color" />
-                    <span id="subtitleBackgroundColorValue" class="subtitle-color-value">#000000</span>
-                  </label>
-                  <label>
-                    <span data-i18n="subtitle_background_opacity">Background opacity</span>
-                    <input id="subtitleBackgroundOpacityInput" type="number" min="0" max="1" step="0.05" />
-                  </label>
-                  <label>
-                    <span data-i18n="subtitle_horizontal_padding">Left/right padding (px)</span>
-                    <input id="subtitleHorizontalPaddingInput" type="number" min="0" max="80" step="1" />
-                  </label>
-                  <label>
-                    <span data-i18n="subtitle_max_width">Max width (%)</span>
-                    <input id="subtitleMaxWidthInput" type="number" min="35" max="100" step="1" />
-                  </label>
-                </div>
-                <p class="admin-note" data-i18n="subtitle_display_native_note">Custom overlay applies all style settings and enables match highlighting. Native browser subtitles only support limited font/color/background styling.</p>
-              </fieldset>
-              <div class="settings-submit-row">
-                <button type="submit" data-i18n="save_settings">Save Settings</button>
-                <button id="subtitleSetDefaultBtn" type="button" data-i18n="set_as_default">Set as Default</button>
-              </div>
-            </form>
-            <div id="subtitleSettingsMsg" class="admin-note"></div>
-
-            <h3 data-i18n="subtitle_records">Subtitle Records</h3>
-            <div class="proxy-tool-grid">
-              <label>
-                <span data-i18n="subtitle_search_admin">Search Subtitle</span>
-                <input id="subtitleAdminSearchInput" type="text" data-i18n-placeholder="subtitle_search_admin_ph" placeholder="asset, label, language..." />
-              </label>
-              <label class="toggle-row">
-                <input id="subtitleDeleteFileCheck" type="checkbox" />
-                <span data-i18n="subtitle_delete_file">Delete subtitle file from disk too</span>
-              </label>
-            </div>
-            <div class="admin-pager" id="subtitleRecordsPager">
-              <button id="subtitleRecordsPrevPage" type="button" data-i18n="prev_page">Prev</button>
-              <span id="subtitleRecordsPageInfo">-</span>
-              <button id="subtitleRecordsNextPage" type="button" data-i18n="next_page">Next</button>
-            </div>
-            <div id="subtitleRecordsRows" class="rows"></div>
-            <div id="subtitleRecordsMsg" class="admin-note"></div>
-
-            <h3 data-i18n="combined_search">Combined Subtitle + OCR Search</h3>
-            <div class="proxy-tool-grid">
-              <label>
-                <span data-i18n="combined_search_query">Search Query</span>
-                <input id="combinedSearchInput" type="text" data-i18n-placeholder="combined_search_query_ph" placeholder="Type query..." />
-              </label>
-              <label>
-                <span data-i18n="combined_search_limit">Limit</span>
-                <input id="combinedSearchLimit" type="number" min="10" max="500" step="10" value="120" />
-              </label>
-            </div>
-            <div class="proxy-tool-actions">
-              <button id="runCombinedSearchBtn" type="button" data-i18n="combined_search_run">Run Search</button>
-            </div>
-            <div id="combinedSearchRows" class="rows"></div>
-            <div id="combinedSearchMsg" class="admin-note"></div>
-          </section>
-
-          <section class="settings-subpanel" data-settings-panel="backup">
-            <h3 data-i18n="backup_settings">Backup Settings</h3>
-            <form id="backupSettingsForm" class="stack">
-              <fieldset class="settings-group">
-                <legend data-i18n="backup_schedule">Schedule</legend>
-                <label class="toggle-row">
-                  <input type="checkbox" name="backupEnabled" />
-                  <span data-i18n="backup_enabled">Enable daily backup</span>
-                </label>
-                <label>
-                  <span data-i18n="backup_directory">Backup directory</span>
-                  <input name="backupDirectory" value="/home/belge/depo/netapp/belgelik-restic/db-backups" data-i18n-placeholder="backup_directory_ph" placeholder="/home/belge/depo/netapp/belgelik-restic/db-backups" />
-                </label>
-                <label>
-                  <span data-i18n="backup_daily_hour">Daily hour</span>
-                  <input name="backupDailyHour" type="number" min="0" max="23" step="1" />
-                </label>
-                <label>
-                  <span data-i18n="backup_retention_days">Retention (days)</span>
-                  <input name="backupRetentionDays" type="number" min="1" max="3650" step="1" />
-                </label>
-              </fieldset>
-              <fieldset class="settings-group">
-                <legend data-i18n="backup_contents">Contents</legend>
-                <label class="toggle-row">
-                  <input type="checkbox" name="backupIncludeMamDb" />
-                  <span data-i18n="backup_include_mam_db">MAM PostgreSQL dump</span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" name="backupIncludeKeycloakDb" />
-                  <span data-i18n="backup_include_keycloak_db">Keycloak PostgreSQL dump</span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" name="backupIncludeUploadsArchive" />
-                  <span data-i18n="backup_include_uploads">Uploads archive (.tar.gz)</span>
-                </label>
-                <label class="toggle-row">
-                  <input type="checkbox" name="backupIncludeUploadsRestic" />
-                  <span data-i18n="backup_include_uploads_restic">Uploads incremental backup (restic)</span>
-                </label>
-                <label>
-                  <span data-i18n="backup_restic_repository">Restic repository</span>
-                  <input name="backupResticRepository" value="/home/belge/depo/netapp/belgelik-restic/restic-repo" />
-                </label>
-                <div class="proxy-tool-grid">
-                  <label>
-                    <span data-i18n="backup_restic_keep_daily">Restic daily snapshots</span>
-                    <input name="backupResticKeepDaily" type="number" min="1" max="3650" step="1" />
-                  </label>
-                  <label>
-                    <span data-i18n="backup_restic_keep_weekly">Restic weekly snapshots</span>
-                    <input name="backupResticKeepWeekly" type="number" min="1" max="520" step="1" />
-                  </label>
-                  <label>
-                    <span data-i18n="backup_restic_keep_monthly">Restic monthly snapshots</span>
-                    <input name="backupResticKeepMonthly" type="number" min="1" max="240" step="1" />
-                  </label>
-                </div>
-              </fieldset>
-              <div class="settings-submit-row">
-                <button type="submit" data-i18n="save_settings">Save Settings</button>
-                <button id="runBackupNowBtn" type="button" data-i18n="backup_run_now">Run Backup Now</button>
-              </div>
-            </form>
-            <fieldset id="permissionBackupGroup" class="settings-group" hidden>
-              <legend data-i18n="permission_backup_title">Permission Export / Import</legend>
-              <div class="permission-backup-row">
-                <strong data-i18n="permission_backup_asset_rights">Asset rights</strong>
-                <input id="assetRightsExportName" data-i18n-placeholder="permission_backup_export_file_name_ph" placeholder="Optional file name" />
-                <button id="exportAssetRightsBtn" type="button" data-i18n="permission_backup_export">Export</button>
-                <div class="permission-file-picker">
-                  <input id="assetRightsImportFile" type="file" accept="application/json,.json" />
-                  <label for="assetRightsImportFile" class="permission-file-picker-button" data-i18n="permission_backup_choose_file">Select file</label>
-                  <span id="assetRightsImportFileName" class="permission-file-picker-name" data-i18n="permission_backup_no_file">No file chosen</span>
-                </div>
-                <button id="importAssetRightsBtn" type="button" class="secondary" data-i18n="permission_backup_import">Import</button>
-              </div>
-              <div class="permission-backup-row">
-                <strong data-i18n="permission_backup_principal_rights">User and group rights</strong>
-                <input id="principalRightsExportName" data-i18n-placeholder="permission_backup_export_file_name_ph" placeholder="Optional file name" />
-                <button id="exportPrincipalRightsBtn" type="button" data-i18n="permission_backup_export">Export</button>
-                <div class="permission-file-picker">
-                  <input id="principalRightsImportFile" type="file" accept="application/json,.json" />
-                  <label for="principalRightsImportFile" class="permission-file-picker-button" data-i18n="permission_backup_choose_file">Select file</label>
-                  <span id="principalRightsImportFileName" class="permission-file-picker-name" data-i18n="permission_backup_no_file">No file chosen</span>
-                </div>
-                <button id="importPrincipalRightsBtn" type="button" class="secondary" data-i18n="permission_backup_import">Import</button>
-              </div>
-              <div id="permissionBackupMsg" class="admin-note"></div>
-            </fieldset>
-            <div id="backupFilesRows" class="rows"></div>
-            <div id="backupSettingsMsg" class="admin-note"></div>
-          </section>
-
-          <section class="settings-subpanel" data-settings-panel="users">
-            <form id="authSessionSettingsForm" class="stack">
-              <fieldset class="settings-group">
-                <legend data-i18n="auth_session_settings">Login Session Settings</legend>
-                <label class="toggle-row">
-                  <input type="checkbox" name="rememberMe" />
-                  <span data-i18n="auth_remember_me">Allow remember me</span>
-                </label>
-                <label>
-                  <span data-i18n="auth_sso_idle_minutes">Idle timeout (minutes)</span>
-                  <input name="ssoIdleMinutes" type="number" min="1" max="1440" step="1" />
-                </label>
-                <label>
-                  <span data-i18n="auth_sso_max_hours">Maximum session (hours)</span>
-                  <input name="ssoMaxHours" type="number" min="1" max="720" step="1" />
-                </label>
-                <label>
-                  <span data-i18n="auth_client_idle_minutes">Client idle timeout (minutes)</span>
-                  <input name="clientIdleMinutes" type="number" min="1" max="1440" step="1" />
-                </label>
-                <label>
-                  <span data-i18n="auth_client_max_hours">Client maximum session (hours)</span>
-                  <input name="clientMaxHours" type="number" min="1" max="720" step="1" />
-                </label>
-              </fieldset>
-              <div class="settings-submit-row">
-                <button type="submit" data-i18n="save_auth_session">Save Login Settings</button>
-              </div>
-              <div id="authSessionSettingsMsg" class="admin-note"></div>
-            </form>
-            <div class="settings-section-head user-settings-head">
-              <h3 data-i18n="principal_settings">User / Group Settings</h3>
-              <div class="user-settings-search-form">
-                <select id="userPermissionsPrincipalType" class="user-settings-principal-type" aria-label="Principal type">
-                  <option value="user" data-i18n="principal_type_user">User</option>
-                  <option value="group" data-i18n="principal_type_group">Group</option>
-                </select>
-                <input id="userPermissionsSearchInput" class="user-settings-search" type="text" data-i18n-placeholder="user_or_group_search_ph" placeholder="Search user or group..." autocomplete="off" aria-label="User or Group Search" />
-                <button id="userPermissionsSearchButton" class="user-settings-search-button" type="button" data-i18n="principal_search">Search</button>
-              </div>
-            </div>
-            <div id="userPermissionsRows" class="rows user-permissions-rows"></div>
-            <div class="admin-pager" id="userPermissionsPager">
-              <label>
-                <span data-i18n="page_size">Page size</span>
-                <select id="userPermissionsPageSize">
-                  <option value="20">20</option>
-                  <option value="50">50</option>
-                </select>
-              </label>
-              <button id="userPermissionsPrevPage" type="button" data-i18n="prev_page">Prev</button>
-              <span id="userPermissionsPageInfo">-</span>
-              <button id="userPermissionsNextPage" type="button" data-i18n="next_page">Next</button>
-            </div>
-            <div id="userPermissionsMsg" class="admin-note"></div>
-            <h3 data-i18n="identity_overview">Identity Overview</h3>
-            <div class="proxy-tool-actions identity-overview-actions">
-              <button id="refreshIdentityOverviewBtn" type="button" data-i18n="refresh">Refresh</button>
-            </div>
-            <div id="identityOverviewSummary" class="metrics"></div>
-            <div class="identity-grid">
-              <section>
-                <h4 data-i18n="identity_keycloak_groups">Keycloak Groups</h4>
-                <div id="identityGroupsRows" class="rows compact-rows"></div>
-              </section>
-              <section>
-                <h4 data-i18n="identity_keycloak_users">Keycloak Users</h4>
-                <div class="user-settings-search-form identity-user-search-form">
-                  <input id="identityUserSearchInput" class="user-settings-search" type="text" data-i18n-placeholder="user_search_ph" placeholder="Search user..." autocomplete="off" aria-label="Keycloak User Search" />
-                  <button id="identityUserSearchButton" class="user-settings-search-button" type="button" data-i18n="user_search">User Search</button>
-                </div>
-                <div id="identityUsersRows" class="rows compact-rows"></div>
-              </section>
-              <section>
-                <h4 data-i18n="identity_mam_only_groups">MAM-only Groups</h4>
-                <div id="identityMamGroupsRows" class="rows compact-rows"></div>
-              </section>
-            </div>
-            <h3 data-i18n="group_admins">Group Admins</h3>
-            <div class="filter-row">
-              <label>
-                <span data-i18n="managed_group">Managed group</span>
-                <input id="groupAdminGroupInput" type="text" placeholder="archive-team" list="identityGroupOptions" />
-              </label>
-              <label>
-                <span data-i18n="manager_principal">Manager user/group</span>
-                <input id="groupAdminUserInput" type="text" placeholder="username" list="identityUserOptions" />
-              </label>
-              <label>
-                <span data-i18n="admin_scope">Scope</span>
-                <select id="groupAdminScopeInput">
-                  <option value="asset-rights" data-i18n="admin_scope_asset_rights">Asset rights</option>
-                  <option value="document-rights" data-i18n="admin_scope_document_rights">Document rights</option>
-                  <option value="text-admin" data-i18n="admin_scope_text_admin">OCR / subtitle</option>
-                </select>
-              </label>
-              <label>
-                <span data-i18n="asset_type_scope">Asset type</span>
-                <div id="groupAdminAssetTypeInput" class="group-admin-type-checks" role="group" aria-label="Asset type">
-                  <label><input type="checkbox" value="document" /> <span data-i18n="asset_type_document">Document</span></label>
-                  <label><input type="checkbox" value="video" /> <span data-i18n="asset_type_video">Video</span></label>
-                  <label><input type="checkbox" value="audio" /> <span data-i18n="asset_type_audio">Audio</span></label>
-                  <label><input type="checkbox" value="photo" /> <span data-i18n="asset_type_photo">Photo</span></label>
-                  <label><input type="checkbox" value="other" /> <span data-i18n="asset_type_other">Other</span></label>
-                </div>
-              </label>
-              <button id="addGroupAdminBtn" type="button" data-i18n="add_group_admin">Add</button>
-            </div>
-            <datalist id="identityGroupOptions"></datalist>
-            <datalist id="identityUserOptions"></datalist>
-            <div id="groupAdminsRows" class="rows"></div>
-            <div id="groupAdminsMsg" class="admin-note"></div>
-          </section>
-        </article>
-        </section>
-      </section>
-    </main>
+      </main>
+    </div>
 
     <script src="/session-expiry.js?v=20260714-session-expiry-3"></script>
-    <script src="/main-access-scope.js?v=20260809-metadata-main-tab-1"></script>
-    <script src="/admin-records.js?v=20261001-ocr-delete-button-2"></script>
-    <script src="/admin-system-health.js?v=20260803-media-job-filters-5"></script>
-    <script src="/admin.js?v=20261005-version-derivative-repair-2"></script>
+    <script src="/admin-system-health.js?v=20261019-server-resources-2"></script>
+    <script src="/admin-records.js?v=20261018-content-status-1"></script>
+    <script src="/admin/admin.js?v=20261019-shared-language-1"></script>
   </body>
 </html>

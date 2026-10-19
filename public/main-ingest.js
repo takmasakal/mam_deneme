@@ -36,7 +36,7 @@
         event.preventDefault();
         event.stopImmediatePropagation();
         if (!global.confirm(t('upload_admin_new_tab_confirm'))) return;
-        const adminWindow = global.open(link.href || '/admin.html', '_blank');
+        const adminWindow = global.open(link.href || '/admin', '_blank');
         if (adminWindow) adminWindow.opener = null;
         notifyUpload(t(adminWindow ? 'upload_admin_opened_new_tab' : 'upload_navigation_warning'), 'info');
       }, true);

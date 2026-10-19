@@ -218,15 +218,16 @@
       const status = String(job.status || '').trim().toLowerCase();
       const badgeClass = status === 'completed' ? 'health-ok' : status === 'failed' ? 'health-bad' : 'health-warn';
       const typeIsSubtitle = type === 'subtitle';
+      const typeIsMetadata = type === 'metadata';
       const details = [
         [t('health_job_asset'), job.assetTitle || '-'],
-        [typeIsSubtitle ? t('health_job_label') : t('health_job_engine'), typeIsSubtitle ? (job.label || '-') : (job.engine || '-')],
-        [typeIsSubtitle ? t('health_job_model') : t('health_job_segments'), typeIsSubtitle ? (job.model || '-') : String(job.segmentCount || 0)],
+        [typeIsMetadata ? t('health_job_model') : typeIsSubtitle ? t('health_job_label') : t('health_job_engine'), typeIsMetadata ? (job.model || '-') : typeIsSubtitle ? (job.label || '-') : (job.engine || '-')],
+        [typeIsMetadata ? t('health_job_chunks') : typeIsSubtitle ? t('health_job_model') : t('health_job_segments'), typeIsMetadata ? String(job.chunkCount || 0) : typeIsSubtitle ? (job.model || '-') : String(job.segmentCount || 0)],
         [t('health_job_updated'), formatDateTime(job.updatedAt)],
         [t('health_job_finished'), formatDateTime(job.finishedAt)],
         [t('health_job_progress'), `${Math.max(0, Math.min(100, Number(job.progress) || 0))}%`]
       ];
-      if (!typeIsSubtitle) {
+      if (!typeIsSubtitle && !typeIsMetadata) {
         details.splice(3, 0, [t('health_job_lines'), String(job.lineCount || 0)]);
       }
       const warningText = String(job.warning || '').trim();
@@ -262,6 +263,7 @@
 
     function renderSystemHealth(data = {}) {
       if (!systemHealthRows) return;
+      const resources = data.resources || {};
       const disk = data.disk || {};
       const jobs = data.jobs || {};
       const services = data.services || {};
@@ -296,12 +298,54 @@
           ${serviceBadge(entry)}
         </div>
       `).join('');
+      const resourcePercent = (value) => Math.max(0, Math.min(100, Number(value) || 0));
+      const resourceTone = (value) => value >= 90 ? 'is-critical' : value >= 75 ? 'is-warning' : 'is-normal';
+      const cpuPercent = resourcePercent(resources.cpuUsagePercent);
+      const memoryPercent = resourcePercent(resources.memoryUsagePercent);
+      const diskTotal = Math.max(0, Number(disk.fsTotalBytes) || 0);
+      const diskUsed = Math.max(0, diskTotal - (Number(disk.fsFreeBytes) || 0));
+      const diskPercent = diskTotal > 0 ? resourcePercent((diskUsed / diskTotal) * 100) : 0;
+      const gpu = resources.gpu || {};
+      const gpuPercent = resourcePercent(gpu.usagePercent);
+      const loadAverage = Array.isArray(resources.loadAverage) ? resources.loadAverage.slice(0, 3) : [];
+      const resourceCards = `
+        <div class="health-resource-card ${resourceTone(cpuPercent)}">
+          <span><strong>${escapeHtml(t('health_cpu'))}</strong><small>${escapeHtml(String(resources.cpuCount || 0))} ${escapeHtml(t('health_cores'))}</small></span>
+          <b>${escapeHtml(cpuPercent.toFixed(1))}%</b>
+          <i class="health-resource-meter" aria-hidden="true"><span style="width:${cpuPercent.toFixed(1)}%"></span></i>
+        </div>
+        <div class="health-resource-card ${resourceTone(memoryPercent)}">
+          <span><strong>${escapeHtml(t('health_memory'))}</strong><small>${escapeHtml(humanBytes(resources.usedMemoryBytes))} / ${escapeHtml(humanBytes(resources.totalMemoryBytes))}</small></span>
+          <b>${escapeHtml(memoryPercent.toFixed(1))}%</b>
+          <i class="health-resource-meter" aria-hidden="true"><span style="width:${memoryPercent.toFixed(1)}%"></span></i>
+        </div>
+        <div class="health-resource-card ${gpu.available ? resourceTone(gpuPercent) : 'is-unavailable'}">
+          <span><strong>${escapeHtml(t('health_gpu'))}</strong><small>${escapeHtml(gpu.available ? (gpu.names || []).join(', ') : t('health_gpu_unavailable'))}</small></span>
+          <b>${escapeHtml(gpu.available ? `${gpuPercent.toFixed(1)}%` : '—')}</b>
+          ${gpu.available ? `<i class="health-resource-meter" aria-hidden="true"><span style="width:${gpuPercent.toFixed(1)}%"></span></i><small class="health-resource-detail">${escapeHtml(humanBytes(gpu.usedMemoryBytes))} / ${escapeHtml(humanBytes(gpu.totalMemoryBytes))}</small>` : ''}
+        </div>
+        <div class="health-resource-card ${resourceTone(diskPercent)}">
+          <span><strong>${escapeHtml(t('health_disk'))}</strong><small>${escapeHtml(t('health_uploads_size'))}: ${escapeHtml(humanBytes(disk.uploadsBytes))} · ${escapeHtml(String(disk.uploadsFiles || 0))} ${escapeHtml(t('health_uploads_files'))}</small></span>
+          <b>${escapeHtml(diskPercent.toFixed(1))}%</b>
+          <i class="health-resource-meter" aria-hidden="true"><span style="width:${diskPercent.toFixed(1)}%"></span></i>
+          <small class="health-resource-detail">${escapeHtml(t('health_fs_free'))}: ${escapeHtml(humanBytes(disk.fsFreeBytes))} / ${escapeHtml(humanBytes(disk.fsTotalBytes))}</small>
+        </div>
+        <div class="health-resource-card">
+          <span><strong>${escapeHtml(t('health_load_average'))}</strong><small>1 / 5 / 15 min</small></span>
+          <b>${escapeHtml(loadAverage.map((value) => Number(value).toFixed(2)).join(' · ') || '—')}</b>
+        </div>
+        <div class="health-resource-card">
+          <span><strong>${escapeHtml(t('health_process_memory'))}</strong><small>RSS / heap</small></span>
+          <b>${escapeHtml(humanBytes(resources.processRssBytes))} / ${escapeHtml(humanBytes(resources.processHeapUsedBytes))}</b>
+        </div>`;
       systemHealthRows.innerHTML = [
-        `<div class="row"><strong>${escapeHtml(t('health_disk'))}</strong><span>${escapeHtml(t('health_uploads_size'))}: ${escapeHtml(humanBytes(disk.uploadsBytes))} | ${escapeHtml(t('health_uploads_files'))}: ${escapeHtml(String(disk.uploadsFiles || 0))} | ${escapeHtml(t('health_fs_free'))}: ${escapeHtml(humanBytes(disk.fsFreeBytes))} / ${escapeHtml(t('health_fs_total'))}: ${escapeHtml(humanBytes(disk.fsTotalBytes))}</span></div>`,
+        global.document?.body?.classList?.contains('admin-page')
+          ? `<div class="row health-resources-row"><strong>${escapeHtml(t('health_resources'))}</strong><div class="health-resource-list">${resourceCards}</div></div>`
+          : '',
         `<div class="row health-services-row" data-health-section="services"><strong>${escapeHtml(t('health_services'))}</strong><div class="health-service-list">${serviceCards}</div></div>`,
         `<div class="row"><strong>${escapeHtml(t('health_jobs'))}</strong><span>${escapeHtml(t('health_proxy_running'))}: ${escapeHtml(String(jobs.proxyRunning || 0))} | ${escapeHtml(t('health_subtitle_running'))}: ${escapeHtml(String(jobs.subtitleRunning || 0))} | ${escapeHtml(t('health_ocr_running'))}: ${escapeHtml(String(jobs.ocrRunning || 0))} | ${escapeHtml(t('health_metadata_running'))}: ${escapeHtml(String(jobs.metadataRunning || 0))} | ${escapeHtml(t('health_proxy_failed'))}: ${escapeHtml(String(jobs.proxyFailed || 0))} | ${escapeHtml(t('health_subtitle_failed'))}: ${escapeHtml(String(jobs.subtitleFailed || 0))} | ${escapeHtml(t('health_ocr_failed'))}: ${escapeHtml(String(jobs.ocrFailed || 0))} | ${escapeHtml(t('health_metadata_failed'))}: ${escapeHtml(String(jobs.metadataFailed || 0))}</span></div>`,
         `<div class="row"><strong>${escapeHtml(t('health_integrity'))}</strong><span>${escapeHtml(t('health_missing_proxy'))}: ${escapeHtml(String(integrity.missingProxy || 0))} | ${escapeHtml(t('health_missing_thumbnail'))}: ${escapeHtml(String(integrity.missingThumbnail || 0))} | ${escapeHtml(t('health_missing_subtitle'))}: ${escapeHtml(String(integrity.missingSubtitle || 0))} | ${escapeHtml(t('health_missing_ocr'))}: ${escapeHtml(String(integrity.missingOcr || 0))}</span></div>`
-      ].join('');
+      ].filter(Boolean).join('');
       if (systemJobStatus) {
         const filteredMediaJobs = filterMediaJobs(mediaJobs);
         systemJobStatus.innerHTML = `
