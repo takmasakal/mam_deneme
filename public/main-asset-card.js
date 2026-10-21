@@ -133,7 +133,7 @@
 
       const hitPager = `${subtitlePager}${ocrPager}`;
       const mediaDuration = (isVideo(asset) || isAudio(asset)) && Number(asset.durationSeconds) > 0
-        ? `${escapeHtml(t('duration'))}: ${escapeHtml(formatDuration(asset.durationSeconds, isVideo(asset) ? (asset.videoFrameRate || 25) : 0))}`
+        ? `${escapeHtml(t('duration'))}: ${escapeHtml(formatDuration(asset.durationSeconds, isVideo(asset) ? asset.videoFrameRate : 0, isVideo(asset) ? asset.videoFrameCount : 0))}`
         : '';
       const fileSizeBytes = Number(asset.fileSizeBytes);
       const fileSizeMb = Number.isFinite(fileSizeBytes) && fileSizeBytes > 0

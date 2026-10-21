@@ -406,7 +406,8 @@ function createMediaToolService(options = {}) {
           width: Number.isFinite(Number(video.width)) ? Math.max(0, Number(video.width)) : 0,
           height: Number.isFinite(Number(video.height)) ? Math.max(0, Number(video.height)) : 0,
           pixelFormat: String(video.pix_fmt || '').trim(),
-          frameRate: fps > 0 ? fps : 0
+          frameRate: fps > 0 ? fps : 0,
+          frameCount: Number.isFinite(Number(video.nb_frames)) ? Math.max(0, Number(video.nb_frames)) : 0
         } : null,
         audio: {
           streamCount: audioStreams.length,

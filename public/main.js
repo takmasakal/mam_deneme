@@ -1368,7 +1368,7 @@ function isTextPreviewable(asset) { return commonModule.isTextPreviewable(asset)
 function thumbFallbackForAsset(asset) { return commonModule.thumbFallbackForAsset(asset); }
 function documentSearchControls() { return commonModule.documentSearchControls(); }
 function formatDate(value) { return commonModule.formatDate(value); }
-function formatDuration(seconds, frameRate = 0) { return commonModule.formatDuration(seconds, frameRate); }
+function formatDuration(seconds, frameRate = 0, frameCount = 0) { return commonModule.formatDuration(seconds, frameRate, frameCount); }
 async function loadAssetTechnicalInfo(asset) { return commonModule.loadAssetTechnicalInfo(asset); }
 
 function openDownloadInNewTab(downloadUrl) {

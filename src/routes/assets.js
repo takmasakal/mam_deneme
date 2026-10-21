@@ -1467,10 +1467,12 @@ function registerAssetRoutes(app, deps) {
   
     let sourceDurationSeconds = 0;
     let sourceVideoFrameRate = 0;
+    let sourceVideoFrameCount = 0;
     if (persistOriginalMedia && isVideoUpload) {
       const sourceTechnicalInfo = await probeMediaTechnicalInfo(absolutePath);
       sourceDurationSeconds = Number(sourceTechnicalInfo?.durationSeconds) || 0;
       sourceVideoFrameRate = Number(sourceTechnicalInfo?.video?.frameRate) || 0;
+      sourceVideoFrameCount = Number(sourceTechnicalInfo?.video?.frameCount) || 0;
     }
 
     const requestedOwner = String(metadata.owner || metadata.uploadedBy || '').trim();
@@ -1491,7 +1493,8 @@ function registerAssetRoutes(app, deps) {
       },
       fileHash,
       sourcePath: persistOriginalMedia ? absolutePath : '',
-      videoFrameRate: sourceVideoFrameRate
+      videoFrameRate: sourceVideoFrameRate,
+      videoFrameCount: sourceVideoFrameCount
     };
     if (sourceDurationSeconds > 0) payload.durationSeconds = sourceDurationSeconds;
     if (persistOriginalMedia && (isVideoUpload || String(mimeType || '').toLowerCase().startsWith('audio/'))
