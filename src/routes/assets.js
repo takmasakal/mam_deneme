@@ -8,6 +8,18 @@ const { buildSearchableDcSql } = require('../services/assetSearchTextService');
 
 const advancedSearchService = createAdvancedSearchService();
 
+function getTechnicalInfoFingerprint(filePath) {
+  const target = String(filePath || '').trim();
+  if (!target) return '';
+  try {
+    const stat = fs.statSync(target);
+    if (!stat.isFile()) return '';
+    return `${path.resolve(target)}\u001f${stat.size}\u001f${stat.mtimeMs}`;
+  } catch (_error) {
+    return '';
+  }
+}
+
 function registerAssetRoutes(app, deps) {
   const {
     pool,
@@ -1496,11 +1508,15 @@ function registerAssetRoutes(app, deps) {
     let sourceDurationSeconds = 0;
     let sourceVideoFrameRate = 0;
     let sourceVideoFrameCount = 0;
+    let sourceTechnicalInfo = null;
+    let proxyTechnicalInfo = null;
     if (persistOriginalMedia && isVideoUpload) {
-      const sourceTechnicalInfo = await probeMediaTechnicalInfo(absolutePath);
+      sourceTechnicalInfo = await probeMediaTechnicalInfo(absolutePath);
       sourceDurationSeconds = Number(sourceTechnicalInfo?.durationSeconds) || 0;
       sourceVideoFrameRate = Number(sourceTechnicalInfo?.video?.frameRate) || 0;
       sourceVideoFrameCount = Number(sourceTechnicalInfo?.video?.frameCount) || 0;
+      const proxyPath = publicUploadUrlToAbsolutePath(resolveStoredUrl(proxyUrl, 'proxies'));
+      if (proxyPath && fs.existsSync(proxyPath)) proxyTechnicalInfo = await probeMediaTechnicalInfo(proxyPath);
     }
 
     const requestedOwner = String(metadata.owner || metadata.uploadedBy || '').trim();
@@ -1517,6 +1533,12 @@ function registerAssetRoutes(app, deps) {
       thumbnailUrl,
       dcMetadata: {
         ...(metadata?.dcMetadata && typeof metadata.dcMetadata === 'object' ? metadata.dcMetadata : {}),
+        ...(sourceTechnicalInfo ? {
+          mediaTechnicalInfo: {
+            original: { fingerprint: getTechnicalInfoFingerprint(absolutePath), payload: sourceTechnicalInfo },
+            proxy: { fingerprint: getTechnicalInfoFingerprint(publicUploadUrlToAbsolutePath(resolveStoredUrl(proxyUrl, 'proxies'))), payload: proxyTechnicalInfo || { available: false } }
+          }
+        } : {}),
         ...(detectedAudioChannels > 0 ? { audioChannels: detectedAudioChannels } : {})
       },
       fileHash,
@@ -1712,11 +1734,33 @@ function registerAssetRoutes(app, deps) {
       })();
   
       const proxyPath = publicUploadUrlToAbsolutePath(resolveStoredUrl(row.proxy_url, 'proxies'));
-  
+      const cachedInfo = row.dc_metadata?.mediaTechnicalInfo && typeof row.dc_metadata.mediaTechnicalInfo === 'object'
+        ? row.dc_metadata.mediaTechnicalInfo
+        : {};
+      const originalFingerprint = getTechnicalInfoFingerprint(sourcePath);
+      const proxyFingerprint = getTechnicalInfoFingerprint(proxyPath);
+      const cachedOriginal = cachedInfo.original?.fingerprint === originalFingerprint
+        && (cachedInfo.original?.payload?.available || !originalFingerprint)
+        ? cachedInfo.original
+        : null;
+      const cachedProxy = cachedInfo.proxy?.fingerprint === proxyFingerprint
+        && (cachedInfo.proxy?.payload?.available || !proxyFingerprint)
+        ? cachedInfo.proxy
+        : null;
       const [original, proxy] = await Promise.all([
-        probeMediaTechnicalInfo(sourcePath),
-        probeMediaTechnicalInfo(proxyPath)
+        cachedOriginal ? Promise.resolve(cachedOriginal.payload) : probeMediaTechnicalInfo(sourcePath),
+        cachedProxy ? Promise.resolve(cachedProxy.payload) : probeMediaTechnicalInfo(proxyPath)
       ]);
+      if (!cachedOriginal || !cachedProxy) {
+        const nextTechnicalInfo = {
+          original: cachedOriginal || { fingerprint: originalFingerprint, payload: original },
+          proxy: cachedProxy || { fingerprint: proxyFingerprint, payload: proxy }
+        };
+        await pool.query(
+          `UPDATE assets SET dc_metadata = jsonb_set(COALESCE(dc_metadata, '{}'::jsonb), '{mediaTechnicalInfo}', $2::jsonb, true) WHERE id = $1`,
+          [row.id, JSON.stringify(nextTechnicalInfo)]
+        );
+      }
   
       return res.json({
         assetId: row.id,

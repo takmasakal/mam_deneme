@@ -3935,6 +3935,9 @@ async function createAssetRecord(input) {
     dcMetadata: {
       ...buildDefaultDcMetadata(input),
       ...sanitizeDcMetadata(input.dcMetadata),
+      ...(input.dcMetadata?.mediaTechnicalInfo && typeof input.dcMetadata.mediaTechnicalInfo === 'object'
+        ? { mediaTechnicalInfo: input.dcMetadata.mediaTechnicalInfo }
+        : {}),
       ...(Number(input.videoFrameRate) > 0 ? { videoFrameRate: Number(input.videoFrameRate) } : {}),
       ...(Number(input.videoFrameCount) > 0 ? { videoFrameCount: Number(input.videoFrameCount) } : {})
     },
