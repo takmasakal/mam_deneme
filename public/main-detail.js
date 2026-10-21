@@ -260,7 +260,7 @@
       const workflowDisabled = asset.inTrash ? ' disabled' : '';
       const durationSeconds = Number(asset.durationSeconds) || 0;
       const hasDuration = (isVideo(asset) || (typeof isAudio === 'function' && isAudio(asset))) && durationSeconds > 0;
-      const durationMeta = hasDuration ? ` | <span id="assetDurationMeta">${t('duration')}: ${escapeHtml(formatDuration(durationSeconds))}</span>` : '';
+      const durationMeta = hasDuration ? ` | <span id="assetDurationMeta">${t('duration')}: ${escapeHtml(formatDuration(durationSeconds, isVideo(asset) ? asset.videoFrameRate : 0, isVideo(asset) ? asset.videoFrameCount : 0))}</span>` : '';
       const fileSizeBytes = Number(asset.fileSizeBytes);
       const hasFileSize = Number.isFinite(fileSizeBytes) && fileSizeBytes > 0;
       const fileSizeMeta = hasFileSize
