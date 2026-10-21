@@ -258,15 +258,7 @@
       const metadataFieldsetOpen = canEditMetadata ? '<fieldset class="metadata-fieldset">' : '<fieldset class="metadata-fieldset" disabled>';
       const durationSeconds = Number(asset.durationSeconds) || 0;
       const hasDuration = (isVideo(asset) || (typeof isAudio === 'function' && isAudio(asset))) && durationSeconds > 0;
-      const durationDisplaySeconds = durationSeconds;
-      const formattedDuration = (() => {
-        const totalCentiseconds = Math.max(0, Math.round(durationDisplaySeconds * 100));
-        const hours = String(Math.floor(totalCentiseconds / 360000)).padStart(2, '0');
-        const minutes = String(Math.floor((totalCentiseconds % 360000) / 6000)).padStart(2, '0');
-        const seconds = ((totalCentiseconds % 6000) / 100).toFixed(2).padStart(5, '0');
-        return `${hours}:${minutes}:${seconds}`;
-      })();
-      const durationMeta = hasDuration ? ` | <span id="assetDurationMeta">${t('duration')}: ${escapeHtml(formattedDuration)}</span>` : '';
+      const durationMeta = hasDuration ? ` | <span id="assetDurationMeta">${t('duration')}: ${escapeHtml(formatDuration(durationSeconds, isVideo(asset) ? asset.videoFrameRate : 0, isVideo(asset) ? asset.videoFrameCount : 0))}</span>` : '';
       const fileSizeBytes = Number(asset.fileSizeBytes);
       const hasFileSize = Number.isFinite(fileSizeBytes) && fileSizeBytes > 0;
       const fileSizeMeta = hasFileSize
