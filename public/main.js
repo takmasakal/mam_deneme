@@ -1412,6 +1412,7 @@ function buildInlineFieldMatch(value, query) { return commonModule.buildInlineFi
 function tagColorStyle(tag) { return commonModule.tagColorStyle(tag); }
 function assetTagChipStyle(asset) { return commonModule.assetTagChipStyle(asset); }
 function secondsToTimecode(timeSeconds, fps) { return commonModule.secondsToTimecode(timeSeconds, fps); }
+function clampTimecodeSecondsToFrameCount(timeSeconds, fps, frameCount, fallbackDuration = 0) { return commonModule.clampTimecodeSecondsToFrameCount(timeSeconds, fps, frameCount, fallbackDuration); }
 function parseTimecodeInput(value, fps) { return commonModule.parseTimecodeInput(value, fps); }
 function subtitleTrackMarkup(asset) { return commonModule.subtitleTrackMarkup(asset); }
 
