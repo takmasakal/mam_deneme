@@ -464,6 +464,15 @@
           : await api(`/api/assets/${asset.id}/technical`);
         if (selectedAssetIdRef?.get?.() !== asset.id) return;
         const originalVideoInfo = payload?.original?.video;
+        const technicalFps = Number(originalVideoInfo?.frameRate) || 0;
+        if (technicalFps > 0 && Number(asset.videoFrameRate) !== technicalFps) {
+          asset.videoFrameRate = technicalFps;
+          const mediaEl = document.getElementById('assetMediaEl');
+          if (mediaEl) {
+            mediaEl.dispatchEvent(new Event('durationchange'));
+            mediaEl.dispatchEvent(new Event('timeupdate'));
+          }
+        }
         if (originalVideoInfo && Number(originalVideoInfo.frameCount) > 0 && Number(originalVideoInfo.frameRate) > 0) {
           const preciseDuration = formatDuration(payload.original.durationSeconds, originalVideoInfo.frameRate, originalVideoInfo.frameCount);
           const durationMeta = document.getElementById('assetDurationMeta');
@@ -638,7 +647,7 @@
       const clips = asset.cuts.map((cut) => ({ cutId: String(cut?.cutId || '').trim(), label: String(cut?.label || '').trim(), inPointSeconds: Math.max(0, Number(cut?.inPointSeconds || 0)) })).filter((cut) => cut.cutId && cut.label && terms.some((term) => textIncludesSearchTerm(cut.label, term)));
       if (!clips.length) return '';
       return clips.map((cut) => {
-        const startTc = secondsToTimecode(cut.inPointSeconds, PLAYER_FPS);
+        const startTc = secondsToTimecode(cut.inPointSeconds, Number(asset.videoFrameRate) || PLAYER_FPS);
         return `<button type="button" class="dc-hit clip-hit-jump" data-clip-jump="1" data-id="${escapeHtml(String(asset.id || ''))}" data-cut-id="${escapeHtml(String(cut.cutId || ''))}" data-start-sec="${escapeHtml(String(cut.inPointSeconds))}"><strong>${escapeHtml(t('clip_name'))}:</strong> ${highlightMatch(cut.label, query)} <span class="dc-hit-tc">TC ${escapeHtml(startTc)}</span></button>`;
       }).join(' ');
     }

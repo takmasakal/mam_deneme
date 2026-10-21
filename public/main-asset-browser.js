@@ -149,7 +149,7 @@ function renderAssetHitList({ asset, type, hits, query, hitClass, label }) {
       const hitText = String(hit?.text || '').trim();
       if (!hitText) return '';
       const hitSec = Number(hit?.startSec || 0);
-      const hitTc = secondsToTimecode(hitSec, PLAYER_FPS);
+      const hitTc = secondsToTimecode(hitSec, Number(asset?.videoFrameRate) || PLAYER_FPS);
       return `<button type="button" class="asset-meta dc-hit-row media-hit-jump" data-media-hit="1" data-hit-type="${escapeHtml(type)}" data-id="${escapeHtml(asset.id)}" data-start-sec="${escapeHtml(String(hitSec))}"><strong>${escapeHtml(label)}</strong> <span class="dc-hit-tc">TC ${escapeHtml(hitTc)}</span>: ${highlightMatch(hitText, query, hitClass)}</button>`;
     })
     .filter(Boolean)
@@ -397,7 +397,7 @@ async function handleAssetHitPage(button) {
         text: String(item.line || item.text || ''),
         startSec: Number(item.startSec || 0),
         endSec: Number(item.endSec || 0),
-        startTc: String(item.startTc || secondsToTimecode(Number(item.startSec || 0), PLAYER_FPS))
+        startTc: String(item.startTc || secondsToTimecode(Number(item.startSec || 0), Number(asset.videoFrameRate) || PLAYER_FPS))
       }));
       asset.ocrSearchPage = { ...page, query: highlightQuery };
     } else {
@@ -406,7 +406,7 @@ async function handleAssetHitPage(button) {
         text: String(item.text || ''),
         startSec: Number(item.startSec || 0),
         endSec: Number(item.endSec || 0),
-        startTc: String(item.startTc || secondsToTimecode(Number(item.startSec || 0), PLAYER_FPS))
+        startTc: String(item.startTc || secondsToTimecode(Number(item.startSec || 0), Number(asset.videoFrameRate) || PLAYER_FPS))
       }));
       asset.subtitleSearchPage = { ...page, query: highlightQuery };
     }

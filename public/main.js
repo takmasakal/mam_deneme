@@ -74,7 +74,7 @@ const FALLBACK_LOGOUT_URL = '/oauth2/sign_out?rd=%2Foauth2%2Fstart%3Frd%3D%252F'
 const LOGOUT_URL_TIMEOUT_MS = 1200;
 const DETAIL_PANEL_BASE_MIN_PX = 377;
 const USER_PERMISSION_REFRESH_INTERVAL_MS = 30000;
-const PLAYER_FPS = 25;
+const DEFAULT_PLAYER_FPS = 25;
 const PANELS = [
   { id: 'panelIngest', defaultSize: 1 },
   { id: 'panelAssets', defaultSize: 1.2 },
@@ -349,7 +349,7 @@ const shellModule = window.createMainShellModule({
   },
   scheduleNativeSubtitleCuePosition,
   secondsToTimecode,
-  PLAYER_FPS,
+  PLAYER_FPS: DEFAULT_PLAYER_FPS,
   parseTimecodeInput
 });
 
@@ -1330,7 +1330,7 @@ commonModule = window.createMainCommonModule({
     get: () => currentLang
   },
   subtitleOverlayEnabledByAsset,
-  PLAYER_FPS,
+  PLAYER_FPS: DEFAULT_PLAYER_FPS,
   selectedAssetIdRef: {
     get: () => selectedAssetId
   },
@@ -2175,7 +2175,7 @@ const assetBrowserModule = window.createMainAssetBrowserModule({
   isVideo,
   isAudio,
   isDocument,
-  PLAYER_FPS,
+  PLAYER_FPS: DEFAULT_PLAYER_FPS,
   loadAssets: (...args) => loadAssets(...args),
   setPanelVideoToolsButtonState
 });
@@ -2377,7 +2377,7 @@ async function openMultiSelectionDetail() {
 const playerRuntimeModule = window.createMainPlayerRuntimeModule({
   t,
   escapeHtml,
-  PLAYER_FPS,
+  PLAYER_FPS: DEFAULT_PLAYER_FPS,
   useMpegDashPlayerUI,
   isVideo,
   isAudio,
@@ -2416,8 +2416,8 @@ function initMpegDashPlayer(mediaEl, asset, root = document) {
   return playerRuntimeModule.initMpegDashPlayer(mediaEl, asset, root);
 }
 
-function initPlaybackRateLongPress(mediaEl, triggerBtn, backwardBtn, forwardBtn) {
-  return playerRuntimeModule.initPlaybackRateLongPress(mediaEl, triggerBtn, backwardBtn, forwardBtn);
+function initPlaybackRateLongPress(mediaEl, triggerBtn, backwardBtn, forwardBtn, asset = null) {
+  return playerRuntimeModule.initPlaybackRateLongPress(mediaEl, triggerBtn, backwardBtn, forwardBtn, asset);
 }
 
 function initFrameControls(mediaEl, asset, root = document, options = {}) {
@@ -2431,15 +2431,15 @@ const playerUiModule = window.createMainPlayerUiModule({
     get: () => detailVideoPinned,
     set: (value) => { detailVideoPinned = Boolean(value); }
   },
-  PLAYER_FPS
+  PLAYER_FPS: DEFAULT_PLAYER_FPS
 });
 
 function initDetailVideoPin(root = document) {
   return playerUiModule.initDetailVideoPin(root);
 }
 
-function initCustomVideoControls(mediaEl, root = document) {
-  return playerUiModule.initCustomVideoControls(mediaEl, root);
+function initCustomVideoControls(mediaEl, root = document, asset = null) {
+  return playerUiModule.initCustomVideoControls(mediaEl, root, asset);
 }
 
 const documentPreviewModule = window.createMainDocumentPreviewModule({

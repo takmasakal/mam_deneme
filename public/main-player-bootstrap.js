@@ -55,7 +55,7 @@
         if (isVideo(asset)) {
           if (useMpegDashPlayerUI()) cleanups.push(initMpegDashPlayer(mediaEl, asset, root));
           cleanups.push(initFrameControls(mediaEl, asset, root, options));
-          if (useCustomLikeTimelineUI()) cleanups.push(initCustomVideoControls(mediaEl, root));
+          if (useCustomLikeTimelineUI()) cleanups.push(initCustomVideoControls(mediaEl, root, asset));
           cleanups.push(initVideoSubtitleTools(mediaEl, asset, root));
           if (typeof initCustomSubtitleOverlay === 'function') {
             cleanups.push(initCustomSubtitleOverlay(mediaEl, asset, root));
@@ -66,7 +66,7 @@
         }
         if (isAudio(asset)) {
           cleanups.push(initFrameControls(mediaEl, asset, root, options));
-          cleanups.push(initCustomVideoControls(mediaEl, root));
+          cleanups.push(initCustomVideoControls(mediaEl, root, asset));
           cleanups.push(initVideoSubtitleTools(mediaEl, asset, root));
           if (typeof initCustomSubtitleOverlay === 'function') {
             cleanups.push(initCustomSubtitleOverlay(mediaEl, asset, root));
