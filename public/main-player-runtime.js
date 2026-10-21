@@ -76,7 +76,7 @@
       };
     }
 
-    function initPlaybackRateLongPress(mediaEl, triggerBtn, backwardBtn, forwardBtn) {
+    function initPlaybackRateLongPress(mediaEl, triggerBtn, backwardBtn, forwardBtn, asset = null) {
       if (!(mediaEl instanceof HTMLMediaElement) || !(triggerBtn instanceof HTMLElement) || !(backwardBtn instanceof HTMLElement) || !(forwardBtn instanceof HTMLElement)) return () => {};
 
       const rates = [0.25, 0.5, 1, 2, 4, 8];
@@ -175,7 +175,7 @@
         } finally {
           suppressPauseHandling = false;
         }
-        const fps = Math.max(1, PLAYER_FPS || 25);
+        const fps = Math.max(1, Number(asset?.videoFrameRate) || PLAYER_FPS || 25);
         const stepSeconds = Math.max(0.001, preferredRate / fps);
         reverseTimer = global.setInterval(() => {
           const current = Number(mediaEl.currentTime) || 0;
@@ -357,7 +357,7 @@
         return () => {};
       }
 
-      const playbackRateCleanup = initPlaybackRateLongPress(mediaEl, playbackRateBtn, playbackRateBackBtn, playbackRateForwardBtn);
+      const playbackRateCleanup = initPlaybackRateLongPress(mediaEl, playbackRateBtn, playbackRateBackBtn, playbackRateForwardBtn, asset);
       const marks = cutMarksByAsset.get(asset.id) || { in: null, out: null };
       cutMarksByAsset.set(asset.id, marks);
       const cuts = Array.isArray(asset.cuts) ? [...asset.cuts] : [];
@@ -366,7 +366,7 @@
       let activeCutPlayOutSec = null;
       const subtitleOverlayCheck = root.querySelector('#subtitleOverlayCheck');
 
-      const getFps = () => PLAYER_FPS;
+      const getFps = () => Math.max(1, Number(asset?.videoFrameRate) || PLAYER_FPS || 25);
       const snapToFrame = (seconds) => {
         const fps = getFps();
         const raw = Number(seconds);

@@ -152,6 +152,7 @@ async function toggleFullscreenForElement(targetEl) {
 
 function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
   if (!mediaEl || !fullscreenTarget) return () => {};
+  const getAssetFps = () => Math.max(1, Number(asset?.videoFrameRate) || PLAYER_FPS || 25);
   const prevNativeControls = Boolean(mediaEl.controls);
   const overlay = document.createElement('div');
   overlay.className = 'fullscreen-overlay hidden';
@@ -471,7 +472,7 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
   const syncOverlay = () => {
     const duration = Number.isFinite(mediaEl.duration) ? mediaEl.duration : 0;
     const current = Number(mediaEl.currentTime) || 0;
-    if (fsTimecodeValue) fsTimecodeValue.textContent = secondsToTimecode(current, PLAYER_FPS);
+    if (fsTimecodeValue) fsTimecodeValue.textContent = secondsToTimecode(current, getAssetFps());
     if (fsTime) fsTime.textContent = `${formatClock(current)} / ${formatClock(duration)}`;
     if (fsSeek && duration > 0) {
       const ratio = Math.max(0, Math.min(1, current / duration));
@@ -565,7 +566,7 @@ function initFullscreenOverlay(mediaEl, fullscreenTarget, asset = null) {
   const onTimecodeJumpApply = async () => {
     const nextTc = String(fsTcJumpInput?.value || '').trim();
     if (!nextTc) return;
-    const nextSeconds = parseTimecodeInput(nextTc, PLAYER_FPS);
+    const nextSeconds = parseTimecodeInput(nextTc, getAssetFps());
     if (!Number.isFinite(nextSeconds)) {
       alert(t('invalid_timecode'));
       return;

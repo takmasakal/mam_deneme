@@ -69,7 +69,7 @@ document.addEventListener('mam:version-order-changed', (event) => {
 });
 const I18N_PATH = '/i18n.json';
 const DETAIL_PANEL_BASE_MIN_PX = 377;
-const PLAYER_FPS = 25;
+const DEFAULT_PLAYER_FPS = 25;
 const PANELS = [
   { id: 'panelIngest', defaultSize: 1 },
   { id: 'panelAssets', defaultSize: 1.2 },
@@ -340,7 +340,7 @@ const shellModule = window.createMainShellModule({
   },
   scheduleNativeSubtitleCuePosition,
   secondsToTimecode,
-  PLAYER_FPS,
+  PLAYER_FPS: DEFAULT_PLAYER_FPS,
   parseTimecodeInput
 });
 
@@ -1287,7 +1287,7 @@ commonModule = window.createMainCommonModule({
     get: () => currentLang
   },
   subtitleOverlayEnabledByAsset,
-  PLAYER_FPS,
+  PLAYER_FPS: DEFAULT_PLAYER_FPS,
   selectedAssetIdRef: {
     get: () => selectedAssetId
   },
@@ -2119,7 +2119,7 @@ const assetBrowserModule = window.createMainAssetBrowserModule({
   isVideo,
   isAudio,
   isDocument,
-  PLAYER_FPS,
+  PLAYER_FPS: DEFAULT_PLAYER_FPS,
   loadAssets: (...args) => loadAssets(...args),
   assetPaginationRef: assetPaginationState,
   setPanelVideoToolsButtonState
@@ -2324,7 +2324,7 @@ async function openMultiSelectionDetail() {
 const playerRuntimeModule = window.createMainPlayerRuntimeModule({
   t,
   escapeHtml,
-  PLAYER_FPS,
+  PLAYER_FPS: DEFAULT_PLAYER_FPS,
   useMpegDashPlayerUI,
   isVideo,
   cutMarksByAsset,
@@ -2362,8 +2362,8 @@ function initMpegDashPlayer(mediaEl, asset, root = document) {
   return playerRuntimeModule.initMpegDashPlayer(mediaEl, asset, root);
 }
 
-function initPlaybackRateLongPress(mediaEl, triggerBtn, backwardBtn, forwardBtn) {
-  return playerRuntimeModule.initPlaybackRateLongPress(mediaEl, triggerBtn, backwardBtn, forwardBtn);
+function initPlaybackRateLongPress(mediaEl, triggerBtn, backwardBtn, forwardBtn, asset = null) {
+  return playerRuntimeModule.initPlaybackRateLongPress(mediaEl, triggerBtn, backwardBtn, forwardBtn, asset);
 }
 
 function initFrameControls(mediaEl, asset, root = document, options = {}) {
@@ -2377,15 +2377,15 @@ const playerUiModule = window.createMainPlayerUiModule({
     get: () => detailVideoPinned,
     set: (value) => { detailVideoPinned = Boolean(value); }
   },
-  PLAYER_FPS
+  PLAYER_FPS: DEFAULT_PLAYER_FPS
 });
 
 function initDetailVideoPin(root = document) {
   return playerUiModule.initDetailVideoPin(root);
 }
 
-function initCustomVideoControls(mediaEl, root = document) {
-  return playerUiModule.initCustomVideoControls(mediaEl, root);
+function initCustomVideoControls(mediaEl, root = document, asset = null) {
+  return playerUiModule.initCustomVideoControls(mediaEl, root, asset);
 }
 
 const documentPreviewModule = window.createMainDocumentPreviewModule({

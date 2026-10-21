@@ -244,7 +244,7 @@
       };
     }
 
-    function initCustomVideoControls(mediaEl, root = document) {
+    function initCustomVideoControls(mediaEl, root = document, asset = null) {
       const byId = (id) => root.querySelector(`#${id}`);
       const bar = byId('customPlayerBar');
       const playBtn = byId('customPlayPauseBtn');
@@ -256,13 +256,13 @@
       if (!bar || !playBtn || !currentEl || !durationEl || !seek || !muteBtn || !vol) return () => {};
       let lastVolume = Number.isFinite(mediaEl.volume) && mediaEl.volume > 0 ? mediaEl.volume : 1;
       let isSeeking = false;
-      const fps = PLAYER_FPS;
+      const getFps = () => Math.max(1, Number(asset?.videoFrameRate) || PLAYER_FPS || 25);
       let totalFrames = 1;
       let maxFrame = 0;
       const getDuration = () => (Number.isFinite(mediaEl.duration) && mediaEl.duration > 0 ? mediaEl.duration : 0);
       const rebuildSeekScale = () => {
         const duration = getDuration();
-        totalFrames = Math.max(1, Math.floor(duration * fps));
+        totalFrames = Math.max(1, Math.floor(duration * getFps()));
         maxFrame = Math.max(0, totalFrames - 1);
         seek.min = '0';
         seek.step = '1';
@@ -271,13 +271,13 @@
       const secondsToFrame = (sec) => {
         const duration = getDuration();
         if (duration <= 0) return 0;
-        return Math.max(0, Math.min(maxFrame, Math.round(Number(sec || 0) * fps)));
+        return Math.max(0, Math.min(maxFrame, Math.round(Number(sec || 0) * getFps())));
       };
       const frameToSeconds = (frame) => {
         const duration = getDuration();
         if (duration <= 0) return 0;
         const safe = Math.max(0, Math.min(maxFrame, Number(frame || 0)));
-        return Math.max(0, Math.min(duration, safe / fps));
+        return Math.max(0, Math.min(duration, safe / getFps()));
       };
       const toClock = (sec) => {
         const s = Math.max(0, Number(sec) || 0);
