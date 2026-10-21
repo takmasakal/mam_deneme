@@ -2393,6 +2393,7 @@ const playerRuntimeModule = window.createMainPlayerRuntimeModule({
   highlightMatch,
   effectiveSearchHighlightClass,
   secondsToTimecode,
+  clampTimecodeSecondsToFrameCount,
   parseTimecodeInput,
   api,
   deleteApi,
