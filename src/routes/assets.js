@@ -1487,7 +1487,7 @@ function registerAssetRoutes(app, deps) {
     if (persistOriginalMedia && (isVideoUpload || String(mimeType || '').toLowerCase().startsWith('audio/'))
       && (!Number(payload.durationSeconds) || Number(payload.durationSeconds) <= 0)) {
       const detected = await getVideoDurationSeconds(absolutePath);
-      if (detected > 0) payload.durationSeconds = Math.round(detected);
+      if (detected > 0) payload.durationSeconds = detected;
     }
   
     try {

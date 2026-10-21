@@ -46,7 +46,7 @@ async function initDb() {
       type TEXT NOT NULL,
       tags TEXT[] NOT NULL DEFAULT '{}',
       owner TEXT NOT NULL,
-      duration_seconds INTEGER NOT NULL DEFAULT 0,
+      duration_seconds DOUBLE PRECISION NOT NULL DEFAULT 0,
       source_path TEXT NOT NULL DEFAULT '',
       media_url TEXT NOT NULL DEFAULT '',
       proxy_url TEXT NOT NULL DEFAULT '',
@@ -77,6 +77,10 @@ async function initDb() {
       updated_at TIMESTAMPTZ NOT NULL
       ,default_version_id TEXT NOT NULL DEFAULT ''
     );
+
+    ALTER TABLE assets
+    ALTER COLUMN duration_seconds TYPE DOUBLE PRECISION
+    USING duration_seconds::DOUBLE PRECISION;
 
     ALTER TABLE assets
     ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
