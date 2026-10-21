@@ -690,14 +690,28 @@
     }
 
     function secondsToTimecode(timeSeconds, fps) {
-      const safeFps = Math.max(1, Math.round(Number(fps) || 25));
-      const totalFrames = Math.max(0, Math.round((Number(timeSeconds) || 0) * safeFps));
-      const frames = totalFrames % safeFps;
-      const totalSeconds = Math.floor(totalFrames / safeFps);
+      const actualFps = Math.max(1, Number(fps) || 25);
+      const nominalFps = Math.max(1, Math.round(actualFps));
+      // Convert elapsed media time to frames using ffprobe's actual rate, then
+      // format the frame count using the nominal timecode base (e.g. 30 for
+      // 29.97 fps). Using nominal FPS for both steps accumulates frame drift.
+      const totalFrames = Math.max(0, Math.round((Number(timeSeconds) || 0) * actualFps));
+      const frames = totalFrames % nominalFps;
+      const totalSeconds = Math.floor(totalFrames / nominalFps);
       const secs = totalSeconds % 60;
       const mins = Math.floor(totalSeconds / 60) % 60;
       const hours = Math.floor(totalSeconds / 3600);
       return [hours, mins, secs, frames].map((n) => String(n).padStart(2, '0')).join(':');
+    }
+
+    function clampTimecodeSecondsToFrameCount(timeSeconds, fps, frameCount, fallbackDuration = 0) {
+      const current = Math.max(0, Number(timeSeconds) || 0);
+      const rate = Math.max(0, Number(fps) || 0);
+      const frames = Math.max(0, Number(frameCount) || 0);
+      const duration = frames > 0 && rate > 0
+        ? frames / rate
+        : Math.max(0, Number(fallbackDuration) || 0);
+      return duration > 0 ? Math.min(current, duration) : current;
     }
 
     function parseTimecodeInput(value, fps) {
@@ -1134,6 +1148,7 @@
       tagColorStyle,
       assetTagChipStyle,
       secondsToTimecode,
+      clampTimecodeSecondsToFrameCount,
       parseTimecodeInput,
       initCustomSubtitleOverlay,
       applyNativeSubtitleCuePosition,
