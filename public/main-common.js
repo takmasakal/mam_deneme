@@ -337,8 +337,8 @@
       const duration = Math.max(0, Number(seconds) || 0);
       const fps = Math.max(0, Number(frameRate) || 0);
       const frames = Math.max(0, Number(frameCount) || 0);
-      const lastFrameTime = fps > 0 && frames > 0 ? Math.max(0, (frames - 1) / fps) : duration;
-      const totalCentiseconds = Math.max(0, Math.round(lastFrameTime * 100));
+      const frameBasedDuration = fps > 0 && frames > 0 ? (frames / fps) : duration;
+      const totalCentiseconds = Math.max(0, Math.round(frameBasedDuration * 100));
       const hh = String(Math.floor(totalCentiseconds / 360000)).padStart(2, '0');
       const mm = String(Math.floor((totalCentiseconds % 360000) / 6000)).padStart(2, '0');
       const secondsWithinMinute = (totalCentiseconds % 6000) / 100;
