@@ -334,11 +334,11 @@
     }
 
     function formatDuration(seconds) {
-      const totalMilliseconds = Math.max(0, Math.round((Number(seconds) || 0) * 1000));
-      const hh = String(Math.floor(totalMilliseconds / 3600000)).padStart(2, '0');
-      const mm = String(Math.floor((totalMilliseconds % 3600000) / 60000)).padStart(2, '0');
-      const secondsWithinMinute = (totalMilliseconds % 60000) / 1000;
-      return `${hh}:${mm}:${secondsWithinMinute.toFixed(3).padStart(6, '0')}`;
+      const totalCentiseconds = Math.max(0, Math.round((Number(seconds) || 0) * 100));
+      const hh = String(Math.floor(totalCentiseconds / 360000)).padStart(2, '0');
+      const mm = String(Math.floor((totalCentiseconds % 360000) / 6000)).padStart(2, '0');
+      const secondsWithinMinute = (totalCentiseconds % 6000) / 100;
+      return `${hh}:${mm}:${secondsWithinMinute.toFixed(2).padStart(5, '0')}`;
     }
 
     function formatBitrate(bitsPerSec) {
