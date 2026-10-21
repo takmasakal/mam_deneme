@@ -259,10 +259,10 @@
       const durationSeconds = Number(asset.durationSeconds) || 0;
       const hasDuration = (isVideo(asset) || (typeof isAudio === 'function' && isAudio(asset))) && durationSeconds > 0;
       const formattedDuration = (() => {
-        const totalMilliseconds = Math.max(0, Math.round(durationSeconds * 1000));
-        const hours = String(Math.floor(totalMilliseconds / 3600000)).padStart(2, '0');
-        const minutes = String(Math.floor((totalMilliseconds % 3600000) / 60000)).padStart(2, '0');
-        const seconds = ((totalMilliseconds % 60000) / 1000).toFixed(3).padStart(6, '0');
+        const totalCentiseconds = Math.max(0, Math.round(durationSeconds * 100));
+        const hours = String(Math.floor(totalCentiseconds / 360000)).padStart(2, '0');
+        const minutes = String(Math.floor((totalCentiseconds % 360000) / 6000)).padStart(2, '0');
+        const seconds = ((totalCentiseconds % 6000) / 100).toFixed(2).padStart(5, '0');
         return `${hours}:${minutes}:${seconds}`;
       })();
       const durationMeta = hasDuration ? ` | ${t('duration')}: ${escapeHtml(formattedDuration)}` : '';
