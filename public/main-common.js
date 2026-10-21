@@ -337,10 +337,14 @@
       const duration = Math.max(0, Number(seconds) || 0);
       const fps = Math.max(0, Number(frameRate) || 0);
       const frames = Math.max(0, Number(frameCount) || 0);
-      // ffprobe's counted frames and measured frame rate are the source of
-      // truth: dividing the total frame count by FPS also handles fractional
-      // rates (for example 30000/1001) without mixing nominal and actual FPS.
-      const frameBasedDuration = fps > 0 && frames > 0 ? frames / fps : duration;
+      // Timecode HH:MM:SS fields use nominal integer FPS, while the frame
+      // remainder must use ffprobe's actual FPS (e.g. 29.97). Dividing the
+      // entire frame count by actual FPS incorrectly shifts the whole-second
+      // portion for fractional rates.
+      const nominalFps = Math.max(1, Math.round(fps));
+      const frameBasedDuration = fps > 0 && frames > 0
+        ? Math.floor(frames / nominalFps) + ((frames % nominalFps) / fps)
+        : duration;
       const totalCentiseconds = Math.max(0, Math.round(frameBasedDuration * 100));
       const hh = String(Math.floor(totalCentiseconds / 360000)).padStart(2, '0');
       const mm = String(Math.floor((totalCentiseconds % 360000) / 6000)).padStart(2, '0');
