@@ -3934,7 +3934,8 @@ async function createAssetRecord(input) {
     downloadDeniedGroups: assetAccessService.normalizeAccessList(input.downloadDeniedGroups || input.download_denied_groups || []),
     dcMetadata: {
       ...buildDefaultDcMetadata(input),
-      ...sanitizeDcMetadata(input.dcMetadata)
+      ...sanitizeDcMetadata(input.dcMetadata),
+      ...(Number(input.videoFrameRate) > 0 ? { videoFrameRate: Number(input.videoFrameRate) } : {})
     },
     status: input.status?.trim() || 'Ingested',
     deletedAt: null,

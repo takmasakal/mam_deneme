@@ -333,8 +333,11 @@
       return `${day}.${month}.${year} ${hour}:${minute}`;
     }
 
-    function formatDuration(seconds) {
-      const totalCentiseconds = Math.max(0, Math.round((Number(seconds) || 0) * 100));
+    function formatDuration(seconds, frameRate = 0) {
+      const duration = Math.max(0, Number(seconds) || 0);
+      const fps = Math.max(0, Number(frameRate) || 0);
+      const lastFrameTime = fps > 0 && duration > 0 ? Math.max(0, duration - (1 / fps)) : duration;
+      const totalCentiseconds = Math.max(0, Math.round(lastFrameTime * 100));
       const hh = String(Math.floor(totalCentiseconds / 360000)).padStart(2, '0');
       const mm = String(Math.floor((totalCentiseconds % 360000) / 6000)).padStart(2, '0');
       const secondsWithinMinute = (totalCentiseconds % 6000) / 100;
@@ -393,7 +396,7 @@
         <div class="tech-card">
           <h5>${escapeHtml(title)}</h5>
           <div class="tech-row"><span>${escapeHtml(t('tech_container'))}</span><strong>${escapeHtml(techValue(container))}</strong></div>
-          <div class="tech-row"><span>${escapeHtml(t('tech_duration'))}</span><strong>${escapeHtml(formatDuration(info.durationSeconds))}</strong></div>
+          <div class="tech-row"><span>${escapeHtml(t('tech_duration'))}</span><strong>${escapeHtml(formatDuration(info.durationSeconds, info.video?.frameRate))}</strong></div>
           <div class="tech-row"><span>${escapeHtml(t('tech_resolution'))}</span><strong>${escapeHtml(resolution)}</strong></div>
           <div class="tech-row"><span>${escapeHtml(t('tech_video_codec'))}</span><strong>${escapeHtml(techValue(videoCodec))}</strong></div>
           <div class="tech-row"><span>${escapeHtml(t('tech_frame_rate'))}</span><strong>${escapeHtml(formatFrameRate(info.video?.frameRate))}</strong></div>
