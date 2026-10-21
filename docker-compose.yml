@@ -39,7 +39,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      cache_from:
+        - kaisha-app:latest
       args:
+        BUILDKIT_INLINE_CACHE: "1"
         INSTALL_LIBREOFFICE: ${INSTALL_LIBREOFFICE:-true}
         PRELOAD_ML_MODELS: ${PRELOAD_ML_MODELS:-true}
         PRELOAD_PADDLE_OCR: ${PRELOAD_PADDLE_OCR:-true}

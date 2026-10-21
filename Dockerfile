@@ -111,7 +111,8 @@ ENV MAM_GIT_COMMIT=${MAM_GIT_COMMIT} \
 
 LABEL org.opencontainers.image.revision="${MAM_GIT_COMMIT}" \
   org.opencontainers.image.created="${MAM_BUILD_DATE}" \
-  org.opencontainers.image.source_branch="${MAM_GIT_BRANCH}"
+  org.opencontainers.image.source_branch="${MAM_GIT_BRANCH}" \
+  org.opencontainers.image.build-cache="inline-v1"
 
 EXPOSE 3000
 

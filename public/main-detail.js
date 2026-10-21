@@ -165,8 +165,8 @@
         });
       const languageLabel = (lang) => {
         const uiLang = String(currentLang?.() || 'tr').toLowerCase();
-        if (lang === 'tr') return uiLang === 'tr' ? t('subtitle_lang_turkish_short') : 'tur';
-        if (lang === 'en') return uiLang === 'tr' ? t('subtitle_lang_english_short') : 'eng';
+        if (lang === 'tr') return uiLang === 'tr' ? t('subtitle_lang_turkish_short') : 'Tur';
+        if (lang === 'en') return uiLang === 'tr' ? t('subtitle_lang_english_short') : 'Eng';
         return lang.slice(0, 3);
       };
       const subtitleBadge = languageChoices.length > 1
