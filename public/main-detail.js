@@ -260,18 +260,14 @@
       const workflowDisabled = asset.inTrash ? ' disabled' : '';
       const durationSeconds = Number(asset.durationSeconds) || 0;
       const hasDuration = (isVideo(asset) || (typeof isAudio === 'function' && isAudio(asset))) && durationSeconds > 0;
-      const durationFrameRate = isVideo(asset) ? (Number(asset.videoFrameRate) || 25) : 0;
-      const durationDisplaySeconds = Math.round((durationFrameRate > 0 && durationSeconds > 0
-        ? Math.max(0, durationSeconds - (1 / durationFrameRate))
-        : durationSeconds) * 100) / 100;
-      const durationMeta = hasDuration ? ` | ${t('duration')}: ${escapeHtml(formatDuration(durationSeconds, durationFrameRate))}` : '';
+      const durationMeta = hasDuration ? ` | <span id="assetDurationMeta">${t('duration')}: ${escapeHtml(formatDuration(durationSeconds))}</span>` : '';
       const fileSizeBytes = Number(asset.fileSizeBytes);
       const hasFileSize = Number.isFinite(fileSizeBytes) && fileSizeBytes > 0;
       const fileSizeMeta = hasFileSize
         ? ` | ${t('tech_file_size')}: ${escapeHtml(`${(fileSizeBytes / (1024 * 1024)).toFixed(2)} MB`)}`
         : '';
       const durationField = hasDuration
-        ? `<label>${t('duration')}<input name="durationSeconds" type="number" min="0" step="0.01" value="${escapeHtml(durationDisplaySeconds.toFixed(2))}" readonly aria-readonly="true" />${buildInlineFieldMatch(`${durationDisplaySeconds}s`, currentSearchHighlightQuery(), searchHighlightClass)}</label>`
+        ? `<label>${t('duration')}<input id="assetDurationInput" name="durationSeconds" type="number" min="0" step="0.01" value="${escapeHtml(durationSeconds.toFixed(2))}" readonly aria-readonly="true" />${buildInlineFieldMatch(`${durationSeconds}s`, currentSearchHighlightQuery(), searchHighlightClass)}</label>`
         : '';
 
       const metadataTopSection = `

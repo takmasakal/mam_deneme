@@ -3935,7 +3935,8 @@ async function createAssetRecord(input) {
     dcMetadata: {
       ...buildDefaultDcMetadata(input),
       ...sanitizeDcMetadata(input.dcMetadata),
-      ...(Number(input.videoFrameRate) > 0 ? { videoFrameRate: Number(input.videoFrameRate) } : {})
+      ...(Number(input.videoFrameRate) > 0 ? { videoFrameRate: Number(input.videoFrameRate) } : {}),
+      ...(Number(input.videoFrameCount) > 0 ? { videoFrameCount: Number(input.videoFrameCount) } : {})
     },
     status: input.status?.trim() || 'Ingested',
     deletedAt: null,

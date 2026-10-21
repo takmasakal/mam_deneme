@@ -84,6 +84,7 @@ function createAssetMapperService(deps = {}) {
       owner: row.owner,
       durationSeconds: row.duration_seconds,
       videoFrameRate: Number(row.dc_metadata?.videoFrameRate) || 0,
+      videoFrameCount: Number(row.dc_metadata?.videoFrameCount) || 0,
       sourcePath: row.source_path,
       mediaUrl: row.media_url,
       proxyUrl,
