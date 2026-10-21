@@ -1465,6 +1465,14 @@ function registerAssetRoutes(app, deps) {
       thumbnailUrl = '';
     }
   
+    let sourceDurationSeconds = 0;
+    let sourceVideoFrameRate = 0;
+    if (persistOriginalMedia && isVideoUpload) {
+      const sourceTechnicalInfo = await probeMediaTechnicalInfo(absolutePath);
+      sourceDurationSeconds = Number(sourceTechnicalInfo?.durationSeconds) || 0;
+      sourceVideoFrameRate = Number(sourceTechnicalInfo?.video?.frameRate) || 0;
+    }
+
     const requestedOwner = String(metadata.owner || metadata.uploadedBy || '').trim();
     const owner = String(context?.displayName || context?.username || context?.email || '').trim() || requestedOwner || 'Unknown';
     const payload = {
@@ -1482,8 +1490,10 @@ function registerAssetRoutes(app, deps) {
         ...(detectedAudioChannels > 0 ? { audioChannels: detectedAudioChannels } : {})
       },
       fileHash,
-      sourcePath: persistOriginalMedia ? absolutePath : ''
+      sourcePath: persistOriginalMedia ? absolutePath : '',
+      videoFrameRate: sourceVideoFrameRate
     };
+    if (sourceDurationSeconds > 0) payload.durationSeconds = sourceDurationSeconds;
     if (persistOriginalMedia && (isVideoUpload || String(mimeType || '').toLowerCase().startsWith('audio/'))
       && (!Number(payload.durationSeconds) || Number(payload.durationSeconds) <= 0)) {
       const detected = await getVideoDurationSeconds(absolutePath);

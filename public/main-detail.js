@@ -258,8 +258,12 @@
       const metadataFieldsetOpen = canEditMetadata ? '<fieldset class="metadata-fieldset">' : '<fieldset class="metadata-fieldset" disabled>';
       const durationSeconds = Number(asset.durationSeconds) || 0;
       const hasDuration = (isVideo(asset) || (typeof isAudio === 'function' && isAudio(asset))) && durationSeconds > 0;
+      const durationFrameRate = isVideo(asset) ? (Number(asset.videoFrameRate) || 25) : 0;
+      const durationDisplaySeconds = Math.round((durationFrameRate > 0 && durationSeconds > 0
+        ? Math.max(0, durationSeconds - (1 / durationFrameRate))
+        : durationSeconds) * 100) / 100;
       const formattedDuration = (() => {
-        const totalCentiseconds = Math.max(0, Math.round(durationSeconds * 100));
+        const totalCentiseconds = Math.max(0, Math.round(durationDisplaySeconds * 100));
         const hours = String(Math.floor(totalCentiseconds / 360000)).padStart(2, '0');
         const minutes = String(Math.floor((totalCentiseconds % 360000) / 6000)).padStart(2, '0');
         const seconds = ((totalCentiseconds % 6000) / 100).toFixed(2).padStart(5, '0');
@@ -272,7 +276,7 @@
         ? ` | ${t('tech_file_size')}: ${escapeHtml(`${(fileSizeBytes / (1024 * 1024)).toFixed(2)} MB`)}`
         : '';
       const durationField = hasDuration
-        ? `<label>${t('duration')}<input name="durationSeconds" type="number" min="0" value="${escapeHtml(durationSeconds)}" readonly aria-readonly="true" />${buildInlineFieldMatch(`${durationSeconds}s`, currentSearchHighlightQuery(), searchHighlightClass)}</label>`
+        ? `<label>${t('duration')}<input name="durationSeconds" type="number" min="0" step="0.01" value="${escapeHtml(durationDisplaySeconds.toFixed(2))}" readonly aria-readonly="true" />${buildInlineFieldMatch(`${durationDisplaySeconds}s`, currentSearchHighlightQuery(), searchHighlightClass)}</label>`
         : '';
       const accessListText = (values) => (Array.isArray(values) ? values : [])
         .map((value) => String(value || '').trim())

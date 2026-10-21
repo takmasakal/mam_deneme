@@ -39,8 +39,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      cache_from:
-        - kaisha-app:latest
       args:
         BUILDKIT_INLINE_CACHE: "1"
         INSTALL_LIBREOFFICE: ${INSTALL_LIBREOFFICE:-true}
