@@ -186,7 +186,7 @@
           el.onloadedmetadata = () => resolve(Number.isFinite(el.duration) ? el.duration : 0);
           el.onerror = () => resolve(0);
         });
-        return Math.max(0, Math.round(duration));
+        return Math.max(0, duration);
       } finally {
         URL.revokeObjectURL(url);
       }

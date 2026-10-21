@@ -107,7 +107,7 @@ function mediaViewer(asset, options = {}) {
                 <span id="customMarkInTick" class="custom-seek-tick custom-seek-tick-in hidden" data-label="IN" title="IN"></span>
                 <span id="customMarkOutTick" class="custom-seek-tick custom-seek-tick-out hidden" data-label="OUT" title="OUT"></span>
               </div>
-              <span id="customDurationTime" class="custom-time">00:00:00</span>
+              <span id="customDurationTime" class="custom-time">00:00:00.000</span>
               <div class="custom-volume-wrap" id="customVolumeWrap">
                 <button type="button" id="customMuteBtn" title="Volume" aria-label="Volume">🔊</button>
                 <div class="custom-volume-popover" id="customVolumePopover">
@@ -139,6 +139,7 @@ function mediaViewer(asset, options = {}) {
                   ${tcInControlBar ? `<div class="viewer-tc viewer-tc-inline">${t('tc')}: <strong id="currentTimecode">00:00:00:00</strong> <span class="viewer-rate-group"><button type="button" id="playbackRateBackBtn" class="viewer-rate-arrow" aria-label="Reverse playback rates">◀</button><button type="button" id="playbackRateBtn" class="viewer-rate-btn" aria-label="Playback rate">1x</button><button type="button" id="playbackRateForwardBtn" class="viewer-rate-arrow" aria-label="Forward playback rates">▶</button></span></div>` : ''}
                   ${showVideoToolsButton ? `<button type="button" id="videoToolsBtn">${t('video_tools')}</button>` : ''}
                 </div>
+                ${customMode ? '' : `<div class="viewer-tc viewer-tc-inline viewer-duration">${t('duration')}: <strong id="playerDurationPrecise">--:--:--.---</strong></div>`}
               </div>
             </div>
           </div>

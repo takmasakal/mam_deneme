@@ -366,6 +366,15 @@
       let activeCutPlayOutSec = null;
       const subtitleOverlayCheck = root.querySelector('#subtitleOverlayCheck');
 
+      const preciseDurationEl = root.querySelector('#playerDurationPrecise');
+      const formatPreciseDuration = (seconds) => {
+        const totalMilliseconds = Math.max(0, Math.round((Number(seconds) || 0) * 1000));
+        const hh = String(Math.floor(totalMilliseconds / 3600000)).padStart(2, '0');
+        const mm = String(Math.floor((totalMilliseconds % 3600000) / 60000)).padStart(2, '0');
+        const ss = (totalMilliseconds % 60000) / 1000;
+        return `${hh}:${mm}:${ss.toFixed(3).padStart(6, '0')}`;
+      };
+
       const getFps = () => PLAYER_FPS;
       const snapToFrame = (seconds) => {
         const fps = getFps();
@@ -386,6 +395,10 @@
         }
         const currentTc = secondsToTimecode(mediaEl.currentTime, getFps());
         currentTimecodeEl.textContent = currentTc;
+        if (preciseDurationEl) {
+          const duration = Number.isFinite(mediaEl.duration) && mediaEl.duration > 0 ? mediaEl.duration : 0;
+          preciseDurationEl.textContent = duration > 0 ? formatPreciseDuration(duration) : '--:--:--.---';
+        }
         const currentTcHost = currentTimecodeEl.closest('.viewer-tc') || currentTimecodeEl;
         currentTcHost.dataset.tcEditable = '1';
         currentTcHost.dataset.tcValue = currentTc;
@@ -787,6 +800,8 @@
 
       mediaEl.addEventListener('timeupdate', updateTimecode);
       mediaEl.addEventListener('seeked', updateTimecode);
+      mediaEl.addEventListener('loadedmetadata', updateTimecode);
+      mediaEl.addEventListener('durationchange', updateTimecode);
       mediaEl.addEventListener('loadedmetadata', syncMarkTicks);
       mediaEl.addEventListener('durationchange', syncMarkTicks);
       global.addEventListener('resize', syncMarkTicks);
@@ -823,6 +838,8 @@
         cutsList?.removeEventListener('click', onTimecodeJump);
         mediaEl.removeEventListener('timeupdate', updateTimecode);
         mediaEl.removeEventListener('seeked', updateTimecode);
+        mediaEl.removeEventListener('loadedmetadata', updateTimecode);
+        mediaEl.removeEventListener('durationchange', updateTimecode);
         mediaEl.removeEventListener('loadedmetadata', syncMarkTicks);
         mediaEl.removeEventListener('durationchange', syncMarkTicks);
         global.removeEventListener('resize', syncMarkTicks);
