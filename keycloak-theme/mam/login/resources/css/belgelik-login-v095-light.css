@@ -338,6 +338,27 @@ html[data-theme='dark'] #kc-form-wrapper button[type='button'] {
   color: #e7ebf2 !important;
 }
 
+html[data-theme='dark'] #kc-form-wrapper .pf-c-form-control:focus,
+html[data-theme='dark'] #kc-form-wrapper .pf-v5-c-form-control:focus,
+html[data-theme='dark'] #kc-form-wrapper input[type='text']:focus,
+html[data-theme='dark'] #kc-form-wrapper input[type='email']:focus,
+html[data-theme='dark'] #kc-form-wrapper input[type='password']:focus,
+html[data-theme='dark'] #kc-form-wrapper input[type='tel']:focus,
+html[data-theme='dark'] #kc-form-wrapper input[type='text']:focus-visible,
+html[data-theme='dark'] #kc-form-wrapper input[type='email']:focus-visible,
+html[data-theme='dark'] #kc-form-wrapper input[type='password']:focus-visible,
+html[data-theme='dark'] #kc-form-wrapper input[type='tel']:focus-visible,
+html[data-theme='dark'] #username:focus,
+html[data-theme='dark'] #username:focus-visible {
+  border-color: #e2a63b !important;
+  box-shadow: 0 0 0 3px rgba(226, 166, 59, 0.2) !important;
+  outline-color: #e2a63b !important;
+}
+
+html[data-theme='dark'] #kc-form-options input[type='checkbox'] {
+  accent-color: #e2a63b !important;
+}
+
 html[data-theme='dark'] #kc-page-title,
 html[data-theme='dark'] #kc-info-wrapper,
 html[data-theme='dark'] #kc-form-options,

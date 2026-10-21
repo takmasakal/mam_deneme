@@ -379,6 +379,7 @@ function createMediaToolService(options = {}) {
       'error',
       '-print_format',
       'json',
+      '-count_frames',
       '-show_format',
       '-show_streams',
       inputPath
@@ -407,7 +408,9 @@ function createMediaToolService(options = {}) {
           height: Number.isFinite(Number(video.height)) ? Math.max(0, Number(video.height)) : 0,
           pixelFormat: String(video.pix_fmt || '').trim(),
           frameRate: fps > 0 ? fps : 0,
-          frameCount: Number.isFinite(Number(video.nb_frames)) ? Math.max(0, Number(video.nb_frames)) : 0
+          frameCount: Number.isFinite(Number(video.nb_read_frames)) && Number(video.nb_read_frames) > 0
+            ? Number(video.nb_read_frames)
+            : (Number.isFinite(Number(video.nb_frames)) ? Math.max(0, Number(video.nb_frames)) : 0)
         } : null,
         audio: {
           streamCount: audioStreams.length,
