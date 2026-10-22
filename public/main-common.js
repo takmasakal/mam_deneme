@@ -333,19 +333,8 @@
       return `${day}.${month}.${year} ${hour}:${minute}`;
     }
 
-    function formatDuration(seconds, frameRate = 0, frameCount = 0) {
-      const duration = Math.max(0, Number(seconds) || 0);
-      const fps = Math.max(0, Number(frameRate) || 0);
-      const frames = Math.max(0, Number(frameCount) || 0);
-      // Timecode HH:MM:SS fields use nominal integer FPS, while the frame
-      // remainder must use ffprobe's actual FPS (e.g. 29.97). Dividing the
-      // entire frame count by actual FPS incorrectly shifts the whole-second
-      // portion for fractional rates.
-      const nominalFps = Math.max(1, Math.round(fps));
-      const frameBasedDuration = fps > 0 && frames > 0
-        ? Math.floor(frames / nominalFps) + ((frames % nominalFps) / fps)
-        : duration;
-      const totalCentiseconds = Math.max(0, Math.round(frameBasedDuration * 100));
+    function formatDuration(seconds) {
+      const totalCentiseconds = Math.max(0, Math.round((Number(seconds) || 0) * 100));
       const hh = String(Math.floor(totalCentiseconds / 360000)).padStart(2, '0');
       const mm = String(Math.floor((totalCentiseconds % 360000) / 6000)).padStart(2, '0');
       const secondsWithinMinute = (totalCentiseconds % 6000) / 100;
@@ -461,11 +450,20 @@
       if (!asset || !isVideo(asset)) return;
       const bodyEl = document.getElementById('assetTechnicalInfoBody');
       if (!bodyEl) return;
-      bodyEl.textContent = t('tech_loading');
-      try {
-        const payload = technicalInfoStore
-          ? await technicalInfoStore.get(asset)
-          : await api(`/api/assets/${asset.id}/technical`);
+      const stored = asset.dcMetadata?.mediaTechnicalInfo;
+      const storedOriginal = stored?.original?.payload;
+      const cachedPayload = storedOriginal && typeof storedOriginal === 'object'
+        ? {
+          assetId: asset.id,
+          original: { label: 'original', url: String(asset.mediaUrl || ''), ...storedOriginal },
+          proxy: {
+            label: 'proxy',
+            url: String(asset.proxyUrl || ''),
+            ...(stored?.proxy?.payload && typeof stored.proxy.payload === 'object' ? stored.proxy.payload : { available: false })
+          }
+        }
+        : null;
+      const renderPayload = (payload) => {
         if (selectedAssetIdRef?.get?.() !== asset.id) return;
         const originalVideoInfo = payload?.original?.video;
         const technicalFps = Number(originalVideoInfo?.frameRate) || 0;
@@ -477,18 +475,19 @@
             mediaEl.dispatchEvent(new Event('timeupdate'));
           }
         }
-        if (originalVideoInfo && Number(originalVideoInfo.frameCount) > 0 && Number(originalVideoInfo.frameRate) > 0) {
-          const preciseDuration = formatDuration(payload.original.durationSeconds, originalVideoInfo.frameRate, originalVideoInfo.frameCount);
-          const durationMeta = document.getElementById('assetDurationMeta');
-          if (durationMeta) durationMeta.textContent = `${t('duration')}: ${preciseDuration}`;
-          const durationInput = document.getElementById('assetDurationInput');
-          if (durationInput) {
-            const [hours, minutes, seconds] = preciseDuration.split(':');
-            durationInput.value = String((Number(hours) * 3600) + (Number(minutes) * 60) + Number(seconds));
-          }
-        }
         bodyEl.innerHTML = renderTechnicalInfoSection(payload);
         initTechnicalTabs(bodyEl);
+      };
+      if (cachedPayload) {
+        renderPayload(cachedPayload);
+        return;
+      }
+      bodyEl.textContent = t('tech_loading');
+      try {
+        const payload = technicalInfoStore
+          ? await technicalInfoStore.get(asset)
+          : await api(`/api/assets/${asset.id}/technical`);
+        renderPayload(payload);
       } catch (_error) {
         if (selectedAssetIdRef?.get?.() !== asset.id) return;
         bodyEl.textContent = t('tech_unavailable');
@@ -702,16 +701,6 @@
       const mins = Math.floor(totalSeconds / 60) % 60;
       const hours = Math.floor(totalSeconds / 3600);
       return [hours, mins, secs, frames].map((n) => String(n).padStart(2, '0')).join(':');
-    }
-
-    function clampTimecodeSecondsToFrameCount(timeSeconds, fps, frameCount, fallbackDuration = 0) {
-      const current = Math.max(0, Number(timeSeconds) || 0);
-      const rate = Math.max(0, Number(fps) || 0);
-      const frames = Math.max(0, Number(frameCount) || 0);
-      const duration = frames > 0 && rate > 0
-        ? frames / rate
-        : Math.max(0, Number(fallbackDuration) || 0);
-      return duration > 0 ? Math.min(current, duration) : current;
     }
 
     function parseTimecodeInput(value, fps) {
@@ -1153,7 +1142,6 @@
       tagColorStyle,
       assetTagChipStyle,
       secondsToTimecode,
-      clampTimecodeSecondsToFrameCount,
       parseTimecodeInput,
       initCustomSubtitleOverlay,
       applyNativeSubtitleCuePosition,

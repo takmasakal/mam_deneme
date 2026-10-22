@@ -13,7 +13,6 @@
       highlightMatch,
       effectiveSearchHighlightClass,
       secondsToTimecode,
-      clampTimecodeSecondsToFrameCount,
       parseTimecodeInput,
       api,
       deleteApi,
@@ -391,13 +390,7 @@
             activeCutPlayOutSec = null;
           }
         }
-        const timecodeTime = clampTimecodeSecondsToFrameCount(
-          mediaEl.currentTime,
-          Number(asset?.videoFrameRate) || 0,
-          Number(asset?.videoFrameCount) || 0,
-          mediaEl.duration
-        );
-        const currentTc = secondsToTimecode(timecodeTime, getFps());
+        const currentTc = secondsToTimecode(mediaEl.currentTime, getFps());
         currentTimecodeEl.textContent = currentTc;
         const currentTcHost = currentTimecodeEl.closest('.viewer-tc') || currentTimecodeEl;
         currentTcHost.dataset.tcEditable = '1';

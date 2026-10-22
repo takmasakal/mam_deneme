@@ -1368,7 +1368,7 @@ function isTextPreviewable(asset) { return commonModule.isTextPreviewable(asset)
 function thumbFallbackForAsset(asset) { return commonModule.thumbFallbackForAsset(asset); }
 function documentSearchControls() { return commonModule.documentSearchControls(); }
 function formatDate(value) { return commonModule.formatDate(value); }
-function formatDuration(seconds, frameRate = 0, frameCount = 0) { return commonModule.formatDuration(seconds, frameRate, frameCount); }
+function formatDuration(seconds) { return commonModule.formatDuration(seconds); }
 async function loadAssetTechnicalInfo(asset) { return commonModule.loadAssetTechnicalInfo(asset); }
 
 function openDownloadInNewTab(downloadUrl) {
@@ -1412,7 +1412,6 @@ function buildInlineFieldMatch(value, query) { return commonModule.buildInlineFi
 function tagColorStyle(tag) { return commonModule.tagColorStyle(tag); }
 function assetTagChipStyle(asset) { return commonModule.assetTagChipStyle(asset); }
 function secondsToTimecode(timeSeconds, fps) { return commonModule.secondsToTimecode(timeSeconds, fps); }
-function clampTimecodeSecondsToFrameCount(timeSeconds, fps, frameCount, fallbackDuration = 0) { return commonModule.clampTimecodeSecondsToFrameCount(timeSeconds, fps, frameCount, fallbackDuration); }
 function parseTimecodeInput(value, fps) { return commonModule.parseTimecodeInput(value, fps); }
 function subtitleTrackMarkup(asset) { return commonModule.subtitleTrackMarkup(asset); }
 
@@ -2431,7 +2430,6 @@ const playerRuntimeModule = window.createMainPlayerRuntimeModule({
   highlightMatch,
   effectiveSearchHighlightClass,
   secondsToTimecode,
-  clampTimecodeSecondsToFrameCount,
   parseTimecodeInput,
   api,
   deleteApi,
