@@ -1,0 +1,265 @@
+#!/usr/bin/env python3
+"""Precompute missing per-asset/per-version ffprobe metadata in PostgreSQL.
+
+Run from inside the application container. Dry-run is the default; pass --apply
+to persist only entries whose file fingerprint is missing or has changed.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from fractions import Fraction
+from pathlib import Path
+from typing import Any
+
+VIDEO_EXTENSIONS = {".3g2", ".3gp", ".avi", ".m2ts", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".mts", ".webm", ".wmv"}
+
+
+def load_pg_driver():
+    try:
+        import psycopg  # type: ignore
+        return psycopg
+    except ImportError:
+        try:
+            import psycopg2  # type: ignore
+            return psycopg2
+        except ImportError as exc:
+            raise SystemExit("PostgreSQL driver missing. Build the updated app image first.") from exc
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Fill missing video technical metadata using ffprobe.")
+    parser.add_argument("--db-url", default=os.getenv("DATABASE_URL", ""))
+    parser.add_argument("--uploads-dir", default=os.getenv("UPLOADS_DIR", "/app/uploads"))
+    parser.add_argument("--asset-id", help="Process one asset only.")
+    parser.add_argument("--limit", type=int, default=0, help="Limit assets (0 means all).")
+    parser.add_argument("--apply", action="store_true", help="Save results; without this flag the run is a dry-run.")
+    parser.add_argument("--verbose", action="store_true", help="Print each asset/version processed.")
+    return parser.parse_args()
+
+
+def as_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except (TypeError, ValueError):
+            return {}
+    return {}
+
+
+def absolute_media_path(value: str, uploads_dir: str, default_subdir: str = "") -> str:
+    raw = str(value or "").strip().split("?", 1)[0]
+    if not raw:
+        return ""
+    if raw.startswith("/uploads/"):
+        return str(Path(uploads_dir, raw[len("/uploads/"):]))
+    if raw.startswith("uploads/"):
+        return str(Path(uploads_dir, raw[len("uploads/"):]))
+    if os.path.isabs(raw):
+        return raw
+    candidates = ([Path(uploads_dir, default_subdir, raw)] if default_subdir else []) + [Path(uploads_dir, raw)]
+    return str(next((item for item in candidates if item.is_file()), candidates[0]))
+
+
+def file_fingerprint(file_path: str) -> str:
+    if not file_path:
+        return ""
+    result = subprocess.run(
+        ["node", "-e", "const fs=require('fs'),p=require('path').resolve(process.argv[1]);const s=fs.statSync(p);if(!s.isFile())process.exit(2);process.stdout.write(`${p}\\x1f${s.size}\\x1f${s.mtimeMs}`)", file_path],
+        capture_output=True, text=True, check=False,
+    )
+    return result.stdout if result.returncode == 0 else ""
+
+
+def numeric(value: Any, default: float = 0) -> float:
+    try:
+        parsed = float(value)
+        return max(0, parsed) if parsed == parsed else default
+    except (TypeError, ValueError):
+        return default
+
+
+def frame_rate(video: dict[str, Any] | None) -> float:
+    if not video:
+        return 0
+    for key in ("avg_frame_rate", "r_frame_rate"):
+        try:
+            rate = float(Fraction(str(video.get(key) or "0/0")))
+            if rate > 0:
+                return rate
+        except (ValueError, ZeroDivisionError, TypeError):
+            pass
+    return 0
+
+
+def probe_media(file_path: str) -> dict[str, Any]:
+    if not file_path or not Path(file_path).is_file():
+        return {"available": False}
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-print_format", "json", "-count_frames", "-show_format", "-show_streams", file_path],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
+        return {"available": False}
+    try:
+        parsed = json.loads(result.stdout or "{}")
+    except ValueError:
+        return {"available": False}
+    fmt = parsed.get("format") if isinstance(parsed.get("format"), dict) else {}
+    streams = parsed.get("streams") if isinstance(parsed.get("streams"), list) else []
+    video = next((s for s in streams if s.get("codec_type") == "video"), None)
+    audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
+    primary_audio = audio_streams[0] if audio_streams else None
+    frame_count = numeric(video.get("nb_read_frames")) or numeric(video.get("nb_frames")) if video else 0
+    return {
+        "available": True,
+        "container": [part for part in str(fmt.get("format_name") or "").split(",") if part],
+        "durationSeconds": numeric(fmt.get("duration")),
+        "bitRate": numeric(fmt.get("bit_rate")),
+        "fileSize": numeric(fmt.get("size")),
+        "video": ({"codec": str(video.get("codec_name") or "").strip(), "profile": str(video.get("profile") or "").strip(),
+                   "width": numeric(video.get("width")), "height": numeric(video.get("height")),
+                   "pixelFormat": str(video.get("pix_fmt") or "").strip(), "frameRate": frame_rate(video),
+                   "frameCount": frame_count} if video else None),
+        "audio": {"streamCount": len(audio_streams),
+                  "codecs": sorted({str(s.get("codec_name") or "").strip() for s in audio_streams if str(s.get("codec_name") or "").strip()}),
+                  "channels": numeric(primary_audio.get("channels")) if primary_audio else 0,
+                  "sampleRate": numeric(primary_audio.get("sample_rate")) if primary_audio else 0},
+    }
+
+
+def cache_is_valid(entry: Any, fingerprint: str) -> bool:
+    cached = entry if isinstance(entry, dict) else {}
+    payload = cached.get("payload") if isinstance(cached.get("payload"), dict) else {}
+    return cached.get("fingerprint", "") == fingerprint and (bool(payload.get("available")) or not fingerprint)
+
+
+def cache_entry(file_path: str, existing: Any) -> tuple[dict[str, Any], bool]:
+    fingerprint = file_fingerprint(file_path)
+    current = existing if isinstance(existing, dict) else {}
+    if cache_is_valid(current, fingerprint):
+        return current, False
+    return {"fingerprint": fingerprint, "payload": probe_media(file_path)}, True
+
+
+def main() -> int:
+    args = parse_args()
+    if not args.db_url:
+        print("DATABASE_URL is missing; run this script inside the app container.", file=sys.stderr)
+        return 2
+    uploads_dir = str(Path(args.uploads_dir).resolve())
+    conn = load_pg_driver().connect(args.db_url)
+    processed = changed = skipped = failures = 0
+    try:
+        with conn.cursor() as cur:
+            query = """SELECT id, source_path, media_url, proxy_url, default_version_id, duration_seconds,
+                              file_name, mime_type, type, dc_metadata
+                       FROM assets
+                       WHERE (LOWER(COALESCE(mime_type, '')) LIKE 'video/%'
+                              OR LOWER(COALESCE(type, '')) = 'video'
+                              OR LOWER(COALESCE(file_name, '')) ~ '\\.(3g2|3gp|avi|m2ts|m4v|mkv|mov|mp4|mpeg|mpg|mts|webm|wmv)$')"""
+            params: list[Any] = []
+            if args.asset_id:
+                query += " AND id = %s"
+                params.append(args.asset_id)
+            query += " ORDER BY created_at, id"
+            if args.limit > 0:
+                query += " LIMIT %s"
+                params.append(args.limit)
+            cur.execute(query, params)
+            assets = cur.fetchall()
+            for row in assets:
+                (asset_id, source_path, media_url, proxy_url, default_version_id, _duration,
+                 file_name, mime_type, _asset_type, dc_value) = row
+                if not str(mime_type or "").lower().startswith("video/") and Path(str(file_name or "")).suffix.lower() not in VIDEO_EXTENSIONS:
+                    skipped += 1
+                    continue
+                dc = as_object(dc_value)
+                technical = as_object(dc.get("mediaTechnicalInfo"))
+                source = str(source_path or "").strip()
+                if not Path(source).is_file():
+                    source = absolute_media_path(str(media_url or ""), uploads_dir)
+                if not Path(source).is_file():
+                    source = ""
+                proxy = absolute_media_path(str(proxy_url or ""), uploads_dir, "proxies")
+                if not Path(proxy).is_file():
+                    proxy = ""
+                original_entry, original_changed = cache_entry(source, technical.get("original"))
+                proxy_entry, proxy_changed = cache_entry(proxy, technical.get("proxy"))
+                for path in (source, proxy):
+                    if path and Path(path).is_file() and not (original_entry if path == source else proxy_entry).get("payload", {}).get("available"):
+                        failures += 1
+                if original_changed or proxy_changed:
+                    technical.update({"original": original_entry, "proxy": proxy_entry})
+                    changed += 1
+
+                cur.execute("""SELECT version_id, snapshot_source_path, snapshot_media_url, snapshot_mime_type, snapshot_file_name
+                               FROM asset_versions WHERE asset_id = %s AND action_type <> 'attachment'
+                               ORDER BY created_at, version_id""", (asset_id,))
+                version_rows = cur.fetchall()
+                versions_info = as_object(technical.get("versions"))
+                version_changed = False
+                default_duration = None
+                for version_id, snap_path, snap_url, snap_mime, snap_name in version_rows:
+                    if not str(snap_mime or "").lower().startswith("video/") and Path(str(snap_name or "")).suffix.lower() not in VIDEO_EXTENSIONS:
+                        continue
+                    version_source = str(snap_path or "").strip()
+                    if not Path(version_source).is_file():
+                        version_source = absolute_media_path(str(snap_url or media_url or ""), uploads_dir)
+                    if not Path(version_source).is_file():
+                        version_source = source
+                    if not Path(version_source).is_file():
+                        version_source = ""
+                    is_original = bool(version_source and source and Path(version_source).resolve() == Path(source).resolve())
+                    version_proxy = proxy if is_original else absolute_media_path(str(snap_url or ""), uploads_dir, "proxies")
+                    if not Path(version_proxy).is_file():
+                        version_proxy = ""
+                    current = as_object(versions_info.get(str(version_id)))
+                    original_cached, original_changed_for_version = cache_entry(version_source, current.get("original"))
+                    proxy_cached, proxy_changed_for_version = cache_entry(version_proxy, current.get("proxy"))
+                    for path, entry in ((version_source, original_cached), (version_proxy, proxy_cached)):
+                        if path and Path(path).is_file() and not entry.get("payload", {}).get("available"):
+                            failures += 1
+                    if original_changed_for_version or proxy_changed_for_version:
+                        versions_info[str(version_id)] = {"original": original_cached, "proxy": proxy_cached}
+                        version_changed = True
+                    if str(version_id) == str(default_version_id or "") and original_cached.get("payload", {}).get("available"):
+                        default_duration = numeric(original_cached["payload"].get("durationSeconds"))
+                    if args.verbose:
+                        state = "probed" if original_changed_for_version or proxy_changed_for_version else "cached"
+                        print(f"{asset_id} v:{version_id} {state}")
+                if version_changed:
+                    technical["versions"] = versions_info
+                    changed += 1
+                if not (original_changed or proxy_changed or version_changed):
+                    skipped += 1
+                if args.apply and default_duration:
+                    cur.execute("UPDATE assets SET duration_seconds = %s WHERE id = %s AND default_version_id = %s",
+                                (default_duration, asset_id, default_version_id))
+                if args.apply and (original_changed or proxy_changed or version_changed):
+                    cur.execute("""UPDATE assets SET dc_metadata = jsonb_set(COALESCE(dc_metadata, '{}'::jsonb),
+                                      '{mediaTechnicalInfo}', %s::jsonb, true) WHERE id = %s""",
+                                (json.dumps(technical, ensure_ascii=False), asset_id))
+                    conn.commit()
+                elif not args.apply:
+                    conn.rollback()
+                processed += 1
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    print(f"{'APPLY' if args.apply else 'DRY-RUN'}: assets checked={processed}, cache groups needing update={changed}, unchanged/skipped={skipped}, ffprobe failures={failures}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

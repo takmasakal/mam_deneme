@@ -81,6 +81,8 @@ FROM deps
 
 WORKDIR /app
 
+RUN pip3 install --no-cache-dir --break-system-packages 'psycopg[binary]>=3.2,<4'
+
 COPY package*.json ./
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
   npm ci --omit=dev --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 \
