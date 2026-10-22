@@ -33,6 +33,26 @@
       return Boolean(canUsePdfAdvancedTools() || (asset?.canEditAssetPdf ?? asset?.canEditAsset));
     }
 
+    function setPreviewVersionBorder(asset, versionId) {
+      if (typeof assetDetail?.querySelectorAll !== 'function') return;
+      assetDetail.dataset.previewAssetId = String(asset?.id || '');
+      assetDetail.dataset.previewVersionId = String(versionId || '');
+      const rows = Array.from(assetDetail.querySelectorAll('.version[data-version-id]'));
+      const originalId = rows.find((row) => row.dataset.originalVersion === 'true')?.dataset.versionId || '';
+      const previewIsOriginal = Boolean(originalId && String(versionId) === originalId);
+      rows.forEach((row) => {
+        row.classList.remove('is-default-version', 'is-preview-version');
+        const rowId = String(row.dataset.versionId || '');
+        const isOriginal = row.dataset.originalVersion === 'true';
+        if (!previewIsOriginal && !isOriginal && row.dataset.fileRole !== 'attachment' && rowId === String(asset?.defaultVersionId || '')) {
+          row.classList.add('is-default-version');
+        }
+        if (!previewIsOriginal && row.dataset.fileRole !== 'attachment' && rowId === String(versionId)) {
+          row.classList.add('is-preview-version');
+        }
+      });
+    }
+
     function downloadVersion(asset, versionId) {
       if (!versionId || asset?.canDownloadAsset === false) return;
       const link = documentRef.createElement('a');
@@ -67,6 +87,7 @@
         const existingMedia = host.querySelector?.('#assetMediaEl, video, audio') || null;
         if ((isAudio || isVideo) && typeof previewMediaVersion === 'function'
           && previewMediaVersion({ asset, version, mediaUrl, isVideo, isAudio, mediaEl: existingMedia, host })) {
+          setPreviewVersionBorder(asset, versionId);
           showShortcutToast?.(t('version_preview_loaded').replace('{name}', version?.label || versionFileName), { type: 'success' });
           return;
         }
@@ -80,6 +101,7 @@
             <pre id="docPreviewBox" class="doc-preview">${t('preview_loading')}</pre>
           `;
           host.replaceChildren(wrapper);
+          setPreviewVersionBorder(asset, versionId);
           initDocumentPreview({
             ...asset,
             id: asset.id,
@@ -104,12 +126,14 @@
         wrapper.className = 'viewer-resizable';
         wrapper.appendChild(target);
         host.replaceChildren(wrapper);
+        setPreviewVersionBorder(asset, versionId);
         selectedImageVersionIds.delete(String(asset.id));
         target.addEventListener(isAudio || isVideo ? 'loadedmetadata' : 'load', () => {
           showShortcutToast?.(t('version_preview_loaded').replace('{name}', version?.label || versionFileName), { type: 'success' });
         }, { once: true });
         return;
       }
+      setPreviewVersionBorder(asset, versionId);
       showShortcutToast?.(t('version_preview_loaded').replace('{name}', version?.label || version?.versionLabel || versionId), { type: 'success' });
       const previewUrl = office
         ? `/api/assets/${encodeURIComponent(asset.id)}/libreoffice-preview.pdf?versionId=${encodeURIComponent(versionId)}`
@@ -273,6 +297,10 @@
             actionButton.disabled = true;
             try {
               await api(`/api/assets/${encodeURIComponent(asset.id)}/default-version`, { method: 'PATCH', body: JSON.stringify({ versionId }) });
+              if (assetDetail?.dataset) {
+                assetDetail.dataset.previewAssetId = '';
+                assetDetail.dataset.previewVersionId = '';
+              }
               selectedImageVersionIds.delete(String(asset.id));
               localStorage.removeItem(`mam:version-thumbnail:${asset.id}`);
               await refreshAssetDetail(asset.id, workflow);

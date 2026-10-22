@@ -183,6 +183,21 @@
       </div>`;
     }
 
+    function getOriginalVersionId(asset) {
+      const versions = (Array.isArray(asset?.versions) ? asset.versions : [])
+        .filter((version) => version?.fileRole !== 'attachment' && version?.actionType !== 'attachment');
+      versions.sort((a, b) => {
+        const aTime = Date.parse(a?.createdAt || '') || 0;
+        const bTime = Date.parse(b?.createdAt || '') || 0;
+        if (aTime !== bTime) return aTime - bTime;
+        const aV1 = String(a?.label || '').trim().toLowerCase() === 'v1' ? 0 : 1;
+        const bV1 = String(b?.label || '').trim().toLowerCase() === 'v1' ? 0 : 1;
+        if (aV1 !== bV1) return aV1 - bV1;
+        return String(a?.versionId || a?.version_id || '').localeCompare(String(b?.versionId || b?.version_id || ''));
+      });
+      return String(versions[0]?.versionId || versions[0]?.version_id || '');
+    }
+
     function renderVersionRow(asset, version, access, interactive) {
       const attachment = version.fileRole === 'attachment' || version.actionType === 'attachment';
       const renderFileText = (value) => attachment
@@ -191,7 +206,15 @@
       const rowState = getVersionRowState(version, access);
       const changeKindLabel = rowState.actionType === 'pdf_save' ? renderPdfChangeKindLabel(version) : '';
       const cleanNote = cleanVersionNoteText(version.note);
-      const rowClass = 'version';
+      const versionId = String(version.versionId || version.version_id || '');
+      const originalVersionId = getOriginalVersionId(asset);
+      const isOriginalVersion = Boolean(versionId && versionId === originalVersionId);
+      const previewBelongsToAsset = String(assetDetail?.dataset?.previewAssetId || '') === String(asset.id || '');
+      const previewedVersionId = previewBelongsToAsset ? String(assetDetail?.dataset?.previewVersionId || '') : '';
+      const previewIsOriginal = Boolean(previewedVersionId && previewedVersionId === originalVersionId);
+      const isDefaultVersion = Boolean(!previewIsOriginal && !isOriginalVersion && versionId && String(asset.defaultVersionId || '') === versionId);
+      const isPreviewVersion = Boolean(!isOriginalVersion && !attachment && previewedVersionId && previewedVersionId === versionId);
+      const rowClass = ['version', isDefaultVersion ? 'is-default-version' : '', isPreviewVersion ? 'is-preview-version' : ''].filter(Boolean).join(' ');
       const restoreAttr = '';
       const downloadButton = rowState.canDownloadVersion
         ? `<button type="button" class="downloadVersionBtn" data-version-id="${escapeHtml(version.versionId)}">${attachment ? escapeHtml(t('download_attachment')) : escapeHtml(t('download_version'))}</button>`
@@ -209,7 +232,7 @@
         </div>
       ` : '';
       return `
-        <div class="${rowClass}" draggable="true" data-version-id="${escapeHtml(version.versionId)}"${restoreAttr}>
+        <div class="${rowClass}" draggable="true" data-version-id="${escapeHtml(versionId)}" data-original-version="${isOriginalVersion ? 'true' : 'false'}" data-file-role="${attachment ? 'attachment' : 'version'}"${restoreAttr}>
           <strong>${renderFileText(version.label)}</strong> <span class="asset-meta">${attachment ? escapeHtml(t('attachment_file')) : escapeHtml(t('version_label'))}</span> - ${renderFileText(cleanNote)}<br />
           ${attachment && version.snapshotFileName ? `<span class="asset-meta">${escapeHtml(t('file_name'))}: ${renderFileText(version.snapshotFileName)}</span><br />` : ''}
           <span class="asset-meta">${escapeHtml(formatDate(version.createdAt))}</span><br />
