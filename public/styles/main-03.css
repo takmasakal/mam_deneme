@@ -362,6 +362,14 @@
   font-size: 14px;
 }
 
+.version.is-default-version {
+  box-shadow: inset 0 0 0 2px #22c55e;
+}
+
+.version.is-preview-version {
+  box-shadow: inset 0 0 0 2px #facc15;
+}
+
 .version.version-restorable {
   cursor: pointer;
 }
