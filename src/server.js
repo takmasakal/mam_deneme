@@ -291,6 +291,10 @@ const DEFAULT_ADMIN_SETTINGS = {
   ocrDefaultEnableBlurFilter: true,
   ocrDefaultEnableRegionMode: false,
   ocrDefaultIgnoreStaticOverlays: true,
+  ocrDefaultIntervalSec: 4,
+  ocrDefaultMinDisplaySec: 8,
+  ocrDefaultMergeGapSec: 4,
+  ocrDefaultEngine: 'paddle',
   subtitleStyle: {
     customOverlayEnabled: true,
     bottomOffset: 56,
@@ -4562,6 +4566,15 @@ function normalizeOcrEngine(value) {
   return 'paddle';
 }
 
+function getVideoOcrDefaults(settings = DEFAULT_ADMIN_SETTINGS) {
+  return {
+    intervalSec: clampNumber(settings.ocrDefaultIntervalSec, 1, 30, DEFAULT_ADMIN_SETTINGS.ocrDefaultIntervalSec),
+    minDisplaySec: clampNumber(settings.ocrDefaultMinDisplaySec, 1, 60, DEFAULT_ADMIN_SETTINGS.ocrDefaultMinDisplaySec),
+    mergeGapSec: clampNumber(settings.ocrDefaultMergeGapSec, 0, 30, DEFAULT_ADMIN_SETTINGS.ocrDefaultMergeGapSec),
+    engine: normalizeOcrEngine(settings.ocrDefaultEngine || DEFAULT_ADMIN_SETTINGS.ocrDefaultEngine)
+  };
+}
+
 async function prepareOcrFrames({
   workDir,
   files,
@@ -5486,6 +5499,10 @@ async function getAdminSettings() {
       ? Boolean(value.allowFilelessAssetCreation)
       : DEFAULT_ADMIN_SETTINGS.allowFilelessAssetCreation,
     newAssetDefaultVisibility: normalizeNewAssetDefaultVisibility(value.newAssetDefaultVisibility),
+    ocrDefaultIntervalSec: clampNumber(value.ocrDefaultIntervalSec, 1, 30, DEFAULT_ADMIN_SETTINGS.ocrDefaultIntervalSec),
+    ocrDefaultMinDisplaySec: clampNumber(value.ocrDefaultMinDisplaySec, 1, 60, DEFAULT_ADMIN_SETTINGS.ocrDefaultMinDisplaySec),
+    ocrDefaultMergeGapSec: clampNumber(value.ocrDefaultMergeGapSec, 0, 30, DEFAULT_ADMIN_SETTINGS.ocrDefaultMergeGapSec),
+    ocrDefaultEngine: normalizeOcrEngine(value.ocrDefaultEngine || DEFAULT_ADMIN_SETTINGS.ocrDefaultEngine),
     subtitleStyle: normalizeSubtitleStyle(value.subtitleStyle),
     auditRetentionDays: normalizeAuditRetentionDays(value.auditRetentionDays),
     mediaJobRetentionDays: normalizeMediaJobRetentionDays(value.mediaJobRetentionDays),
@@ -6486,13 +6503,15 @@ app.get('/api/ui-settings', async (_req, res) => {
     return res.json({
       playerUiMode,
       allowFilelessAssetCreation: Boolean(settings.allowFilelessAssetCreation),
-      subtitleStyle: normalizeSubtitleStyle(settings.subtitleStyle)
+      subtitleStyle: normalizeSubtitleStyle(settings.subtitleStyle),
+      videoOcrDefaults: getVideoOcrDefaults(settings)
     });
   } catch (_error) {
     return res.json({
       playerUiMode: 'vidstack',
       allowFilelessAssetCreation: false,
-      subtitleStyle: normalizeSubtitleStyle(DEFAULT_ADMIN_SETTINGS.subtitleStyle)
+      subtitleStyle: normalizeSubtitleStyle(DEFAULT_ADMIN_SETTINGS.subtitleStyle),
+      videoOcrDefaults: getVideoOcrDefaults(DEFAULT_ADMIN_SETTINGS)
     });
   }
 });

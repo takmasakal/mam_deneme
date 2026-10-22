@@ -1000,6 +1000,18 @@ function initVideoOcrTools(asset, root = document) {
     || !downloadLink
     || !itemsEl) return () => {};
 
+  const ocrDefaults = global.MAM_VIDEO_OCR_DEFAULTS || {};
+  const applyNumericDefault = (input, value, fallback, min, max) => {
+    const number = Number(value);
+    const normalized = Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
+    input.value = String(normalized);
+  };
+  applyNumericDefault(intervalInput, ocrDefaults.intervalSec, 4, 1, 30);
+  applyNumericDefault(minDisplayInput, ocrDefaults.minDisplaySec, 8, 1, 60);
+  applyNumericDefault(mergeGapInput, ocrDefaults.mergeGapSec, 4, 0, 30);
+  const preferredEngine = String(ocrDefaults.engine || 'paddle');
+  if (Array.from(engineSelect.options).some((option) => option.value === preferredEngine)) engineSelect.value = preferredEngine;
+
   let disposed = false;
 
   const setBusy = (busy) => {

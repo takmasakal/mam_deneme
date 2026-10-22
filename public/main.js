@@ -1453,10 +1453,14 @@ async function loadUiSettings() {
     playerUiMode = (mode === 'vidstack' || mode === 'mpegdash') ? mode : 'vidstack';
     allowFilelessAssetCreation = Boolean(settings?.allowFilelessAssetCreation);
     subtitleStyleSettings = normalizeClientSubtitleStyle(settings?.subtitleStyle || {});
+    window.MAM_VIDEO_OCR_DEFAULTS = settings?.videoOcrDefaults && typeof settings.videoOcrDefaults === 'object'
+      ? settings.videoOcrDefaults
+      : { intervalSec: 4, minDisplaySec: 8, mergeGapSec: 4, engine: 'paddle' };
   } catch (_error) {
     playerUiMode = 'vidstack';
     allowFilelessAssetCreation = false;
     subtitleStyleSettings = normalizeClientSubtitleStyle({});
+    window.MAM_VIDEO_OCR_DEFAULTS = { intervalSec: 4, minDisplaySec: 8, mergeGapSec: 4, engine: 'paddle' };
   }
   try {
     const storedFontSize = Number(localStorage.getItem(LOCAL_SUBTITLE_FONT_SIZE));

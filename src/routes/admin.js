@@ -20,6 +20,12 @@ function readCpuTimes() {
   }, { idle: 0, total: 0 });
 }
 
+function clampAdminNumber(value, min, max, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(max, number));
+}
+
 let previousCpuTimes = readCpuTimes();
 
 async function collectServerResources(commandRunner) {
@@ -2820,6 +2826,18 @@ app.patch('/api/admin/settings', async (req, res) => {
       ocrDefaultIgnoreStaticOverlays: Object.prototype.hasOwnProperty.call(req.body, 'ocrDefaultIgnoreStaticOverlays')
         ? Boolean(req.body.ocrDefaultIgnoreStaticOverlays)
         : current.ocrDefaultIgnoreStaticOverlays,
+      ocrDefaultIntervalSec: Object.prototype.hasOwnProperty.call(req.body, 'ocrDefaultIntervalSec')
+        ? clampAdminNumber(req.body.ocrDefaultIntervalSec, 1, 30, current.ocrDefaultIntervalSec)
+        : current.ocrDefaultIntervalSec,
+      ocrDefaultMinDisplaySec: Object.prototype.hasOwnProperty.call(req.body, 'ocrDefaultMinDisplaySec')
+        ? clampAdminNumber(req.body.ocrDefaultMinDisplaySec, 1, 60, current.ocrDefaultMinDisplaySec)
+        : current.ocrDefaultMinDisplaySec,
+      ocrDefaultMergeGapSec: Object.prototype.hasOwnProperty.call(req.body, 'ocrDefaultMergeGapSec')
+        ? clampAdminNumber(req.body.ocrDefaultMergeGapSec, 0, 30, current.ocrDefaultMergeGapSec)
+        : current.ocrDefaultMergeGapSec,
+      ocrDefaultEngine: Object.prototype.hasOwnProperty.call(req.body, 'ocrDefaultEngine')
+        ? normalizeOcrEngine(req.body.ocrDefaultEngine)
+        : current.ocrDefaultEngine,
       subtitleStyle: Object.prototype.hasOwnProperty.call(req.body, 'subtitleStyle')
         ? normalizeSubtitleStyle(req.body.subtitleStyle)
         : normalizeSubtitleStyle(current.subtitleStyle),
