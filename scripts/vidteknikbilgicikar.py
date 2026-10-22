@@ -193,7 +193,7 @@ def main() -> int:
             query = """SELECT id, source_path, media_url, proxy_url, default_version_id, duration_seconds,
                               file_name, mime_type, type, dc_metadata
                        FROM assets
-                       WHERE (LOWER(COALESCE(mime_type, '')) LIKE 'video/%'
+                       WHERE (LOWER(COALESCE(mime_type, '')) LIKE 'video/%%'
                               OR LOWER(COALESCE(type, '')) = 'video'
                               OR LOWER(COALESCE(file_name, '')) ~ '\\.(3g2|3gp|avi|m2ts|m4v|mkv|mov|mp4|mpeg|mpg|mts|webm|wmv)$')"""
             params: list[Any] = []

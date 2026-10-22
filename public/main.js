@@ -2700,6 +2700,7 @@ const detailVersionActionsModule = window.createMainDetailVersionActions({
       : mediaUrl;
     const previewAsset = {
       ...asset,
+      defaultVersionId: versionId,
       subtitleUrl: String(selectedVersionSubtitle?.subtitleUrl || '').trim(),
       subtitleLang: String(selectedVersionSubtitle?.subtitleLang || '').trim(),
       subtitleLabel: String(selectedVersionSubtitle?.subtitleLabel || '').trim(),

@@ -98,7 +98,7 @@ function mediaViewer(asset, options = {}) {
         <div class="video-top-layout${audioSideLayout ? '' : ' no-audio-side'}">
           <div class="video-main-col">
             <div class="viewer-resizable video-resizable${audioOverlayInViewer ? ' video-resizable-audio-overlay' : ''}" data-viewer-loading="video">
-              <video id="assetMediaEl" data-asset-id="${escapeHtml(asset.id)}" class="asset-viewer"${nativeControlsAttr} preload="metadata"${srcAttr}${dashManifestAttr} poster="${escapeHtml(asset.thumbnailUrl || '')}"${audioChannelsAttr}>
+              <video id="assetMediaEl" data-asset-id="${escapeHtml(asset.id)}" data-version-id="${escapeHtml(asset.defaultVersionId || asset.originalVersionId || '')}" class="asset-viewer"${nativeControlsAttr} preload="metadata"${srcAttr}${dashManifestAttr} poster="${escapeHtml(asset.thumbnailUrl || '')}"${audioChannelsAttr}>
                 ${subtitleTrackMarkup(asset)}
               </video>
               ${loadingOverlay()}
@@ -335,7 +335,7 @@ function mediaViewer(asset, options = {}) {
             <div class="video-top-layout audio-tools-top-layout">
               <div class="video-main-col">
                 <div class="audio-subtitle-stage" data-audio-subtitle-stage="1" data-viewer-loading="audio">
-                  <audio id="assetMediaEl" data-asset-id="${escapeHtml(asset.id)}" class="asset-viewer audio-tools-media" preload="metadata" src="${playbackUrl}"${audioChannelsAttr}></audio>
+                  <audio id="assetMediaEl" data-asset-id="${escapeHtml(asset.id)}" data-version-id="${escapeHtml(asset.defaultVersionId || asset.originalVersionId || '')}" class="asset-viewer audio-tools-media" preload="metadata" src="${playbackUrl}"${audioChannelsAttr}></audio>
                   ${loadingOverlay()}
                 </div>
                 <div class="custom-player-bar" id="customPlayerBar">
@@ -448,7 +448,7 @@ function mediaViewer(asset, options = {}) {
     return `
       <div class="audio-detail-viewer" data-audio-viewer="1" data-viewer-loading="audio">
         <div class="audio-subtitle-stage" data-audio-subtitle-stage="1"></div>
-        <audio id="assetMediaEl" data-asset-id="${escapeHtml(asset.id)}" class="asset-viewer audio-detail-media" controls preload="metadata" src="${playbackUrl}"${audioChannelsAttr}></audio>
+        <audio id="assetMediaEl" data-asset-id="${escapeHtml(asset.id)}" data-version-id="${escapeHtml(asset.defaultVersionId || asset.originalVersionId || '')}" class="asset-viewer audio-detail-media" controls preload="metadata" src="${playbackUrl}"${audioChannelsAttr}></audio>
         ${loadingOverlay()}
       </div>
     `;

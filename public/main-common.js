@@ -152,28 +152,54 @@
     }
 
     function syncSubtitleOverlayInOpenPlayers(asset) {
-      normalizeActiveSubtitleAsset(asset);
       const assetId = String(asset?.id || '').trim();
-      const subtitleUrl = String(asset?.subtitleUrl || '').trim();
       if (!assetId) return;
-      const enabled = getSubtitleOverlayEnabled(assetId, false) && Boolean(subtitleUrl);
+      const dc = asset.dcMetadata && typeof asset.dcMetadata === 'object' ? asset.dcMetadata : {};
+      const items = Array.isArray(asset.subtitleItems) ? asset.subtitleItems
+        : (Array.isArray(dc.subtitleItems) ? dc.subtitleItems : []);
+      const originalVersionId = String(asset.originalVersionId || dc.originalVersionId || '').trim();
+      const activeByLang = asset.subtitleActiveByLang && typeof asset.subtitleActiveByLang === 'object'
+        ? asset.subtitleActiveByLang
+        : (dc.subtitleActiveByLang && typeof dc.subtitleActiveByLang === 'object' ? dc.subtitleActiveByLang : {});
+      const directSubtitleUrl = String(asset.subtitleUrl || dc.subtitleUrl || '').trim();
+      const overlayEnabled = getSubtitleOverlayEnabled(assetId, false);
       const useCustomOverlay = customSubtitleOverlayEnabled();
-      const currentLang = currentLangRef?.get?.() || 'tr';
-      const subtitleLang = String(asset?.subtitleLang || currentLang || 'tr').slice(0, 12);
-      const subtitleLabel = String(asset?.subtitleLabel || t('subtitles'));
-      document.querySelectorAll('[data-subtitle-asset-id]').forEach((picker) => {
-        if (String(picker.dataset.subtitleAssetId || '').trim() !== assetId) return;
-        picker.querySelectorAll('[data-subtitle-toggle], [data-subtitle-language-choice]').forEach((button) => {
-          const active = enabled && (!button.hasAttribute('data-subtitle-language-choice')
-            || String(button.dataset.subtitleUrl || '').trim() === subtitleUrl);
-          button.classList.toggle('active', active);
-          button.setAttribute('aria-pressed', String(active));
-        });
-      });
+      const sourceVersionFor = (mediaEl) => String(
+        mediaEl.dataset.versionId || asset.defaultVersionId || asset.originalVersionId || ''
+      ).trim();
+      const itemVersionFor = (item) => String(item?.sourceVersionId || originalVersionId || '').trim();
+      const subtitleForPlayer = (mediaEl) => {
+        const versionId = sourceVersionFor(mediaEl);
+        const versionItems = items.filter((item) => String(item?.subtitleUrl || '').trim()
+          && (!versionId || itemVersionFor(item) === versionId));
+        if (!items.length && directSubtitleUrl) {
+          return {
+            subtitleUrl: directSubtitleUrl,
+            subtitleLang: asset.subtitleLang || dc.subtitleLang,
+            subtitleLabel: asset.subtitleLabel || dc.subtitleLabel
+          };
+        }
+        const selectedUrl = directSubtitleUrl;
+        const selectedItem = versionItems.find((item) => String(item.subtitleUrl || '').trim() === selectedUrl);
+        if (selectedItem) return selectedItem;
+        const activeUrls = new Set(Object.values(activeByLang).map((url) => String(url || '').trim()).filter(Boolean));
+        return versionItems.find((item) => activeUrls.has(String(item.subtitleUrl || '').trim()))
+          || versionItems[versionItems.length - 1]
+          || null;
+      };
       const players = Array.from(document.querySelectorAll('video[data-asset-id], audio[data-asset-id]'))
         .filter((el) => String(el.dataset.assetId || '').trim() === assetId);
 
       players.forEach((mediaEl) => {
+        const selectedItem = subtitleForPlayer(mediaEl);
+        const subtitleUrl = String(selectedItem?.subtitleUrl || '').trim();
+        const enabled = overlayEnabled && Boolean(subtitleUrl);
+        const currentLang = currentLangRef?.get?.() || 'tr';
+        const subtitleLang = String(selectedItem?.subtitleLang || currentLang || 'tr').slice(0, 12);
+        const subtitleLabel = String(selectedItem?.subtitleLabel || t('subtitles'));
+        mediaEl.dataset.subtitleUrl = subtitleUrl;
+        mediaEl.dataset.subtitleLang = subtitleLang;
+        mediaEl.dataset.subtitleLabel = subtitleLabel;
         const existing = mediaEl.querySelector('#assetSubtitleTrack');
         const hideAll = () => {
           Array.from(mediaEl.textTracks || []).forEach((tt) => {
@@ -184,7 +210,9 @@
         if (!enabled || useCustomOverlay || mediaEl.tagName === 'AUDIO') {
           if (existing) existing.remove();
           hideAll();
-          mediaEl.dispatchEvent(new CustomEvent('mam:subtitle-overlay-sync', { detail: { enabled, asset } }));
+          mediaEl.dispatchEvent(new CustomEvent('mam:subtitle-overlay-sync', {
+            detail: { enabled, asset, sourceVersionId: sourceVersionFor(mediaEl), subtitleUrl }
+          }));
           return;
         }
 
@@ -208,7 +236,24 @@
         track.addEventListener('load', showLastTrack, { once: true });
         setTimeout(showLastTrack, 60);
         setTimeout(() => scheduleNativeSubtitleCuePosition(mediaEl), 180);
-        mediaEl.dispatchEvent(new CustomEvent('mam:subtitle-overlay-sync', { detail: { enabled, asset } }));
+        mediaEl.dispatchEvent(new CustomEvent('mam:subtitle-overlay-sync', {
+          detail: { enabled, asset, sourceVersionId: sourceVersionFor(mediaEl), subtitleUrl }
+        }));
+      });
+
+      const displayedVersionId = String(asset.defaultVersionId || asset.originalVersionId || '').trim();
+      const displayMedia = players.find((mediaEl) => sourceVersionFor(mediaEl) === displayedVersionId) || players[0];
+      const displayItem = displayMedia ? subtitleForPlayer(displayMedia) : null;
+      const displayUrl = String(displayItem?.subtitleUrl || '').trim();
+      document.querySelectorAll('[data-subtitle-asset-id]').forEach((picker) => {
+        if (String(picker.dataset.subtitleAssetId || '').trim() !== assetId) return;
+        picker.querySelectorAll('[data-subtitle-toggle], [data-subtitle-language-choice]').forEach((button) => {
+          const active = overlayEnabled && Boolean(displayUrl)
+            && (!button.hasAttribute('data-subtitle-language-choice')
+              || String(button.dataset.subtitleUrl || '').trim() === displayUrl);
+          button.classList.toggle('active', active);
+          button.setAttribute('aria-pressed', String(active));
+        });
       });
     }
 
@@ -977,6 +1022,10 @@
       let cues = [];
       let loadedUrl = '';
       let loading = null;
+      let loadingUrl = '';
+      const currentSubtitleUrl = () => mediaEl.dataset.subtitleUrl != null
+        ? String(mediaEl.dataset.subtitleUrl || '').trim()
+        : String(asset.subtitleUrl || '').trim();
       const overlay = document.createElement('div');
       overlay.className = 'mam-subtitle-overlay hidden';
       overlay.setAttribute('aria-live', 'polite');
@@ -991,34 +1040,42 @@
       };
 
       const ensureCues = async () => {
-        const url = String(asset.subtitleUrl || '').trim();
+        const url = currentSubtitleUrl();
         if (!url) {
           cues = [];
           loadedUrl = '';
           return;
         }
-        if (loadedUrl === url && cues.length) return;
-        if (loading) return loading;
-        loading = fetch(`${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`, { cache: 'no-store' })
+        if (loadedUrl === url) return;
+        if (loading && loadingUrl === url) return loading;
+        const request = fetch(`${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`, { cache: 'no-store' })
           .then((response) => response.ok ? response.text() : '')
           .then((text) => {
-            if (disposed) return;
+            if (disposed || currentSubtitleUrl() !== url) return;
             cues = parseVttCues(text);
             loadedUrl = url;
           })
           .catch(() => {
+            if (currentSubtitleUrl() !== url) return;
             cues = [];
-            loadedUrl = '';
+            loadedUrl = url;
           })
           .finally(() => {
-            loading = null;
+            if (loading === request) {
+              loading = null;
+              loadingUrl = '';
+            }
           });
-        return loading;
+        loading = request;
+        loadingUrl = url;
+        return request;
       };
 
       const render = () => {
         if (disposed) return;
-        const enabled = getSubtitleOverlayEnabled(asset.id, false) && Boolean(asset.subtitleUrl) && customSubtitleOverlayEnabled();
+        const enabled = getSubtitleOverlayEnabled(asset.id, false)
+          && Boolean(currentSubtitleUrl())
+          && customSubtitleOverlayEnabled();
         if (!enabled) {
           overlay.classList.add('hidden');
           overlay.innerHTML = '';

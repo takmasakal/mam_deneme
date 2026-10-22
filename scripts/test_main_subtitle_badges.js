@@ -88,6 +88,22 @@ customOverlayEnabled = false;
 players.splice(0, 1);
 common.syncSubtitleOverlayInOpenPlayers(asset);
 assert.strictEqual(players[0].events.at(-1).detail.enabled, true, 'audio continues using its custom overlay with native video subtitles');
+customOverlayEnabled = true;
+players.splice(0, players.length,
+  { tagName: 'VIDEO', dataset: { assetId: 'asset-1', versionId: 'v1' }, textTracks: [], events: [], querySelector: () => null, dispatchEvent(event) { this.events.push(event); } },
+  { tagName: 'VIDEO', dataset: { assetId: 'asset-1', versionId: 'v2' }, textTracks: [], events: [], querySelector: () => null, dispatchEvent(event) { this.events.push(event); } }
+);
+states.set('asset-1', true);
+common.syncSubtitleOverlayInOpenPlayers({
+  id: 'asset-1', originalVersionId: 'v1', defaultVersionId: 'v2', subtitleUrl: '/v2-tr.vtt',
+  subtitleActiveByLang: { tr: '/v2-tr.vtt' },
+  subtitleItems: [
+    { sourceVersionId: 'v1', subtitleUrl: '/v1-tr.vtt', subtitleLang: 'tr' },
+    { sourceVersionId: 'v2', subtitleUrl: '/v2-tr.vtt', subtitleLang: 'tr' }
+  ]
+});
+assert.strictEqual(players[0].events.at(-1).detail.subtitleUrl, '/v1-tr.vtt', 'V1 player never receives V2 subtitles');
+assert.strictEqual(players[1].events.at(-1).detail.subtitleUrl, '/v2-tr.vtt', 'V2 player receives its own subtitles');
 picker.dataset.subtitleAssetId = 'other-asset';
 states.set(asset.id, false);
 common.syncSubtitleOverlayInOpenPlayers(asset);
