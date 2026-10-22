@@ -130,11 +130,27 @@ function registerAssetRoutes(app, deps) {
   }
 
   function resolveAssetSourcePath(row = {}) {
+    const versionSourcePath = String(row.default_version_source_path || '').trim();
+    if (versionSourcePath && fs.existsSync(versionSourcePath)) return versionSourcePath;
+    const versionMediaPath = publicUploadUrlToAbsolutePath(resolveStoredUrl(row.default_version_media_url, ''));
+    if (versionMediaPath && fs.existsSync(versionMediaPath)) return versionMediaPath;
     const sourcePath = String(row.source_path || '').trim();
     if (sourcePath && fs.existsSync(sourcePath)) return sourcePath;
     const mediaPath = publicUploadUrlToAbsolutePath(resolveStoredUrl(row.media_url, ''));
     if (mediaPath && fs.existsSync(mediaPath)) return mediaPath;
     return '';
+  }
+
+  function resolveAssetDurationSeconds(row = {}) {
+    const versionId = String(row.default_version_id || '').trim();
+    const technical = row.dc_metadata?.mediaTechnicalInfo;
+    const cachedDuration = Number(technical?.versions?.[versionId]?.original?.payload?.durationSeconds);
+    if (versionId && Number.isFinite(cachedDuration) && cachedDuration > 0) return cachedDuration;
+    if (!versionId) {
+      const duration = Number(row.duration_seconds);
+      return Number.isFinite(duration) && duration > 0 ? duration : null;
+    }
+    return null;
   }
 
   function resolveAssetFilePath(row = {}) {
@@ -424,11 +440,17 @@ function registerAssetRoutes(app, deps) {
       }
       if (dateRange.from) {
         baseValues.push(dateRange.from);
-        baseWhere.push(`${dateField}_at >= $${baseValues.length}`);
+        const dateExpression = dateField === 'created'
+          ? 'COALESCE((SELECT version_date.created_at FROM asset_versions version_date WHERE version_date.asset_id = assets.id AND version_date.version_id = assets.default_version_id LIMIT 1), assets.created_at)'
+          : 'assets.updated_at';
+        baseWhere.push(`${dateExpression} >= $${baseValues.length}`);
       }
       if (dateRange.to) {
         baseValues.push(dateRange.to);
-        baseWhere.push(`${dateField}_at <= $${baseValues.length}`);
+        const dateExpression = dateField === 'created'
+          ? 'COALESCE((SELECT version_date.created_at FROM asset_versions version_date WHERE version_date.asset_id = assets.id AND version_date.version_id = assets.default_version_id LIMIT 1), assets.created_at)'
+          : 'assets.updated_at';
+        baseWhere.push(`${dateExpression} <= $${baseValues.length}`);
       }
       if (types.length) {
         baseValues.push(types);
@@ -581,10 +603,18 @@ function registerAssetRoutes(app, deps) {
         const sql = `
           SELECT
             assets.*,
+            (SELECT snapshot_source_path FROM asset_versions v WHERE v.asset_id = assets.id AND v.version_id = assets.default_version_id LIMIT 1) AS default_version_source_path,
             (SELECT snapshot_media_url FROM asset_versions v WHERE v.asset_id = assets.id AND v.version_id = assets.default_version_id LIMIT 1) AS default_version_media_url,
+            (SELECT created_at FROM asset_versions v WHERE v.asset_id = assets.id AND v.version_id = assets.default_version_id LIMIT 1) AS default_version_created_at,
             (SELECT snapshot_thumbnail_url FROM asset_versions v WHERE v.asset_id = assets.id AND v.version_id = assets.default_version_id LIMIT 1) AS default_version_thumbnail_url,
             (SELECT snapshot_file_name FROM asset_versions v WHERE v.asset_id = assets.id AND v.version_id = assets.default_version_id LIMIT 1) AS default_version_file_name,
             (SELECT snapshot_mime_type FROM asset_versions v WHERE v.asset_id = assets.id AND v.version_id = assets.default_version_id LIMIT 1) AS default_version_mime_type,
+            CASE
+              WHEN (assets.dc_metadata -> 'mediaTechnicalInfo' -> 'versions' -> assets.default_version_id -> 'original' -> 'payload' ->> 'durationSeconds') ~ '^[0-9]+([.][0-9]+)?$'
+                THEN (assets.dc_metadata -> 'mediaTechnicalInfo' -> 'versions' -> assets.default_version_id -> 'original' -> 'payload' ->> 'durationSeconds')::numeric
+              WHEN assets.default_version_id IS NULL THEN NULLIF(assets.duration_seconds, 0)
+              ELSE NULL
+            END AS active_version_duration_seconds,
             (
               SELECT COALESCE(
                 json_agg(
@@ -641,7 +671,7 @@ function registerAssetRoutes(app, deps) {
         };
         rows = await fetchAssetRows();
         if (durationRange.active) {
-          rows = rows.filter((row) => matchesNumberRange(row.duration_seconds, durationRange, { requirePositive: true }));
+          rows = rows.filter((row) => matchesNumberRange(resolveAssetDurationSeconds(row), durationRange, { requirePositive: true }));
         }
         if (fileSizeRange.active) {
           const rowsWithFileSize = await Promise.all(
@@ -937,6 +967,8 @@ function registerAssetRoutes(app, deps) {
       }
       const responseAssets = await Promise.all(hydratedRows.map(async (row) => {
         const asset = mapAssetRowForUser(row, accessContext);
+        const activeDuration = resolveAssetDurationSeconds(row);
+        if (activeDuration !== null) asset.durationSeconds = activeDuration;
         asset.attachmentSearchItems = attachmentSummaries.get(row.id) || [];
         if (row.default_version_media_url) asset.mediaUrl = row.default_version_media_url;
         if (row.default_version_thumbnail_url) asset.thumbnailUrl = row.default_version_thumbnail_url;
