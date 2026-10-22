@@ -286,6 +286,10 @@ const DEFAULT_ADMIN_SETTINGS = {
   allowFilelessAssetCreation: false,
   newAssetDefaultVisibility: 'owner_groups',
   playerUiMode: 'vidstack',
+  ocrDefaultIntervalSec: 4,
+  ocrDefaultMinDisplaySec: 8,
+  ocrDefaultMergeGapSec: 4,
+  ocrDefaultEngine: 'paddle',
   ocrDefaultAdvancedMode: true,
   ocrDefaultTurkishAiCorrect: true,
   ocrDefaultEnableBlurFilter: true,
@@ -4587,6 +4591,15 @@ function normalizeOcrEngine(value) {
   return 'paddle';
 }
 
+function getVideoOcrDefaults(settings = DEFAULT_ADMIN_SETTINGS) {
+  return {
+    intervalSec: clampNumber(settings.ocrDefaultIntervalSec, 1, 30, DEFAULT_ADMIN_SETTINGS.ocrDefaultIntervalSec),
+    minDisplaySec: clampNumber(settings.ocrDefaultMinDisplaySec, 1, 60, DEFAULT_ADMIN_SETTINGS.ocrDefaultMinDisplaySec),
+    mergeGapSec: clampNumber(settings.ocrDefaultMergeGapSec, 0, 30, DEFAULT_ADMIN_SETTINGS.ocrDefaultMergeGapSec),
+    engine: normalizeOcrEngine(settings.ocrDefaultEngine)
+  };
+}
+
 async function prepareOcrFrames({
   workDir,
   files,
@@ -5457,6 +5470,10 @@ async function getAdminSettings() {
   return {
     ...DEFAULT_ADMIN_SETTINGS,
     ...value,
+    ocrDefaultIntervalSec: clampNumber(value.ocrDefaultIntervalSec, 1, 30, DEFAULT_ADMIN_SETTINGS.ocrDefaultIntervalSec),
+    ocrDefaultMinDisplaySec: clampNumber(value.ocrDefaultMinDisplaySec, 1, 60, DEFAULT_ADMIN_SETTINGS.ocrDefaultMinDisplaySec),
+    ocrDefaultMergeGapSec: clampNumber(value.ocrDefaultMergeGapSec, 0, 30, DEFAULT_ADMIN_SETTINGS.ocrDefaultMergeGapSec),
+    ocrDefaultEngine: normalizeOcrEngine(value.ocrDefaultEngine),
     allowFilelessAssetCreation: Object.prototype.hasOwnProperty.call(value, 'allowFilelessAssetCreation')
       ? Boolean(value.allowFilelessAssetCreation)
       : DEFAULT_ADMIN_SETTINGS.allowFilelessAssetCreation,
@@ -6575,13 +6592,15 @@ app.get('/api/ui-settings', async (_req, res) => {
     return res.json({
       playerUiMode,
       allowFilelessAssetCreation: Boolean(settings.allowFilelessAssetCreation),
-      subtitleStyle: normalizeSubtitleStyle(settings.subtitleStyle)
+      subtitleStyle: normalizeSubtitleStyle(settings.subtitleStyle),
+      videoOcrDefaults: getVideoOcrDefaults(settings)
     });
   } catch (_error) {
     return res.json({
       playerUiMode: 'vidstack',
       allowFilelessAssetCreation: false,
-      subtitleStyle: normalizeSubtitleStyle(DEFAULT_ADMIN_SETTINGS.subtitleStyle)
+      subtitleStyle: normalizeSubtitleStyle(DEFAULT_ADMIN_SETTINGS.subtitleStyle),
+      videoOcrDefaults: getVideoOcrDefaults()
     });
   }
 });

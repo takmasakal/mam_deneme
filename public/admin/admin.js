@@ -202,6 +202,7 @@
   settingsTurkishText['Token & OIDC'] = 'Belirteç ve OIDC';
   Object.assign(settingsTurkishText, {'Manager user/group':'Yönetici kullanıcı/grup','Asset type':'Varlık türü','Document rights':'Belge yetkileri','OCR / subtitle':'OCR / altyazı','Document':'Belge','Video':'Video','Audio':'Ses','Photo':'Fotoğraf','Other':'Diğer','All asset types':'Tüm varlık türleri','Edit':'Düzenle','Update':'Güncelle','Actions':'İşlemler','Created':'Oluşturulma'});
   Object.assign(settingsTurkishText, {'Scan Missing Manually':'Eksikleri Elle Tara','Scan Missing Automatically':'Eksikleri Otomatik Tara','Stop scan':'Taramayı Durdur'});
+  Object.assign(settingsTurkishText, {'Video OCR parameters':'Video OCR parametreleri','Interval (sec)':'Aralık (sn)','Min visible (sec)':'En az görünme (sn)','Merge gap (sec)':'Birleşme aralığı (sn)','OCR engine':'OCR motoru'});
   const localizedSettingsNotice = (en, tr) => language === 'tr' ? tr : en;
   const localizedSettingsLabel = (value) => language === 'tr' ? (settingsTurkishText[value] || value) : value;
   function localizeSettingsText() {
@@ -586,7 +587,7 @@
     const concurrency = settings.mediaJobConcurrency || {};
     [['Subtitle','subtitle',1],['VideoOcr','videoOcr',1],['Proxy','proxy',1],['Metadata','metadata',1],['Thumbnail','thumbnail',2],['Upload','upload',3],['Download','download',6],['Backup','backup',1]].forEach(([suffix,key,fallback]) => setFormValue(general, `mediaJobConcurrency${suffix}`, Number(concurrency[key]) || fallback));
     const ocr = byId('v2OcrSettingsForm');
-    ['ocrDefaultAdvancedMode','ocrDefaultTurkishAiCorrect','ocrDefaultEnableBlurFilter','ocrDefaultEnableRegionMode','ocrDefaultIgnoreStaticOverlays'].forEach((name) => setFormValue(ocr, name, settings[name]));
+    ['ocrDefaultIntervalSec','ocrDefaultMinDisplaySec','ocrDefaultMergeGapSec','ocrDefaultEngine','ocrDefaultAdvancedMode','ocrDefaultTurkishAiCorrect','ocrDefaultEnableBlurFilter','ocrDefaultEnableRegionMode','ocrDefaultIgnoreStaticOverlays'].forEach((name) => setFormValue(ocr, name, settings[name]));
     const subtitle = byId('v2SubtitleSettingsForm');
     const style = settings.subtitleStyle || {};
     setFormValue(subtitle, 'customOverlay', style.customOverlayEnabled !== false); setFormValue(subtitle, 'bottomOffsetPx', style.bottomOffset ?? 56); setFormValue(subtitle, 'fontSizePx', style.fontSize ?? 24); setFormValue(subtitle, 'textColor', style.textColor || '#ffffff'); setFormValue(subtitle, 'backgroundColor', style.backgroundColor || '#000000'); setFormValue(subtitle, 'backgroundOpacity', style.backgroundOpacity ?? .72); setFormValue(subtitle, 'horizontalPaddingPx', style.horizontalPadding ?? 16); setFormValue(subtitle, 'maxWidthPercent', style.maxWidth ?? 82);
@@ -1224,6 +1225,11 @@
   byId('v2OcrSettingsForm').addEventListener('submit', async (event) => {
     event.preventDefault(); const form = event.currentTarget; const payload = {};
     ['ocrDefaultAdvancedMode','ocrDefaultTurkishAiCorrect','ocrDefaultEnableBlurFilter','ocrDefaultEnableRegionMode','ocrDefaultIgnoreStaticOverlays'].forEach((name) => { payload[name] = form.elements[name].checked; });
+    const readNumber = (name, fallback) => { const value = Number(form.elements[name].value); return Number.isFinite(value) ? value : fallback; };
+    payload.ocrDefaultIntervalSec = readNumber('ocrDefaultIntervalSec', 4);
+    payload.ocrDefaultMinDisplaySec = readNumber('ocrDefaultMinDisplaySec', 8);
+    payload.ocrDefaultMergeGapSec = readNumber('ocrDefaultMergeGapSec', 4);
+    payload.ocrDefaultEngine = form.elements.ocrDefaultEngine.value || 'paddle';
     try { await api('/api/admin/settings', { method:'PATCH', body:JSON.stringify(payload) }); settingsMessage(localizedSettingsNotice('Settings saved.', 'Ayarlar kaydedildi.')); } catch (error) { settingsMessage(error.message); }
   });
   byId('v2SubtitleSettingsForm').addEventListener('submit', async (event) => {
