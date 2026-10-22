@@ -1665,36 +1665,38 @@ function registerAssetRoutes(app, deps) {
         && path.resolve(selectedSourcePath) === path.resolve(String(loaded.row.source_path));
       const selectedProxyUrl = sourceIsOriginal ? loaded.row.proxy_url : version.rows[0].snapshot_media_url;
       const selectedProxyPath = publicUploadUrlToAbsolutePath(resolveStoredUrl(selectedProxyUrl, 'proxies'));
-      try {
-        const [originalInfo, proxyInfo] = await Promise.all([
-          probeMediaTechnicalInfo(selectedSourcePath),
-          probeMediaTechnicalInfo(selectedProxyPath)
-        ]);
-        if (Number(originalInfo?.durationSeconds) > 0) durationSeconds = Number(originalInfo.durationSeconds);
-        const existingTechnicalInfo = nextDcMetadata.mediaTechnicalInfo && typeof nextDcMetadata.mediaTechnicalInfo === 'object'
-          ? nextDcMetadata.mediaTechnicalInfo
-          : {};
-        const versionsTechnicalInfo = existingTechnicalInfo.versions && typeof existingTechnicalInfo.versions === 'object'
-          ? existingTechnicalInfo.versions
-          : {};
-        nextDcMetadata = {
-          ...nextDcMetadata,
-          ...(Number(originalInfo?.video?.frameRate) > 0 ? { videoFrameRate: Number(originalInfo.video.frameRate) } : {}),
-          ...(Number(originalInfo?.video?.frameCount) > 0 ? { videoFrameCount: Number(originalInfo.video.frameCount) } : {}),
-          mediaTechnicalInfo: {
-            ...existingTechnicalInfo,
+      const existingTechnicalInfo = nextDcMetadata.mediaTechnicalInfo && typeof nextDcMetadata.mediaTechnicalInfo === 'object'
+        ? nextDcMetadata.mediaTechnicalInfo
+        : {};
+      const versionsTechnicalInfo = existingTechnicalInfo.versions && typeof existingTechnicalInfo.versions === 'object'
+        ? existingTechnicalInfo.versions
+        : {};
+      const selectedTechnicalInfo = versionsTechnicalInfo[versionId]
+        || (sourceIsOriginal ? existingTechnicalInfo : null);
+      const originalInfo = selectedTechnicalInfo?.original?.fingerprint === getTechnicalInfoFingerprint(selectedSourcePath)
+        ? selectedTechnicalInfo.original.payload
+        : null;
+      const proxyInfo = selectedTechnicalInfo?.proxy?.fingerprint === getTechnicalInfoFingerprint(selectedProxyPath)
+        ? selectedTechnicalInfo.proxy.payload
+        : null;
+      if (Number(originalInfo?.durationSeconds) > 0) durationSeconds = Number(originalInfo.durationSeconds);
+      nextDcMetadata = {
+        ...nextDcMetadata,
+        ...(Number(originalInfo?.video?.frameRate) > 0 ? { videoFrameRate: Number(originalInfo.video.frameRate) } : {}),
+        ...(Number(originalInfo?.video?.frameCount) > 0 ? { videoFrameCount: Number(originalInfo.video.frameCount) } : {}),
+        mediaTechnicalInfo: {
+          ...existingTechnicalInfo,
+          ...(originalInfo || proxyInfo ? {
             versions: {
               ...versionsTechnicalInfo,
               [versionId]: {
-                original: { fingerprint: getTechnicalInfoFingerprint(selectedSourcePath), payload: originalInfo },
-                proxy: { fingerprint: getTechnicalInfoFingerprint(selectedProxyPath), payload: proxyInfo }
+                ...(originalInfo ? { original: selectedTechnicalInfo.original } : {}),
+                ...(proxyInfo ? { proxy: selectedTechnicalInfo.proxy } : {})
               }
             }
-          }
-        };
-      } catch (_error) {
-        // A probe failure must not block changing the default version.
-      }
+          } : {})
+        }
+      };
       await pool.query(
         'UPDATE assets SET default_version_id = $1, duration_seconds = $2, dc_metadata = $3::jsonb, updated_at = NOW() WHERE id = $4',
         [versionId, durationSeconds, JSON.stringify(nextDcMetadata), req.params.id]
@@ -1795,8 +1797,11 @@ function registerAssetRoutes(app, deps) {
           }
           : versionInfo;
         await pool.query(
-          `UPDATE assets SET dc_metadata = jsonb_set(COALESCE(dc_metadata, '{}'::jsonb), '{mediaTechnicalInfo}', $2::jsonb, true) WHERE id = $1`,
-          [row.id, JSON.stringify(nextTechnicalInfo)]
+          `UPDATE assets
+           SET dc_metadata = jsonb_set(COALESCE(dc_metadata, '{}'::jsonb), '{mediaTechnicalInfo}', $2::jsonb, true),
+               duration_seconds = CASE WHEN $3::numeric > 0 AND default_version_id = $4 THEN $3::numeric ELSE duration_seconds END
+           WHERE id = $1`,
+          [row.id, JSON.stringify(nextTechnicalInfo), Number(original?.durationSeconds) || 0, versionId]
         );
       }
   
@@ -2286,11 +2291,15 @@ function registerAssetRoutes(app, deps) {
         }) : {};
         let replacementProxyUrl = String(derivatives.proxyUrl || '').trim();
         let replacementThumbnailUrl = String(derivatives.thumbnailUrl || replacementProxyUrl || '').trim();
+        let replacementSourceTechnicalInfo = null;
+        let replacementProxyTechnicalInfo = null;
         if (isVideoReplacement) {
           const proxyOut = buildArtifactPath('proxies', `${Date.now()}-${nanoid()}-version-proxy.mp4`, new Date());
           replacementArtifactPaths.push(proxyOut.absolutePath);
-          await generateVideoProxy(replacementPath, proxyOut.absolutePath, { allowAudioFallback: true });
+          const proxyResult = await generateVideoProxy(replacementPath, proxyOut.absolutePath, { allowAudioFallback: true });
+          replacementSourceTechnicalInfo = proxyResult?.technicalInfo || await probeMediaTechnicalInfo(replacementPath);
           replacementProxyUrl = proxyOut.publicUrl;
+          replacementProxyTechnicalInfo = await probeMediaTechnicalInfo(proxyOut.absolutePath);
           const thumb = buildArtifactPath('thumbnails', `${Date.now()}-${nanoid()}-version-thumb.jpg`, new Date());
           replacementArtifactPaths.push(thumb.absolutePath);
           await generateVideoThumbnail(proxyOut.absolutePath, thumb.absolutePath, { seekSeconds: 0 });
@@ -2342,9 +2351,11 @@ function registerAssetRoutes(app, deps) {
               entry.createdAt
             ]
           );
+          let originalVersionId = '';
           if (count === 0) {
+            originalVersionId = nanoid();
             await insertVersion({
-              versionId: nanoid(),
+              versionId: originalVersionId,
               label: 'v1',
               note: 'Original version',
               snapshot: buildVersionSnapshotFromRow(row),
@@ -2354,7 +2365,43 @@ function registerAssetRoutes(app, deps) {
             });
           }
           await insertVersion(version);
-          await dbClient.query('UPDATE assets SET updated_at = $2 WHERE id = $1', [req.params.id, createdAt]);
+          if (replacementSourceTechnicalInfo && fileRole === 'version' && isVideoReplacement) {
+            const existingTechnicalInfo = row.dc_metadata?.mediaTechnicalInfo && typeof row.dc_metadata.mediaTechnicalInfo === 'object'
+              ? row.dc_metadata.mediaTechnicalInfo
+              : {};
+            const versionsTechnicalInfo = existingTechnicalInfo.versions && typeof existingTechnicalInfo.versions === 'object'
+              ? existingTechnicalInfo.versions
+              : {};
+            const nextTechnicalInfo = {
+              ...existingTechnicalInfo,
+              versions: {
+                ...versionsTechnicalInfo,
+                [version.versionId]: {
+                  original: { fingerprint: getTechnicalInfoFingerprint(replacementPath), payload: replacementSourceTechnicalInfo },
+                  proxy: {
+                    fingerprint: getTechnicalInfoFingerprint(publicUploadUrlToAbsolutePath(replacementProxyUrl)),
+                    payload: replacementProxyTechnicalInfo || { available: false }
+                  }
+                }
+              }
+            };
+            if (count === 0 && !nextTechnicalInfo.versions[originalVersionId]) {
+              const originalPath = String(row.source_path || '').trim();
+              const originalInfo = existingTechnicalInfo.original?.payload;
+              if (originalPath && originalInfo) {
+                nextTechnicalInfo.versions[originalVersionId] = {
+                  original: { fingerprint: getTechnicalInfoFingerprint(originalPath), payload: originalInfo },
+                  proxy: existingTechnicalInfo.proxy || { fingerprint: '', payload: { available: false } }
+                };
+              }
+            }
+            await dbClient.query(
+              "UPDATE assets SET updated_at = $2, dc_metadata = jsonb_set(COALESCE(dc_metadata, '{}'::jsonb), '{mediaTechnicalInfo}', $3::jsonb, true) WHERE id = $1",
+              [req.params.id, createdAt, JSON.stringify(nextTechnicalInfo)]
+            );
+          } else {
+            await dbClient.query('UPDATE assets SET updated_at = $2 WHERE id = $1', [req.params.id, createdAt]);
+          }
           await dbClient.query('COMMIT');
         } catch (error) {
           await dbClient.query('ROLLBACK').catch(() => {});

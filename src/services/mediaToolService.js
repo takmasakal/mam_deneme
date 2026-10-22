@@ -444,7 +444,7 @@ function createMediaToolService(options = {}) {
 
     try {
       await runProxy(true);
-      return { audioFallbackUsed: false };
+      return { audioFallbackUsed: false, technicalInfo };
     } catch (error) {
       const message = String(error?.message || '');
       const audioStreamDecodeFailure = audioStreams.some((stream) => {
@@ -473,7 +473,8 @@ function createMediaToolService(options = {}) {
       await runProxy(false);
       return {
         audioFallbackUsed: true,
-        warning: 'Source audio stream could not be decoded reliably. Proxy was created without audio.'
+        warning: 'Source audio stream could not be decoded reliably. Proxy was created without audio.',
+        technicalInfo
       };
     }
   }
