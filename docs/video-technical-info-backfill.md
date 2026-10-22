@@ -12,8 +12,7 @@ mevcut davranışıyla uyumlu biçimde `assets.duration_seconds` alanına yazar.
 
 ## Çalıştırma
 
-Güncel uygulama imajı oluşturulduktan sonra komutları Compose dosyasının
-bulunduğu dizinde çalıştırın:
+MetMAM için, MetMAM deposunun kök dizininde:
 
 ```sh
 docker compose build app
@@ -37,6 +36,10 @@ docker compose exec -T app python3 scripts/vidteknikbilgicikar.py --asset-id ASS
 ```sh
 docker compose exec -T app python3 scripts/vidteknikbilgicikar.py --apply --verbose
 ```
+
+Bu yalın `docker compose` komutlarını Belgelik/Kaisha sunucusunda kullanmayın.
+Kaisha için onun `mam-kaisha.sh` sarmalayıcısını ve Kaisha compose birleşimini
+kullanan komutları izleyin.
 
 Sonuç özetindeki `failures` sıfır değilse, ilgili dosya için ffprobe erişimini
 ve uygulama konteynerindeki dosya yolunu kontrol edin. Büyük arşivlerde işlem
