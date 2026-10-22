@@ -489,6 +489,9 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
   const subtitleItems = () => Array.isArray(asset.subtitleItems) ? asset.subtitleItems : [];
   const applyAssetFromApi = (mappedAsset) => {
     if (!mappedAsset || typeof mappedAsset !== 'object') return;
+    if (mappedAsset.defaultVersionId) asset.defaultVersionId = mappedAsset.defaultVersionId;
+    if (mappedAsset.originalVersionId) asset.originalVersionId = mappedAsset.originalVersionId;
+    if (Array.isArray(mappedAsset.versions)) asset.versions = mappedAsset.versions;
     asset.subtitleUrl = mappedAsset.subtitleUrl || asset.subtitleUrl || '';
     asset.subtitleLang = mappedAsset.subtitleLang || asset.subtitleLang || getLang();
     asset.subtitleLabel = mappedAsset.subtitleLabel || asset.subtitleLabel || '';
@@ -497,6 +500,12 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
       ? mappedAsset.subtitleActiveByLang
       : (asset.subtitleActiveByLang || {});
     asset.audioStreamOptions = Array.isArray(mappedAsset.audioStreamOptions) ? mappedAsset.audioStreamOptions : (asset.audioStreamOptions || []);
+  };
+  const currentSourceVersionId = () => {
+    const activeMedia = mediaEl?.dataset?.versionId
+      ? mediaEl
+      : root.querySelector?.('#assetMediaEl[data-version-id], video[data-version-id], audio[data-version-id]');
+    return String(activeMedia?.dataset?.versionId || asset.defaultVersionId || asset.originalVersionId || '').trim();
   };
   const renderSearchResults = (matches = [], didYouMean = '', query = '', fuzzyUsed = false) => {
     const suggestion = String(didYouMean || '').trim();
@@ -730,7 +739,7 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
         fileName: file.name,
         fileData: await readFileAsBase64(file),
         lang: selectedLang,
-        sourceVersionId: String(asset.defaultVersionId || asset.originalVersionId || '').trim()
+        sourceVersionId: currentSourceVersionId()
       };
       const result = await api(`/api/assets/${asset.id}/subtitles`, { method: 'POST', body: JSON.stringify(payload) });
       applyAssetFromApi(result.asset);
@@ -760,7 +769,7 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
           useZemberekLexicon: String(getLang() || '').toLowerCase().startsWith('tr') && Boolean(zemberekCheck.checked),
           audioStreamIndex: getSelectedAudioStream(),
           audioChannelIndex: getSelectedAudioChannel(),
-          sourceVersionId: String(asset.defaultVersionId || asset.originalVersionId || '').trim()
+          sourceVersionId: currentSourceVersionId()
         })
       });
       setStatus(t('subtitle_job_started'));
