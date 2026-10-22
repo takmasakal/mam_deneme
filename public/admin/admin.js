@@ -1224,13 +1224,32 @@
   });
   byId('v2OcrSettingsForm').addEventListener('submit', async (event) => {
     event.preventDefault(); const form = event.currentTarget; const payload = {};
+    const saveStatus = byId('v2OcrSettingsMessage');
+    const showSaveStatus = (message, state) => {
+      saveStatus.textContent = message;
+      saveStatus.classList.toggle('is-success', state === 'success');
+      saveStatus.classList.toggle('is-error', state === 'error');
+    };
+    showSaveStatus('', '');
     ['ocrDefaultAdvancedMode','ocrDefaultTurkishAiCorrect','ocrDefaultEnableBlurFilter','ocrDefaultEnableRegionMode','ocrDefaultIgnoreStaticOverlays'].forEach((name) => { payload[name] = form.elements[name].checked; });
     const readNumber = (name, fallback) => { const value = Number(form.elements[name].value); return Number.isFinite(value) ? value : fallback; };
     payload.ocrDefaultIntervalSec = readNumber('ocrDefaultIntervalSec', 4);
     payload.ocrDefaultMinDisplaySec = readNumber('ocrDefaultMinDisplaySec', 8);
     payload.ocrDefaultMergeGapSec = readNumber('ocrDefaultMergeGapSec', 4);
     payload.ocrDefaultEngine = form.elements.ocrDefaultEngine.value || 'paddle';
-    try { await api('/api/admin/settings', { method:'PATCH', body:JSON.stringify(payload) }); settingsMessage(localizedSettingsNotice('Settings saved.', 'Ayarlar kaydedildi.')); } catch (error) { settingsMessage(error.message); }
+    try {
+      await api('/api/admin/settings', { method:'PATCH', body:JSON.stringify(payload) });
+      const videoOcrDefaults = {
+        intervalSec: payload.ocrDefaultIntervalSec,
+        minDisplaySec: payload.ocrDefaultMinDisplaySec,
+        mergeGapSec: payload.ocrDefaultMergeGapSec,
+        engine: payload.ocrDefaultEngine
+      };
+      try { global.localStorage.setItem('mam_video_ocr_defaults_updated', JSON.stringify(videoOcrDefaults)); } catch (_error) {}
+      showSaveStatus(localizedSettingsNotice('Settings saved.', 'Ayarlar kaydedildi.'), 'success');
+    } catch (error) {
+      showSaveStatus(error.message || localizedSettingsNotice('Failed to save settings.', 'Ayarlar kaydedilemedi.'), 'error');
+    }
   });
   byId('v2SubtitleSettingsForm').addEventListener('submit', async (event) => {
     event.preventDefault(); const form = event.currentTarget; const subtitleStyle = { customOverlayEnabled:form.elements.customOverlay.checked, bottomOffset:numberValue(form,'bottomOffsetPx',56), fontSize:numberValue(form,'fontSizePx',24), textColor:form.elements.textColor.value, backgroundColor:form.elements.backgroundColor.value, backgroundOpacity:Number(form.elements.backgroundOpacity.value), horizontalPadding:numberValue(form,'horizontalPaddingPx',16), maxWidth:numberValue(form,'maxWidthPercent',82) };
