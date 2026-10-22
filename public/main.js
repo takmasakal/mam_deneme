@@ -2671,6 +2671,26 @@ const detailVersionActionsModule = window.createMainDetailVersionActions({
     const versionThumbnailUrl = String(version?.snapshotThumbnailUrl || '').trim();
     const versionId = String(version?.versionId || version?.version_id || '').trim();
     const isOriginalVersion = Boolean(versionId && versionId === String(asset?.originalVersionId || '').trim());
+    const versionSubtitleItems = (Array.isArray(asset?.subtitleItems) ? asset.subtitleItems : [])
+      .filter((item) => {
+        const sourceVersionId = String(item?.sourceVersionId || asset?.originalVersionId || '').trim();
+        return sourceVersionId === versionId && String(item?.subtitleUrl || '').trim();
+      });
+    const subtitleLanguageKey = (value) => {
+      const primary = String(value || '').trim().toLowerCase().replaceAll('_', '-').split('-')[0];
+      if (primary === 'tr' || primary === 'tur') return 'tr';
+      if (primary === 'en' || primary === 'eng') return 'en';
+      return primary.replace(/[^a-z0-9]/g, '').slice(0, 12);
+    };
+    const versionSubtitleActiveByLang = {};
+    versionSubtitleItems.forEach((item) => {
+      const langKey = subtitleLanguageKey(item.subtitleLang);
+      if (langKey) versionSubtitleActiveByLang[langKey] = String(item.subtitleUrl).trim();
+    });
+    const currentSubtitleLang = subtitleLanguageKey(asset?.subtitleLang);
+    const selectedVersionSubtitle = versionSubtitleItems.find((item) => subtitleLanguageKey(item.subtitleLang) === currentSubtitleLang)
+      || versionSubtitleItems[versionSubtitleItems.length - 1]
+      || null;
     const assetThumbnailUrl = String(asset?.thumbnailUrl || '').trim();
     const posterUrl = versionThumbnailUrl
       || (isOriginalVersion ? String(asset?.originalThumbnailUrl || '').trim() : '')
@@ -2680,6 +2700,11 @@ const detailVersionActionsModule = window.createMainDetailVersionActions({
       : mediaUrl;
     const previewAsset = {
       ...asset,
+      subtitleUrl: String(selectedVersionSubtitle?.subtitleUrl || '').trim(),
+      subtitleLang: String(selectedVersionSubtitle?.subtitleLang || '').trim(),
+      subtitleLabel: String(selectedVersionSubtitle?.subtitleLabel || '').trim(),
+      subtitleItems: versionSubtitleItems,
+      subtitleActiveByLang: versionSubtitleActiveByLang,
       mediaUrl: effectiveMediaUrl,
       proxyUrl: versionIsVideo ? effectiveMediaUrl : asset.proxyUrl,
       thumbnailUrl: versionIsVideo ? posterUrl : asset.thumbnailUrl
