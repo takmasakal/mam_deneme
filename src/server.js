@@ -1003,6 +1003,7 @@ function sanitizeVideoOcrItems(value) {
       return {
         id: String(item.id || nanoid()).trim() || nanoid(),
         ocrUrl,
+        sourceVersionId: String(item.sourceVersionId || '').trim(),
         ocrLabel: String(item.ocrLabel || '').trim() || 'video-ocr',
         ocrEngine: normalizeOcrEngine(item.ocrEngine),
         lineCount: Math.max(0, Number(item.lineCount) || 0),
@@ -2406,6 +2407,7 @@ async function getLatestMediaProcessingJobForAsset(assetId, jobType) {
 
 function buildVideoOcrDbRequestPayload(job) {
   return {
+    sourceVersionId: String(job.sourceVersionId || ''),
     intervalSec: Number(job.intervalSec || 0),
     ocrLang: String(job.ocrLang || ''),
     ocrPreset: normalizeOcrPreset(job.ocrPreset),
@@ -2687,6 +2689,7 @@ async function saveAssetVideoOcrMetadata(assetId, row, job) {
   items.push({
     id: nanoid(),
     ocrUrl: resultUrl,
+    sourceVersionId: String(job.sourceVersionId || '').trim(),
     ocrLabel: requestedLabel,
     ocrEngine: normalizeOcrEngine(job.ocrEngine || job.requestedEngine || 'paddle'),
     lineCount: Math.max(0, Number(job.lineCount) || 0),
@@ -4855,6 +4858,8 @@ function queueVideoOcrJob(row, options = {}) {
     throw new Error("OCR range is invalid. 'ocrEndSec' must be greater than 'ocrStartSec'.");
   }
   const ocrLang = String(options.ocrLang || 'eng+tur').trim() || 'eng+tur';
+  const sourceVersionId = String(options.sourceVersionId || '').trim();
+  const inputPath = String(options.inputPath || '').trim();
   const existingDc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
   const nextVersion = sanitizeVideoOcrItems(existingDc.videoOcrItems).length + 1;
   const autoOcrLabel = buildOcrDisplayLabel({
@@ -4893,6 +4898,8 @@ function queueVideoOcrJob(row, options = {}) {
   const job = {
     jobId,
     assetId: row.id,
+    sourceVersionId,
+    inputPath,
     status: 'queued',
     intervalSec,
     ocrLang,
@@ -4980,7 +4987,7 @@ function queueVideoOcrJob(row, options = {}) {
       finishedAt: ''
     });
     try {
-      const inputPath = resolveAssetInputPath(row);
+      const inputPath = running.inputPath || resolveAssetInputPath(row);
       if (!inputPath) throw new Error('Source media not found');
       const selectedEngine = ocrEngine;
       const preferredLabel = normalizeRequestedOcrLabel(

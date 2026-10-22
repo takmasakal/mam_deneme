@@ -416,7 +416,26 @@ function registerTextProcessingRoutes(app, deps) {
         return res.status(400).json({ error: "OCR range is invalid. 'ocrEndSec' must be greater than 'ocrStartSec'." });
       }
   
+      let sourceVersionId = String(req.body?.sourceVersionId || row.default_version_id || '').trim();
+      let inputPath = '';
+      if (sourceVersionId) {
+        const versionResult = await pool.query(
+          `SELECT snapshot_source_path, snapshot_media_url, snapshot_mime_type
+           FROM asset_versions WHERE asset_id = $1 AND version_id = $2 LIMIT 1`,
+          [row.id, sourceVersionId]
+        );
+        const version = versionResult.rows?.[0];
+        if (!version) return res.status(404).json({ error: 'Selected media version was not found' });
+        if (!String(version.snapshot_mime_type || '').toLowerCase().startsWith('video/')) {
+          return res.status(400).json({ error: 'Selected version is not a video' });
+        }
+        inputPath = String(version.snapshot_source_path || '').trim();
+        if (!inputPath || !fs.existsSync(inputPath)) inputPath = publicUploadUrlToAbsolutePath(version.snapshot_media_url);
+        if (!inputPath || !fs.existsSync(inputPath)) return res.status(404).json({ error: 'Selected media version file is missing' });
+      }
       const job = aiExecution.queueVideoOcr(row, {
+        sourceVersionId,
+        inputPath,
         intervalSec: req.body?.intervalSec,
         ocrLang: req.body?.ocrLang,
         ocrPreset: req.body?.ocrPreset,

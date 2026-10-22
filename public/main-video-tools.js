@@ -1332,6 +1332,7 @@ function initVideoOcrTools(asset, root = document) {
           enableRegionMode: Boolean(regionModeCheck.checked),
           tickerHeightPct: Number(tickerHeightInput.value || 20),
           ignoreStaticOverlays: Boolean(staticFilterCheck.checked),
+          sourceVersionId: String(asset.defaultVersionId || asset.originalVersionId || '').trim(),
           ignorePhrases: String(ignorePhrasesInput.value || '').trim(),
           minDisplaySec: Number(minDisplayInput.value || 8),
           mergeGapSec: Number(mergeGapInput.value || 4),
