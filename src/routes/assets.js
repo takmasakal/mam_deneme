@@ -5,6 +5,7 @@ const { parseMultipartUpload } = require('../services/multipartUploadParser');
 const { createAdvancedSearchService } = require('../services/advancedSearchService');
 const { createAssetListQueryService } = require('../services/assetListQueryService');
 const { buildSearchableDcSql } = require('../services/assetSearchTextService');
+const { subtitleLanguageKey, resolveSubtitleActiveByLang } = require('../services/subtitleSelectionService');
 
 const advancedSearchService = createAdvancedSearchService();
 
@@ -1656,7 +1657,7 @@ function registerAssetRoutes(app, deps) {
       if (!versionId) return res.status(400).json({ error: 'versionId is required' });
       const version = await pool.query('SELECT version_id, snapshot_media_url, snapshot_source_path, snapshot_thumbnail_url, snapshot_mime_type, action_type FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [req.params.id, versionId]);
       if (!version.rowCount) return res.status(404).json({ error: 'Version not found' });
-      const original = await pool.query("SELECT snapshot_mime_type FROM asset_versions WHERE asset_id = $1 ORDER BY created_at ASC, CASE WHEN label = 'v1' THEN 0 ELSE 1 END, version_id ASC LIMIT 1", [req.params.id]);
+      const original = await pool.query("SELECT version_id, snapshot_mime_type FROM asset_versions WHERE asset_id = $1 ORDER BY created_at ASC, CASE WHEN label = 'v1' THEN 0 ELSE 1 END, version_id ASC LIMIT 1", [req.params.id]);
       if (version.rows[0].action_type === 'attachment' || String(version.rows[0].snapshot_mime_type || '').toLowerCase() !== String(original.rows[0]?.snapshot_mime_type || loaded.row.mime_type || '').toLowerCase()) return res.status(400).json({ error: 'Ek dosyalar varsayılan yapılamaz' });
       let durationSeconds = Number(loaded.row.duration_seconds) || 0;
       let nextDcMetadata = loaded.row.dc_metadata && typeof loaded.row.dc_metadata === 'object' ? loaded.row.dc_metadata : {};
@@ -1697,6 +1698,29 @@ function registerAssetRoutes(app, deps) {
           } : {})
         }
       };
+      const subtitleItems = Array.isArray(nextDcMetadata.subtitleItems) ? nextDcMetadata.subtitleItems : [];
+      const originalVersionId = String(original.rows[0]?.version_id || '').trim();
+      const versionSubtitleItems = subtitleItems.filter((item) => (
+        String(item?.sourceVersionId || originalVersionId).trim() === versionId
+        && String(item?.subtitleUrl || '').trim()
+      ));
+      if (versionSubtitleItems.length) {
+        const activeByLang = resolveSubtitleActiveByLang(nextDcMetadata, subtitleItems);
+        versionSubtitleItems.forEach((item) => {
+          const langKey = subtitleLanguageKey(item.subtitleLang);
+          if (langKey) activeByLang[langKey] = String(item.subtitleUrl).trim();
+        });
+        const currentLangKey = subtitleLanguageKey(nextDcMetadata.subtitleLang);
+        const selectedSubtitle = versionSubtitleItems.find((item) => subtitleLanguageKey(item.subtitleLang) === currentLangKey)
+          || versionSubtitleItems[versionSubtitleItems.length - 1];
+        nextDcMetadata = {
+          ...nextDcMetadata,
+          subtitleUrl: String(selectedSubtitle.subtitleUrl || '').trim(),
+          subtitleLang: String(selectedSubtitle.subtitleLang || '').trim(),
+          subtitleLabel: String(selectedSubtitle.subtitleLabel || '').trim(),
+          subtitleActiveByLang: activeByLang
+        };
+      }
       await pool.query(
         'UPDATE assets SET default_version_id = $1, duration_seconds = $2, dc_metadata = $3::jsonb, updated_at = NOW() WHERE id = $4',
         [versionId, durationSeconds, JSON.stringify(nextDcMetadata), req.params.id]
