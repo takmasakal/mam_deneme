@@ -1325,7 +1325,7 @@ function isTextPreviewable(asset) { return commonModule.isTextPreviewable(asset)
 function thumbFallbackForAsset(asset) { return commonModule.thumbFallbackForAsset(asset); }
 function documentSearchControls() { return commonModule.documentSearchControls(); }
 function formatDate(value) { return commonModule.formatDate(value); }
-function formatDuration(seconds, frameRate = 0, frameCount = 0) { return commonModule.formatDuration(seconds, frameRate, frameCount); }
+function formatDuration(seconds) { return commonModule.formatDuration(seconds); }
 async function loadAssetTechnicalInfo(asset) { return commonModule.loadAssetTechnicalInfo(asset); }
 function extractDcMetadataFromPayload(payload) { return commonModule.extractDcMetadataFromPayload(payload); }
 function foldSearchText(value) { return commonModule.foldSearchText(value); }
@@ -2375,7 +2375,6 @@ const playerRuntimeModule = window.createMainPlayerRuntimeModule({
   highlightMatch,
   effectiveSearchHighlightClass,
   secondsToTimecode,
-  clampTimecodeSecondsToFrameCount,
   parseTimecodeInput,
   api,
   deleteApi,

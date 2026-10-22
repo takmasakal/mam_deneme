@@ -47,7 +47,7 @@ assert.match(html, /data-cut-id="cut-3"/);
 
 assert.strictEqual(common.secondsToTimecode(334.021, 25), '00:05:34:01');
 assert.strictEqual(common.secondsToTimecode(119.52, 29.97), '00:01:59:12');
-assert.strictEqual(common.formatDuration(334.021, 25, 8350), '00:05:34.00');
-assert.strictEqual(common.clampTimecodeSecondsToFrameCount(334.021, 25, 8350, 334.021), 334);
+assert.strictEqual(common.formatDuration(334.021), '00:05:34.02');
+assert.strictEqual(common.formatDuration(119.52, 29.97, 3582), '00:01:59.52');
 
 console.log('mainCommon clip hit tests passed');
