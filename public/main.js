@@ -1535,18 +1535,21 @@ window.addEventListener('storage', (event) => {
       mergeGapSec: clamp(defaults.mergeGapSec, 4, 0, 30),
       engine: String(defaults.engine || 'paddle')
     };
-    const inputs = [
-      ['videoOcrIntervalInput', window.MAM_VIDEO_OCR_DEFAULTS.intervalSec],
-      ['videoOcrMinDisplayInput', window.MAM_VIDEO_OCR_DEFAULTS.minDisplaySec],
-      ['videoOcrMergeGapInput', window.MAM_VIDEO_OCR_DEFAULTS.mergeGapSec]
-    ];
-    inputs.forEach(([id, value]) => {
-      const input = document.getElementById(id);
-      if (input) input.value = String(value);
-    });
-    const engine = document.getElementById('videoOcrEngineSelect');
-    if (engine && Array.from(engine.options).some((option) => option.value === window.MAM_VIDEO_OCR_DEFAULTS.engine)) {
-      engine.value = window.MAM_VIDEO_OCR_DEFAULTS.engine;
+    const preset = document.getElementById('videoOcrPresetSelect');
+    if (!preset || preset.value === 'general') {
+      const inputs = [
+        ['videoOcrIntervalInput', window.MAM_VIDEO_OCR_DEFAULTS.intervalSec],
+        ['videoOcrMinDisplayInput', window.MAM_VIDEO_OCR_DEFAULTS.minDisplaySec],
+        ['videoOcrMergeGapInput', window.MAM_VIDEO_OCR_DEFAULTS.mergeGapSec]
+      ];
+      inputs.forEach(([id, value]) => {
+        const input = document.getElementById(id);
+        if (input) input.value = String(value);
+      });
+      const engine = document.getElementById('videoOcrEngineSelect');
+      if (engine && Array.from(engine.options).some((option) => option.value === window.MAM_VIDEO_OCR_DEFAULTS.engine)) {
+        engine.value = window.MAM_VIDEO_OCR_DEFAULTS.engine;
+      }
     }
   } catch (_error) {}
 });
