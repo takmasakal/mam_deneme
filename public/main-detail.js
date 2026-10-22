@@ -287,7 +287,7 @@
       const fileSizeBytes = Number(asset.fileSizeBytes);
       const hasFileSize = Number.isFinite(fileSizeBytes) && fileSizeBytes > 0;
       const fileSizeMeta = hasFileSize
-        ? ` | ${t('tech_file_size')}: ${escapeHtml(`${(fileSizeBytes / (1024 * 1024)).toFixed(2)} MB`)}`
+        ? ` | <span id="assetFileSizeMeta">${t('tech_file_size')}: ${escapeHtml(`${(fileSizeBytes / (1024 * 1024)).toFixed(2)} MB`)}</span>`
         : '';
       const durationField = hasDuration
         ? `<label>${t('duration')}<input id="assetDurationInput" name="durationSeconds" type="number" min="0" step="0.01" value="${escapeHtml(durationDisplaySeconds.toFixed(2))}" readonly aria-readonly="true" />${buildInlineFieldMatch(`${durationDisplaySeconds}s`, currentSearchHighlightQuery(), searchHighlightClass)}</label>`

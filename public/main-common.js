@@ -451,21 +451,41 @@
       const bodyEl = document.getElementById('assetTechnicalInfoBody');
       if (!bodyEl) return;
       const stored = asset.dcMetadata?.mediaTechnicalInfo;
-      const storedOriginal = stored?.original?.payload;
+      const selectedVersionInfo = asset.defaultVersionId
+        ? stored?.versions?.[String(asset.defaultVersionId)]
+        : stored;
+      const storedOriginal = selectedVersionInfo?.original?.payload;
       const cachedPayload = storedOriginal && typeof storedOriginal === 'object'
         ? {
           assetId: asset.id,
+          versionId: String(asset.defaultVersionId || ''),
           original: { label: 'original', url: String(asset.mediaUrl || ''), ...storedOriginal },
           proxy: {
             label: 'proxy',
             url: String(asset.proxyUrl || ''),
-            ...(stored?.proxy?.payload && typeof stored.proxy.payload === 'object' ? stored.proxy.payload : { available: false })
+            ...(selectedVersionInfo?.proxy?.payload && typeof selectedVersionInfo.proxy.payload === 'object' ? selectedVersionInfo.proxy.payload : { available: false })
           }
         }
         : null;
       const renderPayload = (payload) => {
         if (selectedAssetIdRef?.get?.() !== asset.id) return;
         const originalVideoInfo = payload?.original?.video;
+        const versionDuration = Number(payload?.original?.durationSeconds) || 0;
+        const versionFileSize = Number(payload?.original?.fileSize) || 0;
+        if (asset.defaultVersionId && String(payload?.versionId || '') === String(asset.defaultVersionId)) {
+          if (versionDuration > 0) {
+            asset.durationSeconds = versionDuration;
+            const durationInput = document.getElementById('assetDurationInput');
+            if (durationInput) durationInput.value = versionDuration.toFixed(2);
+            const durationMeta = document.getElementById('assetDurationMeta');
+            if (durationMeta) durationMeta.textContent = `${t('duration')}: ${formatDuration(versionDuration)}`;
+          }
+          if (versionFileSize > 0) {
+            asset.fileSizeBytes = versionFileSize;
+            const fileSizeMeta = document.getElementById('assetFileSizeMeta');
+            if (fileSizeMeta) fileSizeMeta.textContent = `${t('tech_file_size')}: ${(versionFileSize / (1024 * 1024)).toFixed(2)} MB`;
+          }
+        }
         const technicalFps = Number(originalVideoInfo?.frameRate) || 0;
         if (technicalFps > 0 && Number(asset.videoFrameRate) !== technicalFps) {
           asset.videoFrameRate = technicalFps;

@@ -1585,6 +1585,7 @@ function registerAssetRoutes(app, deps) {
   
       const asset = mapAssetRowForUser(row, loaded.accessContext);
       const originalAssetThumbnailUrl = String(asset.thumbnailUrl || '').trim();
+      const originalAssetProxyUrl = String(asset.proxyUrl || '').trim();
       asset.versionMimeType = versionsResult.rows[versionsResult.rows.length - 1]?.snapshot_mime_type || row.mime_type;
       asset.fileSizeBytes = await resolveAssetFileSize(row);
       const audioCandidate = isVideoCandidate({
@@ -1607,6 +1608,7 @@ function registerAssetRoutes(app, deps) {
       }
       asset.originalVersionId = String(originalVersion?.versionId || '').trim();
       asset.originalThumbnailUrl = String(originalVersion?.snapshotThumbnailUrl || originalAssetThumbnailUrl).trim();
+      asset.originalProxyUrl = originalAssetProxyUrl;
       asset.versions.forEach((version) => {
         version.fileRole = version.actionType === 'attachment' || String(version.snapshotMimeType || '').toLowerCase() !== String(asset.versionMimeType || '').toLowerCase() ? 'attachment' : 'version';
       });
@@ -1618,6 +1620,14 @@ function registerAssetRoutes(app, deps) {
         asset.fileName = preferredVersion.snapshotFileName || asset.fileName;
         asset.mimeType = preferredVersion.snapshotMimeType || asset.mimeType;
         asset.type = inferAssetType('', asset.mimeType, asset.fileName);
+        const preferredPath = String(preferredVersion.snapshotSourcePath || '') || publicUploadUrlToAbsolutePath(preferredVersion.snapshotMediaUrl);
+        if (preferredPath && fs.existsSync(preferredPath)) {
+          try { asset.fileSizeBytes = fs.statSync(preferredPath).size; } catch (_error) {}
+        }
+        const preferredTechnical = row.dc_metadata?.mediaTechnicalInfo?.versions?.[preferredVersion.versionId]?.original?.payload;
+        if (Number(preferredTechnical?.durationSeconds) > 0) asset.durationSeconds = Number(preferredTechnical.durationSeconds);
+        if (Number(preferredTechnical?.video?.frameRate) > 0) asset.videoFrameRate = Number(preferredTechnical.video.frameRate);
+        if (Number(preferredTechnical?.video?.frameCount) > 0) asset.videoFrameCount = Number(preferredTechnical.video.frameCount);
         if (preferredVersion.snapshotMediaUrl && String(asset.mimeType || '').toLowerCase().startsWith('image/')) {
           asset.proxyUrl = preferredVersion.snapshotThumbnailUrl || preferredVersion.snapshotMediaUrl;
         } else if (preferredVersion.snapshotMediaUrl && String(asset.mimeType || '').toLowerCase().startsWith('video/')) {
@@ -1644,11 +1654,51 @@ function registerAssetRoutes(app, deps) {
       if (await rejectIfForeignEditLock(req, res, req.params.id)) return undefined;
       const versionId = String(req.body?.versionId || '').trim();
       if (!versionId) return res.status(400).json({ error: 'versionId is required' });
-      const version = await pool.query('SELECT version_id, snapshot_media_url, snapshot_thumbnail_url, snapshot_mime_type, action_type FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [req.params.id, versionId]);
+      const version = await pool.query('SELECT version_id, snapshot_media_url, snapshot_source_path, snapshot_thumbnail_url, snapshot_mime_type, action_type FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [req.params.id, versionId]);
       if (!version.rowCount) return res.status(404).json({ error: 'Version not found' });
       const original = await pool.query("SELECT snapshot_mime_type FROM asset_versions WHERE asset_id = $1 ORDER BY created_at ASC, CASE WHEN label = 'v1' THEN 0 ELSE 1 END, version_id ASC LIMIT 1", [req.params.id]);
       if (version.rows[0].action_type === 'attachment' || String(version.rows[0].snapshot_mime_type || '').toLowerCase() !== String(original.rows[0]?.snapshot_mime_type || loaded.row.mime_type || '').toLowerCase()) return res.status(400).json({ error: 'Ek dosyalar varsayılan yapılamaz' });
-      await pool.query('UPDATE assets SET default_version_id = $1, updated_at = NOW() WHERE id = $2', [versionId, req.params.id]);
+      let durationSeconds = Number(loaded.row.duration_seconds) || 0;
+      let nextDcMetadata = loaded.row.dc_metadata && typeof loaded.row.dc_metadata === 'object' ? loaded.row.dc_metadata : {};
+      const selectedSourcePath = String(version.rows[0].snapshot_source_path || '') || publicUploadUrlToAbsolutePath(version.rows[0].snapshot_media_url);
+      const sourceIsOriginal = selectedSourcePath && loaded.row.source_path
+        && path.resolve(selectedSourcePath) === path.resolve(String(loaded.row.source_path));
+      const selectedProxyUrl = sourceIsOriginal ? loaded.row.proxy_url : version.rows[0].snapshot_media_url;
+      const selectedProxyPath = publicUploadUrlToAbsolutePath(resolveStoredUrl(selectedProxyUrl, 'proxies'));
+      try {
+        const [originalInfo, proxyInfo] = await Promise.all([
+          probeMediaTechnicalInfo(selectedSourcePath),
+          probeMediaTechnicalInfo(selectedProxyPath)
+        ]);
+        if (Number(originalInfo?.durationSeconds) > 0) durationSeconds = Number(originalInfo.durationSeconds);
+        const existingTechnicalInfo = nextDcMetadata.mediaTechnicalInfo && typeof nextDcMetadata.mediaTechnicalInfo === 'object'
+          ? nextDcMetadata.mediaTechnicalInfo
+          : {};
+        const versionsTechnicalInfo = existingTechnicalInfo.versions && typeof existingTechnicalInfo.versions === 'object'
+          ? existingTechnicalInfo.versions
+          : {};
+        nextDcMetadata = {
+          ...nextDcMetadata,
+          ...(Number(originalInfo?.video?.frameRate) > 0 ? { videoFrameRate: Number(originalInfo.video.frameRate) } : {}),
+          ...(Number(originalInfo?.video?.frameCount) > 0 ? { videoFrameCount: Number(originalInfo.video.frameCount) } : {}),
+          mediaTechnicalInfo: {
+            ...existingTechnicalInfo,
+            versions: {
+              ...versionsTechnicalInfo,
+              [versionId]: {
+                original: { fingerprint: getTechnicalInfoFingerprint(selectedSourcePath), payload: originalInfo },
+                proxy: { fingerprint: getTechnicalInfoFingerprint(selectedProxyPath), payload: proxyInfo }
+              }
+            }
+          }
+        };
+      } catch (_error) {
+        // A probe failure must not block changing the default version.
+      }
+      await pool.query(
+        'UPDATE assets SET default_version_id = $1, duration_seconds = $2, dc_metadata = $3::jsonb, updated_at = NOW() WHERE id = $4',
+        [versionId, durationSeconds, JSON.stringify(nextDcMetadata), req.params.id]
+      );
       await recordAuditEvent?.(req, { action: 'asset.default_file_changed', targetType: 'asset', targetId: req.params.id, targetTitle: String(loaded.row.title || loaded.row.file_name || req.params.id), details: { versionId, previousVersionId: loaded.row.default_version_id || '' } });
       res.json({ saved: true, defaultVersionId: versionId });
     } catch (_error) {
@@ -1690,19 +1740,35 @@ function registerAssetRoutes(app, deps) {
         return res.status(loaded.status).json({ error: loaded.error });
       }
       const row = loaded.row;
-  
+      const versionId = String(req.query?.versionId || row.default_version_id || '').trim();
+      let selectedVersion = null;
+      if (versionId) {
+        const selected = await pool.query(
+          `SELECT version_id, snapshot_source_path, snapshot_media_url, snapshot_mime_type, action_type
+           FROM asset_versions WHERE asset_id = $1 AND version_id = $2 LIMIT 1`,
+          [row.id, versionId]
+        );
+        selectedVersion = selected.rows?.[0] || null;
+        if (!selectedVersion || selectedVersion.action_type === 'attachment') {
+          return res.status(404).json({ error: 'Selected media version was not found' });
+        }
+      }
       const sourcePath = (() => {
-        let p = String(row.source_path || '').trim();
+        let p = String(selectedVersion?.snapshot_source_path || row.source_path || '').trim();
         if (p && fs.existsSync(p)) return p;
-        const media = publicUploadUrlToAbsolutePath(row.media_url);
+        const media = publicUploadUrlToAbsolutePath(selectedVersion?.snapshot_media_url || row.media_url);
         if (media && fs.existsSync(media)) return media;
         return '';
       })();
-  
-      const proxyPath = publicUploadUrlToAbsolutePath(resolveStoredUrl(row.proxy_url, 'proxies'));
-      const cachedInfo = row.dc_metadata?.mediaTechnicalInfo && typeof row.dc_metadata.mediaTechnicalInfo === 'object'
+      const isOriginalSource = Boolean(sourcePath && row.source_path && path.resolve(sourcePath) === path.resolve(String(row.source_path)));
+      const proxyUrl = selectedVersion && !isOriginalSource ? selectedVersion.snapshot_media_url : row.proxy_url;
+      const proxyPath = publicUploadUrlToAbsolutePath(resolveStoredUrl(proxyUrl, 'proxies'));
+      const storedTechnicalInfo = row.dc_metadata?.mediaTechnicalInfo && typeof row.dc_metadata.mediaTechnicalInfo === 'object'
         ? row.dc_metadata.mediaTechnicalInfo
         : {};
+      const cachedInfo = versionId
+        ? (storedTechnicalInfo.versions?.[versionId] || {})
+        : storedTechnicalInfo;
       const originalFingerprint = getTechnicalInfoFingerprint(sourcePath);
       const proxyFingerprint = getTechnicalInfoFingerprint(proxyPath);
       const cachedOriginal = cachedInfo.original?.fingerprint === originalFingerprint
@@ -1718,10 +1784,16 @@ function registerAssetRoutes(app, deps) {
         cachedProxy ? Promise.resolve(cachedProxy.payload) : probeMediaTechnicalInfo(proxyPath)
       ]);
       if (!cachedOriginal || !cachedProxy) {
-        const nextTechnicalInfo = {
+        const versionInfo = {
           original: cachedOriginal || { fingerprint: originalFingerprint, payload: original },
           proxy: cachedProxy || { fingerprint: proxyFingerprint, payload: proxy }
         };
+        const nextTechnicalInfo = versionId
+          ? {
+            ...storedTechnicalInfo,
+            versions: { ...(storedTechnicalInfo.versions || {}), [versionId]: versionInfo }
+          }
+          : versionInfo;
         await pool.query(
           `UPDATE assets SET dc_metadata = jsonb_set(COALESCE(dc_metadata, '{}'::jsonb), '{mediaTechnicalInfo}', $2::jsonb, true) WHERE id = $1`,
           [row.id, JSON.stringify(nextTechnicalInfo)]
@@ -1730,14 +1802,15 @@ function registerAssetRoutes(app, deps) {
   
       return res.json({
         assetId: row.id,
+        versionId,
         original: {
           label: 'original',
-          url: String(row.media_url || ''),
+          url: String(selectedVersion?.snapshot_media_url || row.media_url || ''),
           ...original
         },
         proxy: {
           label: 'proxy',
-          url: String(resolveStoredUrl(row.proxy_url, 'proxies') || ''),
+          url: String(resolveStoredUrl(proxyUrl, 'proxies') || ''),
           ...proxy
         }
       });

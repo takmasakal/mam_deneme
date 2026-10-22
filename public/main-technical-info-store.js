@@ -25,6 +25,7 @@
         String(asset?.updatedAt || asset?.updated_at || '').trim(),
         String(asset?.mediaUrl || asset?.media_url || '').trim(),
         String(asset?.proxyUrl || asset?.proxy_url || '').trim(),
+        String(asset?.defaultVersionId || '').trim(),
         String(asset?.proxyStatus || asset?.proxy_status || '').trim()
       ].join('\u001f');
     }

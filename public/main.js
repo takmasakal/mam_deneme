@@ -1319,7 +1319,7 @@ function tf(key, vars = {}) {
 }
 
 const technicalInfoStore = window.createMainTechnicalInfoStore(
-  (asset) => api(`/api/assets/${encodeURIComponent(asset.id)}/technical`),
+  (asset) => api(`/api/assets/${encodeURIComponent(asset.id)}/technical${asset.defaultVersionId ? `?versionId=${encodeURIComponent(asset.defaultVersionId)}` : ''}`),
   { maxEntries: 50 }
 );
 
@@ -2672,11 +2672,11 @@ const detailVersionActionsModule = window.createMainDetailVersionActions({
     const versionId = String(version?.versionId || version?.version_id || '').trim();
     const isOriginalVersion = Boolean(versionId && versionId === String(asset?.originalVersionId || '').trim());
     const assetThumbnailUrl = String(asset?.thumbnailUrl || '').trim();
-    const posterUrl = isOriginalVersion
-      ? (assetThumbnailUrl || String(asset?.originalThumbnailUrl || '').trim() || versionThumbnailUrl)
-      : (versionThumbnailUrl || assetThumbnailUrl);
+    const posterUrl = versionThumbnailUrl
+      || (isOriginalVersion ? String(asset?.originalThumbnailUrl || '').trim() : '')
+      || assetThumbnailUrl;
     const effectiveMediaUrl = versionIsVideo && isOriginalVersion
-      ? (String(asset?.proxyUrl || '').trim() || mediaUrl)
+      ? (String(asset?.originalProxyUrl || '').trim() || mediaUrl)
       : mediaUrl;
     const previewAsset = {
       ...asset,
