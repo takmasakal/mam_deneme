@@ -7,12 +7,15 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends libheif-examples \
   && rm -rf /var/lib/apt/lists/*
 
+RUN pip3 install --no-cache-dir --break-system-packages 'psycopg[binary]>=3.2,<4'
+
 COPY package*.json ./
 RUN npm ci --omit=dev \
   && npm cache clean --force
 
 COPY public ./public
 COPY src ./src
+COPY scripts/vidteknikbilgicikar.py ./scripts/vidteknikbilgicikar.py
 
 RUN mkdir -p /app/uploads /app/uploads/proxies /app/uploads/thumbnails /app/uploads/subtitles /app/uploads/ocr
 
