@@ -1220,7 +1220,17 @@
   byId('v2SettingsForm').addEventListener('submit', async (event) => {
     event.preventDefault(); const form = event.currentTarget;
     const payload = { playerUiMode: form.elements.playerUiMode.value, newAssetDefaultVisibility: form.elements.newAssetDefaultVisibility.value, allowFilelessAssetCreation: form.elements.allowFilelessAssetCreation.checked, apiTokenEnabled: form.elements.apiTokenEnabled.checked, oidcBearerEnabled: form.elements.oidcBearerEnabled.checked, apiToken: form.elements.apiToken.value.trim(), oidcIssuerUrl: form.elements.oidcIssuerUrl.value.trim(), oidcJwksUrl: form.elements.oidcJwksUrl.value.trim(), oidcAudience: form.elements.oidcAudience.value.trim(), mediaJobConcurrency: { subtitle:numberValue(form,'mediaJobConcurrencySubtitle',1), videoOcr:numberValue(form,'mediaJobConcurrencyVideoOcr',1), proxy:numberValue(form,'mediaJobConcurrencyProxy',1), metadata:numberValue(form,'mediaJobConcurrencyMetadata',1), thumbnail:numberValue(form,'mediaJobConcurrencyThumbnail',2), upload:numberValue(form,'mediaJobConcurrencyUpload',3), download:numberValue(form,'mediaJobConcurrencyDownload',6), backup:numberValue(form,'mediaJobConcurrencyBackup',1) } };
-    try { await api('/api/admin/settings', { method:'PATCH', body:JSON.stringify(payload) }); settingsMessage(localizedSettingsNotice('Settings saved.', 'Ayarlar kaydedildi.')); } catch (error) { settingsMessage(error.message); }
+    try {
+      await api('/api/admin/settings', { method:'PATCH', body:JSON.stringify(payload) });
+      const videoOcrDefaults = {
+        intervalSec: payload.ocrDefaultIntervalSec,
+        minDisplaySec: payload.ocrDefaultMinDisplaySec,
+        mergeGapSec: payload.ocrDefaultMergeGapSec,
+        engine: payload.ocrDefaultEngine
+      };
+      try { global.localStorage.setItem('mam_video_ocr_defaults_updated', JSON.stringify(videoOcrDefaults)); } catch (_error) {}
+      settingsMessage(localizedSettingsNotice('Settings saved.', 'Ayarlar kaydedildi.'));
+    } catch (error) { settingsMessage(error.message); }
   });
   byId('v2OcrSettingsForm').addEventListener('submit', async (event) => {
     event.preventDefault(); const form = event.currentTarget; const payload = {};

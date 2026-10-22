@@ -1168,15 +1168,16 @@ function initVideoOcrTools(asset, root = document) {
       mergeGapInput.value = '8';
       return;
     }
-    intervalInput.value = '4';
+    const defaults = global.MAM_VIDEO_OCR_DEFAULTS || {};
+    applyNumericDefault(intervalInput, defaults.intervalSec, 4, 1, 30);
     preprocessSelect.value = 'light';
     advancedCheck.checked = true;
     blurFilterCheck.checked = true;
     blurThresholdInput.value = '80';
     regionModeCheck.checked = false;
     staticFilterCheck.checked = true;
-    minDisplayInput.value = '8';
-    mergeGapInput.value = '4';
+    applyNumericDefault(minDisplayInput, defaults.minDisplaySec, 8, 1, 60);
+    applyNumericDefault(mergeGapInput, defaults.mergeGapSec, 4, 0, 30);
   };
   const isManualRange = () => String(rangeModeSelect.value || 'full').trim() === 'manual';
   const parseTimecodeSeconds = (value) => {

@@ -1471,6 +1471,38 @@ async function loadUiSettings() {
   applySubtitleStyleSettings();
 }
 
+window.addEventListener('storage', (event) => {
+  if (event.key !== 'mam_video_ocr_defaults_updated' || !event.newValue) return;
+  try {
+    const defaults = JSON.parse(event.newValue);
+    const clamp = (value, fallback, min, max) => {
+      const number = Number(value);
+      return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
+    };
+    window.MAM_VIDEO_OCR_DEFAULTS = {
+      intervalSec: clamp(defaults.intervalSec, 4, 1, 30),
+      minDisplaySec: clamp(defaults.minDisplaySec, 8, 1, 60),
+      mergeGapSec: clamp(defaults.mergeGapSec, 4, 0, 30),
+      engine: String(defaults.engine || 'paddle')
+    };
+    const preset = document.getElementById('videoOcrPresetSelect');
+    if (!preset || preset.value === 'general') {
+      [
+        ['videoOcrIntervalInput', window.MAM_VIDEO_OCR_DEFAULTS.intervalSec],
+        ['videoOcrMinDisplayInput', window.MAM_VIDEO_OCR_DEFAULTS.minDisplaySec],
+        ['videoOcrMergeGapInput', window.MAM_VIDEO_OCR_DEFAULTS.mergeGapSec]
+      ].forEach(([id, value]) => {
+        const input = document.getElementById(id);
+        if (input) input.value = String(value);
+      });
+      const engine = document.getElementById('videoOcrEngineSelect');
+      if (engine && Array.from(engine.options).some((option) => option.value === window.MAM_VIDEO_OCR_DEFAULTS.engine)) {
+        engine.value = window.MAM_VIDEO_OCR_DEFAULTS.engine;
+      }
+    }
+  } catch (_error) {}
+});
+
 
 function resolveThemePreference(value) {
   const normalized = String(value || '').trim().toLowerCase();
