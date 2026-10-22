@@ -635,13 +635,23 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
     const activeByLang = asset.subtitleActiveByLang && typeof asset.subtitleActiveByLang === 'object'
       ? asset.subtitleActiveByLang
       : {};
+    const versionColors = ['#49d39a', '#f4c542', '#68a7ff', '#d987f5', '#ff8a65', '#54c7d9', '#b5d957', '#ff6fae'];
+    const versionRows = (Array.isArray(asset.versions) ? asset.versions : [])
+      .filter((version) => version?.fileRole !== 'attachment' && version?.actionType !== 'attachment')
+      .slice()
+      .sort((a, b) => (Date.parse(a?.createdAt || '') || 0) - (Date.parse(b?.createdAt || '') || 0));
+    const originalVersionId = String(asset.originalVersionId || versionRows[0]?.versionId || '').trim();
     itemsEl.innerHTML = items.map((item) => {
       const itemLanguage = languageKey(item.subtitleLang);
       const active = activeByLang[itemLanguage] === item.subtitleUrl;
+      const sourceVersionId = String(item.sourceVersionId || originalVersionId).trim();
+      const sourceVersionIndex = versionRows.findIndex((version) => String(version.versionId || '') === sourceVersionId);
+      const versionColorIndex = sourceVersionIndex >= 0 ? sourceVersionIndex % versionColors.length : 0;
+      const versionLabel = versionRows[sourceVersionIndex]?.label || (sourceVersionIndex >= 0 ? `v${sourceVersionIndex + 1}` : 'v1');
       return `
-        <div class="subtitle-item-row ${active ? 'active' : ''}" data-subtitle-url="${escapeHtml(item.subtitleUrl)}">
+        <div class="subtitle-item-row ${active ? 'active' : ''}" data-subtitle-url="${escapeHtml(item.subtitleUrl)}" data-source-version-id="${escapeHtml(sourceVersionId)}" data-version-color="${versionColorIndex}" style="--subtitle-version-accent:${versionColors[versionColorIndex]}">
           <span class="subtitle-item-label">${escapeHtml(item.subtitleLabel || item.subtitleLang || 'subtitle')}</span>
-          <span class="subtitle-item-lang">${escapeHtml(item.subtitleLang || '')}</span>
+          <span class="subtitle-item-lang">${escapeHtml(item.subtitleLang || '')} · ${escapeHtml(versionLabel)}</span>
           <a class="subtitle-item-download-btn" href="${escapeHtml(item.subtitleUrl)}" download target="_blank" rel="noreferrer">${t('subtitle_download')}</a>
           ${itemLanguage !== 'tr' ? `<button type="button" class="subtitle-item-translate-btn">${t('subtitle_translate_tr')}</button>` : ''}
           ${currentUserCanDeleteAssetsRef.get() ? `<button type="button" class="subtitle-item-remove-btn">${t('subtitle_remove')}</button>` : ''}
@@ -744,7 +754,8 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
       const payload = {
         fileName: file.name,
         fileData: await readFileAsBase64(file),
-        lang: selectedLang
+        lang: selectedLang,
+        sourceVersionId: String(asset.defaultVersionId || asset.originalVersionId || '').trim()
       };
       const result = await api(`/api/assets/${asset.id}/subtitles`, { method: 'POST', body: JSON.stringify(payload) });
       applyAssetFromApi(result.asset);
@@ -773,7 +784,8 @@ function initVideoSubtitleTools(mediaEl, asset, root = document) {
           turkishAiCorrect: String(getLang() || '').toLowerCase().startsWith('tr'),
           useZemberekLexicon: String(getLang() || '').toLowerCase().startsWith('tr') && Boolean(zemberekCheck.checked),
           audioStreamIndex: getSelectedAudioStream(),
-          audioChannelIndex: getSelectedAudioChannel()
+          audioChannelIndex: getSelectedAudioChannel(),
+          sourceVersionId: String(asset.defaultVersionId || asset.originalVersionId || '').trim()
         })
       });
       setStatus(t('subtitle_job_started'));

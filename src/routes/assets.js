@@ -2161,6 +2161,21 @@ function registerAssetRoutes(app, deps) {
         const versionMimeType = String(original.rows[0]?.snapshot_mime_type || row.mime_type || '').toLowerCase();
         const roleError = validateFileRole(fileRole, replacementMimeType, versionMimeType);
         if (roleError) return res.status(400).json({ error: roleError });
+        if (fileRole === 'version' && isVideoReplacement) {
+          const videoVersionCount = await pool.query(
+            `SELECT COUNT(*)::int AS c FROM asset_versions
+             WHERE asset_id = $1 AND action_type <> 'attachment'
+               AND LOWER(COALESCE(snapshot_mime_type, '')) LIKE 'video/%'`,
+            [row.id]
+          );
+          if (Number(videoVersionCount.rows?.[0]?.c || 0) >= 2) {
+            return res.status(409).json({
+              error: 'A video asset can have at most two video versions',
+              code: 'video_version_limit_reached',
+              limit: 2
+            });
+          }
+        }
 
         let replacementBuffer;
         try {
