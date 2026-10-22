@@ -171,7 +171,8 @@ function registerTextProcessingRoutes(app, deps) {
         row,
         subtitleUrl,
         effectiveLang,
-        safeName
+        safeName,
+        String(req.body?.sourceVersionId || row.default_version_id || '').trim()
       );
       return res.json({
         subtitleUrl,
@@ -206,6 +207,36 @@ function registerTextProcessingRoutes(app, deps) {
       const subtitleBackend = normalizeSubtitleBackend(
         req.body?.subtitleBackend || (req.body?.useWhisperX ? 'whisperx' : 'whisper')
       );
+      let sourceVersionId = String(req.body?.sourceVersionId || row.default_version_id || '').trim();
+      if (!sourceVersionId) {
+        const originalResult = await pool.query(
+          `SELECT version_id FROM asset_versions WHERE asset_id = $1 AND action_type <> 'attachment'
+           ORDER BY created_at ASC, CASE WHEN label = 'v1' THEN 0 ELSE 1 END, version_id ASC LIMIT 1`,
+          [row.id]
+        );
+        sourceVersionId = String(originalResult.rows?.[0]?.version_id || '').trim();
+      }
+      let inputPath = '';
+      if (sourceVersionId) {
+        const versionResult = await pool.query(
+          `SELECT snapshot_source_path, snapshot_media_url, snapshot_mime_type
+           FROM asset_versions WHERE asset_id = $1 AND version_id = $2 LIMIT 1`,
+          [row.id, sourceVersionId]
+        );
+        const version = versionResult.rows?.[0];
+        if (!version) return res.status(404).json({ error: 'Selected media version was not found' });
+        const versionMime = String(version.snapshot_mime_type || '').toLowerCase();
+        if (!versionMime.startsWith('video/') && !versionMime.startsWith('audio/')) {
+          return res.status(400).json({ error: 'Selected version is not audio or video' });
+        }
+        inputPath = String(version.snapshot_source_path || '').trim();
+        if (!inputPath || !fs.existsSync(inputPath)) {
+          inputPath = publicUploadUrlToAbsolutePath(version.snapshot_media_url);
+        }
+        if (!inputPath || !fs.existsSync(inputPath)) {
+          return res.status(404).json({ error: 'Selected media version file is missing' });
+        }
+      }
       const job = aiExecution.queueSubtitleGeneration(row, {
         lang: subtitleLang,
         label: subtitleLabel,
@@ -214,7 +245,9 @@ function registerTextProcessingRoutes(app, deps) {
         audioChannelIndex,
         turkishAiCorrect,
         useZemberekLexicon,
-        subtitleBackend
+        subtitleBackend,
+        sourceVersionId,
+        inputPath
       });
       return res.status(202).json({
         jobId: job.jobId,

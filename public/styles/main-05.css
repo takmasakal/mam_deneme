@@ -485,10 +485,12 @@ select.subtitle-lang-input {
   border-radius: 8px;
   padding: 6px 8px;
   background: #1f2532;
+  border-left: 4px solid var(--subtitle-version-accent, #49d39a);
 }
 
 .subtitle-item-row.active {
   border-color: #49d39a;
+  border-left-color: var(--subtitle-version-accent, #49d39a);
   box-shadow: inset 0 0 0 1px #49d39a55;
 }
 

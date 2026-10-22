@@ -986,6 +986,7 @@ function sanitizeSubtitleItems(value) {
         subtitleUrl,
         subtitleLang: normalizeSubtitleLang(item.subtitleLang),
         subtitleLabel: String(item.subtitleLabel || '').trim() || 'subtitle',
+        sourceVersionId: String(item.sourceVersionId || '').trim(),
         createdAt: String(item.createdAt || new Date().toISOString())
       };
     })
@@ -2204,7 +2205,7 @@ function buildGeneratedSubtitleVtt(assetTitle, durationSeconds) {
   return `${lines.join('\n')}\n`;
 }
 
-async function saveAssetSubtitleMetadata(assetId, row, subtitleUrl, subtitleLang, subtitleLabel) {
+async function saveAssetSubtitleMetadata(assetId, row, subtitleUrl, subtitleLang, subtitleLabel, sourceVersionId = '') {
   const now = new Date().toISOString();
   const existingDc = row.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
   const items = sanitizeSubtitleItems(existingDc.subtitleItems);
@@ -2213,6 +2214,7 @@ async function saveAssetSubtitleMetadata(assetId, row, subtitleUrl, subtitleLang
     subtitleUrl: String(subtitleUrl || '').trim(),
     subtitleLang: normalizeSubtitleLang(subtitleLang),
     subtitleLabel: String(subtitleLabel || '').trim() || 'subtitle',
+    sourceVersionId: String(sourceVersionId || '').trim(),
     createdAt: now
   };
   items.push(nextItem);
@@ -2512,6 +2514,7 @@ function buildSubtitleDbRequestPayload(job) {
     subtitleLang: normalizeSubtitleLang(job.subtitleLang),
     subtitleLabel: String(job.subtitleLabel || 'auto-whisper'),
     sourceSubtitleUrl: String(job.sourceSubtitleUrl || ''),
+    sourceVersionId: String(job.sourceVersionId || ''),
     targetLang: normalizeSubtitleLang(job.targetLang || job.subtitleLang),
     turkishAiCorrect: Boolean(job.turkishAiCorrect),
     useZemberekLexicon: Boolean(job.useZemberekLexicon),
@@ -5105,6 +5108,8 @@ function queueSubtitleGenerationJob(row, options = {}) {
   const model = String(options.model || WHISPER_MODEL || 'small').trim() || 'small';
   const audioStreamIndex = normalizeOptionalMediaIndex(options.audioStreamIndex);
   const audioChannelIndex = normalizeOptionalMediaIndex(options.audioChannelIndex);
+  const sourceVersionId = String(options.sourceVersionId || '').trim();
+  const inputPath = String(options.inputPath || '').trim();
   const requestedSubtitleBackend = normalizeSubtitleBackend(
     options.subtitleBackend || (options.useWhisperX ? 'whisperx' : 'whisper')
   );
@@ -5118,6 +5123,7 @@ function queueSubtitleGenerationJob(row, options = {}) {
   const job = {
     jobId,
     assetId: row.id,
+    sourceVersionId,
     status: 'queued',
     model,
     audioStreamIndex,
@@ -5179,12 +5185,12 @@ function queueSubtitleGenerationJob(row, options = {}) {
     });
 
     try {
-      const inputPath = resolvePlaybackInputPath(row);
-      if (!inputPath) throw new Error('Source media not found for transcription');
+      const subtitleInputPath = inputPath || resolvePlaybackInputPath(row);
+      if (!subtitleInputPath || !fs.existsSync(subtitleInputPath)) throw new Error('Source media not found for transcription');
       const storedName = `${Date.now()}-${nanoid()}-auto-${sanitizeFileName(row.id)}.vtt`;
       const subtitleOut = buildArtifactPath('subtitles', storedName, row.created_at);
       let usedSubtitleBackend = requestedSubtitleBackend;
-      let transcription = await transcribeMediaToVtt(inputPath, subtitleOut.absolutePath, {
+      let transcription = await transcribeMediaToVtt(subtitleInputPath, subtitleOut.absolutePath, {
         lang: subtitleLang,
         model,
         subtitleBackend: usedSubtitleBackend,
@@ -5199,7 +5205,7 @@ function queueSubtitleGenerationJob(row, options = {}) {
       if (!subtitleReady && usedSubtitleBackend === 'whisperx') {
         const whisperxError = compactTranscriptionError(transcription).slice(0, 240);
         usedSubtitleBackend = 'whisper';
-        transcription = await transcribeMediaToVtt(inputPath, subtitleOut.absolutePath, {
+        transcription = await transcribeMediaToVtt(subtitleInputPath, subtitleOut.absolutePath, {
           lang: subtitleLang,
           model,
           subtitleBackend: usedSubtitleBackend,
@@ -5240,7 +5246,7 @@ function queueSubtitleGenerationJob(row, options = {}) {
         }
       }
       const subtitleUrl = subtitleOut.publicUrl;
-      const updatedRow = await saveAssetSubtitleMetadata(row.id, row, subtitleUrl, subtitleLang, subtitleLabel);
+      const updatedRow = await saveAssetSubtitleMetadata(row.id, row, subtitleUrl, subtitleLang, subtitleLabel, running.sourceVersionId);
       running.status = 'completed';
       running.progress = 100;
       running.progressPhase = 'completed';
@@ -5419,7 +5425,7 @@ function queueSubtitleTranslationJob(row, options = {}) {
       if (!generatedCueCount) throw new Error('Translated subtitle did not contain any cues');
       persistLiveMediaJobProgress(running, 'subtitle', 96, 'saving');
       const subtitleUrl = subtitleOut.publicUrl;
-      const updatedRow = await saveAssetSubtitleMetadata(row.id, row, subtitleUrl, targetLang, subtitleLabel);
+      const updatedRow = await saveAssetSubtitleMetadata(row.id, row, subtitleUrl, targetLang, subtitleLabel, sourceItem.sourceVersionId);
       await syncSubtitleCueIndexForAssetRow(updatedRow);
       running.status = 'completed';
       running.progress = 100;
