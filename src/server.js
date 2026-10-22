@@ -6774,15 +6774,15 @@ function buildAssetOrderClause({ hasRelevance, sortBy, rankedParamAlias }) {
     case 'updated_desc':
       return 'updated_at DESC';
     case 'created_asc':
-      return 'created_at ASC';
+      return 'COALESCE(default_version_created_at, created_at) ASC';
     case 'created_desc':
-      return 'created_at DESC';
+      return 'COALESCE(default_version_created_at, created_at) DESC';
     case 'title_asc':
       return 'LOWER(title) ASC, created_at DESC';
     case 'duration_asc':
-      return 'NULLIF(duration_seconds, 0) ASC NULLS LAST, updated_at DESC';
+      return 'active_version_duration_seconds ASC NULLS LAST, updated_at DESC';
     case 'duration_desc':
-      return 'NULLIF(duration_seconds, 0) DESC NULLS LAST, updated_at DESC';
+      return 'active_version_duration_seconds DESC NULLS LAST, updated_at DESC';
     case 'size_asc':
     case 'size_desc':
       return 'updated_at DESC';
