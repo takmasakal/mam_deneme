@@ -2,6 +2,7 @@ const assert = require('assert');
 
 const {
   PERMISSION_KEYS,
+  resolvePermissionKeysFromPrincipals,
   normalizePermissionEntry,
   permissionKeysToLegacyFlags
 } = require('../src/permissions');
@@ -36,6 +37,12 @@ const settings = {
   },
   legacyuser: { permissionKeys: ['pdf.advanced'] }
 };
+
+for (const principal of ['admin', 'standart yönetici', 'standart yonetici']) {
+  const permissions = resolvePermissionKeysFromPrincipals({ groups: [`/${principal}`] }).permissionKeys;
+  assert.ok(permissions.includes('admin.access'), `${principal} should retain admin access`);
+  assert.ok(permissions.includes('asset.delete'), `${principal} should be able to delete visible assets`);
+}
 
 const usersByName = {
   ik1: {

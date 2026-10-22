@@ -52,9 +52,9 @@ const PRINCIPAL_PERMISSION_MAP = {
   'super admin': PERMISSION_KEYS,
   'super-admin': PERMISSION_KEYS,
   super_admin: PERMISSION_KEYS,
-  admin: ['admin.access'],
-  'standart yönetici': ['admin.access'],
-  'standart yonetici': ['admin.access'],
+  admin: ['admin.access', 'asset.delete'],
+  'standart yönetici': ['admin.access', 'asset.delete'],
+  'standart yonetici': ['admin.access', 'asset.delete'],
   altyazı_ocr_operator: ['text.admin'],
   altyazi_ocr_operator: ['text.admin']
 };
