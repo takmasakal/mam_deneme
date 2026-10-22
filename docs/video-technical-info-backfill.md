@@ -8,18 +8,20 @@ Betik varsayılan olarak dry-run çalışır; `--apply` olmadan veritabanına ya
 Geçerli dosya parmak iziyle eşleşen kayıtları tekrar hesaplamaz. Yalnızca
 eksik/değişmiş kaynak ve proxy bilgilerini tamamlar; medya dosyalarını değiştirmez.
 
-Güncel uygulama imajını oluşturup başlattıktan sonra Compose dizininde:
+Kaisha sunucusunda yalın `docker compose build app` veya `docker compose up`
+kullanmayın. Temel Compose tanımları MetMAM servislerini de içerir. Kaisha
+deposunun kök dizininde `mam-kaisha.sh` sarmalayıcısını kullanın; bu, doğru
+Kaisha compose/env birleşimini seçer ve app kaynakları değiştiğinde imajı kurar:
 
 ```sh
-docker compose build app
-docker compose up -d app
-docker compose exec -T app python3 scripts/vidteknikbilgicikar.py --limit 2 --verbose
+./deploy/mam-kaisha.sh up
+docker compose --env-file deploy/.env.kaisha -f docker-compose.yml -f docker-compose.kaisha.yml exec -T app python3 scripts/vidteknikbilgicikar.py --limit 2 --verbose
 ```
 
 Dry-run çıktısı doğru görünüyorsa:
 
 ```sh
-docker compose exec -T app python3 scripts/vidteknikbilgicikar.py --apply --verbose
+docker compose --env-file deploy/.env.kaisha -f docker-compose.yml -f docker-compose.kaisha.yml exec -T app python3 scripts/vidteknikbilgicikar.py --apply --verbose
 ```
 
 Tek varlık için `--asset-id ASSET_ID` eklenebilir. Büyük arşivlerde işlem uzun
