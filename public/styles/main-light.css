@@ -807,6 +807,14 @@ html[data-theme="light"] .detail-version-row.is-default {
   box-shadow: 0 10px 24px rgba(230, 0, 40, 0.14);
 }
 
+html[data-theme="light"] .version.is-default-version {
+  box-shadow: inset 0 0 0 2px #e60028;
+}
+
+html[data-theme="light"] .version.is-preview-version {
+  box-shadow: inset 0 0 0 2px #4b5563;
+}
+
 html[data-theme="light"] .detail-section-title,
 html[data-theme="light"] .collapsible-head,
 html[data-theme="light"] .card-title,
