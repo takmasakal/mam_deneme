@@ -213,7 +213,7 @@
       const previewBelongsToAsset = String(assetDetail?.dataset?.previewAssetId || '') === String(asset.id || '');
       const previewedVersionId = previewBelongsToAsset ? String(assetDetail?.dataset?.previewVersionId || '') : '';
       const previewIsOriginal = Boolean(previewedVersionId && previewedVersionId === originalVersionId);
-      const isDefaultVersion = Boolean(!previewIsOriginal && !isOriginalVersion && versionId && String(asset.defaultVersionId || '') === versionId);
+      const isDefaultVersion = Boolean(!isOriginalVersion && versionId && String(asset.defaultVersionId || '') === versionId);
       const isPreviewVersion = Boolean(!isOriginalVersion && !attachment && previewedVersionId && previewedVersionId === versionId);
       const rowClass = ['version', isDefaultVersion ? 'is-default-version' : '', isPreviewVersion ? 'is-preview-version' : ''].filter(Boolean).join(' ');
       const restoreAttr = '';

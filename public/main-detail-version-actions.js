@@ -44,7 +44,7 @@
         row.classList.remove('is-default-version', 'is-preview-version');
         const rowId = String(row.dataset.versionId || '');
         const isOriginal = row.dataset.originalVersion === 'true';
-        if (!previewIsOriginal && !isOriginal && row.dataset.fileRole !== 'attachment' && rowId === String(asset?.defaultVersionId || '')) {
+        if (!isOriginal && row.dataset.fileRole !== 'attachment' && rowId === String(asset?.defaultVersionId || '')) {
           row.classList.add('is-default-version');
         }
         if (!previewIsOriginal && row.dataset.fileRole !== 'attachment' && rowId === String(versionId)) {
