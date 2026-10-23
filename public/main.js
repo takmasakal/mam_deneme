@@ -790,6 +790,7 @@ let i18n = {
     close: 'Close',
     fullscreen_image: 'Full screen',
     photo_ocr_settings: 'Photo OCR',
+    photo_ocr_attachment_source: 'Attachment OCR: {name}',
     photo_ocr_title: 'Photo OCR',
     photo_ocr_lang: 'OCR language',
     photo_ocr_label: 'OCR file name',
@@ -1200,6 +1201,7 @@ let i18n = {
     close: 'Kapat',
     fullscreen_image: 'Tam ekran',
     photo_ocr_settings: 'Fotoğraf OCR',
+    photo_ocr_attachment_source: 'Ek dosya OCR: {name}',
     photo_ocr_title: 'Fotoğraf OCR',
     photo_ocr_lang: 'OCR dil',
     photo_ocr_label: 'OCR dosya adı',
@@ -2609,6 +2611,8 @@ const detailVersionActionsModule = window.createMainDetailVersionActions({
   refreshAssetDetail,
   currentLang: () => currentLang,
   canUsePdfAdvancedTools: () => currentUserCanUsePdfAdvancedTools,
+  openPhotoOcrDialog,
+  toggleFullscreenForElement,
   selectedImageVersionIds,
   previewMediaVersion: ({ asset, version, mediaUrl, isVideo: versionIsVideo, isAudio: versionIsAudio, mediaEl: previewMediaEl, host }) => {
     let mediaEl = previewMediaEl || assetDetail.querySelector('#assetMediaEl, .video-resizable video, .audio-viewer-resizable audio, video, audio');
@@ -2766,24 +2770,30 @@ function focusCutRowInDetail(root = document, cutId = '') {
   return detailModule.focusCutRowInDetail(root, cutId);
 }
 
-function latestPhotoOcrText(asset) {
+function latestPhotoOcrText(asset, sourceVersionId = '') {
   const dc = asset?.dcMetadata && typeof asset.dcMetadata === 'object' ? asset.dcMetadata : {};
   const items = Array.isArray(asset?.photoOcrItems) && asset.photoOcrItems.length
     ? asset.photoOcrItems
     : (Array.isArray(dc.photoOcrItems) ? dc.photoOcrItems : []);
-  const latest = items.length ? items[items.length - 1] : null;
-  const label = String(latest?.ocrLabel || asset?.photoOcrLabel || dc.photoOcrLabel || '').trim();
-  const url = String(latest?.ocrUrl || asset?.photoOcrUrl || dc.photoOcrUrl || '').trim();
+  const sourceId = String(sourceVersionId || '').trim();
+  const matchingItems = sourceId
+    ? items.filter((item) => String(item?.sourceVersionId || '').trim() === sourceId)
+    : items.filter((item) => !String(item?.sourceVersionId || '').trim());
+  const latest = matchingItems.length ? matchingItems[matchingItems.length - 1] : null;
+  const label = String(latest?.ocrLabel || (sourceId ? '' : asset?.photoOcrLabel || dc.photoOcrLabel) || '').trim();
+  const url = String(latest?.ocrUrl || (sourceId ? '' : asset?.photoOcrUrl || dc.photoOcrUrl) || '').trim();
   return { label, url };
 }
 
-function openPhotoOcrDialog(asset) {
-  if (!asset || !isImage(asset)) return;
+function openPhotoOcrDialog(asset, options = {}) {
+  const sourceVersionId = String(options.sourceVersionId || '').trim();
+  const sourceFileName = String(options.sourceFileName || '').trim();
+  if (!asset || (!sourceVersionId && !isImage(asset))) return;
   const existing = document.getElementById('photoOcrModalBackdrop');
   if (existing) existing.remove();
-  const current = latestPhotoOcrText(asset);
-  const imgUrl = String(asset.proxyUrl || asset.mediaUrl || '').trim();
-  const labelValue = String(current.label || `${asset.title || 'photo'}-ocr`).replace(/\.txt$/i, '');
+  const current = latestPhotoOcrText(asset, sourceVersionId);
+  const imgUrl = String(options.imageUrl || asset.proxyUrl || asset.mediaUrl || '').trim();
+  const labelValue = String(current.label || `${sourceFileName || asset.title || 'photo'}-ocr`).replace(/\.txt$/i, '');
   const backdrop = document.createElement('div');
   backdrop.id = 'photoOcrModalBackdrop';
   backdrop.className = 'clip-modal-backdrop photo-ocr-modal-backdrop';
@@ -2793,6 +2803,7 @@ function openPhotoOcrDialog(asset) {
         <h4>${escapeHtml(t('photo_ocr_title'))}</h4>
         <button type="button" class="photo-ocr-close" aria-label="${escapeHtml(t('close'))}">×</button>
       </div>
+      ${sourceVersionId ? `<div class="asset-meta photo-ocr-source-badge">${escapeHtml(t('photo_ocr_attachment_source').replace('{name}', sourceFileName || sourceVersionId))}</div>` : ''}
       <div class="photo-ocr-preview-wrap">
         <img class="photo-ocr-preview" src="${escapeHtml(imgUrl)}" alt="${escapeHtml(asset.title || '')}" />
       </div>
@@ -2820,7 +2831,8 @@ function openPhotoOcrDialog(asset) {
     try {
       const payload = {
         ocrLang: String(backdrop.querySelector('#photoOcrLangInput')?.value || 'eng+tur').trim() || 'eng+tur',
-        ocrLabel: String(backdrop.querySelector('#photoOcrLabelInput')?.value || '').trim()
+        ocrLabel: String(backdrop.querySelector('#photoOcrLabelInput')?.value || '').trim(),
+        ...(sourceVersionId ? { sourceVersionId } : {})
       };
       const result = await api(`/api/assets/${encodeURIComponent(asset.id)}/photo-ocr/extract`, {
         method: 'POST',

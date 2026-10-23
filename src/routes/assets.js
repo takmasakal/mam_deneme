@@ -745,7 +745,11 @@ function registerAssetRoutes(app, deps) {
                   text: String(item.line || item.text || ''),
                   startSec: Number(item.startSec || 0),
                   endSec: Number(item.endSec || 0),
-                  startTc: formatTimecode(Number(item.startSec || 0))
+                  startTc: formatTimecode(Number(item.startSec || 0)),
+                  sourceType: String(item.sourceType || ''),
+                  sourceFileName: String(item.sourceFileName || ''),
+                  sourceVersionId: String(item.sourceVersionId || ''),
+                  ocrLabel: String(item.ocrLabel || '')
                 }));
                 const prefix = hitType === 'ocr' ? '_ocr' : '_subtitle';
                 row[`${prefix}_search_hit`] = mapped[0];
@@ -1135,7 +1139,11 @@ function registerAssetRoutes(app, deps) {
           inTrash: Boolean(row.deleted_at),
           updatedAt: row.updated_at,
           ocrHitText: String(hit.line || ''),
-          startSec: Number(hit.startSec || 0)
+          startSec: Number(hit.startSec || 0),
+          sourceType: String(hit.sourceType || ''),
+          sourceFileName: String(hit.sourceFileName || ''),
+          sourceVersionId: String(hit.sourceVersionId || ''),
+          ocrLabel: String(hit.ocrLabel || '')
         });
         if (out.length >= limit) break;
       }

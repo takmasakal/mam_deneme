@@ -1004,6 +1004,8 @@ function sanitizeVideoOcrItems(value) {
         id: String(item.id || nanoid()).trim() || nanoid(),
         ocrUrl,
         sourceVersionId: String(item.sourceVersionId || '').trim(),
+        sourceType: String(item.sourceType || '').trim().toLowerCase(),
+        sourceFileName: String(item.sourceFileName || '').trim(),
         ocrLabel: String(item.ocrLabel || '').trim() || 'video-ocr',
         ocrEngine: normalizeOcrEngine(item.ocrEngine),
         lineCount: Math.max(0, Number(item.lineCount) || 0),
@@ -2744,6 +2746,9 @@ async function saveAssetPhotoOcrMetadata(assetId, row, job) {
   items.push({
     id: nanoid(),
     ocrUrl: String(job.resultUrl || '').trim(),
+    sourceVersionId: String(job.sourceVersionId || '').trim(),
+    sourceType: String(job.sourceType || '').trim().toLowerCase(),
+    sourceFileName: String(job.sourceFileName || '').trim(),
     ocrLabel: requestedLabel,
     ocrEngine: normalizeOcrEngine(job.ocrEngine || 'paddle'),
     lineCount: Math.max(0, Number(job.lineCount) || 0),

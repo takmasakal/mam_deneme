@@ -350,18 +350,44 @@ function registerTextProcessingRoutes(app, deps) {
         return res.status(loaded.status).json({ error: loaded.error });
       }
       const row = loaded.row;
-      if (!isPhotoCandidate(row)) {
+      const sourceVersionId = String(req.body?.sourceVersionId || '').trim();
+      let photoInputPath = '';
+      let sourceFileName = '';
+      let sourceType = '';
+      if (sourceVersionId) {
+        const versionResult = await pool.query(
+          `SELECT version_id, action_type, snapshot_source_path, snapshot_media_url,
+                  snapshot_mime_type, snapshot_file_name
+           FROM asset_versions WHERE asset_id = $1 AND version_id = $2`,
+          [req.params.id, sourceVersionId]
+        );
+        const version = versionResult.rows[0];
+        if (!version || String(version.action_type || '').toLowerCase() !== 'attachment') {
+          return res.status(404).json({ error: 'Image attachment not found' });
+        }
+        if (!String(version.snapshot_mime_type || '').toLowerCase().startsWith('image/')) {
+          return res.status(400).json({ error: 'Photo OCR is supported only for image attachments' });
+        }
+        sourceFileName = String(version.snapshot_file_name || '').trim();
+        sourceType = 'attachment';
+        photoInputPath = String(version.snapshot_source_path || '').trim();
+        if (!photoInputPath || !fs.existsSync(photoInputPath)) {
+          const resolved = publicUploadUrlToAbsolutePath(String(version.snapshot_media_url || '').trim());
+          photoInputPath = resolved && fs.existsSync(resolved) ? resolved : '';
+        }
+      } else if (!isPhotoCandidate(row)) {
         return res.status(400).json({ error: 'Photo OCR is supported only for image assets' });
       }
       if (typeof extractPhotoOcrToText !== 'function' || typeof saveAssetPhotoOcrMetadata !== 'function') {
         return res.status(500).json({ error: 'Photo OCR service is not available' });
       }
 
-      const inputPath = resolvePhotoOcrInputPath(row);
+      const inputPath = photoInputPath || resolvePhotoOcrInputPath(row);
       if (!inputPath) return res.status(404).json({ error: 'Photo source file not found' });
 
       const ocrLang = String(req.body?.ocrLang || 'eng+tur').trim() || 'eng+tur';
-      const baseLabel = String(req.body?.ocrLabel || '').trim() || `${path.basename(String(row.file_name || row.title || 'photo'), path.extname(String(row.file_name || '')))}-photo-ocr`;
+      const inputFileName = sourceFileName || String(row.file_name || row.title || 'photo');
+      const baseLabel = String(req.body?.ocrLabel || '').trim() || `${path.basename(inputFileName, path.extname(inputFileName))}-photo-ocr`;
       const safeLabel = sanitizeFileName(baseLabel.replace(/\.txt$/i, '')) || 'photo-ocr';
       const storedName = `${Date.now()}-${nanoid()}-${safeLabel}.txt`;
       const out = buildArtifactPath('ocr', storedName, row.created_at);
@@ -369,6 +395,9 @@ function registerTextProcessingRoutes(app, deps) {
       const saved = await saveAssetPhotoOcrMetadata(req.params.id, row, {
         resultUrl: out.publicUrl,
         ocrLabel: safeLabel,
+        sourceVersionId,
+        sourceType,
+        sourceFileName,
         ocrEngine: result.engine || 'paddle',
         ocrLang,
         lineCount: result.lines,
@@ -673,8 +702,13 @@ function registerTextProcessingRoutes(app, deps) {
       const loaded = await loadVisibleAssetRow(req, assetId);
       if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
       const row = loaded.row;
-      if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type })) {
-        return res.status(400).json({ error: 'OCR search is supported only for video assets' });
+      const hasOcrSources = Boolean(
+        String(row.dc_metadata?.videoOcrUrl || row.dc_metadata?.photoOcrUrl || '').trim()
+        || (Array.isArray(row.dc_metadata?.videoOcrItems) && row.dc_metadata.videoOcrItems.length)
+        || (Array.isArray(row.dc_metadata?.photoOcrItems) && row.dc_metadata.photoOcrItems.length)
+      );
+      if (!isVideoCandidate({ mimeType: row.mime_type, fileName: row.file_name, declaredType: row.type }) && !hasOcrSources) {
+        return res.status(400).json({ error: 'OCR search is supported only for video assets or assets with image OCR attachments' });
       }
 
       const search = await searchOcrMatchesForAssetRow(row, query, offset + limit + 1);
