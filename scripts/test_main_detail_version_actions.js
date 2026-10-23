@@ -75,7 +75,7 @@ async function run() {
     },
     documentRef: {
       body: { appendChild() {} },
-      createElement: (tag) => ({ tag, dataset: {}, get src() { return this.url || ''; }, set src(value) { this.url = new URL(value, 'https://mam.example').href; }, setAttribute() {}, click() {}, remove() {}, addEventListener() {}, appendChild(child) { this.child = child; } })
+      createElement: (tag) => ({ tag, dataset: {}, children: [], get src() { return this.url || ''; }, set src(value) { this.url = new URL(value, 'https://mam.example').href; }, setAttribute() {}, click() {}, remove() {}, addEventListener() {}, appendChild(child) { this.children.push(child); if (!this.child) this.child = child; } })
     },
     confirmAction: () => true,
     alertError: () => {}
@@ -180,6 +180,8 @@ async function run() {
   assert.equal(cleanupCalls, 1);
   await listener({ target: makeButton('previewVersionBtn', 'image-attachment'), preventDefault() {}, stopPropagation() {} });
   assert.equal(previewHost.child.child.tag, 'img', 'image replaces the PDF in the same host');
+  assert(previewHost.child.children.some((child) => child.className === 'image-fullscreen-btn'), 'image attachment preview includes fullscreen control');
+  assert(previewHost.child.children.some((child) => child.className === 'image-ocr-settings-btn'), 'image attachment preview includes OCR control');
   assert.equal(apiCalls.length, 2, 'preview never changes the default');
   await listener({ target: makeButton('previewVersionBtn', 'word-attachment'), preventDefault() {}, stopPropagation() {} });
   const wordUrl = new URL(previewHost.child.child.src);

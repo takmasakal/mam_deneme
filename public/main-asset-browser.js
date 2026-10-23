@@ -150,7 +150,10 @@ function renderAssetHitList({ asset, type, hits, query, hitClass, label }) {
       if (!hitText) return '';
       const hitSec = Number(hit?.startSec || 0);
       const hitTc = secondsToTimecode(hitSec, Number(asset?.videoFrameRate) || PLAYER_FPS);
-      return `<button type="button" class="asset-meta dc-hit-row media-hit-jump" data-media-hit="1" data-hit-type="${escapeHtml(type)}" data-id="${escapeHtml(asset.id)}" data-start-sec="${escapeHtml(String(hitSec))}"><strong>${escapeHtml(label)}</strong> <span class="dc-hit-tc">TC ${escapeHtml(hitTc)}</span>: ${highlightMatch(hitText, query, hitClass)}</button>`;
+      const sourceBadge = hit?.sourceType === 'attachment'
+        ? `<span class="ocr-attachment-source-badge">${escapeHtml(t('photo_ocr_attachment_source').replace('{name}', hit.sourceFileName || ''))}</span>`
+        : '';
+      return `<button type="button" class="asset-meta dc-hit-row media-hit-jump" data-media-hit="1" data-hit-type="${escapeHtml(type)}" data-id="${escapeHtml(asset.id)}" data-start-sec="${escapeHtml(String(hitSec))}"><strong>${escapeHtml(label)}</strong> <span class="dc-hit-tc">TC ${escapeHtml(hitTc)}</span>${sourceBadge}: ${highlightMatch(hitText, query, hitClass)}</button>`;
     })
     .filter(Boolean)
     .join('')}</div>`;
@@ -181,7 +184,9 @@ function compactAssetHit(hit) {
     hit?.query || '',
     hit?.text || hit?.line || '',
     Number(hit?.startSec || 0),
-    Number(hit?.endSec || 0)
+    Number(hit?.endSec || 0),
+    hit?.sourceType || '',
+    hit?.sourceFileName || ''
   ];
 }
 
@@ -397,6 +402,10 @@ async function handleAssetHitPage(button) {
         text: String(item.line || item.text || ''),
         startSec: Number(item.startSec || 0),
         endSec: Number(item.endSec || 0),
+        sourceType: String(item.sourceType || ''),
+        sourceFileName: String(item.sourceFileName || ''),
+        sourceVersionId: String(item.sourceVersionId || ''),
+        ocrLabel: String(item.ocrLabel || ''),
         startTc: String(item.startTc || secondsToTimecode(Number(item.startSec || 0), Number(asset.videoFrameRate) || PLAYER_FPS))
       }));
       asset.ocrSearchPage = { ...page, query: highlightQuery };

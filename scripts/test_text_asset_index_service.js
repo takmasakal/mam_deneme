@@ -11,11 +11,14 @@ const ocrDir = path.join(uploadsDir, '2026', '7', '22', 'ocr');
 fs.mkdirSync(ocrDir, { recursive: true });
 
 const ocrUrl = '/uploads/2026/7/22/ocr/sample-ocr.txt';
+const attachmentOcrUrl = '/uploads/2026/7/22/ocr/attachment-ocr.txt';
 const ocrPath = path.join(uploadsDir, '2026', '7', '22', 'ocr', 'sample-ocr.txt');
+const attachmentOcrPath = path.join(uploadsDir, '2026', '7', '22', 'ocr', 'attachment-ocr.txt');
 fs.writeFileSync(ocrPath, [
   '[00:00:01.000 --> 00:00:02.500] İstanbul ekran yazısı',
   '[00:00:03.000 --> 00:00:04.000] Ankara başka yazı'
 ].join('\n'));
+fs.writeFileSync(attachmentOcrPath, '[00:00:05.000 --> 00:00:06.000] Attachment-only receipt text');
 
 const segments = [];
 const pool = {
@@ -46,6 +49,15 @@ const pool = {
     if (compactSql.startsWith('SELECT COUNT(*)::int AS count FROM asset_ocr_segments')) {
       const count = segments.filter((row) => row.asset_id === params[0] && row.ocr_url === params[1]).length;
       return { rowCount: 1, rows: [{ count }] };
+    }
+    if (compactSql.startsWith('SELECT ocr_url, start_sec, end_sec, segment_text FROM asset_ocr_segments')) {
+      const [assetId, urls, pattern, limit] = params;
+      const needle = String(pattern || '').replace(/%/g, '');
+      const rows = segments
+        .filter((row) => row.asset_id === assetId && urls.includes(row.ocr_url))
+        .filter((row) => row.norm_text.includes(needle))
+        .slice(0, Number(limit) || 8);
+      return { rowCount: rows.length, rows };
     }
     if (compactSql.startsWith('SELECT 1 FROM asset_ocr_segments')) {
       const exists = segments.some((row) => row.asset_id === params[0] && row.ocr_url === params[1]);
@@ -153,7 +165,8 @@ const service = createTextAssetIndexService({
     file_name: 'sample.mp4',
     created_at: '2026-07-22T10:00:00Z',
     dc_metadata: {
-      videoOcrItems: [{ ocrUrl, ocrEngine: 'paddle', segmentCount: 2 }]
+      videoOcrItems: [{ ocrUrl, ocrEngine: 'paddle', segmentCount: 2 }],
+      photoOcrItems: [{ ocrUrl: attachmentOcrUrl, ocrEngine: 'paddle', segmentCount: 1, sourceType: 'attachment', sourceVersionId: 'attachment-1', sourceFileName: 'receipt.jpg' }]
     }
   };
 
@@ -170,6 +183,12 @@ const service = createTextAssetIndexService({
   const batchMatches = batch.byAssetId.get(row.id) || [];
   assert.strictEqual(batchMatches.length, 1, 'Expected one batch OCR match');
   assert.strictEqual(batchMatches[0].startSec, 3);
+
+  const attachmentMatch = await service.searchOcrMatchesForAssetRow(row, 'receipt', 8);
+  assert.strictEqual(attachmentMatch.matches.length, 1, 'attachment OCR is searchable alongside primary video OCR');
+  assert.strictEqual(attachmentMatch.matches[0].sourceType, 'attachment');
+  assert.strictEqual(attachmentMatch.matches[0].sourceVersionId, 'attachment-1');
+  assert.strictEqual(attachmentMatch.matches[0].sourceFileName, 'receipt.jpg');
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   console.log('textAssetIndexService OK');

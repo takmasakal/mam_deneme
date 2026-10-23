@@ -18,6 +18,8 @@
       cleanupPreview = () => {},
       documentSearchControls = () => '',
       initDocumentPreview = () => () => {},
+      openPhotoOcrDialog,
+      toggleFullscreenForElement,
       documentRef = global.document,
       confirmAction = global.confirm?.bind(global),
       alertError = global.alert?.bind(global),
@@ -123,8 +125,30 @@
         const fileUrl = office ? `/api/assets/${encodeURIComponent(asset.id)}/libreoffice-preview.pdf?versionId=${encodeURIComponent(versionId)}` : mediaUrl;
         target.src = imageVersion ? `/api/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(versionId)}/preview` : isAudio || isVideo ? mediaUrl : `/pdf-viewer.html?file=${encodeURIComponent(fileUrl)}&assetId=${encodeURIComponent(asset.id)}&lang=${encodeURIComponent(currentLang())}&pdfAdvanced=0&versionId=${encodeURIComponent(versionId)}${attachment ? '&attachment=1' : ''}`;
         const wrapper = documentRef.createElement('div');
-        wrapper.className = 'viewer-resizable';
+        wrapper.className = `viewer-resizable${imageVersion && attachment ? ' image-viewer-resizable mam-fs-root' : ''}`;
         wrapper.appendChild(target);
+        if (imageVersion && attachment) {
+          const ocrButton = documentRef.createElement('button');
+          ocrButton.type = 'button';
+          ocrButton.className = 'image-ocr-settings-btn';
+          ocrButton.textContent = '⚙';
+          ocrButton.setAttribute('aria-label', t('photo_ocr_settings'));
+          ocrButton.title = t('photo_ocr_settings');
+          ocrButton.addEventListener('click', () => openPhotoOcrDialog?.(asset, {
+            sourceVersionId: versionId,
+            sourceFileName: versionFileName,
+            imageUrl: target.currentSrc || target.src
+          }));
+          const fullscreenButton = documentRef.createElement('button');
+          fullscreenButton.type = 'button';
+          fullscreenButton.className = 'image-fullscreen-btn';
+          fullscreenButton.textContent = '⛶';
+          fullscreenButton.setAttribute('aria-label', t('fullscreen_image'));
+          fullscreenButton.title = t('fullscreen_image');
+          fullscreenButton.addEventListener('click', () => toggleFullscreenForElement?.(wrapper));
+          wrapper.appendChild(ocrButton);
+          wrapper.appendChild(fullscreenButton);
+        }
         host.replaceChildren(wrapper);
         setPreviewVersionBorder(asset, versionId);
         selectedImageVersionIds.delete(String(asset.id));

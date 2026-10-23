@@ -372,15 +372,17 @@
             data-lines="${escapeHtml(String(item.lineCount || 0))}"
             data-segments="${escapeHtml(String(item.segmentCount || 0))}"
             data-kind="${escapeHtml(item.ocrKind || '')}"
+            data-source-type="${escapeHtml(item.sourceType || '')}"
+            data-source-file-name="${escapeHtml(item.sourceFileName || '')}"
             ${index === 0 ? 'selected' : ''}
-          >${escapeHtml(item.ocrLabel || item.itemId || 'ocr')}</option>
+          >${escapeHtml(item.sourceType === 'attachment' ? `${t('ocr_attachment_source')}: ${item.sourceFileName || item.ocrLabel || item.itemId || 'ocr'}` : (item.ocrLabel || item.itemId || 'ocr'))}</option>
         `).join('');
         const first = group.items[0] || {};
         return `
           <div class="row ocr-row" data-asset-id="${escapeHtml(group.assetId)}">
             <div class="ocr-row-main">
               <strong>${escapeHtml(group.assetTitle || group.assetId)}</strong>
-              <span class="ocr-selected-meta">${escapeHtml(t('ocr_engine'))}: ${escapeHtml(first.ocrEngine || '-')} | ${escapeHtml(t('ocr_lines'))}: ${escapeHtml(String(first.lineCount || 0))} | ${escapeHtml(t('ocr_segments'))}: ${escapeHtml(String(first.segmentCount || 0))}</span>
+              <span class="ocr-selected-meta">${first.sourceType === 'attachment' ? `${escapeHtml(t('ocr_attachment_source'))}: ${escapeHtml(first.sourceFileName || '')} | ` : ''}${escapeHtml(t('ocr_engine'))}: ${escapeHtml(first.ocrEngine || '-')} | ${escapeHtml(t('ocr_lines'))}: ${escapeHtml(String(first.lineCount || 0))} | ${escapeHtml(t('ocr_segments'))}: ${escapeHtml(String(first.segmentCount || 0))}</span>
             </div>
             <select class="ocr-item-select">${options}</select>
             <input type="text" class="ocr-label-input" value="${escapeHtml(first.ocrLabel || '')}" />
@@ -404,10 +406,12 @@
       const lines = String(option.dataset.lines || '0').trim();
       const segments = String(option.dataset.segments || '0').trim();
       const kind = String(option.dataset.kind || '').trim().toLowerCase();
+      const sourceType = String(option.dataset.sourceType || '').trim().toLowerCase();
+      const sourceFileName = String(option.dataset.sourceFileName || '').trim();
       const labelInput = rowEl.querySelector('.ocr-label-input');
       const meta = rowEl.querySelector('.ocr-selected-meta');
       if (labelInput instanceof HTMLInputElement) labelInput.value = label;
-      if (meta) meta.textContent = `${t('ocr_engine')}: ${engine} | ${t('ocr_lines')}: ${lines} | ${t('ocr_segments')}: ${segments}`;
+      if (meta) meta.textContent = `${sourceType === 'attachment' ? `${t('ocr_attachment_source')}: ${sourceFileName} | ` : ''}${t('ocr_engine')}: ${engine} | ${t('ocr_lines')}: ${lines} | ${t('ocr_segments')}: ${segments}`;
       return { itemId, label, engine, lines, segments, kind };
     }
 

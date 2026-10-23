@@ -38,6 +38,27 @@ function createTextAssetIndexService(deps = {}) {
     return photoItems.length ? String(photoItems[photoItems.length - 1].ocrUrl || '').trim() : '';
   }
 
+  function listOcrItemsFromDc(dcMetadata) {
+    const dc = dcMetadata && typeof dcMetadata === 'object' ? dcMetadata : {};
+    const videoItems = sanitizeVideoOcrItems(dc.videoOcrItems).map((item) => ({ ...item, ocrKind: 'video' }));
+    const photoItems = sanitizePhotoOcrItems(dc.photoOcrItems).map((item) => ({ ...item, ocrKind: 'photo' }));
+    if (!videoItems.length && String(dc.videoOcrUrl || '').trim()) videoItems.push({
+      ocrUrl: String(dc.videoOcrUrl).trim(), ocrLabel: String(dc.videoOcrLabel || 'video-ocr'),
+      ocrEngine: dc.videoOcrEngine || 'paddle', ocrKind: 'video'
+    });
+    if (!photoItems.length && String(dc.photoOcrUrl || '').trim()) photoItems.push({
+      ocrUrl: String(dc.photoOcrUrl).trim(), ocrLabel: String(dc.photoOcrLabel || 'photo-ocr'),
+      ocrEngine: dc.photoOcrEngine || 'paddle', ocrKind: 'photo'
+    });
+    const seen = new Set();
+    return [...videoItems, ...photoItems].filter((item) => {
+      const url = String(item.ocrUrl || '').trim();
+      if (!url || seen.has(url)) return false;
+      seen.add(url);
+      return true;
+    });
+  }
+
   function getActiveOcrItemFromDc(dcMetadata) {
     const dc = dcMetadata && typeof dcMetadata === 'object' ? dcMetadata : {};
     const activeUrl = pickLatestVideoOcrUrlFromDc(dc);
@@ -113,9 +134,10 @@ function createTextAssetIndexService(deps = {}) {
 
   function getCandidateOcrFilePathsForRow(row) {
     const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
-    const directUrl = pickLatestVideoOcrUrlFromDc(dc);
-    const directPath = directUrl ? publicUploadUrlToAbsolutePath(directUrl) : '';
-    if (directPath && fs.existsSync(directPath)) return [directPath];
+    const directPaths = listOcrItemsFromDc(dc)
+      .map((item) => publicUploadUrlToAbsolutePath(String(item.ocrUrl || '').trim()))
+      .filter((filePath) => filePath && fs.existsSync(filePath));
+    if (directPaths.length) return directPaths;
 
     const titleSlug = sanitizeFileName(String(row?.title || '').trim().toLowerCase());
     const fileSlug = sanitizeFileName(path.basename(String(row?.file_name || ''), path.extname(String(row?.file_name || ''))).toLowerCase());
@@ -270,45 +292,29 @@ function createTextAssetIndexService(deps = {}) {
     const assetId = String(row?.id || '').trim();
     const cap = Math.max(1, Math.min(50, Number(limit) || 8));
     if (!assetId || !parsedQuery.raw) return [];
-    const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
-    const activeOcrUrl = String(pickLatestVideoOcrUrlFromDc(dc) || '').trim();
-    if (activeOcrUrl) {
-      const fetchDbMatch = async () => {
-        const ocrWhere = buildSubtitleCueSearchWhereSql({ normColumn: 'norm_text', startIndex: 3, parsedQuery });
-        return pool.query(
-          `
-            SELECT start_sec, end_sec, segment_text
-            FROM asset_ocr_segments
-            WHERE asset_id = $1
-              AND ocr_url = $2
-              ${ocrWhere.clauses.length ? `AND ${ocrWhere.clauses.join(' AND ')}` : ''}
-            ORDER BY start_sec ASC
-            LIMIT $${ocrWhere.nextIndex}
-          `,
-          [assetId, activeOcrUrl, ...ocrWhere.params, cap]
-        );
-      };
-      let dbHit = await fetchDbMatch();
-      if (!dbHit.rowCount) {
-        const exists = await pool.query(
-          'SELECT 1 FROM asset_ocr_segments WHERE asset_id = $1 AND ocr_url = $2 LIMIT 1',
-          [assetId, activeOcrUrl]
-        );
-        if (!exists.rowCount) {
-          await syncOcrSegmentIndexForAsset(assetId, activeOcrUrl, {
-            sourceEngine: String(dc.videoOcrEngine || 'paddle').trim(),
-            lang: ''
-          });
-          dbHit = await fetchDbMatch();
-        }
-      }
-      if (dbHit.rowCount) {
-        return dbHit.rows.map((hit) => ({
-          ocrUrl: activeOcrUrl,
-          line: String(hit.segment_text || ''),
-          startSec: Number(hit.start_sec || 0),
-          endSec: Number(hit.end_sec || 0)
-        }));
+    const sources = listOcrItemsFromDc(row?.dc_metadata || {});
+    const urls = sources.map((item) => String(item.ocrUrl || '').trim()).filter(Boolean);
+    if (urls.length) {
+      await ensureOcrSegmentIndexForAssetRow(row);
+      const ocrWhere = buildSubtitleCueSearchWhereSql({ normColumn: 'norm_text', startIndex: 3, parsedQuery });
+      const result = await pool.query(
+        `SELECT ocr_url, start_sec, end_sec, segment_text FROM asset_ocr_segments
+         WHERE asset_id = $1 AND ocr_url = ANY($2::text[])
+           ${ocrWhere.clauses.length ? `AND ${ocrWhere.clauses.join(' AND ')}` : ''}
+         ORDER BY start_sec ASC LIMIT $${ocrWhere.nextIndex}`,
+        [assetId, urls, ...ocrWhere.params, cap]
+      );
+      if (result.rowCount) {
+        const sourceByUrl = new Map(sources.map((item) => [String(item.ocrUrl || '').trim(), item]));
+        return result.rows.map((hit) => {
+          const source = sourceByUrl.get(String(hit.ocr_url || '').trim()) || {};
+          return {
+            ocrUrl: String(hit.ocr_url || '').trim(), line: String(hit.segment_text || ''),
+            startSec: Number(hit.start_sec || 0), endSec: Number(hit.end_sec || 0),
+            sourceType: String(source.sourceType || ''), sourceFileName: String(source.sourceFileName || ''),
+            sourceVersionId: String(source.sourceVersionId || ''), ocrLabel: String(source.ocrLabel || '')
+          };
+        });
       }
     }
     return findOcrMatchesInRow(row, queryRaw, cap);
@@ -356,90 +362,51 @@ function createTextAssetIndexService(deps = {}) {
   async function ensureOcrSegmentIndexForAssetRow(row) {
     const assetId = String(row?.id || '').trim();
     const dc = row?.dc_metadata && typeof row.dc_metadata === 'object' ? row.dc_metadata : {};
-    const activeItem = getActiveOcrItemFromDc(dc);
-    const activeOcrUrl = String(activeItem?.ocrUrl || '').trim();
-    if (!assetId || !activeOcrUrl) return 0;
-
-    try {
-      const existing = await pool.query(
-        'SELECT COUNT(*)::int AS count FROM asset_ocr_segments WHERE asset_id = $1 AND ocr_url = $2',
-        [assetId, activeOcrUrl]
-      );
-      const count = Number(existing.rows?.[0]?.count || 0);
-      const expected = expectedOcrSegmentCountFromItem(activeItem);
-      if (count > 0 && (!expected || count >= expected)) return count;
-      return await syncOcrSegmentIndexForAsset(assetId, activeOcrUrl, {
-        sourceEngine: String(activeItem?.ocrEngine || dc.videoOcrEngine || dc.photoOcrEngine || 'paddle').trim(),
-        lang: ''
-      });
-    } catch (error) {
-      console.warn('ocr-segment-index-repair-failed', {
-        assetId,
-        ocrUrl: activeOcrUrl,
-        message: error?.message || String(error)
-      });
-      return 0;
+    if (!assetId) return 0;
+    let total = 0;
+    for (const item of listOcrItemsFromDc(dc)) {
+      const ocrUrl = String(item.ocrUrl || '').trim();
+      if (!ocrUrl) continue;
+      try {
+        const existing = await pool.query(
+          'SELECT COUNT(*)::int AS count FROM asset_ocr_segments WHERE asset_id = $1 AND ocr_url = $2',
+          [assetId, ocrUrl]
+        );
+        const count = Number(existing.rows?.[0]?.count || 0);
+        const expected = expectedOcrSegmentCountFromItem(item);
+        if (count > 0 && (!expected || count >= expected)) { total += count; continue; }
+        total += await syncOcrSegmentIndexForAsset(assetId, ocrUrl, {
+          sourceEngine: String(item.ocrEngine || dc.videoOcrEngine || dc.photoOcrEngine || 'paddle').trim(),
+          lang: item.ocrLang || ''
+        });
+      } catch (error) {
+        console.warn('ocr-segment-index-repair-failed', { assetId, ocrUrl, message: error?.message || String(error) });
+      }
     }
+    return total;
   }
 
-  function mapOcrSegmentRow(segment, query, ocrUrl = '') {
+  function mapOcrSegmentRow(segment, query, ocrUrl = '', source = {}) {
     return {
       ocrUrl,
       line: String(segment?.segmentText || segment?.line || '').trim(),
       startSec: Number(segment?.startSec || 0),
       endSec: Number(segment?.endSec || 0),
-      query: String(query || '').trim()
+      query: String(query || '').trim(),
+      sourceType: String(source.sourceType || ''),
+      sourceFileName: String(source.sourceFileName || ''),
+      sourceVersionId: String(source.sourceVersionId || ''),
+      ocrLabel: String(source.ocrLabel || '')
     };
   }
 
   async function searchOcrMatchesForAssetRow(row, queryRaw, limit = 8) {
-    const parsedQuery = parseTextSearchQuery(queryRaw, normalizeSubtitleSearchText);
-    const cap = Math.max(1, Math.min(2000, Number(limit) || 8));
-    if (!parsedQuery.raw) {
-      return { ocrUrl: '', matches: [], didYouMean: '', fuzzyUsed: false, highlightQuery: String(queryRaw || '').trim() };
-    }
-    const exactMatches = await findOcrMatchesForAssetRow(row, queryRaw, cap);
-    if (exactMatches.length || parsedQuery.hasOperators) {
-      const ocrUrl = String(exactMatches[0]?.ocrUrl || pickLatestVideoOcrUrlFromDc(row?.dc_metadata || {}) || '').trim();
-      return {
-        ocrUrl,
-        matches: exactMatches.map((item) => mapOcrSegmentRow(item, queryRaw, item.ocrUrl || ocrUrl)),
-        didYouMean: '',
-        fuzzyUsed: false,
-        highlightQuery: String(queryRaw || '').trim()
-      };
-    }
-    const { ocrUrl, segments } = await loadActiveOcrSegmentsForAssetRow(row);
-    if (!segments.length) {
-      return { ocrUrl, matches: [], didYouMean: '', fuzzyUsed: false, highlightQuery: String(queryRaw || '').trim() };
-    }
-    const fuzzyMatches = segments
-      .filter((segment) => fuzzySearchTextMatch(parsedQuery.raw, segment.segmentText, normalizeSubtitleSearchText))
-      .slice(0, cap)
-      .map((segment) => mapOcrSegmentRow(segment, queryRaw, ocrUrl));
-    const didYouMean = suggestDidYouMeanFromTexts(
-      segments.map((segment) => segment.segmentText),
-      queryRaw,
-      { parseFn: parseTextSearchQuery, normalizeFn: normalizeSubtitleSearchText }
-    );
-    let matches = fuzzyMatches;
-    let fuzzyUsed = fuzzyMatches.length > 0;
-    let highlightQuery = String(queryRaw || '').trim();
-    if (didYouMean) {
-      highlightQuery = didYouMean;
-      const suggestedQuery = parseTextSearchQuery(didYouMean, normalizeSubtitleSearchText);
-      const suggestedMatches = segments
-        .filter((segment) => ocrLineMatchesParsedQuery(segment.segmentText, suggestedQuery))
-        .slice(0, cap)
-        .map((segment) => mapOcrSegmentRow(segment, didYouMean, ocrUrl));
-      if (suggestedMatches.length) {
-        matches = suggestedMatches;
-        fuzzyUsed = true;
-      } else if (matches.length) {
-        matches = matches.map((item) => ({ ...item, query: didYouMean }));
-      }
-    }
-    return { ocrUrl, matches, didYouMean, fuzzyUsed, highlightQuery };
+    const result = await searchOcrMatchesForAssetRows([row], queryRaw, limit);
+    const matches = result.byAssetId.get(String(row?.id || '').trim()) || [];
+    return {
+      ocrUrl: String(matches[0]?.ocrUrl || pickLatestVideoOcrUrlFromDc(row?.dc_metadata || {}) || '').trim(),
+      matches, didYouMean: result.didYouMean, fuzzyUsed: result.fuzzyUsed, highlightQuery: result.highlightQuery
+    };
   }
 
   async function searchOcrMatchesForAssetRows(rows, queryRaw, limit = 8) {
@@ -450,24 +417,27 @@ function createTextAssetIndexService(deps = {}) {
     if (!parsedQuery.raw || !assetRows.length) {
       return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(queryRaw || '').trim() };
     }
-    const activeUrlByAssetId = new Map();
+    const sourceByKey = new Map();
     assetRows.forEach((row) => {
       const assetId = String(row?.id || '').trim();
-      const ocrUrl = String(pickLatestVideoOcrUrlFromDc(row?.dc_metadata || {}) || '').trim();
-      if (assetId && ocrUrl) activeUrlByAssetId.set(assetId, ocrUrl);
+      if (!assetId) return;
+      listOcrItemsFromDc(row?.dc_metadata || {}).forEach((source) => {
+        const url = String(source.ocrUrl || '').trim();
+        if (url) sourceByKey.set(`${assetId}\u0000${url}`, source);
+      });
     });
-    if (!activeUrlByAssetId.size) {
+    if (!sourceByKey.size) {
       return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(queryRaw || '').trim() };
     }
     await Promise.allSettled(assetRows.map((row) => ensureOcrSegmentIndexForAssetRow(row)));
-    const assetIds = Array.from(activeUrlByAssetId.keys());
-    const activeUrls = Array.from(new Set(activeUrlByAssetId.values()));
+    const assetIds = Array.from(new Set(assetRows.map((row) => String(row?.id || '').trim()).filter(Boolean)));
+    const activeUrls = Array.from(new Set(Array.from(sourceByKey.keys()).map((key) => key.slice(key.indexOf('\u0000') + 1))));
     const ocrWhere = buildSubtitleCueSearchWhereSql({ normColumn: 'norm_text', startIndex: 3, parsedQuery });
     const exactResult = await pool.query(
       `
         WITH matched AS (
           SELECT asset_id, ocr_url, start_sec, end_sec, segment_text,
-                 ROW_NUMBER() OVER (PARTITION BY asset_id ORDER BY start_sec ASC) AS rn
+                 ROW_NUMBER() OVER (PARTITION BY asset_id, ocr_url ORDER BY start_sec ASC) AS rn
           FROM asset_ocr_segments
           WHERE asset_id = ANY($1::text[])
             AND ocr_url = ANY($2::text[])
@@ -476,20 +446,21 @@ function createTextAssetIndexService(deps = {}) {
         SELECT asset_id, ocr_url, start_sec, end_sec, segment_text
         FROM matched
         WHERE rn <= $${ocrWhere.nextIndex}
-        ORDER BY asset_id, start_sec ASC
+        ORDER BY asset_id, ocr_url, start_sec ASC
       `,
       [assetIds, activeUrls, ...ocrWhere.params, cap]
     );
     exactResult.rows.forEach((row) => {
       const assetId = String(row.asset_id || '').trim();
-      const activeUrl = activeUrlByAssetId.get(assetId);
-      if (!activeUrl || String(row.ocr_url || '').trim() !== activeUrl) return;
+      const activeUrl = String(row.ocr_url || '').trim();
+      const source = sourceByKey.get(`${assetId}\u0000${activeUrl}`) || {};
+      if (!activeUrl || !sourceByKey.has(`${assetId}\u0000${activeUrl}`)) return;
       if (!byAssetId.has(assetId)) byAssetId.set(assetId, []);
       byAssetId.get(assetId).push(mapOcrSegmentRow({
         line: String(row.segment_text || ''),
         startSec: Number(row.start_sec || 0),
         endSec: Number(row.end_sec || 0)
-      }, queryRaw, activeUrl));
+      }, queryRaw, activeUrl, source));
     });
     if (byAssetId.size || parsedQuery.hasOperators) {
       return { byAssetId, didYouMean: '', fuzzyUsed: false, highlightQuery: String(queryRaw || '').trim() };
@@ -500,13 +471,13 @@ function createTextAssetIndexService(deps = {}) {
         FROM asset_ocr_segments
         WHERE asset_id = ANY($1::text[])
           AND ocr_url = ANY($2::text[])
-        ORDER BY asset_id, start_sec ASC
+        ORDER BY asset_id, ocr_url, start_sec ASC
       `,
       [assetIds, activeUrls]
     );
     const activeSegments = segmentResult.rows.filter((row) => {
       const assetId = String(row.asset_id || '').trim();
-      return String(row.ocr_url || '').trim() === activeUrlByAssetId.get(assetId);
+      return sourceByKey.has(`${assetId}\u0000${String(row.ocr_url || '').trim()}`);
     });
     const didYouMean = suggestDidYouMeanFromTexts(
       activeSegments.map((row) => String(row.segment_text || '')),
@@ -517,6 +488,7 @@ function createTextAssetIndexService(deps = {}) {
     const suggestedQuery = didYouMean ? parseTextSearchQuery(didYouMean, normalizeSubtitleSearchText) : null;
     activeSegments.forEach((row) => {
       const assetId = String(row.asset_id || '').trim();
+      const ocrUrl = String(row.ocr_url || '').trim();
       if (!assetId || (byAssetId.get(assetId) || []).length >= cap) return;
       const text = String(row.segment_text || '');
       const matched = suggestedQuery
@@ -528,7 +500,7 @@ function createTextAssetIndexService(deps = {}) {
         line: text,
         startSec: Number(row.start_sec || 0),
         endSec: Number(row.end_sec || 0)
-      }, highlightQuery, String(row.ocr_url || '').trim()));
+      }, highlightQuery, ocrUrl, sourceByKey.get(`${assetId}\u0000${ocrUrl}`) || {}));
     });
     return { byAssetId, didYouMean, fuzzyUsed: byAssetId.size > 0, highlightQuery };
   }
