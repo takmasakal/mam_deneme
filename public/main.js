@@ -822,6 +822,7 @@ let i18n = {
     photo_ocr_label: 'OCR file name',
     photo_ocr_extract: 'Extract OCR',
     photo_ocr_running: 'Extracting photo OCR...',
+    photo_ocr_queued: 'Photo OCR queued. It will continue in the background if this window closes.',
     photo_ocr_done: 'Photo OCR completed.',
     photo_ocr_failed: 'Photo OCR failed.',
     photo_ocr_result: 'OCR result',
@@ -1250,6 +1251,7 @@ let i18n = {
     photo_ocr_label: 'OCR dosya adı',
     photo_ocr_extract: 'OCR çıkar',
     photo_ocr_running: 'Fotoğraf OCR çıkarılıyor...',
+    photo_ocr_queued: 'Fotoğraf OCR kuyruğa alındı. Bu pencere kapansa da arka planda sürecek.',
     photo_ocr_done: 'Fotoğraf OCR tamamlandı.',
     photo_ocr_failed: 'Fotoğraf OCR başarısız.',
     photo_ocr_result: 'OCR sonucu',
@@ -2879,25 +2881,39 @@ function openPhotoOcrDialog(asset, options = {}) {
     const status = backdrop.querySelector('#photoOcrStatus');
     const resultText = backdrop.querySelector('#photoOcrResultText');
     runBtn.disabled = true;
-    if (status) status.textContent = t('photo_ocr_running');
+    if (status) status.textContent = t('photo_ocr_queued');
     try {
       const payload = {
         ocrLang: String(backdrop.querySelector('#photoOcrLangInput')?.value || 'eng+tur').trim() || 'eng+tur',
         ocrLabel: String(backdrop.querySelector('#photoOcrLabelInput')?.value || '').trim(),
         ...(sourceVersionId ? { sourceVersionId } : {})
       };
-      const result = await api(`/api/assets/${encodeURIComponent(asset.id)}/photo-ocr/extract`, {
+      const queued = await api(`/api/assets/${encodeURIComponent(asset.id)}/photo-ocr/extract`, {
         method: 'POST',
         body: JSON.stringify(payload)
       });
-      if (status) status.textContent = t('photo_ocr_done');
-      if (resultText) resultText.value = String(result?.text || '');
-      await loadAssets();
-      await openAsset(asset.id, workflow);
+      const jobId = String(queued?.jobId || '').trim();
+      if (!jobId) throw new Error('Photo OCR job was not queued');
+      while (backdrop.isConnected) {
+        const result = await api(`/api/assets/${encodeURIComponent(asset.id)}/photo-ocr/jobs/${encodeURIComponent(jobId)}`);
+        if (!backdrop.isConnected) break;
+        if (result.status === 'completed') {
+          if (status) status.textContent = t('photo_ocr_done');
+          if (resultText) resultText.value = String(result.text || '');
+          await loadAssets();
+          if (backdrop.isConnected && selectedAssetId === asset.id) await openAsset(asset.id, workflow);
+          break;
+        }
+        if (result.status === 'failed' || result.status === 'cancelled') {
+          throw new Error(result.error || result.status);
+        }
+        if (status) status.textContent = t(result.status === 'queued' ? 'photo_ocr_queued' : 'photo_ocr_running');
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+      }
     } catch (error) {
-      if (status) status.textContent = `${t('photo_ocr_failed')}: ${String(error?.message || error)}`;
+      if (backdrop.isConnected && status) status.textContent = `${t('photo_ocr_failed')}: ${String(error?.message || error)}`;
     } finally {
-      runBtn.disabled = false;
+      if (backdrop.isConnected) runBtn.disabled = false;
     }
   });
 }

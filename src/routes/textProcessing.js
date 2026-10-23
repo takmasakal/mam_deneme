@@ -39,8 +39,10 @@ function registerTextProcessingRoutes(app, deps) {
     mapSubtitleJobFromDbRow,
     mapVideoOcrJobFromDbRow,
     queueVideoOcrJob,
+    queuePhotoOcrJob,
     extractPhotoOcrToText,
     videoOcrJobs,
+    photoOcrJobs,
     getLatestVideoOcrJobForAsset,
     getLatestMediaProcessingJobForAsset,
     sanitizeVideoOcrItems,
@@ -386,40 +388,70 @@ function registerTextProcessingRoutes(app, deps) {
       const inputPath = photoInputPath || resolvePhotoOcrInputPath(row);
       if (!inputPath) return res.status(404).json({ error: 'Photo source file not found' });
 
-      const ocrLang = String(req.body?.ocrLang || 'eng+tur').trim() || 'eng+tur';
-      const inputFileName = sourceFileName || String(row.file_name || row.title || 'photo');
-      const baseLabel = String(req.body?.ocrLabel || '').trim() || `${path.basename(inputFileName, path.extname(inputFileName))}-photo-ocr`;
-      const safeLabel = sanitizeFileName(baseLabel.replace(/\.txt$/i, '')) || 'photo-ocr';
-      const storedName = `${Date.now()}-${nanoid()}-${safeLabel}.txt`;
-      const out = buildArtifactPath('ocr', storedName, row.created_at);
-      const result = await aiExecution.extractPhotoOcr(inputPath, out.absolutePath, { ocrLang });
-      const saved = await saveAssetPhotoOcrMetadata(req.params.id, row, {
-        resultUrl: out.publicUrl,
-        ocrLabel: safeLabel,
+      if (typeof queuePhotoOcrJob !== 'function') {
+        return res.status(500).json({ error: 'Photo OCR job queue is not available' });
+      }
+      const job = queuePhotoOcrJob(row, {
+        inputPath,
+        ocrLang: String(req.body?.ocrLang || 'eng+tur').trim() || 'eng+tur',
+        ocrLabel: String(req.body?.ocrLabel || '').trim(),
         sourceVersionId,
         sourceType,
-        sourceFileName,
-        ocrEngine: result.engine || 'paddle',
-        ocrLang,
-        lineCount: result.lines,
-        segmentCount: result.segments
+        sourceFileName: sourceFileName || String(row.file_name || row.title || 'photo')
       });
-      let text = '';
-      try {
-        text = fs.readFileSync(out.absolutePath, 'utf8');
-      } catch (_error) {}
-      return res.json({
+      return res.status(202).json({
         ok: true,
-        ocrUrl: out.publicUrl,
-        ocrLabel: saved.item?.ocrLabel || `${safeLabel}.txt`,
-        ocrEngine: result.engine || 'paddle',
-        lineCount: Number(result.lines || 0),
-        segmentCount: Number(result.segments || 0),
-        text,
-        asset: mapAssetRow(saved.row)
+        jobId: job.jobId,
+        assetId: job.assetId,
+        status: job.status,
+        progress: job.progress,
+        progressPhase: job.progressPhase
       });
     } catch (error) {
       return res.status(500).json({ error: String(error?.message || 'Photo OCR extraction failed').slice(0, 900) });
+    }
+  });
+
+  app.get('/api/assets/:id/photo-ocr/jobs/:jobId', async (req, res) => {
+    try {
+      const loaded = await loadVisibleAssetRow(req, req.params.id);
+      if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
+      const jobId = String(req.params.jobId || '').trim();
+      const memoryJob = photoOcrJobs?.get(jobId);
+      const persisted = memoryJob ? null : await getMediaProcessingJobById(jobId, 'photo_ocr');
+      if (memoryJob && String(memoryJob.assetId) !== String(req.params.id)) {
+        return res.status(404).json({ error: 'Photo OCR job not found' });
+      }
+      if (!memoryJob && (!persisted || String(persisted.asset_id || '') !== String(req.params.id))) {
+        return res.status(404).json({ error: 'Photo OCR job not found' });
+      }
+      const resultPayload = persisted?.result_payload && typeof persisted.result_payload === 'object'
+        ? persisted.result_payload
+        : {};
+      const status = String(memoryJob?.status || persisted?.status || 'queued');
+      const ocrUrl = String(memoryJob?.resultUrl || resultPayload.resultUrl || '').trim();
+      let text = '';
+      if (status === 'completed' && ocrUrl) {
+        const resultPath = memoryJob?.resultPath || publicUploadUrlToAbsolutePath(ocrUrl);
+        try { if (resultPath) text = fs.readFileSync(resultPath, 'utf8'); } catch (_error) {}
+      }
+      return res.json({
+        jobId,
+        assetId: String(req.params.id),
+        status,
+        progress: Number(memoryJob?.progress ?? persisted?.progress ?? 0),
+        progressPhase: String(memoryJob?.progressPhase || resultPayload.progressPhase || ''),
+        error: String(memoryJob?.error || persisted?.error_text || ''),
+        ocrUrl,
+        ocrLabel: String(memoryJob?.ocrLabel || resultPayload.ocrLabel || ''),
+        ocrEngine: String(memoryJob?.ocrEngine || resultPayload.ocrEngine || ''),
+        lineCount: Number(memoryJob?.lineCount ?? resultPayload.lineCount ?? 0),
+        segmentCount: Number(memoryJob?.segmentCount ?? resultPayload.segmentCount ?? 0),
+        text,
+        asset: status === 'completed' ? mapAssetRow(loaded.row) : undefined
+      });
+    } catch (_error) {
+      return res.status(500).json({ error: 'Failed to load photo OCR job' });
     }
   });
   

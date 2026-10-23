@@ -84,6 +84,7 @@ const {
   proxyJobs,
   subtitleJobs,
   videoOcrJobs,
+  photoOcrJobs,
   trackMediaJobProcess,
   cancelMediaJobRuntime,
   clearMediaJobRuntime,
@@ -2269,7 +2270,7 @@ function getLatestVideoOcrJobForAsset(assetId) {
 
 function normalizeMediaJobType(value) {
   const raw = String(value || '').trim().toLowerCase();
-  if (raw === 'subtitle' || raw === 'video_ocr' || raw === 'proxy' || raw === 'metadata_enrichment') return raw;
+  if (raw === 'subtitle' || raw === 'video_ocr' || raw === 'photo_ocr' || raw === 'proxy' || raw === 'metadata_enrichment') return raw;
   return '';
 }
 
@@ -4350,6 +4351,119 @@ async function extractPhotoOcrToText(inputPath, outputPath, options = {}) {
   } finally {
     safeRmDir(workDir);
   }
+}
+
+function queuePhotoOcrJob(row, options = {}) {
+  const assetId = String(row?.id || '').trim();
+  const inputPath = String(options.inputPath || '').trim();
+  if (!assetId || !inputPath || !fs.existsSync(inputPath)) throw new Error('Photo source file not found');
+  const jobId = nanoid();
+  const ocrLang = String(options.ocrLang || 'eng+tur').trim() || 'eng+tur';
+  const sourceVersionId = String(options.sourceVersionId || '').trim();
+  const sourceType = String(options.sourceType || '').trim().toLowerCase();
+  const sourceFileName = String(options.sourceFileName || row.file_name || row.title || 'photo').trim();
+  const requestedLabel = String(options.ocrLabel || '').trim()
+    || `${path.basename(sourceFileName, path.extname(sourceFileName))}-photo-ocr`;
+  const ocrLabel = sanitizeFileName(requestedLabel.replace(/\.txt$/i, '')) || 'photo-ocr';
+  const now = new Date().toISOString();
+  const job = {
+    jobId, assetId, inputPath, sourceVersionId, sourceType, sourceFileName, ocrLang, ocrLabel,
+    status: 'queued', progress: 5, progressPhase: 'queued', resultUrl: '', resultPath: '',
+    ocrEngine: '', lineCount: 0, segmentCount: 0, error: '', createdAt: now,
+    startedAt: '', updatedAt: now, finishedAt: ''
+  };
+  photoOcrJobs.set(jobId, job);
+
+  const persist = () => upsertMediaProcessingJobSafe({
+    jobId: job.jobId,
+    assetId: job.assetId,
+    jobType: 'photo_ocr',
+    status: job.status,
+    requestPayload: {
+      sourceVersionId: job.sourceVersionId,
+      sourceType: job.sourceType,
+      sourceFileName: job.sourceFileName,
+      ocrLang: job.ocrLang,
+      ocrLabel: job.ocrLabel
+    },
+    resultPayload: {
+      progressPhase: job.progressPhase,
+      ocrLabel: job.ocrLabel,
+      ocrEngine: job.ocrEngine,
+      lineCount: job.lineCount,
+      segmentCount: job.segmentCount,
+      resultUrl: job.resultUrl,
+      sourceVersionId: job.sourceVersionId,
+      sourceFileName: job.sourceFileName
+    },
+    errorText: job.error,
+    progress: job.progress,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    startedAt: job.startedAt,
+    finishedAt: job.finishedAt
+  }).finally(() => {
+    systemHealthCache.value = null;
+    systemHealthCache.expiresAt = 0;
+  });
+
+  persist();
+  // Use the shared OCR concurrency cap rather than allowing image OCR to
+  // independently overload the OCR model worker.
+  scheduleMediaJobRun('video_ocr', jobId, async () => {
+    if (job.status !== 'queued') return;
+    job.status = 'running';
+    job.progress = 10;
+    job.progressPhase = 'preparing_image';
+    job.startedAt = new Date().toISOString();
+    job.updatedAt = job.startedAt;
+    await persist();
+    try {
+      const storedName = `${Date.now()}-${nanoid()}-${job.ocrLabel}.txt`;
+      const out = buildArtifactPath('ocr', storedName, row.created_at);
+      job.progressPhase = 'recognizing_image';
+      job.progress = 25;
+      job.updatedAt = new Date().toISOString();
+      await persist();
+      const result = await aiExecutionService.extractPhotoOcr(job.inputPath, out.absolutePath, { ocrLang: job.ocrLang });
+      const latestResult = await pool.query('SELECT * FROM assets WHERE id = $1 LIMIT 1', [job.assetId]);
+      const latestRow = latestResult.rows[0];
+      if (!latestRow) throw new Error('Asset no longer exists');
+      job.progressPhase = 'saving';
+      job.progress = 90;
+      job.updatedAt = new Date().toISOString();
+      await persist();
+      const saved = await saveAssetPhotoOcrMetadata(job.assetId, latestRow, {
+        resultUrl: out.publicUrl,
+        ocrLabel: job.ocrLabel,
+        sourceVersionId: job.sourceVersionId,
+        sourceType: job.sourceType,
+        sourceFileName: job.sourceFileName,
+        ocrEngine: result.engine || 'paddle',
+        ocrLang: job.ocrLang,
+        lineCount: result.lines,
+        segmentCount: result.segments
+      });
+      job.resultUrl = out.publicUrl;
+      job.resultPath = out.absolutePath;
+      job.ocrEngine = result.engine || 'paddle';
+      job.lineCount = Number(result.lines || 0);
+      job.segmentCount = Number(result.segments || 0);
+      job.ocrLabel = saved.item?.ocrLabel || `${job.ocrLabel}.txt`;
+      job.status = 'completed';
+      job.progress = 100;
+      job.progressPhase = 'completed';
+    } catch (error) {
+      job.status = 'failed';
+      job.progress = 0;
+      job.progressPhase = 'failed';
+      job.error = String(error?.message || 'Photo OCR extraction failed').slice(0, 900);
+    }
+    job.finishedAt = new Date().toISOString();
+    job.updatedAt = job.finishedAt;
+    await persist();
+  });
+  return job;
 }
 
 async function extractVideoOcrToText(inputPath, outputPath, options = {}) {
@@ -7086,6 +7200,7 @@ registerAdminRoutes(app, {
   proxyJobs,
   subtitleJobs,
   videoOcrJobs,
+  photoOcrJobs,
   metadataEnrichmentService,
   processingExecutionHealth: {
     ai: () => aiExecutionService.health(),
@@ -7224,8 +7339,10 @@ registerTextProcessingRoutes(app, {
   mapSubtitleJobFromDbRow,
   mapVideoOcrJobFromDbRow,
   queueVideoOcrJob,
+  queuePhotoOcrJob,
   extractPhotoOcrToText,
   videoOcrJobs,
+  photoOcrJobs,
   getLatestVideoOcrJobForAsset,
   getLatestMediaProcessingJobForAsset,
   sanitizeVideoOcrItems,

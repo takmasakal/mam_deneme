@@ -80,6 +80,7 @@ function registerAdminRoutes(app, deps) {
     proxyJobs,
     subtitleJobs,
     videoOcrJobs,
+    photoOcrJobs,
     metadataEnrichmentService,
     processingExecutionHealth,
     requireScopedAdminAccess,
@@ -3663,6 +3664,19 @@ app.get('/api/admin/system-health', async (req, res) => {
         ? mapSubtitleJobFromDbRow(row)
         : jobType === 'video_ocr'
           ? mapVideoOcrJobFromDbRow(row)
+          : jobType === 'photo_ocr'
+            ? {
+              jobId: String(row.job_id || ''),
+              assetId: String(row.asset_id || ''),
+              status: normalizeMediaJobStatus(row.status),
+              updatedAt: row.updated_at,
+              finishedAt: row.finished_at,
+              error: String(row.error_text || ''),
+              resultLabel: String(resultPayload.sourceFileName || resultPayload.ocrLabel || 'photo-ocr'),
+              ocrEngine: String(resultPayload.ocrEngine || ''),
+              lineCount: Number(resultPayload.lineCount || 0),
+              segmentCount: Number(resultPayload.segmentCount || 0)
+            }
           : {
             jobId: String(row.job_id || ''),
             assetId: String(row.asset_id || ''),
@@ -3694,9 +3708,9 @@ app.get('/api/admin/system-health', async (req, res) => {
           ? 'auto-metadata'
           : isProxy ? 'transcode/proxy' : jobType === 'subtitle' ? String(mapped.subtitleLabel || '') : String(mapped.resultLabel || ''),
         model: isMetadata || jobType === 'subtitle' ? String(mapped.model || '') : '',
-        engine: jobType === 'video_ocr' ? String(mapped.ocrEngine || '') : '',
-        lineCount: jobType === 'video_ocr' ? Number(mapped.lineCount || 0) : 0,
-        segmentCount: jobType === 'video_ocr' ? Number(mapped.segmentCount || 0) : 0,
+        engine: ['video_ocr', 'photo_ocr'].includes(jobType) ? String(mapped.ocrEngine || '') : '',
+        lineCount: ['video_ocr', 'photo_ocr'].includes(jobType) ? Number(mapped.lineCount || 0) : 0,
+        segmentCount: ['video_ocr', 'photo_ocr'].includes(jobType) ? Number(mapped.segmentCount || 0) : 0,
         chunkCount: isMetadata ? Number(mapped.chunkCount || 0) : 0
       };
     };
@@ -3711,7 +3725,7 @@ app.get('/api/admin/system-health', async (req, res) => {
         SELECT job_id, job_type, request_payload
         FROM media_processing_jobs
         WHERE status IN ('running', 'queued')
-          AND job_type IN ('subtitle', 'video_ocr', 'metadata_enrichment', 'proxy')
+          AND job_type IN ('subtitle', 'video_ocr', 'photo_ocr', 'metadata_enrichment', 'proxy')
       `
     );
     const orphanedIds = orphanedActiveJobs.rows
@@ -3722,7 +3736,9 @@ app.get('/api/admin/system-health', async (req, res) => {
           ? subtitleJobs?.get(jobId)
           : type === 'video_ocr'
             ? videoOcrJobs?.get(jobId)
-            : type === 'proxy'
+            : type === 'photo_ocr'
+              ? photoOcrJobs?.get(jobId)
+              : type === 'proxy'
               ? proxyJobs.get(String(row.request_payload?.batchJobId || jobId))
               : metadataEnrichmentService?.hasJob?.(jobId);
         return !inMemory && !hasActiveMediaJobRuntime?.(jobId);
@@ -3752,7 +3768,7 @@ app.get('/api/admin/system-health', async (req, res) => {
       `
         SELECT job_type, status, COUNT(*)::int AS count
         FROM media_processing_jobs
-        WHERE job_type IN ('subtitle', 'video_ocr', 'metadata_enrichment', 'proxy')
+        WHERE job_type IN ('subtitle', 'video_ocr', 'photo_ocr', 'metadata_enrichment', 'proxy')
           AND updated_at >= NOW() - ($1::int * INTERVAL '1 day')
         GROUP BY job_type, status
       `,
@@ -3764,10 +3780,11 @@ app.get('/api/admin/system-health', async (req, res) => {
       mediaCounts[key] = Number(row.count || 0);
     });
     const subtitleRunning = (mediaCounts['subtitle:running'] || 0) + (mediaCounts['subtitle:queued'] || 0);
-    const ocrRunning = (mediaCounts['video_ocr:running'] || 0) + (mediaCounts['video_ocr:queued'] || 0);
+    const ocrRunning = ['video_ocr', 'photo_ocr'].reduce((sum, type) => sum
+      + (mediaCounts[`${type}:running`] || 0) + (mediaCounts[`${type}:queued`] || 0), 0);
     const metadataRunning = (mediaCounts['metadata_enrichment:running'] || 0) + (mediaCounts['metadata_enrichment:queued'] || 0);
     const subtitleFailed = mediaCounts['subtitle:failed'] || 0;
-    const ocrFailed = mediaCounts['video_ocr:failed'] || 0;
+    const ocrFailed = (mediaCounts['video_ocr:failed'] || 0) + (mediaCounts['photo_ocr:failed'] || 0);
     const metadataFailed = mediaCounts['metadata_enrichment:failed'] || 0;
 
     const { totalBytes: uploadsBytes, totalFiles: uploadsFiles } = getDirSizeAndFiles(UPLOADS_DIR);
@@ -3808,7 +3825,7 @@ app.get('/api/admin/system-health', async (req, res) => {
         SELECT mpj.*, a.title AS asset_title
         FROM media_processing_jobs mpj
         LEFT JOIN assets a ON a.id = mpj.asset_id
-        WHERE mpj.job_type IN ('subtitle', 'video_ocr', 'metadata_enrichment', 'proxy')
+        WHERE mpj.job_type IN ('subtitle', 'video_ocr', 'photo_ocr', 'metadata_enrichment', 'proxy')
           AND mpj.updated_at >= NOW() - ($1::int * INTERVAL '1 day')
         ORDER BY mpj.updated_at DESC
         LIMIT 1000
@@ -3822,7 +3839,7 @@ app.get('/api/admin/system-health', async (req, res) => {
       proxy: { active: null, latestCompleted: null, latestFailed: null }
     };
     recentJobsResult.rows.forEach((row) => {
-      const typeKey = String(row.job_type || '') === 'video_ocr'
+      const typeKey = ['video_ocr', 'photo_ocr'].includes(String(row.job_type || ''))
         ? 'ocr'
         : String(row.job_type || '') === 'metadata_enrichment'
           ? 'metadata'
@@ -3845,8 +3862,9 @@ app.get('/api/admin/system-health', async (req, res) => {
       .filter(Boolean)
       .map((job) => ({
         ...job,
-        cancelable: ['subtitle', 'video_ocr', 'metadata_enrichment'].includes(String(job.jobType || ''))
-          && ['queued', 'running'].includes(String(job.status || ''))
+        cancelable: (['subtitle', 'video_ocr', 'metadata_enrichment'].includes(String(job.jobType || ''))
+          && ['queued', 'running'].includes(String(job.status || '')))
+          || (job.jobType === 'photo_ocr' && job.status === 'queued')
       }));
     const payload = {
       resources: await collectServerResources(runCommandCapture),
@@ -3914,6 +3932,9 @@ app.post('/api/admin/media-jobs/:jobId/cancel', async (req, res) => {
       return res.status(409).json({ error: 'Media job is not active' });
     }
     const jobType = String(row.job_type || '');
+    if (jobType === 'photo_ocr' && String(row.status || '').toLowerCase() === 'running') {
+      return res.status(409).json({ error: 'Photo OCR jobs cannot be cancelled while recognition is running' });
+    }
     if (jobType === 'metadata_enrichment') {
       await metadataEnrichmentService?.cancelJob?.(jobId);
     } else {
@@ -3923,6 +3944,8 @@ app.post('/api/admin/media-jobs/:jobId/cancel', async (req, res) => {
       ? subtitleJobs?.get(jobId)
       : jobType === 'video_ocr'
         ? videoOcrJobs?.get(jobId)
+        : jobType === 'photo_ocr'
+          ? photoOcrJobs?.get(jobId)
         : null;
     if (inMemoryJob) {
       inMemoryJob.status = 'cancelled';

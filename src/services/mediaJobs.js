@@ -1,6 +1,7 @@
 const proxyJobs = new Map();
 const subtitleJobs = new Map();
 const videoOcrJobs = new Map();
+const photoOcrJobs = new Map();
 const mediaJobProcesses = new Map();
 const cancelledMediaJobs = new Set();
 
@@ -55,6 +56,7 @@ module.exports = {
   proxyJobs,
   subtitleJobs,
   videoOcrJobs,
+  photoOcrJobs,
   trackMediaJobProcess,
   cancelMediaJobRuntime,
   clearMediaJobRuntime,

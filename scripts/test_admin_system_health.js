@@ -62,6 +62,14 @@ async function run() {
           status: 'completed',
           progress: 100,
           updatedAt: new Date(Date.now() - (3 * 24 * 60 * 60 * 1000)).toISOString()
+        },
+        {
+          jobId: 'job-4',
+          jobType: 'photo_ocr',
+          assetTitle: 'Attached image OCR',
+          status: 'completed',
+          progress: 100,
+          updatedAt: new Date().toISOString()
         }
       ]
     },
@@ -109,6 +117,7 @@ async function run() {
   assert(elements.systemHealthRows.innerHTML.includes('health_services'));
   assert(elements.systemJobStatus.innerHTML.includes('media-jobs-table'));
   assert(elements.systemJobStatus.innerHTML.includes('data-filter-key="jobType"'));
+  assert(elements.systemJobStatus.innerHTML.includes('data-filter-value="photo_ocr"'));
   assert(/<th><div class="media-job-column-filter"><details class="media-job-filter-menu">/.test(elements.systemJobStatus.innerHTML));
   assert(elements.systemJobStatus.innerHTML.includes('<summary aria-label="health_job_type">health_job_type_short</summary>'));
   assert(elements.systemJobStatus.innerHTML.includes('<summary aria-label="health_job_status">health_job_status</summary>'));
@@ -137,6 +146,10 @@ async function run() {
   filterOptionClick('jobType', 'video_ocr');
   assert(elements.systemJobStatus.innerHTML.includes('Older OCR'));
   assert(!elements.systemJobStatus.innerHTML.includes('Sample video'));
+  filterOptionClick('jobType', 'all');
+  filterOptionClick('jobType', 'photo_ocr');
+  assert(elements.systemJobStatus.innerHTML.includes('Attached image OCR'));
+  assert(elements.systemJobStatus.innerHTML.includes('health_photo_ocr_jobs'));
   filterOptionClick('jobType', 'all');
   filterOptionClick('status', 'completed');
   assert(elements.systemJobStatus.innerHTML.includes('Old subtitle'));
