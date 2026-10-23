@@ -4299,13 +4299,22 @@ async function extractPhotoOcrToText(inputPath, outputPath, options = {}) {
   try {
     const frameName = 'frame-000001.jpg';
     const framePath = path.join(workDir, frameName);
+    const inputExt = path.extname(String(inputPath || '')).toLowerCase();
+    let imageInputPath = inputPath;
+    if (inputExt === '.heic' || inputExt === '.heif') {
+      imageInputPath = path.join(workDir, 'photo-source.jpg');
+      const heif = await runCommandCapture('heif-convert', [inputPath, imageInputPath]);
+      if (!heif.ok || !fs.existsSync(imageInputPath) || fs.statSync(imageInputPath).size <= 0) {
+        throw new Error(String(heif.stderr || heif.stdout || 'Could not convert HEIC image for OCR').trim().slice(0, 700));
+      }
+    }
     const convert = await runCommandCapture('ffmpeg', [
       '-hide_banner',
       '-loglevel',
       'error',
       '-y',
       '-i',
-      inputPath,
+      imageInputPath,
       '-frames:v',
       '1',
       '-vf',

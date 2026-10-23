@@ -86,7 +86,20 @@ function createAiWorkerExecutor(options = {}) {
       } else {
         if (!fs.statSync(inputPath).isFile()) throw new Error('Photo OCR input must be an image file');
         temporaryFramesDir = fs.mkdtempSync(path.join(path.dirname(outputPath), '.photo-ocr-'));
-        fs.copyFileSync(inputPath, path.join(temporaryFramesDir, 'frame-000001.jpg'));
+        const inputExt = path.extname(inputPath).toLowerCase();
+        let photoInputPath = inputPath;
+        if (inputExt === '.heic' || inputExt === '.heif') {
+          photoInputPath = path.join(temporaryFramesDir, 'photo-source.jpg');
+          const conversion = await runner('heif-convert', [inputPath, photoInputPath], {
+            signal: context.signal,
+            onProgress: context.onProgress,
+            env: options.env
+          });
+          if (!fs.existsSync(photoInputPath) || fs.statSync(photoInputPath).size <= 0) {
+            throw new Error(String(conversion?.stderr || conversion?.stdout || 'Could not convert HEIC image for OCR').trim());
+          }
+        }
+        fs.copyFileSync(photoInputPath, path.join(temporaryFramesDir, 'frame-000001.jpg'));
         framesDir = temporaryFramesDir;
       }
       const script = path.join(scriptsDir, 'video_ocr_paddle.py');
