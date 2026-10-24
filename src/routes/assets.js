@@ -161,6 +161,18 @@ function registerAssetRoutes(app, deps) {
     return '';
   }
 
+  function hasStoredThumbnail(value) {
+    const thumbnailPath = publicUploadUrlToAbsolutePath(resolveStoredUrl(String(value || '').trim(), 'thumbnails'));
+    if (!thumbnailPath) return false;
+    try {
+      if (!fs.existsSync(thumbnailPath)) return false;
+      const stat = fs.statSync(thumbnailPath);
+      return stat.isFile() && stat.size > 0;
+    } catch (_error) {
+      return false;
+    }
+  }
+
   function matchesNumberRange(value, range = {}, { requirePositive = false } = {}) {
     if (value === null || value === undefined || String(value).trim() === '') return false;
     const number = Number(value);
@@ -970,7 +982,9 @@ function registerAssetRoutes(app, deps) {
         if (activeDuration !== null) asset.durationSeconds = activeDuration;
         asset.attachmentSearchItems = attachmentSummaries.get(row.id) || [];
         if (row.default_version_media_url) asset.mediaUrl = row.default_version_media_url;
-        if (row.default_version_thumbnail_url) asset.thumbnailUrl = row.default_version_thumbnail_url;
+        if (row.default_version_thumbnail_url && hasStoredThumbnail(row.default_version_thumbnail_url)) {
+          asset.thumbnailUrl = row.default_version_thumbnail_url;
+        }
         if (row.default_version_file_name) asset.fileName = row.default_version_file_name;
         if (row.default_version_mime_type) {
           asset.mimeType = row.default_version_mime_type;
@@ -1737,7 +1751,7 @@ function registerAssetRoutes(app, deps) {
       }
       asset.versions = versionsResult.rows.map(mapVersionRow);
       const originalVersion = [...asset.versions].reverse().find((version) => version.actionType !== 'attachment');
-      if (originalVersion && !String(originalVersion.snapshotThumbnailUrl || '').trim() && originalAssetThumbnailUrl) {
+      if (originalVersion && !hasStoredThumbnail(originalVersion.snapshotThumbnailUrl) && hasStoredThumbnail(originalAssetThumbnailUrl)) {
         originalVersion.snapshotThumbnailUrl = originalAssetThumbnailUrl;
       }
       asset.originalVersionId = String(originalVersion?.versionId || '').trim();
@@ -1750,7 +1764,9 @@ function registerAssetRoutes(app, deps) {
       if (preferredVersion) {
         asset.defaultVersionId = preferredVersion.versionId;
         asset.mediaUrl = preferredVersion.snapshotMediaUrl || asset.mediaUrl;
-        asset.thumbnailUrl = preferredVersion.snapshotThumbnailUrl || asset.thumbnailUrl;
+        asset.thumbnailUrl = hasStoredThumbnail(preferredVersion.snapshotThumbnailUrl)
+          ? preferredVersion.snapshotThumbnailUrl
+          : (originalAssetThumbnailUrl || preferredVersion.snapshotThumbnailUrl || asset.thumbnailUrl);
         asset.fileName = preferredVersion.snapshotFileName || asset.fileName;
         asset.mimeType = preferredVersion.snapshotMimeType || asset.mimeType;
         asset.type = inferAssetType('', asset.mimeType, asset.fileName);
