@@ -19,7 +19,7 @@
     health_job_filter_period: 'Time period', health_job_filter_all_types: 'All job types', health_job_filter_all_statuses: 'All statuses',
     health_job_filter_empty: 'No processing jobs match these filters.', health_recent_jobs_window: 'Last {days} days',
     health_subtitle_jobs: 'Subtitle', health_ocr_jobs: 'Video OCR', health_photo_ocr_jobs: 'Photo OCR', health_asset_upload_jobs: 'Asset upload', health_asset_download_jobs: 'Asset download', health_metadata_jobs: 'Metadata', health_proxy_jobs: 'Proxy',
-    health_job_status_running: 'Running', health_job_status_queued: 'Queued', health_job_status_completed: 'Completed',
+      health_job_status_running: 'Running', health_job_status_queued: 'Queued', health_job_status_completed: 'Completed', health_job_proxy_generated: 'Proxy generated',
     health_job_status_failed: 'Failed', health_job_status_cancelled: 'Cancelled', health_job_cancel: 'Cancel',
     health_job_cancel_confirm: 'Cancel this processing job?', health_job_cancel_failed: 'Job cancellation failed',
     health_job_phase_queued: 'Queued', health_job_phase_preparing: 'Preparing', health_job_phase_cancelling: 'Cancelling', health_job_phase_file_received: 'File received', health_job_phase_generating_proxy: 'Generating proxy', health_job_phase_generating_thumbnail: 'Generating thumbnail', health_job_phase_generating_preview: 'Generating preview', health_job_phase_reading_technical_info: 'Reading technical information', health_job_phase_saving_asset: 'Saving asset', health_job_phase_processing: 'Processing', health_job_phase_preparing_image: 'Preparing image', health_job_phase_recognizing_image: 'Recognizing image', health_job_phase_preparing_audio: 'Preparing audio',
@@ -129,7 +129,7 @@
       health_job_filter_period: 'Zaman aralığı', health_job_filter_all_types: 'Tüm görev türleri', health_job_filter_all_statuses: 'Tüm durumlar',
       health_job_filter_empty: 'Bu filtrelere uyan işleme görevi yok.', health_recent_jobs_window: 'Son {days} gün',
       health_subtitle_jobs: 'Altyazı', health_ocr_jobs: 'Video OCR', health_photo_ocr_jobs: 'Fotoğraf OCR', health_asset_upload_jobs: 'Varlık yükleme', health_asset_download_jobs: 'Varlık indirme', health_metadata_jobs: 'Metadata', health_proxy_jobs: 'Proxy',
-      health_job_status_running: 'Çalışıyor', health_job_status_queued: 'Kuyrukta', health_job_status_completed: 'Tamamlandı',
+      health_job_status_running: 'Çalışıyor', health_job_status_queued: 'Kuyrukta', health_job_status_completed: 'Tamamlandı', health_job_proxy_generated: 'Proxy üretildi',
       health_job_status_failed: 'Başarısız', health_job_status_cancelled: 'İptal edildi', health_job_cancel: 'İptal',
       health_job_cancel_confirm: 'Bu işleme görevi iptal edilsin mi?', health_job_cancel_failed: 'Görev iptal edilemedi',
       health_job_phase_queued: 'Kuyrukta', health_job_phase_preparing: 'Hazırlanıyor', health_job_phase_cancelling: 'İptal ediliyor', health_job_phase_file_received: 'Dosya alındı', health_job_phase_generating_proxy: 'Proxy üretiliyor', health_job_phase_generating_thumbnail: 'Küçük resim üretiliyor', health_job_phase_generating_preview: 'Önizleme üretiliyor', health_job_phase_reading_technical_info: 'Teknik bilgiler okunuyor', health_job_phase_saving_asset: 'Varlık kaydediliyor', health_job_phase_processing: 'İşleniyor', health_job_phase_preparing_image: 'Görsel hazırlanıyor', health_job_phase_recognizing_image: 'Görsel tanınıyor', health_job_phase_preparing_audio: 'Ses hazırlanıyor',
@@ -822,7 +822,12 @@
     const target = byId('v2ProxyJobs');
     try {
       const jobs = await api('/api/admin/proxy-jobs');
-      target.innerHTML = (jobs || []).map((job) => `<div class="settings-record"><strong>${escapeHtml(job.status || 'queued')}</strong><span>${escapeHtml(`${Number(job.processed || 0)} / ${Number(job.total || 0)}`)}</span><span>${escapeHtml(formatDateTime(job.updatedAt || job.createdAt))}</span></div>`).join('') || `<div class="diagnostic-empty">${escapeHtml(t('diagnostics_empty'))}</div>`;
+      target.innerHTML = (jobs || []).map((job) => {
+        const status = String(job.status || 'queued').toLowerCase();
+        const label = status === 'completed' ? localizedSettingsNotice('Proxy generated', 'Proxy üretildi') : status === 'running' ? localizedSettingsNotice('Proxy is being generated', 'Proxy üretiliyor') : status === 'queued' ? localizedSettingsNotice('Proxy generation queued', 'Proxy üretimi sıraya alındı') : status;
+        const statusClass = status === 'completed' ? ' is-success' : status === 'failed' ? ' is-error' : '';
+        return `<div class="settings-record"><strong class="proxy-job-status${statusClass}">${escapeHtml(label)}</strong><span>${escapeHtml(`${Number(job.processed || 0)} / ${Number(job.total || 0)}`)}</span><span>${escapeHtml(formatDateTime(job.updatedAt || job.createdAt))}</span></div>`;
+      }).join('') || `<div class="diagnostic-empty">${escapeHtml(t('diagnostics_empty'))}</div>`;
       localizeSettingsText();
     } catch (error) { target.innerHTML = `<div class="diagnostic-empty">${escapeHtml(error.message)}</div>`; }
   }
@@ -850,10 +855,18 @@
           if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
           await repairV2MissingProxy(item, signal);
         }
+        let proxyJob = null;
         if (proxyItems.length && !signal.aborted) {
-          await api('/api/admin/proxy-jobs', { method:'POST', body:JSON.stringify({ assetIds:proxyItems.map((item) => item.id), includeTrash:byId('v2ProxyIncludeTrash').checked }), signal });
+          proxyJob = await api('/api/admin/proxy-jobs', { method:'POST', body:JSON.stringify({ assetIds:proxyItems.map((item) => item.id), includeTrash:byId('v2ProxyIncludeTrash').checked }), signal });
         }
-        byId('v2ProxyStatus').textContent = localizedSettingsNotice('Automatic generation completed.', 'Otomatik üretim tamamlandı.');
+        const status = byId('v2ProxyStatus');
+        status.classList.remove('is-success', 'is-error');
+        if (proxyJob) {
+          status.textContent = localizedSettingsNotice(`Proxy generation queued for ${proxyItems.length} item(s).`, `${proxyItems.length} öğe için proxy üretimi sıraya alındı; tamamlanınca görev listesinde “Proxy üretildi” olarak görünecek.`);
+        } else {
+          status.textContent = localizedSettingsNotice(`Generation completed for ${directItems.length} item(s).`, `${directItems.length} öğenin üretimi tamamlandı.`);
+          status.classList.add('is-success');
+        }
         await loadV2ProxyJobs();
       }
     } catch (error) {
@@ -1275,10 +1288,10 @@
   byId('v2ScanMissingProxy').addEventListener('click', async () => { try { await scanV2MissingProxy({ autoGenerate:false }); } catch (error) { byId('v2ProxyStatus').textContent = error.message; } });
   byId('v2GenerateAllProxy').addEventListener('click', async () => { try { await scanV2MissingProxy({ autoGenerate:true }); } catch (error) { byId('v2ProxyStatus').textContent = error.message; } });
   byId('v2StopMissingProxy').addEventListener('click', () => { v2MissingProxyScanController?.abort(); });
-  byId('v2MissingProxyRows').addEventListener('click', async (event) => { const button = event.target.closest('[data-proxy-repair]'); if (!button) return; button.disabled = true; try { if (button.dataset.proxyMode === 'proxy') await api('/api/admin/proxy-jobs', { method:'POST', body:JSON.stringify({assetIds:[button.dataset.proxyRepair]}) }); else await api('/api/admin/proxy-tools/run', { method:'POST', body:JSON.stringify({assetId:button.dataset.proxyRepair, mode:button.dataset.proxyMode}) }); await scanV2MissingProxy(); } catch (error) { byId('v2ProxyStatus').textContent = error.message; button.disabled = false; } });
+  byId('v2MissingProxyRows').addEventListener('click', async (event) => { const button = event.target.closest('[data-proxy-repair]'); if (!button) return; button.disabled = true; const status = byId('v2ProxyStatus'); status.classList.remove('is-success', 'is-error'); status.textContent = localizedSettingsNotice('Processing selected item...', 'Seçilen öğe işleniyor...'); try { if (button.dataset.proxyMode === 'proxy') { await api('/api/admin/proxy-jobs', { method:'POST', body:JSON.stringify({assetIds:[button.dataset.proxyRepair]}) }); status.textContent = localizedSettingsNotice('Proxy generation queued. Completion will appear in the job list.', 'Proxy üretimi sıraya alındı. Tamamlandığında görev listesinde “Proxy üretildi” olarak görünecek.'); await loadV2ProxyJobs(); } else { await api('/api/admin/proxy-tools/run', { method:'POST', body:JSON.stringify({assetId:button.dataset.proxyRepair, mode:button.dataset.proxyMode}) }); status.textContent = localizedSettingsNotice('Generation completed.', 'Üretim tamamlandı.'); status.classList.add('is-success'); await scanV2MissingProxy(); } } catch (error) { status.textContent = error.message; status.classList.add('is-error'); button.disabled = false; } });
   byId('v2ProxyAssetName').addEventListener('input', async (event) => { const q = event.target.value.trim(); const box = byId('v2ProxySuggestions'); event.target.dataset.assetId = ''; if (q.length < 3) { box.hidden = true; return; } try { const rows = await api(`/api/admin/assets/suggest?q=${encodeURIComponent(q)}&limit=8&includeTrash=${byId('v2ProxyIncludeTrash').checked ? '1' : '0'}`); box.innerHTML = rows.map((item) => `<button type="button" data-proxy-suggestion-id="${escapeHtml(item.id)}" data-proxy-suggestion-name="${escapeHtml(item.title || item.fileName || item.id)}">${escapeHtml(item.title || item.fileName || item.id)}</button>`).join(''); box.hidden = !rows.length; } catch { box.hidden = true; } });
   byId('v2ProxySuggestions').addEventListener('click', (event) => { const button = event.target.closest('[data-proxy-suggestion-id]'); if (!button) return; byId('v2ProxyAssetName').value = button.dataset.proxySuggestionName; byId('v2ProxyAssetName').dataset.assetId = button.dataset.proxySuggestionId; event.currentTarget.hidden = true; });
-  byId('v2RunProxyTool').addEventListener('click', async (event) => { const name = byId('v2ProxyAssetName').value.trim(); if (!name) return; event.currentTarget.disabled = true; const payload = { assetName:name, assetId:byId('v2ProxyAssetName').dataset.assetId || undefined, mode:byId('v2ProxyAction').value, timecode:byId('v2ProxyTimecode').value.trim() }; try { const result = await api('/api/admin/proxy-tools/run', { method:'POST', body:JSON.stringify(payload) }); byId('v2ProxyStatus').textContent = `${localizedSettingsNotice('Completed', 'Tamamlandı')}: ${result.assetTitle || result.assetId}`; } catch (error) { byId('v2ProxyStatus').textContent = error.message; } finally { event.currentTarget.disabled = false; } });
+  byId('v2RunProxyTool').addEventListener('click', async (event) => { const name = byId('v2ProxyAssetName').value.trim(); if (!name) return; event.currentTarget.disabled = true; const status = byId('v2ProxyStatus'); status.classList.remove('is-success', 'is-error'); status.textContent = localizedSettingsNotice('Generating...', 'Proxy üretiliyor...'); const payload = { assetName:name, assetId:byId('v2ProxyAssetName').dataset.assetId || undefined, mode:byId('v2ProxyAction').value, timecode:byId('v2ProxyTimecode').value.trim() }; try { const result = await api('/api/admin/proxy-tools/run', { method:'POST', body:JSON.stringify(payload) }); status.textContent = `${localizedSettingsNotice('Proxy generated', 'Proxy üretildi')}: ${result.assetTitle || result.assetId}`; status.classList.add('is-success'); } catch (error) { status.textContent = error.message; status.classList.add('is-error'); } finally { event.currentTarget.disabled = false; } });
   byId('v2RefreshIdentity').addEventListener('click', () => Promise.all([loadV2Identity(), loadV2GroupAdmins()]).catch((error) => settingsMessage(error.message)));
   byId('v2IdentityUserSearchBtn').addEventListener('click', () => loadV2Identity().catch((error) => settingsMessage(error.message)));
   byId('v2IdentityUserSearch').addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); loadV2Identity().catch((error) => settingsMessage(error.message)); } });

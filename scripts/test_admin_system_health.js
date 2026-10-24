@@ -90,6 +90,14 @@ async function run() {
           status: 'completed',
           progress: 100,
           updatedAt: new Date().toISOString()
+        },
+        {
+          jobId: 'proxy-1',
+          jobType: 'proxy',
+          assetTitle: 'Proxy video.mp4',
+          status: 'completed',
+          progress: 100,
+          updatedAt: new Date().toISOString()
         }
       ]
     },
@@ -151,6 +159,9 @@ async function run() {
   assert(elements.systemJobStatus.innerHTML.includes('health_asset_download_jobs'));
   assert(elements.systemJobStatus.innerHTML.includes('New upload.mp4'));
   assert(elements.systemJobStatus.innerHTML.includes('Downloaded.pdf'));
+  assert(elements.systemJobStatus.innerHTML.includes('health-proxy-generated'));
+  assert(elements.systemJobStatus.innerHTML.includes('health_job_proxy_generated'));
+  assert(elements.systemJobStatus.innerHTML.includes('Proxy video.mp4'));
   assert(elements.systemJobStatus.innerHTML.includes('erinç'));
   assert(elements.systemJobStatus.innerHTML.includes('health_job_status_running'));
   assert(elements.systemJobStatus.innerHTML.includes('health_job_phase_generating_proxy'));

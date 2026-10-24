@@ -152,7 +152,7 @@
               return `<tr data-media-job-id="${escapeHtml(job.jobId || '')}">
                 <td>${escapeHtml(jobTypeLabel(job.jobType))}</td>
                 <td><strong>${escapeHtml(job.assetTitle || '-')}</strong>${job.actor ? `<small>${escapeHtml(job.actor)}</small>` : ''}${message ? `<small title="${escapeHtml(message)}">${escapeHtml(message)}</small>` : ''}</td>
-                <td><span class="${badgeClass}">${escapeHtml(jobStatusLabel(status))}</span></td>
+              <td><span class="${badgeClass}${status === 'completed' && String(job.jobType || '').toLowerCase() === 'proxy' ? ' health-proxy-generated' : ''}">${escapeHtml(status === 'completed' && String(job.jobType || '').toLowerCase() === 'proxy' ? t('health_job_proxy_generated') : jobStatusLabel(status))}</span></td>
                 <td>${escapeHtml(jobPhaseLabel(job.progressPhase))}</td>
                 <td><div class="media-job-progress"><span style="width:${progress}%"></span></div><small>${progress}%</small></td>
                 <td>${escapeHtml(formatDateTime(job.startedAt || job.createdAt))}</td>
