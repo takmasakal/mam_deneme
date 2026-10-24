@@ -6177,22 +6177,51 @@ async function regenerateVideoThumbnailForAsset(row, options = {}) {
 
   const now = new Date().toISOString();
   const previousThumbnailUrl = resolveStoredUrl(row.thumbnail_url, 'thumbnails');
-  const updated = await pool.query(
-    `
-      UPDATE assets
-      SET thumbnail_url = $2,
-          updated_at = $3
-      WHERE id = $1
-      RETURNING *
-    `,
-    [row.id, thumbOut.publicUrl, now]
-  );
-  await cleanupReplacedUploadUrls(row.id, previousThumbnailUrl, { ignoreSameAssetVersionRefs: true });
+  const updated = await persistVideoThumbnailForSource(row, inputPath, thumbOut.publicUrl, now);
+  await cleanupReplacedUploadUrls(row.id, previousThumbnailUrl);
   return {
-    row: updated.rows[0],
+    row: updated,
     thumbnailUrl: thumbOut.publicUrl,
     timecodeSeconds
   };
+}
+
+async function persistVideoThumbnailForSource(row, sourcePath, thumbnailUrl, updatedAt = new Date().toISOString()) {
+  const result = await pool.query(
+    `
+      WITH updated_asset AS (
+        UPDATE assets
+        SET thumbnail_url = $2,
+            updated_at = $3
+        WHERE id = $1
+        RETURNING *
+      ), updated_source_version AS (
+        UPDATE asset_versions
+        SET snapshot_thumbnail_url = $2
+        WHERE asset_id = $1
+          AND version_id = (
+            SELECT version_id
+            FROM asset_versions
+            WHERE asset_id = $1
+              AND COALESCE(action_type, '') <> 'attachment'
+              AND (
+                (NULLIF($4, '') IS NOT NULL AND snapshot_source_path = $4)
+                OR (NULLIF($5, '') IS NOT NULL AND snapshot_media_url = $5)
+              )
+            ORDER BY
+              CASE WHEN version_id = (SELECT default_version_id FROM assets WHERE id = $1) THEN 0 ELSE 1 END,
+              created_at ASC,
+              CASE WHEN label = 'v1' THEN 0 ELSE 1 END,
+              version_id ASC
+            LIMIT 1
+          )
+        RETURNING version_id
+      )
+      SELECT * FROM updated_asset
+    `,
+    [row.id, thumbnailUrl, updatedAt, String(sourcePath || '').trim(), String(row.media_url || '').trim()]
+  );
+  return result.rows?.[0] || row;
 }
 
 async function generatePdfThumbnail(inputPath, outputPath, options = {}) {
@@ -6296,19 +6325,36 @@ async function ensureVideoProxyAndThumbnail(row, options = {}) {
     }
   }
 
-  const updated = await pool.query(
-    `
-      UPDATE assets
-      SET proxy_url = $2,
-          proxy_status = $3,
-          thumbnail_url = $4,
-          dc_metadata = jsonb_set(COALESCE(dc_metadata, '{}'::jsonb), '{audioChannels}', to_jsonb($5::int), true),
-          updated_at = $6
-      WHERE id = $1
-      RETURNING *
-    `,
-    [row.id, proxyUrl, proxyStatus, thumbnailUrl, Math.max(0, Number(detectedAudioChannels) || 0), now]
-  );
+  let updated;
+  if (thumbnailUrl) {
+    updated = await pool.query(
+      `
+        UPDATE assets
+        SET proxy_url = $2,
+            proxy_status = $3,
+            dc_metadata = jsonb_set(COALESCE(dc_metadata, '{}'::jsonb), '{audioChannels}', to_jsonb($4::int), true),
+            updated_at = $5
+        WHERE id = $1
+        RETURNING *
+      `,
+      [row.id, proxyUrl, proxyStatus, Math.max(0, Number(detectedAudioChannels) || 0), now]
+    );
+    updated = { rows: [await persistVideoThumbnailForSource(updated.rows?.[0] || row, inputPath, thumbnailUrl, now)] };
+  } else {
+    updated = await pool.query(
+      `
+        UPDATE assets
+        SET proxy_url = $2,
+            proxy_status = $3,
+            thumbnail_url = $4,
+            dc_metadata = jsonb_set(COALESCE(dc_metadata, '{}'::jsonb), '{audioChannels}', to_jsonb($5::int), true),
+            updated_at = $6
+        WHERE id = $1
+        RETURNING *
+      `,
+      [row.id, proxyUrl, proxyStatus, thumbnailUrl, Math.max(0, Number(detectedAudioChannels) || 0), now]
+    );
+  }
   const replaced = [];
   if (previousProxyUrl && previousProxyUrl !== proxyUrl) replaced.push(previousProxyUrl);
   if (previousThumbnailUrl && previousThumbnailUrl !== thumbnailUrl) replaced.push(previousThumbnailUrl);
