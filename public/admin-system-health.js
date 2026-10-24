@@ -70,6 +70,8 @@
       if (normalized === 'subtitle') return t('health_subtitle_jobs');
       if (normalized === 'video_ocr') return t('health_ocr_jobs');
       if (normalized === 'photo_ocr') return t('health_photo_ocr_jobs');
+      if (normalized === 'asset_upload') return t('health_asset_upload_jobs');
+      if (normalized === 'asset_download') return t('health_asset_download_jobs');
       if (normalized === 'metadata_enrichment') return t('health_metadata_jobs');
       if (normalized === 'proxy') return t('health_proxy_jobs');
       return normalized || '-';
@@ -78,10 +80,10 @@
     function jobPhaseLabel(phase) {
       const normalized = String(phase || '').trim().toLowerCase();
       const known = new Set([
-        'queued', 'preparing', 'preparing_image', 'recognizing_image', 'preparing_audio', 'model_loading', 'transcribing', 'aligning',
+        'queued', 'preparing', 'file_received', 'generating_proxy', 'generating_thumbnail', 'generating_preview', 'reading_technical_info', 'saving_asset', 'processing', 'preparing_image', 'recognizing_image', 'preparing_audio', 'model_loading', 'transcribing', 'aligning',
         'writing_subtitles', 'sampling_frames', 'model_ready', 'recognizing_frames', 'saving',
         'loading_asset', 'summarizing_document', 'generating_metadata', 'saving_metadata',
-        'completed', 'failed', 'cancelled', 'interrupted'
+        'completed', 'failed', 'cancelled', 'cancelling', 'interrupted'
       ]);
       return known.has(normalized) ? t(`health_job_phase_${normalized}`) : (normalized || '-');
     }
@@ -104,6 +106,8 @@
               ['subtitle', t('health_subtitle_jobs')],
               ['video_ocr', t('health_ocr_jobs')],
               ['photo_ocr', t('health_photo_ocr_jobs')],
+              ['asset_upload', t('health_asset_upload_jobs')],
+              ['asset_download', t('health_asset_download_jobs')],
               ['metadata_enrichment', t('health_metadata_jobs')],
               ['proxy', t('health_proxy_jobs')]
             ].map(([value, label]) => `<button type="button" class="mediaJobFilterOption${selectedValue === value ? ' is-selected' : ''}" data-filter-key="jobType" data-filter-value="${escapeHtml(value)}">${escapeHtml(label)}</button>`).join('')}
@@ -147,7 +151,7 @@
               const message = String(job.error || job.warning || '').trim();
               return `<tr data-media-job-id="${escapeHtml(job.jobId || '')}">
                 <td>${escapeHtml(jobTypeLabel(job.jobType))}</td>
-                <td><strong>${escapeHtml(job.assetTitle || '-')}</strong>${message ? `<small title="${escapeHtml(message)}">${escapeHtml(message)}</small>` : ''}</td>
+                <td><strong>${escapeHtml(job.assetTitle || '-')}</strong>${job.actor ? `<small>${escapeHtml(job.actor)}</small>` : ''}${message ? `<small title="${escapeHtml(message)}">${escapeHtml(message)}</small>` : ''}</td>
                 <td><span class="${badgeClass}">${escapeHtml(jobStatusLabel(status))}</span></td>
                 <td>${escapeHtml(jobPhaseLabel(job.progressPhase))}</td>
                 <td><div class="media-job-progress"><span style="width:${progress}%"></span></div><small>${progress}%</small></td>

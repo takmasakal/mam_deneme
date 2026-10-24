@@ -30,9 +30,9 @@ function createImageDerivativeService(deps) {
   const previewScaleFilter = 'scale=1280:1280:force_original_aspect_ratio=decrease';
   const thumbnailScaleFilter = 'scale=480:480:force_original_aspect_ratio=decrease';
 
-  async function generateHeicPreview(inputPath, outputPath) {
+  async function generateHeicPreview(inputPath, outputPath, jobId = '') {
     const intermediatePath = `${outputPath}.heif-convert.jpg`;
-    const heifResult = await runCommandCapture('heif-convert', [inputPath, intermediatePath]);
+    const heifResult = await runCommandCapture('heif-convert', [inputPath, intermediatePath], { jobId });
     const sourcePath = heifResult.ok && fs.existsSync(intermediatePath) && fs.statSync(intermediatePath).size > 0
       ? intermediatePath
       : inputPath;
@@ -47,7 +47,12 @@ function createImageDerivativeService(deps) {
       '-q:v',
       '5',
       outputPath
-    ]);
+    ], { jobId });
+    if (heifResult.cancelled || ffmpegResult.cancelled) {
+      const error = new Error('Media job cancelled');
+      error.code = 'MEDIA_JOB_CANCELLED';
+      throw error;
+    }
     try {
       if (fs.existsSync(intermediatePath)) fs.unlinkSync(intermediatePath);
     } catch (_error) {
@@ -63,7 +68,7 @@ function createImageDerivativeService(deps) {
     }
   }
 
-  async function generateImagePreview(inputPath, outputPath) {
+  async function generateImagePreview(inputPath, outputPath, jobId = '') {
     const result = await runCommandCapture('ffmpeg', [
       '-y',
       '-i',
@@ -75,13 +80,18 @@ function createImageDerivativeService(deps) {
       '-q:v',
       '5',
       outputPath
-    ]);
+    ], { jobId });
+    if (result.cancelled) {
+      const error = new Error('Media job cancelled');
+      error.code = 'MEDIA_JOB_CANCELLED';
+      throw error;
+    }
     if (!result.ok || !fs.existsSync(outputPath) || fs.statSync(outputPath).size <= 0) {
       throw new Error(compactCommandOutput(result.stderr || result.stdout || 'Image preview generation failed'));
     }
   }
 
-  async function generateImageThumbnail(inputPath, outputPath) {
+  async function generateImageThumbnail(inputPath, outputPath, jobId = '') {
     const result = await runCommandCapture('ffmpeg', [
       '-y',
       '-i',
@@ -93,7 +103,12 @@ function createImageDerivativeService(deps) {
       '-q:v',
       '4',
       outputPath
-    ]);
+    ], { jobId });
+    if (result.cancelled) {
+      const error = new Error('Media job cancelled');
+      error.code = 'MEDIA_JOB_CANCELLED';
+      throw error;
+    }
     if (!result.ok || !fs.existsSync(outputPath) || fs.statSync(outputPath).size <= 0) {
       throw new Error(
         compactCommandOutput(result.stderr || result.stdout || 'Image thumbnail generation failed')
@@ -105,21 +120,27 @@ function createImageDerivativeService(deps) {
     mimeType = '',
     fileName = '',
     inputPath,
-    createdAt = new Date()
+    createdAt = new Date(),
+    jobId = ''
   } = {}) {
     const previewStoredName = `${Date.now()}-${nanoid()}-image-preview.jpg`;
     const previewOut = buildArtifactPath('proxies', previewStoredName, createdAt);
-    if (isHeicCandidate({ mimeType, fileName })) {
-      await generateHeicPreview(inputPath, previewOut.absolutePath);
-    } else {
-      await generateImagePreview(inputPath, previewOut.absolutePath);
-    }
-
     const thumbStoredName = `${Date.now()}-${nanoid()}-image-thumb.jpg`;
     const thumbOut = buildArtifactPath('thumbnails', thumbStoredName, createdAt);
     try {
-      await generateImageThumbnail(previewOut.absolutePath, thumbOut.absolutePath);
-    } catch (_error) {
+      if (isHeicCandidate({ mimeType, fileName })) {
+        await generateHeicPreview(inputPath, previewOut.absolutePath, jobId);
+      } else {
+        await generateImagePreview(inputPath, previewOut.absolutePath, jobId);
+      }
+      await generateImageThumbnail(previewOut.absolutePath, thumbOut.absolutePath, jobId);
+    } catch (error) {
+      if (error?.code === 'MEDIA_JOB_CANCELLED') {
+        [previewOut.absolutePath, thumbOut.absolutePath, `${previewOut.absolutePath}.heif-convert.jpg`].forEach((target) => {
+          try { if (fs.existsSync(target)) fs.unlinkSync(target); } catch (_cleanupError) {}
+        });
+        throw error;
+      }
       return {
         proxyUrl: previewOut.publicUrl,
         thumbnailUrl: previewOut.publicUrl

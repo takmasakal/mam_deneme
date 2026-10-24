@@ -154,6 +154,9 @@ function createMediaToolService(options = {}) {
   function runCommandCapture(cmd, args, commandOptions = {}) {
     const env = commandOptions?.env ? { ...process.env, ...commandOptions.env } : process.env;
     const cwd = commandOptions?.cwd || undefined;
+    if (isMediaJobCancelled(commandOptions?.jobId)) {
+      return Promise.resolve({ ok: false, code: -1, stdout: '', stderr: 'Media job cancelled', cancelled: true });
+    }
     return new Promise((resolve) => {
       const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], env, cwd });
       const untrack = trackMediaJobProcess(commandOptions?.jobId, p);
@@ -181,9 +184,14 @@ function createMediaToolService(options = {}) {
     });
   }
 
-  async function runFfmpeg(args) {
+  async function runFfmpeg(args, jobId = '') {
     const ffmpegArgs = args[0] === '-hide_banner' ? args : ['-hide_banner', ...args];
-    const result = await runCommandCapture('ffmpeg', ffmpegArgs);
+    const result = await runCommandCapture('ffmpeg', ffmpegArgs, { jobId });
+    if (result.cancelled) {
+      const error = new Error('Media job cancelled');
+      error.code = 'MEDIA_JOB_CANCELLED';
+      throw error;
+    }
     if (!result.ok) throw new Error(result.stderr || `ffmpeg exited with code ${result.code}`);
   }
 
@@ -207,20 +215,20 @@ function createMediaToolService(options = {}) {
       const duration = await getVideoDurationSeconds(inputPath);
       const seek = Math.max(0, Math.min(requestedSeek, duration > 0 ? Math.max(0, duration - 0.04) : requestedSeek));
       try {
-        await runFfmpeg(['-y', '-i', inputPath, '-ss', String(seek), '-frames:v', '1', '-vf', 'scale=480:-1', '-q:v', '4', outputPath]);
+        await runFfmpeg(['-y', '-i', inputPath, '-ss', String(seek), '-frames:v', '1', '-vf', 'scale=480:-1', '-q:v', '4', outputPath], thumbnailOptions.jobId);
         if (fileSystem.existsSync(outputPath) && fileSystem.statSync(outputPath).size > 0) return;
-      } catch (_error) {}
-      await runFfmpeg(['-y', '-ss', String(seek), '-i', inputPath, '-frames:v', '1', '-vf', 'scale=480:-1', '-q:v', '4', outputPath]);
+      } catch (error) { if (error?.code === 'MEDIA_JOB_CANCELLED') throw error; }
+      await runFfmpeg(['-y', '-ss', String(seek), '-i', inputPath, '-frames:v', '1', '-vf', 'scale=480:-1', '-q:v', '4', outputPath], thumbnailOptions.jobId);
       if (fileSystem.existsSync(outputPath) && fileSystem.statSync(outputPath).size > 0) return;
       throw new Error('Could not capture thumbnail at requested timecode');
     }
     try {
-      await runFfmpeg(['-y', '-i', inputPath, '-vf', "select='gt(scene,0.3)',scale=480:-1", '-frames:v', '1', '-q:v', '4', outputPath]);
+      await runFfmpeg(['-y', '-i', inputPath, '-vf', "select='gt(scene,0.3)',scale=480:-1", '-frames:v', '1', '-q:v', '4', outputPath], thumbnailOptions.jobId);
       if (fileSystem.existsSync(outputPath) && fileSystem.statSync(outputPath).size > 0) return;
-    } catch (_error) {}
+    } catch (error) { if (error?.code === 'MEDIA_JOB_CANCELLED') throw error; }
     const duration = await getVideoDurationSeconds(inputPath);
     const seek = duration > 0 ? Math.max(1, Math.min(duration * 0.35, Math.max(1, duration - 1))) : 2;
-    await runFfmpeg(['-y', '-ss', String(seek), '-i', inputPath, '-frames:v', '1', '-vf', 'scale=480:-1', '-q:v', '4', outputPath]);
+    await runFfmpeg(['-y', '-ss', String(seek), '-i', inputPath, '-frames:v', '1', '-vf', 'scale=480:-1', '-q:v', '4', outputPath], thumbnailOptions.jobId);
   }
 
   async function getMediaAudioStreams(inputPath) {
@@ -439,7 +447,7 @@ function createMediaToolService(options = {}) {
         audioStreamCount: audioStreams.length,
         scaleFilter: proxyScaleFilter,
         metadataComment
-      }));
+      }), generateOptions.jobId);
     };
 
     try {

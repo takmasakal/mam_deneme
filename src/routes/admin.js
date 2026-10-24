@@ -3077,6 +3077,7 @@ async function buildAuditEventFilters(req) {
   const from = String(req.query.from || '').trim();
   const to = String(req.query.to || '').trim();
 
+  if (!action) where.push("action <> 'asset.upload.processing'");
   if (action) {
     values.push(action);
     where.push(`action = $${values.length}`);
@@ -3832,6 +3833,29 @@ app.get('/api/admin/system-health', async (req, res) => {
       `,
       [mediaJobWindowDays]
     );
+    const recentAssetTransferResult = await pool.query(
+      `
+        SELECT id, created_at, actor, action, target_id, target_title, details
+        FROM (
+          SELECT DISTINCT ON (
+            CASE WHEN action IN ('asset.upload.processing', 'asset.uploaded')
+              THEN COALESCE(NULLIF(details->>'operationId', ''), id)
+              ELSE id
+            END
+          ) id, created_at, actor, action, target_id, target_title, details
+          FROM audit_events
+          WHERE action IN ('asset.upload.processing', 'asset.uploaded', 'asset.downloaded')
+            AND created_at >= NOW() - ($1::int * INTERVAL '1 day')
+          ORDER BY CASE WHEN action IN ('asset.upload.processing', 'asset.uploaded')
+              THEN COALESCE(NULLIF(details->>'operationId', ''), id)
+              ELSE id
+            END, created_at DESC
+        ) latest_events
+        ORDER BY created_at DESC
+        LIMIT 1000
+      `,
+      [mediaJobWindowDays]
+    );
     const recentJobs = {
       subtitle: { active: null, latestCompleted: null, latestFailed: null },
       ocr: { active: null, latestCompleted: null, latestFailed: null },
@@ -3866,6 +3890,33 @@ app.get('/api/admin/system-health', async (req, res) => {
           && ['queued', 'running'].includes(String(job.status || '')))
           || (job.jobType === 'photo_ocr' && job.status === 'queued')
       }));
+    recentAssetTransferResult.rows.forEach((row) => {
+      const action = String(row.action || '');
+      const uploaded = action !== 'asset.downloaded';
+      const timestamp = row.created_at;
+      const details = row.details && typeof row.details === 'object' ? row.details : {};
+      const status = normalizeMediaJobStatus(details.status || (action === 'asset.uploaded' || !uploaded ? 'completed' : 'running'));
+      mediaJobs.push({
+        jobId: `audit:${String(details.operationId || row.id || '')}`,
+        assetId: String(details.assetId || (action === 'asset.uploaded' || !uploaded ? row.target_id : '') || ''),
+        jobType: uploaded ? 'asset_upload' : 'asset_download',
+        assetTitle: String(row.target_title || details.fileName || '').trim(),
+        actor: String(row.actor || '').trim(),
+        status,
+        progress: Math.max(0, Math.min(100, Number(details.progress ?? (status === 'completed' ? 100 : 5)) || 0)),
+        progressPhase: String(details.progressPhase || (status === 'completed' ? 'completed' : 'processing')),
+        label: String(details.fileName || '').trim(),
+        warning: Array.isArray(details.warnings) ? details.warnings.join(', ') : String(details.warning || ''),
+        error: String(details.error || ''),
+        createdAt: details.startedAt || timestamp,
+        startedAt: details.startedAt || timestamp,
+        updatedAt: timestamp,
+        finishedAt: ['completed', 'failed', 'cancelled'].includes(status) ? timestamp : null,
+        cancelable: uploaded && status === 'running' && details.progressPhase !== 'cancelling' && Number(details.progress || 0) < 95
+      });
+    });
+    mediaJobs.sort((a, b) => (Date.parse(String(b.updatedAt || b.createdAt || '')) || 0)
+      - (Date.parse(String(a.updatedAt || a.createdAt || '')) || 0));
     const payload = {
       resources: await collectServerResources(runCommandCapture),
       disk: {
@@ -3922,6 +3973,51 @@ app.post('/api/admin/media-jobs/:jobId/cancel', async (req, res) => {
     if (!effective) return undefined;
     const jobId = String(req.params.jobId || '').trim();
     if (!jobId) return res.status(400).json({ error: 'Media job id is required' });
+    if (jobId.startsWith('audit:')) {
+      const uploadId = jobId.slice('audit:'.length).trim();
+      if (!uploadId) return res.status(400).json({ error: 'Upload operation id is required' });
+      const uploadResult = await pool.query(
+        `
+          SELECT created_at, actor, target_title, details
+          FROM audit_events
+          WHERE action IN ('asset.upload.processing', 'asset.uploaded')
+            AND details->>'operationId' = $1
+          ORDER BY created_at DESC
+          LIMIT 1
+        `,
+        [uploadId]
+      );
+      if (!uploadResult.rowCount) return res.status(404).json({ error: 'Upload operation not found' });
+      const latestUpload = uploadResult.rows[0];
+      const uploadDetails = latestUpload.details && typeof latestUpload.details === 'object' ? latestUpload.details : {};
+      if (normalizeMediaJobStatus(uploadDetails.status) !== 'running' || Number(uploadDetails.progress || 0) >= 95) {
+        return res.status(409).json({ error: 'Upload operation is no longer cancellable' });
+      }
+      cancelMediaJobRuntime?.(uploadId);
+      await recordAuditEvent(req, {
+        action: 'asset.upload.processing',
+        targetType: 'asset_upload',
+        targetId: uploadId,
+        targetTitle: String(latestUpload.target_title || uploadDetails.fileName || ''),
+        details: {
+          ...uploadDetails,
+          operationId: uploadId,
+          status: 'running',
+          progressPhase: 'cancelling',
+          cancelRequestedAt: new Date().toISOString()
+        }
+      });
+      systemHealthCache.expiresAt = 0;
+      systemHealthCache.value = null;
+      await recordAuditEvent(req, {
+        action: 'media_job.cancelled',
+        targetType: 'asset_upload',
+        targetId: uploadId,
+        targetTitle: String(latestUpload.target_title || uploadDetails.fileName || ''),
+        details: { jobType: 'asset_upload' }
+      }).catch(() => {});
+      return res.json({ ok: true, jobId, status: 'cancelling' });
+    }
     const result = await pool.query(
       `SELECT job_id, job_type, status FROM media_processing_jobs WHERE job_id = $1 LIMIT 1`,
       [jobId]

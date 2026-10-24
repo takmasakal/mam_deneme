@@ -83,6 +83,8 @@ function registerAssetRoutes(app, deps) {
     isDocumentCandidate,
     generateDocumentThumbnail,
     imageDerivativeService,
+    isMediaJobCancelled,
+    clearMediaJobRuntime,
     getFileExtension,
     isTextDocumentCandidate,
     getVideoDurationSeconds,
@@ -1315,6 +1317,27 @@ function registerAssetRoutes(app, deps) {
         code: 'empty_upload_file'
       });
     }
+
+    const uploadOperationId = nanoid();
+    const uploadStartedAt = new Date().toISOString();
+    const reportUploadProgress = async (progressPhase, progress, status = 'running', extra = {}) => {
+      await recordAuditEvent?.(req, {
+        action: 'asset.upload.processing',
+        targetType: 'asset_upload',
+        targetId: uploadOperationId,
+        targetTitle: safeName,
+        details: {
+          operationId: uploadOperationId,
+          fileName: safeName,
+          mimeType: inputMimeType,
+          status,
+          progress,
+          progressPhase,
+          startedAt: uploadStartedAt,
+          ...extra
+        }
+      });
+    };
   
     const duplicateAsset = await findDuplicateAssetByHash(fileHash);
     if (duplicateAsset) {
@@ -1345,6 +1368,21 @@ function registerAssetRoutes(app, deps) {
     const ingestPath = getIngestStoragePath({ type: metadata.type, mimeType, fileName: safeName });
     const absolutePath = path.join(ingestPath.absoluteDir, storedName);
     const mediaUrl = `/uploads/${ingestPath.relativeDir.replace(/\\/g, '/')}/${storedName}`;
+    const uploadArtifactPaths = new Set([absolutePath]);
+    const cancelUploadIfRequested = async () => {
+      if (!isMediaJobCancelled?.(uploadOperationId)) return false;
+      uploadArtifactPaths.forEach((artifactPath) => {
+        try { if (artifactPath && fs.existsSync(artifactPath)) fs.unlinkSync(artifactPath); } catch (_error) {}
+      });
+      await reportUploadProgress('cancelled', 0, 'cancelled', { error: 'Cancelled by administrator' });
+      clearMediaJobRuntime?.(uploadOperationId);
+      return true;
+    };
+    const respondIfUploadCancelled = async () => {
+      if (!await cancelUploadIfRequested()) return false;
+      res.status(409).json({ error: 'Upload cancelled', code: 'upload_cancelled' });
+      return true;
+    };
   
     try {
       if (multipartUpload?.path) {
@@ -1362,6 +1400,9 @@ function registerAssetRoutes(app, deps) {
     } catch (_error) {
       return res.status(400).json({ error: 'Could not decode or save file' });
     }
+
+    await reportUploadProgress('file_received', 5);
+    if (await respondIfUploadCancelled()) return undefined;
   
     let proxyUrl = '';
     let proxyStatus = 'not_applicable';
@@ -1385,11 +1426,16 @@ function registerAssetRoutes(app, deps) {
         proxyStatus = 'pending';
         const proxyStoredName = `${Date.now()}-${nanoid()}-proxy.mp4`;
         const proxyOut = buildArtifactPath('proxies', proxyStoredName, new Date());
+        uploadArtifactPaths.add(proxyOut.absolutePath);
   
         try {
+          await reportUploadProgress('generating_proxy', 20);
+          if (await respondIfUploadCancelled()) return undefined;
           const proxyResult = await generateVideoProxy(absolutePath, proxyOut.absolutePath, {
-            allowAudioFallback: allowSilentProxyFallback
+            allowAudioFallback: allowSilentProxyFallback,
+            jobId: uploadOperationId
           });
+          if (await respondIfUploadCancelled()) return undefined;
           proxyUrl = proxyOut.publicUrl;
           proxyStatus = 'ready';
           detectedAudioChannels = await getMediaAudioChannelCount(proxyOut.absolutePath);
@@ -1401,11 +1447,16 @@ function registerAssetRoutes(app, deps) {
             });
           }
         } catch (error) {
+          if (await respondIfUploadCancelled()) return undefined;
           if (error?.code === 'PROXY_AUDIO_FALLBACK_CONFIRMATION_REQUIRED') {
             // Kullanıcıdan karar almadan problemli kaynağı sistemde bırakmıyoruz.
             // Onay gelirse ikinci istekle tekrar yükleniyor.
             try { if (fs.existsSync(absolutePath)) fs.unlinkSync(absolutePath); } catch (_cleanupError) {}
             try { if (fs.existsSync(proxyOut.absolutePath)) fs.unlinkSync(proxyOut.absolutePath); } catch (_cleanupError) {}
+            await reportUploadProgress('failed', 20, 'failed', {
+              error: String(error.message || 'Proxy generation requires confirmation.').slice(0, 400),
+              code: 'proxy_audio_confirmation_required'
+            });
             return res.status(409).json({
               error: String(error.message || 'Proxy generation requires confirmation.'),
               code: 'proxy_audio_confirmation_required',
@@ -1430,12 +1481,17 @@ function registerAssetRoutes(app, deps) {
       }
   
       if (persistOriginalMedia) {
+        await reportUploadProgress('generating_thumbnail', 70);
         const thumbStoredName = `${Date.now()}-${nanoid()}-thumb.jpg`;
         const thumbOut = buildArtifactPath('thumbnails', thumbStoredName, new Date());
+        uploadArtifactPaths.add(thumbOut.absolutePath);
         try {
-          await generateVideoThumbnail(absolutePath, thumbOut.absolutePath);
+          if (await respondIfUploadCancelled()) return undefined;
+          await generateVideoThumbnail(absolutePath, thumbOut.absolutePath, { jobId: uploadOperationId });
+          if (await respondIfUploadCancelled()) return undefined;
           thumbnailUrl = thumbOut.publicUrl;
         } catch (error) {
+          if (await respondIfUploadCancelled()) return undefined;
           thumbnailUrl = '';
           ingestWarnings.push({
             code: 'thumbnail_generation_failed',
@@ -1445,36 +1501,51 @@ function registerAssetRoutes(app, deps) {
         }
       }
     } else if (isPdfCandidate({ mimeType, fileName: safeName })) {
+      await reportUploadProgress('generating_thumbnail', 70);
       const pdfThumbName = `${Date.now()}-${nanoid()}-pdf-thumb.jpg`;
       const pdfThumbOut = buildArtifactPath('thumbnails', pdfThumbName, new Date());
+      uploadArtifactPaths.add(pdfThumbOut.absolutePath);
       try {
-        await generatePdfThumbnail(absolutePath, pdfThumbOut.absolutePath);
+        if (await respondIfUploadCancelled()) return undefined;
+        await generatePdfThumbnail(absolutePath, pdfThumbOut.absolutePath, { jobId: uploadOperationId });
+        if (await respondIfUploadCancelled()) return undefined;
         thumbnailUrl = pdfThumbOut.publicUrl;
       } catch (_error) {
+        if (await respondIfUploadCancelled()) return undefined;
         const fallbackName = `${Date.now()}-${nanoid()}-pdf-thumb.svg`;
         const fallbackOut = buildArtifactPath('thumbnails', fallbackName, new Date());
+        uploadArtifactPaths.add(fallbackOut.absolutePath);
         try {
+          if (await respondIfUploadCancelled()) return undefined;
           await generatePdfFallbackThumbnail(fallbackOut.absolutePath, {
             fileName: safeName,
             title: String(metadata.title || safeName)
           });
+          if (await respondIfUploadCancelled()) return undefined;
           thumbnailUrl = fallbackOut.publicUrl;
         } catch (_fallbackError) {
+          if (await respondIfUploadCancelled()) return undefined;
           thumbnailUrl = '';
         }
       }
     } else if (isDocumentCandidate({ mimeType, fileName: safeName, declaredType: metadata.type })) {
+      await reportUploadProgress('generating_thumbnail', 70);
       const docThumbName = `${Date.now()}-${nanoid()}-doc-thumb-v2.svg`;
       const docThumbOut = buildArtifactPath('thumbnails', docThumbName, new Date());
+      uploadArtifactPaths.add(docThumbOut.absolutePath);
       try {
+        if (await respondIfUploadCancelled()) return undefined;
         await generateDocumentThumbnail(absolutePath, docThumbOut.absolutePath, {
           fileName: safeName,
           title: String(metadata.title || safeName),
           extLabel: (getFileExtension(safeName) || 'DOC').toUpperCase(),
-          includeContent: isTextDocumentCandidate({ mimeType, fileName: safeName })
+          includeContent: isTextDocumentCandidate({ mimeType, fileName: safeName }),
+          jobId: uploadOperationId
         });
+        if (await respondIfUploadCancelled()) return undefined;
         thumbnailUrl = docThumbOut.publicUrl;
       } catch (_error) {
+        if (await respondIfUploadCancelled()) return undefined;
         thumbnailUrl = '';
       }
     } else if (
@@ -1483,16 +1554,25 @@ function registerAssetRoutes(app, deps) {
     ) {
       if (imageDerivativeService?.isImageCandidate({ mimeType, fileName: safeName })) {
         try {
+          await reportUploadProgress('generating_preview', 70);
+          if (await respondIfUploadCancelled()) return undefined;
           const derivatives = await imageDerivativeService.ensureImageDerivativesForUpload({
             mimeType,
             fileName: safeName,
             inputPath: absolutePath,
-            createdAt: new Date()
+            createdAt: new Date(),
+            jobId: uploadOperationId
           });
+          [derivatives.proxyUrl, derivatives.thumbnailUrl].forEach((url) => {
+            const output = publicUploadUrlToAbsolutePath(String(url || ''));
+            if (output) uploadArtifactPaths.add(output);
+          });
+          if (await respondIfUploadCancelled()) return undefined;
           proxyUrl = String(derivatives.proxyUrl || '').trim();
           thumbnailUrl = String(derivatives.thumbnailUrl || '').trim();
           proxyStatus = proxyUrl ? 'ready' : 'failed';
         } catch (error) {
+          if (await respondIfUploadCancelled()) return undefined;
           proxyUrl = '';
           thumbnailUrl = mediaUrl;
           proxyStatus = 'failed';
@@ -1524,7 +1604,10 @@ function registerAssetRoutes(app, deps) {
     let sourceTechnicalInfo = null;
     let proxyTechnicalInfo = null;
     if (persistOriginalMedia && isVideoUpload) {
+      await reportUploadProgress('reading_technical_info', 85);
+      if (await respondIfUploadCancelled()) return undefined;
       sourceTechnicalInfo = await probeMediaTechnicalInfo(absolutePath);
+      if (await respondIfUploadCancelled()) return undefined;
       sourceDurationSeconds = Number(sourceTechnicalInfo?.durationSeconds) || 0;
       sourceVideoFrameRate = Number(sourceTechnicalInfo?.video?.frameRate) || 0;
       sourceVideoFrameCount = Number(sourceTechnicalInfo?.video?.frameCount) || 0;
@@ -1567,7 +1650,10 @@ function registerAssetRoutes(app, deps) {
     }
   
     try {
+      await reportUploadProgress('saving_asset', 95);
+      if (await respondIfUploadCancelled()) return undefined;
       const created = await createAssetRecord(payload);
+      clearMediaJobRuntime?.(uploadOperationId);
       await recordAuditEvent?.(req, {
         action: 'asset.uploaded',
         targetType: 'asset',
@@ -1575,6 +1661,11 @@ function registerAssetRoutes(app, deps) {
         targetTitle: created.title,
         details: {
           fileName: created.fileName || safeName,
+          operationId: uploadOperationId,
+          status: 'completed',
+          progress: 100,
+          progressPhase: 'completed',
+          startedAt: uploadStartedAt,
           mimeType: created.mimeType || String(mimeType || ''),
           type: created.type,
           proxyStatus: created.proxyStatus,
@@ -1587,6 +1678,8 @@ function registerAssetRoutes(app, deps) {
         ingestSucceededWithWarnings: ingestWarnings.length > 0
       });
     } catch (_error) {
+      clearMediaJobRuntime?.(uploadOperationId);
+      await reportUploadProgress('failed', 100, 'failed', { error: String(_error?.message || _error || 'Upload failed').slice(0, 400) });
       console.warn(JSON.stringify({
         event: 'asset-upload-record-error',
         message: String(_error?.message || _error || 'Unknown error'),
