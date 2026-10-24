@@ -62,6 +62,26 @@ async function run() {
           status: 'completed',
           progress: 100,
           updatedAt: new Date(Date.now() - (3 * 24 * 60 * 60 * 1000)).toISOString()
+        },
+        {
+          jobId: 'audit:upload-1',
+          jobType: 'asset_upload',
+          assetTitle: 'New upload.mp4',
+          actor: 'erinç',
+          status: 'running',
+          progress: 20,
+          progressPhase: 'generating_proxy',
+          updatedAt: new Date().toISOString(),
+          cancelable: true
+        },
+        {
+          jobId: 'audit:download-1',
+          jobType: 'asset_download',
+          assetTitle: 'Downloaded.pdf',
+          actor: 'maestro',
+          status: 'completed',
+          progress: 100,
+          updatedAt: new Date().toISOString()
         }
       ]
     },
@@ -117,6 +137,14 @@ async function run() {
   assert(elements.systemJobStatus.innerHTML.includes('mediaJobsRefreshBtn'));
   assert(elements.systemJobStatus.innerHTML.includes('52%'));
   assert(elements.systemJobStatus.innerHTML.includes('mediaJobCancelBtn'));
+  assert(elements.systemJobStatus.innerHTML.includes('data-job-id="audit:upload-1"'));
+  assert(elements.systemJobStatus.innerHTML.includes('health_asset_upload_jobs'));
+  assert(elements.systemJobStatus.innerHTML.includes('health_asset_download_jobs'));
+  assert(elements.systemJobStatus.innerHTML.includes('New upload.mp4'));
+  assert(elements.systemJobStatus.innerHTML.includes('Downloaded.pdf'));
+  assert(elements.systemJobStatus.innerHTML.includes('erinç'));
+  assert(elements.systemJobStatus.innerHTML.includes('health_job_status_running'));
+  assert(elements.systemJobStatus.innerHTML.includes('health_job_phase_generating_proxy'));
   assert.strictEqual(diagnosticsRenders, 1);
 
   const filterChange = (key, value) => elements.systemJobStatus.dispatch('change', {
@@ -137,6 +165,9 @@ async function run() {
   filterOptionClick('jobType', 'video_ocr');
   assert(elements.systemJobStatus.innerHTML.includes('Older OCR'));
   assert(!elements.systemJobStatus.innerHTML.includes('Sample video'));
+  filterOptionClick('jobType', 'asset_upload');
+  assert(elements.systemJobStatus.innerHTML.includes('New upload.mp4'));
+  assert(!elements.systemJobStatus.innerHTML.includes('Downloaded.pdf'));
   filterOptionClick('jobType', 'all');
   filterOptionClick('status', 'completed');
   assert(elements.systemJobStatus.innerHTML.includes('Old metadata'));

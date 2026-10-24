@@ -3190,7 +3190,7 @@ async function extractDocumentThumbnailLines(inputPath, options = {}) {
     .map((line) => line.slice(0, 56));
 
   if (ext === 'docx') {
-    const unzip = await runCommandCapture('unzip', ['-p', inputPath, 'word/document.xml']);
+    const unzip = await runCommandCapture('unzip', ['-p', inputPath, 'word/document.xml'], { jobId: options.jobId });
     if (unzip.ok && String(unzip.stdout || '').trim()) {
       const rich = parseDocxPreview(String(unzip.stdout || ''));
       const lines = normalizeLines(rich.text || '');
@@ -3199,7 +3199,7 @@ async function extractDocumentThumbnailLines(inputPath, options = {}) {
   }
 
   if (ext === 'doc') {
-    const antiword = await runCommandCapture('antiword', [inputPath]);
+    const antiword = await runCommandCapture('antiword', [inputPath], { jobId: options.jobId });
     if (antiword.ok && String(antiword.stdout || '').trim()) {
       const lines = normalizeLines(antiword.stdout || '');
       if (lines.length) return lines;
@@ -3216,7 +3216,7 @@ async function extractDocumentThumbnailLines(inputPath, options = {}) {
     }
   }
 
-  const stringsOut = await runCommandCapture('strings', ['-n', '6', inputPath]);
+  const stringsOut = await runCommandCapture('strings', ['-n', '6', inputPath], { jobId: options.jobId });
   if (stringsOut.ok && String(stringsOut.stdout || '').trim()) {
     return normalizeLines(stringsOut.stdout || '');
   }
@@ -4061,6 +4061,9 @@ async function createAssetRecord(input) {
 function runCommandCapture(cmd, args, options = {}) {
   const env = options?.env ? { ...process.env, ...options.env } : process.env;
   const cwd = options?.cwd || undefined;
+  if (isMediaJobCancelled(options?.jobId)) {
+    return Promise.resolve({ ok: false, code: -1, stdout: '', stderr: 'Media job cancelled', cancelled: true });
+  }
   return new Promise((resolve) => {
     const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], env, cwd });
     const untrack = trackMediaJobProcess(options?.jobId, p);
@@ -6192,7 +6195,7 @@ async function regenerateVideoThumbnailForAsset(row, options = {}) {
   };
 }
 
-async function generatePdfThumbnail(inputPath, outputPath) {
+async function generatePdfThumbnail(inputPath, outputPath, options = {}) {
   const outBase = outputPath.replace(/\.(jpe?g|png)$/i, '');
   const ppmResult = await runCommandCapture('pdftoppm', [
     '-f', '1',
@@ -6202,7 +6205,12 @@ async function generatePdfThumbnail(inputPath, outputPath) {
     '-scale-to-y', '-1',
     inputPath,
     outBase
-  ]);
+  ], { jobId: options.jobId });
+  if (ppmResult.cancelled) {
+    const error = new Error('Media job cancelled');
+    error.code = 'MEDIA_JOB_CANCELLED';
+    throw error;
+  }
   const ppmJpg = `${outBase}.jpg`;
   if (ppmResult.ok && fs.existsSync(ppmJpg) && fs.statSync(ppmJpg).size > 0) {
     if (ppmJpg !== outputPath) {
@@ -6211,7 +6219,8 @@ async function generatePdfThumbnail(inputPath, outputPath) {
     return;
   }
 
-  await runFfmpeg([
+  const ffmpegResult = await runCommandCapture('ffmpeg', [
+    '-hide_banner',
     '-y',
     '-i',
     inputPath,
@@ -6222,7 +6231,13 @@ async function generatePdfThumbnail(inputPath, outputPath) {
     '-q:v',
     '4',
     outputPath
-  ]);
+  ], { jobId: options.jobId });
+  if (ffmpegResult.cancelled) {
+    const error = new Error('Media job cancelled');
+    error.code = 'MEDIA_JOB_CANCELLED';
+    throw error;
+  }
+  if (!ffmpegResult.ok) throw new Error(ffmpegResult.stderr || 'PDF thumbnail generation failed');
 }
 
 async function ensureVideoProxyAndThumbnail(row, options = {}) {
@@ -7239,6 +7254,8 @@ registerAssetRoutes(app, {
     metadataEnrichmentService,
     mapVersionRow,
   recordAuditEvent,
+  isMediaJobCancelled,
+  clearMediaJobRuntime,
   nanoid
 });
 

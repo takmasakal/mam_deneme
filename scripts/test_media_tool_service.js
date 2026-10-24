@@ -6,11 +6,12 @@ const {
   buildOcrFrameExtractArgs,
   buildProxyScaleFilter,
   buildVideoProxyArgs,
+  createMediaToolService,
   parseFfprobeFraction,
   summarizeFfmpegError
 } = require('../src/services/mediaToolService');
 
-function run() {
+async function run() {
   assert.strictEqual(buildProxyScaleFilter(1920, 1080), 'scale=min(640\\,iw):-2');
   assert.strictEqual(buildProxyScaleFilter(720, 1280), 'scale=-2:min(640\\,ih)');
   assert.strictEqual(buildProxyScaleFilter(360, 640), 'scale=-2:min(640\\,ih)');
@@ -73,7 +74,24 @@ function run() {
   assert(!summary.includes('configuration:'));
   assert(summary.includes('Invalid argument'));
 
+  let spawnCalls = 0;
+  const cancellableTools = createMediaToolService({
+    isMediaJobCancelled: (jobId) => jobId === 'upload-1',
+    spawn: () => {
+      spawnCalls += 1;
+      throw new Error('Cancelled jobs must not start another process');
+    }
+  });
+  await assert.rejects(
+    cancellableTools.generateVideoThumbnail('/input.mp4', '/output.jpg', { jobId: 'upload-1' }),
+    (error) => error.code === 'MEDIA_JOB_CANCELLED'
+  );
+  assert.strictEqual(spawnCalls, 0, 'cancelled uploads do not start a thumbnail process');
+
   console.log('media tool service tests passed');
 }
 
-run();
+run().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
