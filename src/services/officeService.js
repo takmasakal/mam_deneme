@@ -113,9 +113,13 @@ function createOfficeService(deps) {
     const stat = fs.statSync(inputPath);
     const assetId = String(row.id || '').trim();
     const revision = `${Math.round(Number(stat.mtimeMs || 0))}-${Math.max(0, Number(stat.size || 0))}`;
-    const outputDir = path.join(uploadsDir, 'previews', 'libreoffice');
+    const assetDate = row.created_at ? new Date(row.created_at) : new Date();
+    const safeDate = Number.isFinite(assetDate.getTime()) ? assetDate : new Date();
+    const dateDir = path.join(String(safeDate.getUTCFullYear()), String(safeDate.getUTCMonth() + 1), String(safeDate.getUTCDate()));
+    const outputDir = path.join(uploadsDir, dateDir, 'preview');
     fs.mkdirSync(outputDir, { recursive: true });
-    const outputName = `${sanitizeFileName(assetId || 'asset')}-${revision}.pdf`;
+    const versionId = String(row.preview_version_id || row.default_version_id || 'original').trim();
+    const outputName = `${sanitizeFileName(assetId || 'asset')}-${sanitizeFileName(versionId || 'original')}-${revision}.pdf`;
     const outputPath = path.join(outputDir, outputName);
     if (fs.existsSync(outputPath)) return outputPath;
 

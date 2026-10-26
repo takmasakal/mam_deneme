@@ -64,6 +64,28 @@ function createAssetDeletionService({
     targetSet.add(path.resolve(safePath));
   }
 
+  function addOfficePreviewPaths(targetSet, assetRow, versionRows = [], allVersions = false) {
+    const assetId = String(assetRow?.id || '').trim();
+    const uploadsDir = uploadRoots?.uploads;
+    if (!assetId || !uploadsDir) return;
+    const createdAt = assetRow.created_at ? new Date(assetRow.created_at) : new Date();
+    const safeDate = Number.isFinite(createdAt.getTime()) ? createdAt : new Date();
+    const dateDir = path.join(String(safeDate.getUTCFullYear()), String(safeDate.getUTCMonth() + 1), String(safeDate.getUTCDate()));
+    const assetPreviewDir = path.join(uploadsDir, dateDir, 'preview');
+    const versionIds = new Set(versionRows.map((version) => String(version?.version_id || '').trim()).filter(Boolean));
+    const legacyPreviewDir = path.join(uploadsDir, 'previews', 'libreoffice');
+    [assetPreviewDir, legacyPreviewDir].forEach((dir, index) => {
+      if (!fs.existsSync(dir)) return;
+      try {
+        for (const name of fs.readdirSync(dir)) {
+          if (!name.startsWith(`${assetId}-`) || !name.toLowerCase().endsWith('.pdf')) continue;
+          if (index === 0 && !allVersions && versionIds.size && ![...versionIds].some((versionId) => name.startsWith(`${assetId}-${versionId}-`))) continue;
+          addAbsoluteCleanupPath(targetSet, path.join(dir, name));
+        }
+      } catch (_error) {}
+    });
+  }
+
   function collectAssetCleanupPaths(row, versionRows = []) {
     const paths = new Set();
     if (!row || typeof row !== 'object') return [];
@@ -87,6 +109,15 @@ function createAssetDeletionService({
       addPublicUploadPath(paths, versionRow.snapshot_thumbnail_url, 'thumbnails');
     });
 
+    addOfficePreviewPaths(paths, row, versionRows, true);
+
+    return Array.from(paths);
+  }
+
+  function collectVersionPreviewCleanupPaths(assetRow, versionRow) {
+    const paths = new Set();
+    if (!assetRow || !versionRow) return [];
+    addOfficePreviewPaths(paths, assetRow, [versionRow], false);
     return Array.from(paths);
   }
 
@@ -203,6 +234,7 @@ function createAssetDeletionService({
 
   return {
     collectAssetCleanupPaths,
+    collectVersionPreviewCleanupPaths,
     cleanupAssetFiles,
     cleanupUnreferencedAssetFiles,
     removeAssetFromCollections,
