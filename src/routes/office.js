@@ -153,7 +153,7 @@ function registerOfficeRoutes(app, deps) {
         const versionResult = await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1 AND version_id = $2', [assetId, versionId]);
         const version = versionResult.rows[0];
         if (!version) return res.status(404).json({ error: 'Version not found' });
-        previewRow = { ...row, file_name: version.snapshot_file_name, mime_type: version.snapshot_mime_type, source_path: version.snapshot_source_path, media_url: version.snapshot_media_url };
+        previewRow = { ...row, file_name: version.snapshot_file_name, mime_type: version.snapshot_mime_type, source_path: version.snapshot_source_path, media_url: version.snapshot_media_url, preview_version_id: version.version_id };
       }
       if (!isOfficeDocumentCandidate({ mimeType: previewRow.mime_type, fileName: previewRow.file_name })) return res.status(400).json({ error: 'Selected file is not an Office document' });
       const pdfPath = await officeService.ensureOfficePreviewPdf(previewRow);
