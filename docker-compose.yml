@@ -52,6 +52,7 @@ services:
         condition: service_started
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/mam_mvp
+      S3_SHARE_CREDENTIALS_KEY: ${S3_SHARE_CREDENTIALS_KEY:-}
       ELASTIC_URL: http://elasticsearch:9200
       ELASTIC_INDEX: mam_assets
       PORT: 3000

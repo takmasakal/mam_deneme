@@ -12,6 +12,7 @@
       canEditMetadata,
       canEditOffice,
       canUsePdfAdvancedTools,
+      canShareS3 = () => false,
       canDeleteAsset,
       documentRef = global.document,
       confirmAction = global.confirm?.bind(global),
@@ -124,7 +125,7 @@
       const button = target?.closest?.(
         '#ensureProxyBtn, #restorePdfOriginalBtn, #downloadPdfOriginalBtn, '
         + '#restoreOfficeOriginalBtn, #downloadOfficeOriginalBtn, #downloadAssetBtn, '
-        + '#downloadProxyBtn, #moveToTrashBtn, #restoreAssetBtn, #deleteAssetBtn'
+        + '#downloadProxyBtn, #shareAssetBtn, #moveToTrashBtn, #restoreAssetBtn, #deleteAssetBtn'
       );
       if (!button) return;
       event.preventDefault();
@@ -174,6 +175,39 @@
       if (button.id === 'downloadProxyBtn') {
         const sourceUrl = String(asset.proxyUrl || '').trim();
         if (sourceUrl) triggerDownload(`${sourceUrl}${sourceUrl.includes('?') ? '&' : '?'}download=1`);
+        return;
+      }
+
+      if (button.id === 'shareAssetBtn') {
+        if (!canShareS3()) return;
+        const entered = global.prompt?.(t('share_expiry_days_prompt'), '7');
+        if (entered === null) return;
+        const expiresInDays = Math.max(1, Math.min(7, Math.round(Number(entered) || 7)));
+        button.disabled = true;
+        try {
+          const created = await api(`/api/assets/${encodeURIComponent(asset.id)}/s3-shares`, {
+            method: 'POST', body: JSON.stringify({ expiresInDays })
+          });
+          let status = created.status;
+          for (let attempt = 0; status === 'queued' && attempt < 30; attempt += 1) {
+            await new Promise((resolve) => global.setTimeout(resolve, 1000));
+            const current = await api(`/api/assets/${encodeURIComponent(asset.id)}/s3-shares/${encodeURIComponent(created.shareId)}`);
+            status = current.status;
+            if (status === 'failed') throw new Error(current.last_error || t('share_upload_failed'));
+          }
+          if (status !== 'active') throw new Error(t('share_still_processing'));
+          const result = await api(`/api/assets/${encodeURIComponent(asset.id)}/s3-shares/${encodeURIComponent(created.shareId)}/url`);
+          try {
+            await global.navigator.clipboard.writeText(result.url);
+            global.alert?.(`${t('share_link_copied')}\n${result.url}`);
+          } catch {
+            global.prompt?.(t('share_link_ready'), result.url);
+          }
+        } catch (error) {
+          alertError(String(error?.message || t('share_failed')));
+        } finally {
+          button.disabled = false;
+        }
         return;
       }
 

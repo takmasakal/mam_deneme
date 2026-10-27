@@ -1,0 +1,27 @@
+services:
+  s3-share-worker:
+    profiles: [s3-sharing]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MAM_RUNTIME_IMAGE: ${MAM_RUNTIME_IMAGE:-mam_deneme-runtime:latest}
+        INSTALL_LIBREOFFICE: ${INSTALL_LIBREOFFICE:-false}
+        PRELOAD_ML_MODELS: "false"
+        PRELOAD_PADDLE_OCR: "false"
+        MAM_GIT_COMMIT: ${MAM_GIT_COMMIT:-unknown}
+        MAM_GIT_BRANCH: ${MAM_GIT_BRANCH:-unknown}
+        MAM_BUILD_DATE: ${MAM_BUILD_DATE:-unknown}
+    command: npm run worker:s3-share
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/mam_mvp
+      PROCESSING_STORAGE_PRIMARY_ROOT: /app/uploads
+      S3_SHARE_CREDENTIALS_KEY: ${S3_SHARE_CREDENTIALS_KEY:-}
+      S3_SHARE_WORKER_POLL_MS: ${S3_SHARE_WORKER_POLL_MS:-2000}
+      TZ: ${TZ:-Europe/Istanbul}
+    volumes:
+      - ./uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped

@@ -380,6 +380,66 @@ async function initDb() {
       expires_at TIMESTAMPTZ NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS s3_share_provider_profiles (
+      provider_id TEXT PRIMARY KEY,
+      provider_type TEXT NOT NULL DEFAULT 's3-compatible',
+      endpoint TEXT NOT NULL,
+      region TEXT NOT NULL DEFAULT 'auto',
+      bucket TEXT NOT NULL,
+      force_path_style BOOLEAN NOT NULL DEFAULT false,
+      encrypted_credentials TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_by TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE TABLE IF NOT EXISTS s3_share_settings (
+      settings_id TEXT PRIMARY KEY DEFAULT 'default',
+      active_provider_id TEXT REFERENCES s3_share_provider_profiles(provider_id),
+      default_ttl_days INTEGER NOT NULL DEFAULT 7,
+      max_ttl_days INTEGER NOT NULL DEFAULT 7,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_by TEXT NOT NULL DEFAULT ''
+    );
+
+    INSERT INTO s3_share_settings (settings_id)
+    VALUES ('default') ON CONFLICT (settings_id) DO NOTHING;
+
+    CREATE TABLE IF NOT EXISTS asset_shares (
+      share_id TEXT PRIMARY KEY,
+      asset_id TEXT NOT NULL,
+      version_id TEXT NOT NULL DEFAULT '',
+      source_ref JSONB NOT NULL,
+      provider_id TEXT NOT NULL REFERENCES s3_share_provider_profiles(provider_id),
+      object_key TEXT NOT NULL UNIQUE,
+      file_name TEXT NOT NULL DEFAULT '',
+      mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+      file_size BIGINT NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'queued',
+      created_by TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      revoked_at TIMESTAMPTZ,
+      last_error TEXT NOT NULL DEFAULT ''
+    );
+
+    -- Keep cleanup records after permanent asset deletion so the worker can
+    -- still identify and remove their cloud objects.
+    ALTER TABLE asset_shares DROP CONSTRAINT IF EXISTS asset_shares_asset_id_fkey;
+
+    CREATE TABLE IF NOT EXISTS asset_share_jobs (
+      job_id TEXT PRIMARY KEY,
+      share_id TEXT NOT NULL REFERENCES asset_shares(share_id) ON DELETE CASCADE,
+      action TEXT NOT NULL CHECK (action IN ('upload', 'delete')),
+      status TEXT NOT NULL DEFAULT 'queued',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      run_after TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      lease_until TIMESTAMPTZ,
+      last_error TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (share_id, action)
+    );
+
     CREATE TABLE IF NOT EXISTS admin_settings (
       key TEXT PRIMARY KEY,
       value JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -471,6 +531,9 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_media_jobs_updated ON media_processing_jobs(updated_at);
     CREATE INDEX IF NOT EXISTS idx_asset_edit_locks_expires ON asset_edit_locks(expires_at);
     CREATE INDEX IF NOT EXISTS idx_asset_edit_locks_locked_by ON asset_edit_locks(locked_by);
+    CREATE INDEX IF NOT EXISTS idx_asset_shares_asset_expiry ON asset_shares(asset_id, expires_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_asset_shares_status_expiry ON asset_shares(status, expires_at);
+    CREATE INDEX IF NOT EXISTS idx_asset_share_jobs_claim ON asset_share_jobs(status, run_after, lease_until);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_group_admins_group_user ON group_admins(group_name, username);
     CREATE INDEX IF NOT EXISTS idx_group_admins_username ON group_admins(username);
     CREATE INDEX IF NOT EXISTS idx_asset_type_access_visibility ON asset_type_access(visibility);

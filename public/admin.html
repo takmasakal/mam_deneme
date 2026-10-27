@@ -20,6 +20,7 @@
           <a data-v2-view-link="health" href="/admin"><span class="nav-icon" aria-hidden="true">⌁</span><span data-v2-i18n="system_health">System Health</span></a>
           <a data-v2-view-link="diagnostics" href="/admin?view=diagnostics"><span class="nav-icon" aria-hidden="true">⌕</span><span data-v2-i18n="runtime_diagnostics">Diagnostics</span></a>
           <a data-v2-view-link="audit" href="/admin?view=audit"><span class="nav-icon" aria-hidden="true">▤</span><span data-v2-i18n="audit_history">Audit History</span></a>
+          <a data-v2-view-link="s3-sharing" href="/admin?view=s3-sharing" hidden><span class="nav-icon" aria-hidden="true">↗</span><span data-v2-i18n="s3_sharing">S3 Sharing</span></a>
           <a data-v2-view-link="asset-rights" href="/admin?view=asset-rights"><span class="nav-icon" aria-hidden="true">◇</span><span data-v2-i18n="asset_rights">Asset Rights</span></a>
           <a data-v2-view-link="metadata" href="/admin?view=metadata"><span class="nav-icon" aria-hidden="true">✣</span><span data-v2-i18n="metadata_generation">Metadata Generation</span></a>
           <a data-v2-view-link="settings" href="/admin?view=settings"><span class="nav-icon" aria-hidden="true">⚙</span><span data-v2-i18n="settings">Settings</span></a>
@@ -108,6 +109,31 @@
               <div class="v2-pager"><button id="auditPrevBtn" class="secondary-button" type="button" data-v2-i18n="previous">Previous</button><span id="auditPageInfo">—</span><button id="auditNextBtn" class="secondary-button" type="button" data-v2-i18n="next">Next</button></div>
               <div id="auditMessage" class="inline-message" role="status"></div>
               <form id="retentionForm" class="retention-form"><fieldset><legend data-v2-i18n="retention">Retention</legend><label><span data-v2-i18n="audit_retention_days">Audit retention (days)</span><input id="auditRetentionDays" type="number" min="1" max="3650" required /></label><label><span data-v2-i18n="job_retention_days">Media-job retention (days)</span><input id="mediaJobRetentionDays" type="number" min="1" max="3650" required /></label><button class="primary-link button-reset" type="submit" data-v2-i18n="save">Save</button></fieldset></form>
+            </section>
+          </section>
+
+          <section class="s3-sharing-view" data-v2-view="s3-sharing" hidden>
+            <section id="s3ShareSettingsSection" class="settings-tool-card" hidden>
+              <div class="s3-section-heading"><div><h2 data-v2-i18n="s3_provider_settings">Provider settings</h2><p data-v2-i18n="s3_provider_description">Configure the object storage used for temporary share links.</p></div></div>
+              <form id="s3ShareSettingsForm">
+                <div class="s3-provider-grid">
+                  <label class="s3-provider-endpoint"><span data-v2-i18n="s3_endpoint">Endpoint</span><input name="endpoint" type="url" placeholder="https://s3.example.net" required /></label>
+                  <label><span data-v2-i18n="s3_region">Region</span><input name="region" value="auto" required /></label>
+                  <label><span data-v2-i18n="s3_bucket">Bucket</span><input name="bucket" required /></label>
+                  <label><span data-v2-i18n="s3_access_key">Access key ID</span><input name="accessKeyId" autocomplete="new-password" /></label>
+                  <label><span data-v2-i18n="s3_secret_key">Secret access key</span><input name="secretAccessKey" type="password" autocomplete="new-password" /></label>
+                  <label><span data-v2-i18n="s3_default_expiry">Default expiry (days)</span><input name="defaultTtlDays" type="number" min="1" max="7" value="7" required /></label>
+                  <label><span data-v2-i18n="s3_max_expiry">Maximum expiry (days)</span><input name="maxTtlDays" type="number" min="1" max="7" value="7" required /></label>
+                  <label class="s3-path-style"><input name="forcePathStyle" type="checkbox" /><span data-v2-i18n="s3_path_style">Path-style requests (MinIO)</span></label>
+                </div>
+                <p id="s3ShareCredentialHint" class="settings-help"></p>
+                <div class="settings-actions"><button class="primary-link button-reset" type="submit" data-v2-i18n="s3_save_provider">Save provider</button><button id="s3ShareTestConnection" class="secondary-button" type="button" data-v2-i18n="test_connection">Test connection</button></div>
+              </form>
+            </section>
+            <section class="settings-record-section">
+              <div class="settings-section-heading"><h2 data-v2-i18n="active_shares">Active and recent shares</h2><button id="s3ShareRefresh" class="secondary-button" type="button" data-v2-i18n="refresh">Refresh</button></div>
+              <div id="s3ShareRows" class="settings-records"></div>
+              <div id="s3ShareMessage" class="inline-message" role="status"></div>
             </section>
           </section>
 

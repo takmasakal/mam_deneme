@@ -40,6 +40,11 @@ const PERMISSION_DEFINITIONS = [
     labelKey: 'perm_document_rights_admin'
   },
   {
+    key: 's3.share',
+    legacyField: 's3ShareAccess',
+    labelKey: 'perm_s3_share'
+  },
+  {
     key: 'advanced.search',
     legacyField: 'advancedSearchAccess',
     labelKey: 'perm_advanced_search'

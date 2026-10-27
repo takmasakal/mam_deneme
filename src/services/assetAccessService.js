@@ -21,7 +21,7 @@ function normalizeVisibility(value, fallback = 'public') {
 }
 
 const ASSET_TYPE_GROUPS = ['video', 'audio', 'photo', 'document', 'other'];
-const ADMIN_SCOPE_GROUPS = ['asset-rights', 'document-rights', 'text-admin'];
+const ADMIN_SCOPE_GROUPS = ['asset-rights', 'document-rights', 'text-admin', 's3-share'];
 
 function normalizeAssetTypeGroup(value, fallback = '') {
   const normalized = String(value || '').trim().toLowerCase();

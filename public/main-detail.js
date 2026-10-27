@@ -25,6 +25,7 @@
       currentUserCanUsePdfAdvancedTools,
       currentUserCanEditOffice,
       currentUserCanAccessAdmin,
+      currentUserCanAccessS3Sharing = () => false,
       currentUserCanDeleteAssets,
       currentUserCanDeleteAssetInUi,
       currentUserCanEditMetadata,
@@ -308,6 +309,7 @@
           ${asset.mediaUrl && asset.canDownloadAsset !== false ? `<button type="button" id="downloadAssetBtn">${t('download_asset')}</button>` : ''}
           ${currentUserCanAccessAdmin() && asset.canDownloadAsset !== false && isVideo(asset) && asset.proxyUrl ? `<button type="button" id="downloadProxyBtn">${t('download_proxy')}</button>` : ''}
           ${canDeleteAssetInUi(asset) && !asset.inTrash ? `<button type="button" id="moveToTrashBtn" class="danger">${t('delete_asset')}</button>` : ''}
+          ${currentUserCanAccessS3Sharing() && asset.canDownloadAsset !== false && !asset.inTrash ? `<button type="button" id="shareAssetBtn" title="${escapeHtml(t('share_asset'))}" aria-label="${escapeHtml(t('share_asset'))}"><span aria-hidden="true">↗</span></button>` : ''}
           ${canDeleteAssetInUi(asset) && asset.inTrash ? `<button type="button" id="restoreAssetBtn">${t('restore')}</button><button type="button" id="deleteAssetBtn" class="danger">${t('delete_permanent')}</button>` : ''}
         </div>
         ${isVideo(asset) ? `

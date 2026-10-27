@@ -133,6 +133,7 @@ let detailModule = null;
 let ingestModule = null;
 let selectedAssetId = null;
 let currentUserCanAccessAdmin = false;
+let currentUserCanAccessS3Sharing = false;
 let currentUserCanEditMetadata = false;
 let currentUserCanEditOffice = false;
 let currentUserCanDeleteAssets = false;
@@ -1630,6 +1631,7 @@ async function loadCurrentUser() {
     const canAccessAdmin = toStrictBool(me.canAccessAdmin, toStrictBool(me.isAdmin, false));
     const canAccessTextAdmin = toStrictBool(me.canAccessTextAdmin, canAccessAdmin);
     const canEditMetadata = toStrictBool(me.canEditMetadata, false);
+    currentUserCanAccessS3Sharing = toStrictBool(me.canAccessS3Sharing, canAccessAdmin);
     const canEditOffice = toStrictBool(me.canEditOffice, false);
     const canDeleteAssets = toStrictBool(me.canDeleteAssets, toStrictBool(me.isAdmin, false));
     const canUsePdfAdvancedTools = toStrictBool(me.canUsePdfAdvancedTools, toStrictBool(me.isAdmin, false));
@@ -1659,7 +1661,7 @@ async function loadCurrentUser() {
     if (adminMenuLink) {
       const canAccessAssetRightsAdmin = toStrictBool(me.canAccessAssetRightsAdmin, canAccessAdmin);
       const canAccessDocumentRightsAdmin = toStrictBool(me.canAccessDocumentRightsAdmin, canAccessAdmin);
-      adminMenuLink.classList.toggle('hidden', !(me.canAccessMetadataAdmin || canAccessAdmin || canAccessTextAdmin || canAccessAssetRightsAdmin || canAccessDocumentRightsAdmin));
+      adminMenuLink.classList.toggle('hidden', !(me.canAccessMetadataAdmin || canAccessAdmin || canAccessTextAdmin || canAccessAssetRightsAdmin || canAccessDocumentRightsAdmin || currentUserCanAccessS3Sharing));
     }
     accessScopeModule?.applyAssetTypeScope?.({
       allowedAssetTypes: Array.isArray(me.allowedAssetTypes) ? me.allowedAssetTypes : null,
@@ -1671,6 +1673,7 @@ async function loadCurrentUser() {
     currentUserCanAccessAdmin = false;
     currentUserCanEditMetadata = false;
     currentUserCanEditOffice = false;
+    currentUserCanAccessS3Sharing = false;
     currentUserCanDeleteAssets = false;
     currentUserCanUsePdfAdvancedTools = false;
     currentUserCanAccessAdvancedSearch = false;
@@ -2274,6 +2277,7 @@ detailModule = window.createMainDetailModule({
   currentUserCanAccessAdmin: () => currentUserCanAccessAdmin,
   currentUserCanDeleteAssets: () => currentUserCanDeleteAssets,
   currentUserCanDeleteAssetInUi,
+  currentUserCanAccessS3Sharing: () => currentUserCanAccessS3Sharing,
   currentUserOwnsAsset,
   currentUserCanEditMetadata: () => currentUserCanEditMetadata,
   currentLang: () => currentLang,
@@ -2736,6 +2740,7 @@ const detailAssetActionsModule = window.createMainDetailAssetActions({
   canDeleteAsset: currentUserCanDeleteAssetInUi,
   onPermanentDeleteSuccess: async (assetId) => {
     const wasSelected = selectedAssetId === assetId;
+  canShareS3: () => currentUserCanAccessS3Sharing,
     selectedAssetIds.delete(assetId);
     await loadAssets();
     if (wasSelected) {

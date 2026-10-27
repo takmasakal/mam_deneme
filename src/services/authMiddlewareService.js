@@ -73,6 +73,18 @@ function createAuthMiddlewareService({
     }
   }
 
+  async function requireS3ShareAccess(req, res, next) {
+    try {
+      const effective = await loadEffective(req);
+      if (effective.isSuperAdmin || effective.canAccessAdmin || effective.canAccessS3Sharing) return next();
+      const accessContext = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+      if (assetAccessService.hasScopedAdminScopeAccess(accessContext, 's3-share')) return next();
+      return forbidden(res);
+    } catch (_error) {
+      return res.status(500).json({ error: 'Failed to verify S3 sharing permissions' });
+    }
+  }
+
   async function requireScopedAdminAccess(req, res, next) {
     const textAdminPaths = [
       /^\/ocr-records(?:\/content)?$/,
@@ -96,6 +108,7 @@ function createAuthMiddlewareService({
       /^\/document-rights\/assets\/[^/]+\/access$/,
       /^\/document-rights\/assets\/[^/]+\/edit-lock$/
     ];
+    const s3SharingPaths = [/^\/s3-sharing(?:\/.*)?$/];
     const safePath = String(req.path || '').trim();
     if (/^\/metadata\/(?:assets\/suggest|generate)$/.test(safePath)) {
       return requirePermissionFlag('canAccessMetadataAdmin', 'Failed to verify metadata admin permissions')(req, res, next);
@@ -105,6 +118,9 @@ function createAuthMiddlewareService({
     }
     if (documentRightsAdminPaths.some((pattern) => pattern.test(safePath))) {
       return requireScopedDocumentRightsAccess(req, res, next);
+    }
+    if (s3SharingPaths.some((pattern) => pattern.test(safePath))) {
+      return requireS3ShareAccess(req, res, next);
     }
     if (assetRightsAdminPaths.some((pattern) => pattern.test(safePath))) {
       return requireScopedAssetRightsAccess(req, res, next);
