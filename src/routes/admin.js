@@ -1140,7 +1140,10 @@ app.get('/api/admin/assets/access', async (req, res) => {
 	    }
 	    const accessContext = await requireAssetRightsAdminRequest(req, res);
 	    if (!accessContext) return null;
-	    assetAccessService.appendManageableAssetAccessWhere(where, values, accessContext, 'assets');
+	    assetAccessService.appendManageableAssetAccessWhere(where, values, accessContext, 'assets', {
+	      includeOwnedAssets: lockedOnly,
+	      ownerGroupsOnly: lockedOnly
+	    });
 	    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const countResult = await pool.query(`SELECT COUNT(*)::int AS total FROM assets ${whereSql}`, values);
     const total = Number(countResult.rows?.[0]?.total || 0);
@@ -1231,9 +1234,12 @@ app.delete('/api/admin/assets/:id/edit-lock', async (req, res) => {
     if (!assetEditLockService) return res.status(503).json({ error: 'Edit lock service is not available' });
     const assetId = String(req.params.id || '').trim();
     if (!assetId) return res.status(400).json({ error: 'assetId is required' });
-    const assetResult = await pool.query('SELECT id, title, file_name FROM assets WHERE id = $1', [assetId]);
+    const assetResult = await pool.query('SELECT * FROM assets WHERE id = $1', [assetId]);
     const assetRow = assetResult.rows[0] || null;
     if (!assetRow) return res.status(404).json({ error: 'Asset not found' });
+    if (!assetAccessService.canManageAssetEditLock(assetRow, effective)) {
+      return res.status(404).json({ error: 'Asset not found' });
+    }
     const result = await assetEditLockService.releaseAsset(assetId);
     await recordAuditEvent?.(req, {
       action: 'asset.edit_lock_released',

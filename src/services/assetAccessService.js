@@ -543,6 +543,18 @@ function createAssetAccessService({ pool }) {
     return managedGroups.some((group) => asset.ownerGroups.includes(group));
   }
 
+  function canManageAssetEditLock(row, context = {}) {
+    if (!row || row.deleted_at) return false;
+    if (context?.canManageAllAssetVisibility) return true;
+    const asset = getAssetAccessSnapshot(row);
+    const identity = context?.accessIdentity || getUserAccessIdentity(context);
+    const identifiers = normalizeAccessList(identity.identifiers || []);
+    const ownerNames = normalizeAccessList([asset.ownerUser, row.owner]);
+    if (ownerNames.some((owner) => identifiers.includes(owner))) return true;
+    const managedGroups = getManagedGroupsForScope(context, 'asset-rights', getAssetTypeGroup(row));
+    return managedGroups.some((group) => asset.ownerGroups.includes(group));
+  }
+
   function canManageAssetTypeAccess(row, context) {
     if (context?.canManageAllAssetVisibility) return true;
     const rule = getTypeAccessSnapshot(row);
@@ -575,20 +587,37 @@ function createAssetAccessService({ pool }) {
     return managedGroups.some((group) => managedTypeGroups.has(group));
   }
 
-  function appendManageableAssetAccessWhere(where, values, context, alias = 'assets') {
+  function appendManageableAssetAccessWhere(where, values, context, alias = 'assets', { includeOwnedAssets = false, ownerGroupsOnly = false } = {}) {
     if (context?.canManageAllAssetVisibility) return;
     const managedGroups = getManagedGroupsForScope(context, 'asset-rights');
-    if (!managedGroups.length) {
+    const conditions = [];
+    if (managedGroups.length) {
+      values.push(managedGroups);
+      conditions.push(ownerGroupsOnly
+        ? `COALESCE(${alias}.owner_groups, '{}') && $${values.length}::text[]`
+        : `(
+          COALESCE(${alias}.owner_groups, '{}') && $${values.length}::text[]
+          OR COALESCE(${alias}.allowed_groups, '{}') && $${values.length}::text[]
+          OR COALESCE(${alias}.edit_allowed_groups, '{}') && $${values.length}::text[]
+          OR COALESCE(${alias}.download_allowed_groups, '{}') && $${values.length}::text[]
+        )`);
+    }
+    if (includeOwnedAssets) {
+      const identity = context?.accessIdentity || getUserAccessIdentity(context || {});
+      const identifiers = normalizeAccessList(identity.identifiers || []);
+      if (identifiers.length) {
+        values.push(identifiers);
+        conditions.push(`(
+          LOWER(BTRIM(COALESCE(${alias}.owner_user, ''))) = ANY($${values.length}::text[])
+          OR LOWER(BTRIM(COALESCE(${alias}.owner, ''))) = ANY($${values.length}::text[])
+        )`);
+      }
+    }
+    if (!conditions.length) {
       where.push('FALSE');
       return;
     }
-    values.push(managedGroups);
-    where.push(`(
-      COALESCE(${alias}.owner_groups, '{}') && $${values.length}::text[]
-      OR COALESCE(${alias}.allowed_groups, '{}') && $${values.length}::text[]
-      OR COALESCE(${alias}.edit_allowed_groups, '{}') && $${values.length}::text[]
-      OR COALESCE(${alias}.download_allowed_groups, '{}') && $${values.length}::text[]
-    )`);
+    where.push(`(${conditions.join(' OR ')})`);
   }
 
   function limitGroupsForScopedAdmin(values, context) {
@@ -841,6 +870,7 @@ function createAssetAccessService({ pool }) {
     canDownloadAsset,
     canDeleteAsset,
     canManageAssetVisibility,
+    canManageAssetEditLock,
     canManageAssetTypeAccess,
     buildNewAssetAccess,
     updateAssetVisibility
