@@ -90,7 +90,7 @@ function registerS3ShareRoutes(app, deps = {}) {
         `SELECT s.share_id, s.asset_id, s.version_id, s.file_name, s.mime_type, s.file_size,
                 s.status, s.created_by, s.created_at, s.expires_at, s.revoked_at, s.last_error,
                 a.title AS asset_title
-         FROM asset_shares s JOIN assets ON assets.id = s.asset_id
+         FROM asset_shares s JOIN assets a ON a.id = s.asset_id
          WHERE ${where.join(' AND ')}
          ORDER BY s.created_at DESC LIMIT 300`,
         values
