@@ -77,6 +77,10 @@ const service = createAuthMiddlewareService({
     assert.strictEqual(result.nextCalled, true, 'asset rights path should allow scoped asset admin');
   }
   {
+    const result = await run(service.requireScopedAdminAccess, { userKey: 'scopedAsset', path: '/assets/asset-123/edit-lock' });
+    assert.strictEqual(result.nextCalled, true, 'asset edit-lock path should allow scoped asset admin');
+  }
+  {
     const result = await run(service.requireScopedAdminAccess, { userKey: 'doc', path: '/document-rights/assets/a/access' });
     assert.strictEqual(result.nextCalled, true, 'document rights path should allow document admin');
   }

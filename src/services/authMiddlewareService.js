@@ -85,6 +85,7 @@ function createAuthMiddlewareService({
     ];
     const assetRightsAdminPaths = [
       /^\/assets\/access$/,
+      /^\/assets\/[^/]+\/edit-lock$/,
       /^\/assets\/access-groups$/,
       /^\/assets\/[^/]+\/access$/,
       /^\/asset-types\/access$/,
