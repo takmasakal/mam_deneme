@@ -6,7 +6,6 @@ const { createAssetShareService } = require('../services/assetShareService');
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function start() {
-  if (!String(process.env.DATABASE_URL || '').trim()) throw new Error('DATABASE_URL is required');
   const primary = String(process.env.PROCESSING_STORAGE_PRIMARY_ROOT || '').trim();
   if (!primary) throw new Error('PROCESSING_STORAGE_PRIMARY_ROOT is required');
   await initDb();

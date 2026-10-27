@@ -20,13 +20,14 @@ services:
       MAM_DB_NAME: mam_mvp
       MAM_DB_PASSWORD_FILE: /run/secrets/mam_postgres_password
       PROCESSING_STORAGE_PRIMARY_ROOT: /app/uploads
-      S3_SHARE_CREDENTIALS_KEY: ${S3_SHARE_CREDENTIALS_KEY:-}
+      S3_SHARE_CREDENTIALS_KEY_FILE: /run/secrets/s3_share_credentials_key
       S3_SHARE_WORKER_POLL_MS: ${S3_SHARE_WORKER_POLL_MS:-2000}
       TZ: ${TZ:-Europe/Istanbul}
     volumes:
       - ./uploads:/app/uploads
     secrets:
       - mam_postgres_password
+      - s3_share_credentials_key
     depends_on:
       postgres:
         condition: service_healthy
