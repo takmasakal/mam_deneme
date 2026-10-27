@@ -49,6 +49,19 @@ if [[ ! -d "${SECRETS_DIR}" || ! -f "${SECRETS_DIR}/mam_superadmin_password" || 
   "${DEPLOY_DIR}/init.sh" "${mam_host}"
 fi
 
+mkdir -p "${SECRETS_DIR}"
+chmod 700 "${SECRETS_DIR}"
+if [[ ! -s "${SECRETS_DIR}/s3_share_credentials_key" ]]; then
+  if ! command -v openssl >/dev/null 2>&1; then
+    echo "OpenSSL is required to generate the S3 credentials encryption key." >&2
+    exit 1
+  fi
+  temporary_secret="$(mktemp "${SECRETS_DIR}/s3_share_credentials_key.XXXXXX")"
+  openssl rand -base64 32 | tr -d '\n' > "${temporary_secret}"
+  chmod 600 "${temporary_secret}"
+  mv "${temporary_secret}" "${SECRETS_DIR}/s3_share_credentials_key"
+fi
+
 encoded_mam_url="$(urlencode "${mam_url}")"
 
 cat > "${ENV_OUT}" <<EOV

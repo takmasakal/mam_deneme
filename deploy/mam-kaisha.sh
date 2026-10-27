@@ -75,6 +75,26 @@ ensure_external_volumes() {
   done
 }
 
+ensure_s3_share_credentials_key() {
+  local secret_file="deploy/secrets/s3_share_credentials_key"
+  mkdir -p "$(dirname "${secret_file}")"
+  chmod 700 "$(dirname "${secret_file}")"
+  if [[ -s "${secret_file}" ]]; then
+    chmod 600 "${secret_file}"
+    return
+  fi
+  if ! command -v openssl >/dev/null 2>&1; then
+    echo "OpenSSL is required to generate the S3 credentials encryption key."
+    exit 1
+  fi
+  local temporary_file
+  temporary_file="$(mktemp "${secret_file}.XXXXXX")"
+  openssl rand -base64 32 | tr -d '\n' > "${temporary_file}"
+  chmod 600 "${temporary_file}"
+  mv "${temporary_file}" "${secret_file}"
+  echo "Generated persistent S3 credentials encryption key in deploy/secrets."
+}
+
 print_running_version() {
   if [[ -z "${DOCKER_CMD}" ]]; then
     DOCKER_CMD="$(detect_docker_cmd)"
@@ -273,6 +293,7 @@ case "${cmd}" in
     ;;
   build)
     ensure_init
+    ensure_s3_share_credentials_key
     ensure_external_volumes
     export_build_metadata
     echo "Building MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
@@ -280,6 +301,7 @@ case "${cmd}" in
     ;;
   up)
     ensure_init
+    ensure_s3_share_credentials_key
     ensure_external_volumes
     export_build_metadata
 
@@ -324,6 +346,7 @@ case "${cmd}" in
 
   restart)
     ensure_init
+    ensure_s3_share_credentials_key
     ensure_external_volumes
     export_build_metadata
 

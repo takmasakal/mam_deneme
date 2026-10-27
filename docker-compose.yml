@@ -63,7 +63,7 @@ services:
       MAM_DB_USER: postgres
       MAM_DB_NAME: mam_mvp
       MAM_DB_PASSWORD_FILE: /run/secrets/mam_postgres_password
-      S3_SHARE_CREDENTIALS_KEY: ${S3_SHARE_CREDENTIALS_KEY:-}
+      S3_SHARE_CREDENTIALS_KEY_FILE: /run/secrets/s3_share_credentials_key
       KEYCLOAK_DB_HOST: keycloak-postgres
       KEYCLOAK_DB_PORT: 5432
       KEYCLOAK_DB_USER: ${KEYCLOAK_DB_USER:-keycloak}
@@ -112,6 +112,7 @@ services:
       - /home/belge/depo/netapp/belgelik-restic:/home/belge/depo/netapp/belgelik-restic
     secrets:
       - mam_postgres_password
+      - s3_share_credentials_key
       - keycloak_db_password
       - keycloak_admin_password
       - restic_password
@@ -305,6 +306,8 @@ secrets:
     file: ./deploy/secrets/mam_admin_password
   mam_user_password:
     file: ./deploy/secrets/mam_user_password
+  s3_share_credentials_key:
+    file: ./deploy/secrets/s3_share_credentials_key
 
 volumes:
   pg_data:
