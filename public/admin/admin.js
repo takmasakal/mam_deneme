@@ -39,7 +39,7 @@
       s3_default_expiry: 'Default expiry (days)', s3_max_expiry: 'Maximum expiry (days)', s3_path_style: 'Path-style requests (MinIO)',
       s3_save_provider: 'Save provider', test_connection: 'Test connection', s3_credentials_saved: 'Credentials are configured. Leave both key fields blank to keep them.',
       s3_settings_saved: 'S3 provider settings saved.', s3_connection_ok: 'Connection successful.', s3_share_none: 'No shares found.',
-      s3_share_status: 'Status', s3_share_created: 'Created by', s3_share_expires: 'Expires', s3_share_delete: 'Revoke and delete', s3_share_revoked: 'Share revoked; cloud object deletion queued.',
+      s3_share_status: 'Status', s3_share_created: 'Created by', s3_share_recipient: 'Shared with', s3_share_recipient_unspecified: 'Not specified', s3_share_method: 'Method', s3_share_method_link: 'Temporary S3 link', s3_share_copy_link: 'Copy link', s3_share_link_copied: 'Share link copied.', s3_share_expires: 'Expires', s3_share_delete: 'Revoke and delete', s3_share_revoked: 'Share revoked; cloud object deletion queued.',
       system_health: 'System Health', runtime_diagnostics: 'Diagnostics', audit_history: 'Audit History',
       asset_rights: 'Asset Rights', document_rights: 'Document Rights', metadata_generation: 'Metadata Generation', settings: 'Settings',
       back_to_mam: 'Back to Belgelik', active_assets: 'Active Assets', open_errors: 'Open Errors',
@@ -91,7 +91,7 @@
       s3_default_expiry: 'Varsayılan süre (gün)', s3_max_expiry: 'En uzun süre (gün)', s3_path_style: 'Path-style istekler (MinIO)',
       s3_save_provider: 'Sağlayıcıyı kaydet', test_connection: 'Bağlantıyı test et', s3_credentials_saved: 'Kimlik bilgileri kayıtlı. Mevcut anahtarları korumak için iki anahtar alanını da boş bırakın.',
       s3_settings_saved: 'S3 sağlayıcı ayarları kaydedildi.', s3_connection_ok: 'Bağlantı başarılı.', s3_share_none: 'Paylaşım bulunamadı.',
-      s3_share_status: 'Durum', s3_share_created: 'Oluşturan', s3_share_expires: 'Bitiş', s3_share_delete: 'İptal et ve sil', s3_share_revoked: 'Paylaşım iptal edildi; bulut nesnesi silinmek üzere kuyruğa alındı.',
+      s3_share_status: 'Durum', s3_share_created: 'Oluşturan', s3_share_recipient: 'Paylaşılan kişi/kurum', s3_share_recipient_unspecified: 'Belirtilmedi', s3_share_method: 'Yöntem', s3_share_method_link: 'Geçici S3 bağlantısı', s3_share_copy_link: 'Bağlantıyı kopyala', s3_share_link_copied: 'Paylaşım bağlantısı kopyalandı.', s3_share_expires: 'Bitiş', s3_share_delete: 'İptal et ve sil', s3_share_revoked: 'Paylaşım iptal edildi; bulut nesnesi silinmek üzere kuyruğa alındı.',
       system_health: 'Sistem Sağlığı', runtime_diagnostics: 'Tanılama', audit_history: 'İşlem Geçmişi',
       asset_rights: 'Varlık Yetkileri', document_rights: 'Belge Yetkileri', metadata_generation: 'Metadata Üretimi', settings: 'Ayarlar',
       back_to_mam: "Belgelik'e Dön", active_assets: 'Aktif Varlıklar', open_errors: 'Açık Hatalar',
@@ -950,7 +950,12 @@
       box.innerHTML = shares.length ? shares.map((item) => {
         const status = String(item.status || '').replaceAll('_', ' ');
         const canRevoke = ['queued', 'active', 'failed'].includes(String(item.status || '').toLowerCase());
-        return `<article class="s3-share-row"><div class="s3-share-asset"><strong>${escapeHtml(item.asset_title || item.file_name || item.asset_id)}</strong><small>${escapeHtml(item.file_name || '')}</small></div><div class="s3-share-detail"><small>${escapeHtml(t('s3_share_status'))}</small><span class="s3-share-status">${escapeHtml(status)}</span></div><div class="s3-share-detail"><small>${escapeHtml(t('s3_share_created'))}</small><span>${escapeHtml(item.created_by || '—')}</span></div><div class="s3-share-detail"><small>${escapeHtml(t('s3_share_expires'))}</small><span>${escapeHtml(formatDateTime(item.expires_at))}</span></div>${canRevoke ? `<button class="danger-button" type="button" data-s3-share-revoke="${escapeHtml(item.share_id)}" data-s3-asset-id="${escapeHtml(item.asset_id)}">${escapeHtml(t('s3_share_delete'))}</button>` : '<span class="s3-share-no-action">—</span>'}</article>`;
+        const canCopy = String(item.status || '').toLowerCase() === 'active';
+        const actions = [
+          canCopy ? `<button class="secondary-button" type="button" data-s3-share-copy="${escapeHtml(item.share_id)}" data-s3-asset-id="${escapeHtml(item.asset_id)}">${escapeHtml(t('s3_share_copy_link'))}</button>` : '',
+          canRevoke ? `<button class="danger-button" type="button" data-s3-share-revoke="${escapeHtml(item.share_id)}" data-s3-asset-id="${escapeHtml(item.asset_id)}">${escapeHtml(t('s3_share_delete'))}</button>` : ''
+        ].filter(Boolean).join('');
+        return `<article class="s3-share-row"><div class="s3-share-asset"><strong>${escapeHtml(item.asset_title || item.file_name || item.asset_id)}</strong><small>${escapeHtml(item.file_name || '')}</small></div><div class="s3-share-detail"><small>${escapeHtml(t('s3_share_status'))}</small><span class="s3-share-status">${escapeHtml(status)}</span></div><div class="s3-share-detail s3-share-meta"><small>${escapeHtml(t('s3_share_created'))} · ${escapeHtml(t('s3_share_recipient'))}</small><span>${escapeHtml(item.created_by || '—')} · ${escapeHtml(item.recipient || t('s3_share_recipient_unspecified'))}</span><small>${escapeHtml(t('s3_share_method'))}</small><span>${escapeHtml(t('s3_share_method_link'))}</span></div><div class="s3-share-detail"><small>${escapeHtml(t('s3_share_expires'))}</small><span>${escapeHtml(formatDateTime(item.expires_at))}</span></div><div class="s3-share-actions">${actions || '<span class="s3-share-no-action">—</span>'}</div></article>`;
       }).join('') : `<div class="diagnostic-empty">${escapeHtml(t('s3_share_none'))}</div>`;
     } catch (error) {
       box.innerHTML = `<div class="diagnostic-empty">${escapeHtml(error.message)}</div>`;
@@ -1289,6 +1294,18 @@
   });
   byId('s3ShareRefresh').addEventListener('click', () => loadS3Shares());
   byId('s3ShareRows').addEventListener('click', async (event) => {
+    const copyButton = event.target.closest('[data-s3-share-copy]');
+    if (copyButton) {
+      copyButton.disabled = true;
+      try {
+        const result = await api(`/api/assets/${encodeURIComponent(copyButton.dataset.s3AssetId)}/s3-shares/${encodeURIComponent(copyButton.dataset.s3ShareCopy)}/url`);
+        if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(result.url);
+        else global.prompt(t('s3_share_copy_link'), result.url);
+        byId('s3ShareMessage').textContent = t('s3_share_link_copied');
+      } catch (error) { byId('s3ShareMessage').textContent = error.message; }
+      finally { copyButton.disabled = false; }
+      return;
+    }
     const button = event.target.closest('[data-s3-share-revoke]');
     if (!button) return;
     button.disabled = true;

@@ -219,10 +219,12 @@
         const entered = global.prompt?.(t('share_expiry_days_prompt'), '7');
         if (entered === null) return;
         const expiresInDays = Math.max(1, Math.min(7, Math.round(Number(entered) || 7)));
+        const recipient = global.prompt?.(t('share_recipient_prompt'), '');
+        if (recipient === null) return;
         button.disabled = true;
         try {
           const created = await api(`/api/assets/${encodeURIComponent(asset.id)}/s3-shares`, {
-            method: 'POST', body: JSON.stringify({ expiresInDays })
+            method: 'POST', body: JSON.stringify({ expiresInDays, recipient: String(recipient || '').trim() })
           });
           let status = created.status;
           for (let attempt = 0; status === 'queued' && attempt < 30; attempt += 1) {

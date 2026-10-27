@@ -422,6 +422,8 @@ async function initDb() {
       last_error TEXT NOT NULL DEFAULT ''
     );
 
+    ALTER TABLE asset_shares ADD COLUMN IF NOT EXISTS recipient TEXT NOT NULL DEFAULT '';
+
     -- Keep cleanup records after permanent asset deletion so the worker can
     -- still identify and remove their cloud objects.
     ALTER TABLE asset_shares DROP CONSTRAINT IF EXISTS asset_shares_asset_id_fkey;

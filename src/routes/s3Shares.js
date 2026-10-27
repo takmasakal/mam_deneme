@@ -87,7 +87,7 @@ function registerS3ShareRoutes(app, deps = {}) {
       const where = ['assets.deleted_at IS NULL'];
       assetAccessService.appendAssetAccessWhere(where, values, gate.context, 'assets');
       const result = await pool.query(
-        `SELECT s.share_id, s.asset_id, s.version_id, s.file_name, s.mime_type, s.file_size,
+        `SELECT s.share_id, s.asset_id, s.version_id, s.file_name, s.mime_type, s.file_size, s.recipient,
                 s.status, s.created_by, s.created_at, s.expires_at, s.revoked_at, s.last_error,
                 assets.title AS asset_title
          FROM asset_shares s JOIN assets ON assets.id = s.asset_id
@@ -146,6 +146,7 @@ function registerS3ShareRoutes(app, deps = {}) {
         fileName: sourceRow.file_name || asset.file_name,
         mimeType: sourceRow.mime_type || asset.mime_type,
         fileSize: stat.size,
+        recipient: String(req.body?.recipient || '').trim().slice(0, 200),
         expiresInDays: req.body?.expiresInDays,
         createdBy: gate.effective.username || gate.effective.displayName || ''
       });

@@ -277,21 +277,24 @@ button.subtitle-delete-btn:focus-visible {
 .s3-sharing-view .settings-actions { margin-top: 12px; justify-content: flex-start; gap: 8px; }
 .s3-sharing-view .settings-section-heading { align-items: center; margin-bottom: 10px; }
 .s3-sharing-view .settings-section-heading h2 { margin: 0; }
-.s3-share-row { min-width: 0; padding: 10px 11px; display: grid; grid-template-columns: minmax(180px,1.5fr) repeat(3,minmax(100px,.8fr)) auto; align-items: center; gap: 12px; border: 1px solid var(--v2-border); border-radius: 8px; background: rgba(10,16,24,.48); }
+.s3-share-row { min-width: 0; padding: 10px 11px; display: grid; grid-template-columns: minmax(180px,1.5fr) repeat(3,minmax(100px,.8fr)) minmax(130px,auto); align-items: center; gap: 12px; border: 1px solid var(--v2-border); border-radius: 8px; background: rgba(10,16,24,.48); }
 .s3-share-asset { min-width: 0; display: grid; gap: 2px; }
 .s3-share-asset strong { overflow: hidden; color: var(--v2-text); text-overflow: ellipsis; white-space: nowrap; }
 .s3-share-asset small { overflow: hidden; color: var(--v2-subtle); text-overflow: ellipsis; white-space: nowrap; }
 .s3-share-detail { min-width: 0; display: grid; gap: 2px; }
 .s3-share-detail small { color: var(--v2-subtle); font-size: 11px; }
 .s3-share-detail > span { overflow: hidden; color: var(--v2-muted); text-overflow: ellipsis; white-space: nowrap; }
+.s3-share-meta > span { white-space: normal; overflow-wrap: anywhere; }
 .s3-share-detail .s3-share-status { width: max-content; max-width: 100%; padding: 2px 7px; border: 1px solid var(--v2-border-strong); border-radius: 999px; color: #dce3ec; text-transform: capitalize; }
 .s3-share-row .danger-button { white-space: nowrap; }
+.s3-share-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.s3-share-actions button { white-space: nowrap; }
 .s3-share-no-action { justify-self: center; color: var(--v2-subtle); }
 @media (max-width: 900px) {
   .s3-provider-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .s3-share-row { grid-template-columns: minmax(0,1fr) repeat(2,minmax(110px,.8fr)); }
   .s3-share-row > .s3-share-asset { grid-column: 1 / -1; }
-  .s3-share-row > .danger-button, .s3-share-row > .s3-share-no-action { grid-column: 3; justify-self: end; }
+  .s3-share-row > .s3-share-actions { grid-column: 3; justify-self: end; }
 }
 @media (max-width: 560px) {
   .s3-provider-grid { grid-template-columns: 1fr; }
@@ -299,5 +302,6 @@ button.subtitle-delete-btn:focus-visible {
   .s3-sharing-view .settings-actions > * { flex: 1 1 100%; justify-content: center; }
   .s3-share-row { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
   .s3-share-row > .s3-share-asset { grid-column: 1 / -1; }
-  .s3-share-row > .danger-button, .s3-share-row > .s3-share-no-action { grid-column: 1 / -1; justify-self: stretch; }
+  .s3-share-row > .s3-share-actions { grid-column: 1 / -1; justify-content: stretch; }
+  .s3-share-actions button { flex: 1 1 auto; }
 }
