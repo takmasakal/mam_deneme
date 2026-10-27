@@ -21,11 +21,11 @@ function createAssetShareService({ pool, settingsService, processingStorage } = 
       await client.query('BEGIN');
       await client.query(
         `INSERT INTO asset_shares
-         (share_id, asset_id, version_id, source_ref, provider_id, object_key, file_name, mime_type, file_size, status, created_by, expires_at)
-         VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9,'queued',$10,$11)`,
+         (share_id, asset_id, version_id, source_ref, provider_id, object_key, file_name, mime_type, file_size, status, created_by, recipient, expires_at)
+         VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9,'queued',$10,$11,$12)`,
         [shareId, input.assetId, String(input.versionId || ''), JSON.stringify(sourceRef), providerId,
           objectKey, String(input.fileName || ''), String(input.mimeType || 'application/octet-stream'),
-          Math.max(0, Number(input.fileSize) || 0), String(input.createdBy || ''), expiresAt]
+          Math.max(0, Number(input.fileSize) || 0), String(input.createdBy || ''), String(input.recipient || '').trim().slice(0, 200), expiresAt]
       );
       await client.query(
         `INSERT INTO asset_share_jobs (job_id, share_id, action) VALUES ($1,$2,'upload')`,
@@ -128,7 +128,7 @@ function createAssetShareService({ pool, settingsService, processingStorage } = 
     if (createdBy) { values.push(createdBy); where.push(`LOWER(s.created_by) = LOWER($${values.length})`); }
     values.push(Math.max(1, Math.min(500, Number(limit) || 100)));
     const result = await pool.query(
-      `SELECT s.share_id, s.asset_id, s.version_id, s.file_name, s.mime_type, s.file_size,
+      `SELECT s.share_id, s.asset_id, s.version_id, s.file_name, s.mime_type, s.file_size, s.recipient,
               s.status, s.created_by, s.created_at, s.expires_at, s.revoked_at, s.last_error,
               a.title AS asset_title
        FROM asset_shares s JOIN assets a ON a.id = s.asset_id
