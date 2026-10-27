@@ -96,7 +96,11 @@ function registerS3ShareRoutes(app, deps = {}) {
         values
       );
       return res.json({ shares: result.rows });
-    } catch (_error) {
+    } catch (error) {
+      // Keep the authenticated API response generic, but retain the underlying
+      // failure in server/runtime diagnostics so database and access-context
+      // problems can be distinguished without exposing internals to the client.
+      console.error('[s3-sharing] Failed to load S3 shares', error);
       return res.status(500).json({ error: 'Failed to load S3 shares' });
     }
   });
