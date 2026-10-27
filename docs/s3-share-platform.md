@@ -23,17 +23,16 @@ S3 sağlayıcı ayarları Yönetim > S3 Paylaşımı içindedir. Tam yönetici (
 - `src/services/assetShareService.js`: paylaşım durumları, kaynak storage referansı, imzalı URL, iptal, expiry ve worker job kuyruğu.
 - `src/routes/s3Shares.js`: yönetim ayarları/listesi ve varlık paylaşım API'leri; erişim doğrulaması her istekte sunucuda yapılır.
 - `src/workers/s3ShareWorker.js`: kaynak dosyayı primary storage'dan S3'e kopyalar, süresi dolmuş/iptal edilmiş nesneleri siler ve geçici hataları yeniden dener.
-- `docker-compose.s3-sharing.yml`: ayrı, isteğe bağlı worker container tanımı. Uygulama API'si ve worker aynı kalıcı `S3_SHARE_CREDENTIALS_KEY` değerini kullanmalıdır.
+- `docker-compose.s3-sharing.yml`: ayrı, isteğe bağlı worker container tanımı. Uygulama API'si ve worker aynı Docker secret'ını (`s3_share_credentials_key`) kullanmalıdır.
 
-Veritabanında `s3_share_provider_profiles`, `s3_share_settings`, `asset_shares` ve `asset_share_jobs` tabloları kullanılır. Credential değerleri AES-256-GCM ile şifrelenir; anahtar ortam değişkeni veya secret dosyasından gelir. Anahtar kaybolursa eski profillerdeki erişim bilgileri çözülemez ve onların S3 nesneleri temizlenemeyebilir. Anahtar yedeklenmeli ve iki serviste aynı tutulmalıdır.
+Veritabanında `s3_share_provider_profiles`, `s3_share_settings`, `asset_shares` ve `asset_share_jobs` tabloları kullanılır. Credential değerleri AES-256-GCM ile şifrelenir; anahtar Docker secret dosyasından okunur. Anahtar kaybolursa eski profillerdeki erişim bilgileri çözülemez ve onların S3 nesneleri temizlenemeyebilir. `deploy/init.sh` ve `deploy/mam.sh up` anahtarı ilk çalıştırmada üretip `deploy/secrets/s3_share_credentials_key` altında korur. Dosyayı yedekleyin, repoya eklemeyin ve yenisini üretmeyin.
 
 ## Kurulum / çalıştırma
 
-1. Kalıcı bir 32-byte anahtar üretin (çıktı hassas sırdır): `openssl rand -base64 32`.
-2. Her uygulamanın app ortamına `S3_SHARE_CREDENTIALS_KEY` olarak ekleyin. İlgili worker aynı değeri almalı; değeri repoya veya dokümana koymayın.
-3. Admin ekranından endpoint, region, bucket, erişim anahtarı ve secret girin; önce kaydedip sonra bağlantı testini çalıştırın. Provider değiştirilirken eski provider profilini silmeyin.
-4. Worker'ı uygulamanın ana Compose dosyası ve `docker-compose.s3-sharing.yml` ile başlatın (Belgelik kurulumunda `--env-file deploy/.env.kaisha -f docker-compose.yml -f docker-compose.kaisha.yml` seçeneklerini de kullanın): `docker compose -f docker-compose.yml -f docker-compose.s3-sharing.yml --profile s3-sharing up -d --build s3-share-worker`.
-5. Test varlığı paylaşın; S3'te nesnenin private kaldığını, URL ile indirilebildiğini, iptalden sonra silindiğini ve expiry cleanup'ın çalıştığını doğrulayın.
+1. `./deploy/mam.sh up` anahtarı ilk çalıştırmada üretir. Başka bir deployment yöntemi kullanıyorsanız 32-byte anahtarı `openssl rand -base64 32` ile üretip `deploy/secrets/s3_share_credentials_key` dosyasına güvenli izinlerle yerleştirin.
+2. Admin ekranından endpoint, region, bucket, erişim anahtarı ve secret girin; önce kaydedip sonra bağlantı testini çalıştırın. Provider değiştirilirken eski provider profilini silmeyin.
+3. Worker'ı uygulamanın ana Compose dosyası ve `docker-compose.s3-sharing.yml` ile başlatın (Belgelik kurulumunda `--env-file deploy/.env.kaisha -f docker-compose.yml -f docker-compose.kaisha.yml` seçeneklerini de kullanın): `docker compose -f docker-compose.yml -f docker-compose.s3-sharing.yml --profile s3-sharing up -d --build s3-share-worker`.
+4. Test varlığı paylaşın; S3'te nesnenin private kaldığını, URL ile indirilebildiğini, iptalden sonra silindiğini ve expiry cleanup'ın çalıştığını doğrulayın.
 
 Belgelik worker Compose tanımı `MAM_DB_*` değişkenlerini, `mam_postgres_password` secret'ını ve `/app/uploads` primary storage mount'ını kullanır. Dağıtım sunucusunda anahtar env/secret değerinin app ve worker'da aynı olduğunu doğrulayın.
 

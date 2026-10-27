@@ -106,6 +106,26 @@ ensure_init() {
   fi
 }
 
+ensure_s3_share_credentials_key() {
+  local secret_file="deploy/secrets/s3_share_credentials_key"
+  mkdir -p "$(dirname "${secret_file}")"
+  chmod 700 "$(dirname "${secret_file}")"
+  if [[ -s "${secret_file}" ]]; then
+    chmod 600 "${secret_file}"
+    return
+  fi
+  if ! command -v openssl >/dev/null 2>&1; then
+    echo "OpenSSL is required to generate the S3 credentials encryption key."
+    exit 1
+  fi
+  local temporary_file
+  temporary_file="$(mktemp "${secret_file}.XXXXXX")"
+  openssl rand -base64 32 | tr -d '\n' > "${temporary_file}"
+  chmod 600 "${temporary_file}"
+  mv "${temporary_file}" "${secret_file}"
+  echo "Generated persistent S3 credentials encryption key in deploy/secrets."
+}
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -133,6 +153,7 @@ case "${cmd}" in
     ;;
   up)
     ensure_init "${2:-}"
+    ensure_s3_share_credentials_key
     export_build_metadata
     dc up -d --no-build
     sync_keycloak_remember_me
@@ -141,6 +162,7 @@ case "${cmd}" in
     dc down
     ;;
   restart)
+    ensure_s3_share_credentials_key
     export_build_metadata
     dc down
     dc up -d --no-build

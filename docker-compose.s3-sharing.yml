@@ -16,11 +16,13 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/mam_mvp
       PROCESSING_STORAGE_PRIMARY_ROOT: /app/uploads
-      S3_SHARE_CREDENTIALS_KEY: ${S3_SHARE_CREDENTIALS_KEY:-}
+      S3_SHARE_CREDENTIALS_KEY_FILE: /run/secrets/s3_share_credentials_key
       S3_SHARE_WORKER_POLL_MS: ${S3_SHARE_WORKER_POLL_MS:-2000}
       TZ: ${TZ:-Europe/Istanbul}
     volumes:
       - ./uploads:/app/uploads
+    secrets:
+      - s3_share_credentials_key
     depends_on:
       postgres:
         condition: service_healthy

@@ -45,7 +45,18 @@ if [[ ! -f "${REALM_TEMPLATE}" ]]; then
   exit 1
 fi
 
-mkdir -p "${ROOT_DIR}/uploads" "${ROOT_DIR}/keycloak-theme" "${DEPLOY_DIR}/keycloak"
+mkdir -p "${ROOT_DIR}/uploads" "${ROOT_DIR}/keycloak-theme" "${DEPLOY_DIR}/keycloak" "${DEPLOY_DIR}/secrets"
+chmod 700 "${DEPLOY_DIR}/secrets"
+if [[ ! -s "${DEPLOY_DIR}/secrets/s3_share_credentials_key" ]]; then
+  if ! command -v openssl >/dev/null 2>&1; then
+    echo "OpenSSL is required to generate the S3 credentials encryption key." >&2
+    exit 1
+  fi
+  s3_key_tmp="$(mktemp "${DEPLOY_DIR}/secrets/s3_share_credentials_key.XXXXXX")"
+  openssl rand -base64 32 | tr -d '\n' > "${s3_key_tmp}"
+  chmod 600 "${s3_key_tmp}"
+  mv "${s3_key_tmp}" "${DEPLOY_DIR}/secrets/s3_share_credentials_key"
+fi
 
 KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
 KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-admin}"

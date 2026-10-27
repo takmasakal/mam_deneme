@@ -52,7 +52,7 @@ services:
         condition: service_started
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/mam_mvp
-      S3_SHARE_CREDENTIALS_KEY: ${S3_SHARE_CREDENTIALS_KEY:-}
+      S3_SHARE_CREDENTIALS_KEY_FILE: /run/secrets/s3_share_credentials_key
       ELASTIC_URL: http://elasticsearch:9200
       ELASTIC_INDEX: mam_assets
       PORT: 3000
@@ -98,6 +98,8 @@ services:
       - ./uploads:/app/uploads
       - ./mountvolume/backup:/mountvolume/backup
       - model_cache:/opt/mam-models
+    secrets:
+      - s3_share_credentials_key
     restart: unless-stopped
 
   onlyoffice:
@@ -236,3 +238,7 @@ volumes:
   es_data:
   keycloak_pg_data:
   model_cache:
+
+secrets:
+  s3_share_credentials_key:
+    file: ./deploy/secrets/s3_share_credentials_key
