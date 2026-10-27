@@ -33,6 +33,13 @@
   };
   const v2Translations = {
     en: {
+      system_health: 'System Health', runtime_diagnostics: 'Diagnostics', audit_history: 'Audit History', s3_sharing: 'S3 Sharing',
+      s3_sharing_subtitle: 'Temporary share links for assets you can view.', s3_provider_settings: 'Provider settings', s3_provider_description: 'Configure the object storage used for temporary share links.', active_shares: 'Active and recent shares',
+      s3_endpoint: 'Endpoint', s3_region: 'Region', s3_bucket: 'Bucket', s3_access_key: 'Access key ID', s3_secret_key: 'Secret access key',
+      s3_default_expiry: 'Default expiry (days)', s3_max_expiry: 'Maximum expiry (days)', s3_path_style: 'Path-style requests (MinIO)',
+      s3_save_provider: 'Save provider', test_connection: 'Test connection', s3_credentials_saved: 'Credentials are configured. Leave both key fields blank to keep them.',
+      s3_settings_saved: 'S3 provider settings saved.', s3_connection_ok: 'Connection successful.', s3_share_none: 'No shares found.',
+      s3_share_status: 'Status', s3_share_created: 'Created by', s3_share_expires: 'Expires', s3_share_delete: 'Revoke and delete', s3_share_revoked: 'Share revoked; cloud object deletion queued.',
       system_health: 'System Health', runtime_diagnostics: 'Diagnostics', audit_history: 'Audit History',
       asset_rights: 'Asset Rights', document_rights: 'Document Rights', metadata_generation: 'Metadata Generation', settings: 'Settings',
       back_to_mam: 'Back to Belgelik', active_assets: 'Active Assets', open_errors: 'Open Errors',
@@ -78,6 +85,13 @@
       learned_none: 'No learned correction yet.', page_info: 'Page {page} / {pages} ({total})'
     },
     tr: {
+      system_health: 'Sistem Sağlığı', runtime_diagnostics: 'Tanılama', audit_history: 'İşlem Geçmişi', s3_sharing: 'S3 Paylaşımı',
+      s3_sharing_subtitle: 'Görüntüleyebildiğiniz varlıklar için geçici paylaşım bağlantıları.', s3_provider_settings: 'Sağlayıcı ayarları', s3_provider_description: 'Geçici paylaşım bağlantıları için kullanılacak nesne depolamasını yapılandırın.', active_shares: 'Etkin ve son paylaşımlar',
+      s3_endpoint: 'Uç nokta', s3_region: 'Bölge', s3_bucket: 'Bucket', s3_access_key: 'Access key ID', s3_secret_key: 'Secret access key',
+      s3_default_expiry: 'Varsayılan süre (gün)', s3_max_expiry: 'En uzun süre (gün)', s3_path_style: 'Path-style istekler (MinIO)',
+      s3_save_provider: 'Sağlayıcıyı kaydet', test_connection: 'Bağlantıyı test et', s3_credentials_saved: 'Kimlik bilgileri kayıtlı. Mevcut anahtarları korumak için iki anahtar alanını da boş bırakın.',
+      s3_settings_saved: 'S3 sağlayıcı ayarları kaydedildi.', s3_connection_ok: 'Bağlantı başarılı.', s3_share_none: 'Paylaşım bulunamadı.',
+      s3_share_status: 'Durum', s3_share_created: 'Oluşturan', s3_share_expires: 'Bitiş', s3_share_delete: 'İptal et ve sil', s3_share_revoked: 'Paylaşım iptal edildi; bulut nesnesi silinmek üzere kuyruğa alındı.',
       system_health: 'Sistem Sağlığı', runtime_diagnostics: 'Tanılama', audit_history: 'İşlem Geçmişi',
       asset_rights: 'Varlık Yetkileri', document_rights: 'Belge Yetkileri', metadata_generation: 'Metadata Üretimi', settings: 'Ayarlar',
       back_to_mam: "Belgelik'e Dön", active_assets: 'Aktif Varlıklar', open_errors: 'Açık Hatalar',
@@ -200,7 +214,7 @@
   };
   const settingsTurkishPlaceholders = {'Type asset name':'Varlık adı yazın','asset name...':'varlık adı...','asset, label, file...':'varlık, etiket, dosya...','asset, label, language...':'varlık, etiket, dil...','Type query...':'Sorgu yazın...','username, name, email...':'kullanıcı adı, ad, e-posta...','Search user or group...':'Kullanıcı veya grup ara...'};
   settingsTurkishText['Token & OIDC'] = 'Belirteç ve OIDC';
-  Object.assign(settingsTurkishText, {'Manager user/group':'Yönetici kullanıcı/grup','Asset type':'Varlık türü','Document rights':'Belge yetkileri','OCR / subtitle':'OCR / altyazı','Document':'Belge','Video':'Video','Audio':'Ses','Photo':'Fotoğraf','Other':'Diğer','All asset types':'Tüm varlık türleri','Edit':'Düzenle','Update':'Güncelle','Actions':'İşlemler','Created':'Oluşturulma'});
+  Object.assign(settingsTurkishText, {'Manager user/group':'Yönetici kullanıcı/grup','Asset type':'Varlık türü','Scopes':'Kapsamlar','Asset rights':'Varlık yetkileri','Document rights':'Belge yetkileri','OCR / subtitle':'OCR / altyazı','S3 sharing':'S3 Paylaşımı','Document':'Belge','Video':'Video','Audio':'Ses','Photo':'Fotoğraf','Other':'Diğer','All asset types':'Tüm varlık türleri','Edit':'Düzenle','Update':'Güncelle','Actions':'İşlemler','Created':'Oluşturulma'});
   Object.assign(settingsTurkishText, {'Scan Missing Manually':'Eksikleri Elle Tara','Scan Missing Automatically':'Eksikleri Otomatik Tara','Stop scan':'Taramayı Durdur'});
   Object.assign(settingsTurkishText, {'Video OCR parameters':'Video OCR parametreleri','Interval (sec)':'Aralık (sn)','Min visible (sec)':'En az görünme (sn)','Merge gap (sec)':'Birleşme aralığı (sn)','OCR engine':'OCR motoru'});
   const localizedSettingsNotice = (en, tr) => language === 'tr' ? tr : en;
@@ -261,8 +275,8 @@
     });
     document.querySelectorAll('[data-v2-placeholder]').forEach((element) => { element.placeholder = t(element.dataset.v2Placeholder); });
     const view = getActiveView();
-    const titleKey = view === 'diagnostics' ? 'runtime_diagnostics' : view === 'audit' ? 'audit_history' : view === 'asset-rights' ? 'asset_rights' : view === 'metadata' ? 'metadata_generation' : view === 'settings' ? 'settings' : 'system_health';
-    const subtitleKey = view === 'diagnostics' ? 'diagnostics_page_subtitle' : view === 'audit' ? 'audit_page_subtitle' : view === 'asset-rights' ? 'rights_page_subtitle' : view === 'metadata' ? 'metadata_page_subtitle' : view === 'settings' ? 'settings_page_subtitle' : 'health_page_subtitle';
+    const titleKey = view === 'diagnostics' ? 'runtime_diagnostics' : view === 'audit' ? 'audit_history' : view === 'asset-rights' ? 'asset_rights' : view === 'metadata' ? 'metadata_generation' : view === 'settings' ? 'settings' : view === 's3-sharing' ? 's3_sharing' : 'system_health';
+    const subtitleKey = view === 'diagnostics' ? 'diagnostics_page_subtitle' : view === 'audit' ? 'audit_page_subtitle' : view === 'asset-rights' ? 'rights_page_subtitle' : view === 'metadata' ? 'metadata_page_subtitle' : view === 'settings' ? 'settings_page_subtitle' : view === 's3-sharing' ? 's3_sharing_subtitle' : 'health_page_subtitle';
     byId('v2PageTitle').textContent = t(titleKey);
     byId('v2PageSubtitle').textContent = t(subtitleKey);
     document.title = `Belgelik Admin — ${byId('v2PageTitle').textContent}`;
@@ -280,6 +294,7 @@
     if (adminPermissions.canAccessAssetRightsAdmin || canUseFullAdmin()) allowed.push('asset-rights');
     if (adminPermissions.canAccessMetadataAdmin || canUseFullAdmin()) allowed.push('metadata');
     if (adminPermissions.canAccessTextAdmin || canUseFullAdmin()) allowed.push('settings');
+    if (adminPermissions.canAccessS3Sharing || canUseFullAdmin()) allowed.push('s3-sharing');
     return allowed;
   }
 
@@ -801,12 +816,13 @@
     const rows = byId('v2GroupAdmins');
     const section = rows?.closest('.settings-record-section');
     if (!section) return;
-    section.innerHTML = `<h3>Group Administrators</h3><div class="settings-group-admin-form"><label><span>Managed group</span><input id="v2GroupAdminGroup" placeholder="archive-team" list="v2IdentityGroupOptions" /></label><label><span>Manager user/group</span><input id="v2GroupAdminUser" placeholder="username" list="v2IdentityUserOptions" /></label><label><span>Scope</span><select id="v2GroupAdminScope"><option value="asset-rights">Asset rights</option><option value="document-rights">Document rights</option><option value="text-admin">OCR / subtitle</option></select></label><label class="settings-group-admin-types"><span>Asset type</span><span id="v2GroupAdminTypes" class="settings-type-checks" role="group"><label><input type="checkbox" value="document" /><span>Document</span></label><label><input type="checkbox" value="video" /><span>Video</span></label><label><input type="checkbox" value="audio" /><span>Audio</span></label><label><input type="checkbox" value="photo" /><span>Photo</span></label><label><input type="checkbox" value="other" /><span>Other</span></label></span></label><button id="v2AddGroupAdmin" class="primary-link button-reset" type="button">Add</button></div><datalist id="v2IdentityGroupOptions"></datalist><datalist id="v2IdentityUserOptions"></datalist><div id="v2GroupAdmins" class="settings-group-admin-table"></div><div id="v2GroupAdminsMessage" class="inline-message"></div>`;
+    section.innerHTML = `<h3>Group Administrators</h3><div class="settings-group-admin-form"><label><span>Managed group</span><input id="v2GroupAdminGroup" placeholder="archive-team" list="v2IdentityGroupOptions" /></label><label><span>Manager user/group</span><input id="v2GroupAdminUser" placeholder="username" list="v2IdentityUserOptions" /></label><fieldset class="settings-group-admin-scopes"><legend>Scopes</legend><span id="v2GroupAdminScopes" class="settings-type-checks" role="group"><label><input type="checkbox" value="asset-rights" /><span>Asset rights</span></label><label><input type="checkbox" value="document-rights" /><span>Document rights</span></label><label><input type="checkbox" value="text-admin" /><span>OCR / subtitle</span></label><label><input type="checkbox" value="s3-share" /><span>S3 sharing</span></label></span></fieldset><fieldset class="settings-group-admin-scopes settings-group-admin-types"><legend>Asset type</legend><span id="v2GroupAdminTypes" class="settings-type-checks" role="group"><label><input type="checkbox" value="document" /><span>Document</span></label><label><input type="checkbox" value="video" /><span>Video</span></label><label><input type="checkbox" value="audio" /><span>Audio</span></label><label><input type="checkbox" value="photo" /><span>Photo</span></label><label><input type="checkbox" value="other" /><span>Other</span></label></span></fieldset><button id="v2AddGroupAdmin" class="primary-link button-reset" type="button">Add</button></div><datalist id="v2IdentityGroupOptions"></datalist><datalist id="v2IdentityUserOptions"></datalist><div id="v2GroupAdmins" class="settings-group-admin-table"></div><div id="v2GroupAdminsMessage" class="inline-message"></div>`;
   }
   mountGroupAdministratorSettings();
 
   const recordsModule = global.createAdminRecordsModule({
     api, t, escapeHtml, highlightSuggestion, openTextEditorModal,
+    onPermissionsSaved: loadV2GroupAdmins,
     userPermissionsSearchInput: byId('userPermissionsSearchInput'), userPermissionsPrincipalType: byId('userPermissionsPrincipalType'), userPermissionsSearchButton: byId('userPermissionsSearchButton'),
     userPermissionsRows: byId('userPermissionsRows'), userPermissionsMsg: byId('userPermissionsMsg'), userPermissionsPageSize: byId('userPermissionsPageSize'),
     userPermissionsPrevPage: byId('userPermissionsPrevPage'), userPermissionsNextPage: byId('userPermissionsNextPage'), userPermissionsPageInfo: byId('userPermissionsPageInfo'),
@@ -896,7 +912,7 @@
 
   async function loadV2GroupAdmins() {
     const result = await api('/api/admin/group-admins');
-    const scopeLabels = {'asset-rights':'Asset rights','document-rights':'Document rights','text-admin':'OCR / subtitle'};
+    const scopeLabels = {'asset-rights':'Asset rights','document-rights':'Document rights','text-admin':'OCR / subtitle','s3-share':'S3 sharing'};
     const typeLabels = {document:'Document',video:'Video',audio:'Audio',photo:'Photo',other:'Other'};
     const list = result.groupAdmins || [];
     const header = `<div class="settings-group-admin-row is-header"><strong>Managed group</strong><strong>Manager user/group</strong><strong>Scope</strong><strong>Asset type</strong><strong>Created</strong><strong>Actions</strong></div>`;
@@ -907,6 +923,47 @@
     }).join('');
     byId('v2GroupAdmins').innerHTML = list.length ? header + body : `<div class="diagnostic-empty">${escapeHtml(t('diagnostics_empty'))}</div>`;
     localizeSettingsText();
+  }
+
+  async function loadS3ShareSettings() {
+    const section = byId('s3ShareSettingsSection');
+    if (!section || !canUseFullAdmin()) return;
+    section.hidden = false;
+    const settings = await api('/api/admin/s3-sharing/settings');
+    const form = byId('s3ShareSettingsForm');
+    ['endpoint', 'region', 'bucket', 'defaultTtlDays', 'maxTtlDays'].forEach((name) => {
+      if (form.elements[name]) form.elements[name].value = settings[name] ?? '';
+    });
+    form.elements.forcePathStyle.checked = Boolean(settings.forcePathStyle);
+    form.elements.accessKeyId.value = '';
+    form.elements.secretAccessKey.value = '';
+    byId('s3ShareCredentialHint').textContent = settings.credentialsConfigured
+      ? `${t('s3_credentials_saved')} ${settings.accessKeyHint || ''}`
+      : '';
+  }
+
+  async function loadS3Shares() {
+    const box = byId('s3ShareRows');
+    try {
+      const result = await api('/api/admin/s3-sharing/shares');
+      const shares = Array.isArray(result.shares) ? result.shares : [];
+      box.innerHTML = shares.length ? shares.map((item) => {
+        const status = String(item.status || '').replaceAll('_', ' ');
+        const canRevoke = ['queued', 'active', 'failed'].includes(String(item.status || '').toLowerCase());
+        return `<article class="s3-share-row"><div class="s3-share-asset"><strong>${escapeHtml(item.asset_title || item.file_name || item.asset_id)}</strong><small>${escapeHtml(item.file_name || '')}</small></div><div class="s3-share-detail"><small>${escapeHtml(t('s3_share_status'))}</small><span class="s3-share-status">${escapeHtml(status)}</span></div><div class="s3-share-detail"><small>${escapeHtml(t('s3_share_created'))}</small><span>${escapeHtml(item.created_by || '—')}</span></div><div class="s3-share-detail"><small>${escapeHtml(t('s3_share_expires'))}</small><span>${escapeHtml(formatDateTime(item.expires_at))}</span></div>${canRevoke ? `<button class="danger-button" type="button" data-s3-share-revoke="${escapeHtml(item.share_id)}" data-s3-asset-id="${escapeHtml(item.asset_id)}">${escapeHtml(t('s3_share_delete'))}</button>` : '<span class="s3-share-no-action">—</span>'}</article>`;
+      }).join('') : `<div class="diagnostic-empty">${escapeHtml(t('s3_share_none'))}</div>`;
+    } catch (error) {
+      box.innerHTML = `<div class="diagnostic-empty">${escapeHtml(error.message)}</div>`;
+    }
+  }
+
+  async function loadS3SharingView() {
+    const isFullAdmin = canUseFullAdmin();
+    byId('s3ShareSettingsSection').hidden = !isFullAdmin;
+    if (isFullAdmin) {
+      try { await loadS3ShareSettings(); } catch (error) { byId('s3ShareMessage').textContent = error.message; }
+    }
+    await loadS3Shares();
   }
 
   function triggerJsonDownload(blob, fallback) {
@@ -1207,6 +1264,40 @@
     if (tab === 'backup') await loadV2Backups();
     if (tab === 'users') await Promise.all([recordsModule.loadUserPermissions(), loadV2Identity(), loadV2GroupAdmins()]);
   });
+  byId('s3ShareSettingsForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const payload = {
+      endpoint: form.elements.endpoint.value.trim(), region: form.elements.region.value.trim(), bucket: form.elements.bucket.value.trim(),
+      accessKeyId: form.elements.accessKeyId.value, secretAccessKey: form.elements.secretAccessKey.value,
+      defaultTtlDays: Number(form.elements.defaultTtlDays.value), maxTtlDays: Number(form.elements.maxTtlDays.value),
+      forcePathStyle: form.elements.forcePathStyle.checked
+    };
+    try {
+      await api('/api/admin/s3-sharing/settings', { method: 'PATCH', body: JSON.stringify(payload) });
+      byId('s3ShareMessage').textContent = t('s3_settings_saved');
+      await loadS3ShareSettings();
+    } catch (error) { byId('s3ShareMessage').textContent = error.message; }
+  });
+  byId('s3ShareTestConnection').addEventListener('click', async (event) => {
+    event.currentTarget.disabled = true;
+    try {
+      await api('/api/admin/s3-sharing/settings/test', { method: 'POST', body: '{}' });
+      byId('s3ShareMessage').textContent = t('s3_connection_ok');
+    } catch (error) { byId('s3ShareMessage').textContent = error.message; }
+    finally { event.currentTarget.disabled = false; }
+  });
+  byId('s3ShareRefresh').addEventListener('click', () => loadS3Shares());
+  byId('s3ShareRows').addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-s3-share-revoke]');
+    if (!button) return;
+    button.disabled = true;
+    try {
+      await api(`/api/assets/${encodeURIComponent(button.dataset.s3AssetId)}/s3-shares/${encodeURIComponent(button.dataset.s3ShareRevoke)}`, { method: 'DELETE' });
+      byId('s3ShareMessage').textContent = t('s3_share_revoked');
+      await loadS3Shares();
+    } catch (error) { byId('s3ShareMessage').textContent = error.message; button.disabled = false; }
+  });
   byId('v2MetadataSettingsForm').addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -1295,13 +1386,15 @@
   byId('v2RefreshIdentity').addEventListener('click', () => Promise.all([loadV2Identity(), loadV2GroupAdmins()]).catch((error) => settingsMessage(error.message)));
   byId('v2IdentityUserSearchBtn').addEventListener('click', () => loadV2Identity().catch((error) => settingsMessage(error.message)));
   byId('v2IdentityUserSearch').addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); loadV2Identity().catch((error) => settingsMessage(error.message)); } });
+  const selectedGroupAdminScopes = () => Array.from(byId('v2GroupAdminScopes').querySelectorAll('input:checked')).map((input) => input.value);
+  const setGroupAdminScopes = (values = []) => { const selected = new Set(values); byId('v2GroupAdminScopes').querySelectorAll('input').forEach((input) => { input.checked = selected.has(input.value); }); };
   const selectedGroupAdminTypes = () => Array.from(byId('v2GroupAdminTypes').querySelectorAll('input:checked')).map((input) => input.value);
   const setGroupAdminTypes = (values = []) => { const selected = new Set(values); byId('v2GroupAdminTypes').querySelectorAll('input').forEach((input) => { input.checked = selected.has(input.value); }); };
-  byId('v2AddGroupAdmin').addEventListener('click', async (event) => { const groupName = byId('v2GroupAdminGroup').value.trim(), username = byId('v2GroupAdminUser').value.trim(); if (!groupName || !username) { byId('v2GroupAdminsMessage').textContent = localizedSettingsNotice('Managed group and manager are required.', 'Yönetilen grup ve yönetici zorunludur.'); return; } event.currentTarget.disabled = true; try { const endpoint = editingGroupAdminId ? `/api/admin/group-admins/${encodeURIComponent(editingGroupAdminId)}` : '/api/admin/group-admins'; await api(endpoint, { method:editingGroupAdminId ? 'PATCH' : 'POST', body:JSON.stringify({groupName, username, adminScopes:[byId('v2GroupAdminScope').value], assetTypeGroups:selectedGroupAdminTypes()}) }); editingGroupAdminId = ''; byId('v2GroupAdminUser').value = ''; byId('v2GroupAdminGroup').value = ''; byId('v2GroupAdminScope').value = 'asset-rights'; setGroupAdminTypes([]); event.currentTarget.textContent = localizedSettingsNotice('Add', 'Ekle'); byId('v2GroupAdminsMessage').textContent = localizedSettingsNotice('Group administrator saved.', 'Grup yöneticisi kaydedildi.'); await loadV2GroupAdmins(); } catch (error) { byId('v2GroupAdminsMessage').textContent = error.message; } finally { event.currentTarget.disabled = false; } });
+  byId('v2AddGroupAdmin').addEventListener('click', async (event) => { const groupName = byId('v2GroupAdminGroup').value.trim(), username = byId('v2GroupAdminUser').value.trim(); if (!groupName || !username) { byId('v2GroupAdminsMessage').textContent = localizedSettingsNotice('Managed group and manager are required.', 'Yönetilen grup ve yönetici zorunludur.'); return; } event.currentTarget.disabled = true; try { const endpoint = editingGroupAdminId ? `/api/admin/group-admins/${encodeURIComponent(editingGroupAdminId)}` : '/api/admin/group-admins'; await api(endpoint, { method:editingGroupAdminId ? 'PATCH' : 'POST', body:JSON.stringify({groupName, username, adminScopes:selectedGroupAdminScopes(), assetTypeGroups:selectedGroupAdminTypes()}) }); editingGroupAdminId = ''; byId('v2GroupAdminUser').value = ''; byId('v2GroupAdminGroup').value = ''; setGroupAdminScopes(['asset-rights']); setGroupAdminTypes([]); event.currentTarget.textContent = localizedSettingsNotice('Add', 'Ekle'); byId('v2GroupAdminsMessage').textContent = localizedSettingsNotice('Group administrator saved.', 'Grup yöneticisi kaydedildi.'); await Promise.all([loadV2GroupAdmins(), recordsModule.loadUserPermissions()]); } catch (error) { byId('v2GroupAdminsMessage').textContent = error.message; } finally { event.currentTarget.disabled = false; } });
   byId('v2GroupAdmins').addEventListener('click', async (event) => {
     const edit = event.target.closest('[data-group-admin-edit]');
-    if (edit) { editingGroupAdminId = edit.dataset.groupAdminEdit; byId('v2GroupAdminGroup').value = edit.dataset.groupName || ''; byId('v2GroupAdminUser').value = edit.dataset.username || ''; let scopes = [], types = []; try { scopes = JSON.parse(edit.dataset.scopes || '[]'); types = JSON.parse(edit.dataset.types || '[]'); } catch {} byId('v2GroupAdminScope').value = scopes[0] || 'asset-rights'; setGroupAdminTypes(types); byId('v2AddGroupAdmin').textContent = localizedSettingsNotice('Update', 'Güncelle'); byId('v2GroupAdminGroup').focus(); return; }
-    const button = event.target.closest('[data-group-admin-delete]'); if (!button || !global.confirm(localizedSettingsNotice('Delete this group administrator?', 'Bu grup yöneticisi silinsin mi?'))) return; button.disabled = true; try { await api(`/api/admin/group-admins/${encodeURIComponent(button.dataset.groupAdminDelete)}`, {method:'DELETE'}); if (editingGroupAdminId === button.dataset.groupAdminDelete) editingGroupAdminId = ''; await loadV2GroupAdmins(); } catch (error) { byId('v2GroupAdminsMessage').textContent = error.message; button.disabled = false; }
+    if (edit) { editingGroupAdminId = edit.dataset.groupAdminEdit; byId('v2GroupAdminGroup').value = edit.dataset.groupName || ''; byId('v2GroupAdminUser').value = edit.dataset.username || ''; let scopes = [], types = []; try { scopes = JSON.parse(edit.dataset.scopes || '[]'); types = JSON.parse(edit.dataset.types || '[]'); } catch {} setGroupAdminScopes(scopes.length ? scopes : ['asset-rights']); setGroupAdminTypes(types); byId('v2AddGroupAdmin').textContent = localizedSettingsNotice('Update', 'Güncelle'); byId('v2GroupAdminGroup').focus(); return; }
+    const button = event.target.closest('[data-group-admin-delete]'); if (!button || !global.confirm(localizedSettingsNotice('Delete this group administrator?', 'Bu grup yöneticisi silinsin mi?'))) return; button.disabled = true; try { await api(`/api/admin/group-admins/${encodeURIComponent(button.dataset.groupAdminDelete)}`, {method:'DELETE'}); if (editingGroupAdminId === button.dataset.groupAdminDelete) editingGroupAdminId = ''; await Promise.all([loadV2GroupAdmins(), recordsModule.loadUserPermissions()]); } catch (error) { byId('v2GroupAdminsMessage').textContent = error.message; button.disabled = false; }
   });
   byId('v2SessionSettingsForm').addEventListener('submit', async (event) => {
     event.preventDefault(); const form = event.currentTarget; const authSession = { rememberMe:form.elements.rememberMe.checked, ssoIdleMinutes:numberValue(form,'ssoIdleMinutes',30), ssoMaxHours:numberValue(form,'ssoMaxHours',8), clientIdleMinutes:numberValue(form,'clientIdleMinutes',30), clientMaxHours:numberValue(form,'clientMaxHours',8) };
@@ -1320,11 +1413,15 @@
     if (getActiveView() === 'audit') loadAuditEvents();
     if (getActiveView() === 'asset-rights') loadAssetRights();
     if (getActiveView() === 'metadata' && canUseFullAdmin()) await loadV2Settings();
+    if (getActiveView() === 's3-sharing') await loadS3SharingView();
     if (getActiveView() === 'settings') {
       if (canUseFullAdmin()) await loadV2Settings();
       const activeSettingsTab = byId('settingsTabs')?.querySelector('[data-settings-tab].is-active')?.dataset.settingsTab;
       if (activeSettingsTab === 'ocr') await recordsModule.loadOcrRecords();
       if (activeSettingsTab === 'subtitle') await recordsModule.loadSubtitleRecords();
+      if (activeSettingsTab === 'users') {
+        await Promise.all([recordsModule.loadUserPermissions(), loadV2Identity(), loadV2GroupAdmins()]);
+      }
     }
   });
   document.addEventListener('keydown', (event) => {
@@ -1353,6 +1450,7 @@
       if (tab === 'ocr') recordsModule.loadOcrRecords();
       if (tab === 'subtitle') recordsModule.loadSubtitleRecords();
     }
+    else if (getActiveView() === 's3-sharing') loadS3SharingView();
     else if (getActiveView() === 'health') refresh({ force: true });
   })();
 })(window);

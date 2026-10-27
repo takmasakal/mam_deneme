@@ -125,9 +125,12 @@ function createEffectivePermissionService({
       effective.permissionKeys = allPermissionKeys;
       Object.assign(effective, permissionKeysToLegacyFlags(allPermissionKeys));
     }
-    const isSuperAdmin = allPermissionKeys.every((key) => effective.permissionKeys.includes(key));
+    // Preserve existing superadmin assignments when adding a new optional permission.
+    const superAdminKeys = allPermissionKeys.filter((key) => key !== 's3.share');
+    const isSuperAdmin = superAdminKeys.every((key) => effective.permissionKeys.includes(key));
     const canAccessAdmin = Boolean(effective.adminPageAccess);
     const canAccessTextAdmin = Boolean(effective.textAdminAccess || canAccessAdmin);
+    const canAccessS3Sharing = Boolean(effective.s3ShareAccess || canAccessAdmin);
     const canEditOffice = Boolean(effective.officeEdit || canAccessAdmin);
     const canAccessAdvancedSearch = Boolean(effective.advancedSearchAccess);
     const effectiveUser = {
@@ -136,6 +139,7 @@ function createEffectivePermissionService({
       isAdmin: canAccessAdmin,
       canAccessAdmin,
       canAccessTextAdmin,
+      canAccessS3Sharing,
       canAccessMetadataAdmin: Boolean(effective.metadataAdminAccess || canAccessAdmin),
       canEditMetadata: Boolean(effective.metadataEdit),
       canEditOffice,

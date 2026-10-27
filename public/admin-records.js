@@ -11,6 +11,7 @@
       userPermissionsSearchButton,
       userPermissionsRows,
       userPermissionsMsg,
+      onPermissionsSaved,
       userPermissionsPageSize,
       userPermissionsPrevPage,
       userPermissionsNextPage,
@@ -159,6 +160,7 @@
           { key: 'metadata.admin', legacyField: 'metadataAdminAccess', labelKey: 'perm_metadata_admin' },
           { key: 'text.admin', legacyField: 'textAdminAccess', labelKey: 'perm_text_admin' },
           { key: 'document.rights.admin', legacyField: 'documentRightsAdminAccess', labelKey: 'perm_document_rights_admin' },
+          { key: 's3.share', legacyField: 's3ShareAccess', labelKey: 'perm_s3_share' },
           { key: 'advanced.search', legacyField: 'advancedSearchAccess', labelKey: 'perm_advanced_search' }
         ];
       if (!list.length) {
@@ -268,6 +270,7 @@
             });
             notifyUserPermissionChange(username);
             await loadUserPermissions();
+            if (typeof onPermissionsSaved === 'function') await onPermissionsSaved();
             setUserPermissionsMessage(t('user_permissions_saved'), { autoClear: true });
           } catch (error) {
             setUserPermissionsMessage(String(error.message || 'Request failed'));

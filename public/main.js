@@ -134,6 +134,7 @@ let ingestModule = null;
 let selectedAssetId = null;
 let currentUserIsSuperAdmin = false;
 let currentUserCanAccessAdmin = false;
+let currentUserCanAccessS3Sharing = false;
 let currentUserCanEditMetadata = false;
 let currentUserCanEditOffice = false;
 let currentUserCanDeleteAssets = false;
@@ -1654,6 +1655,7 @@ async function loadCurrentUser(options = {}) {
     const displayName = String(me.displayName || '').trim();
     const email = String(me.email || '').trim();
     const canAccessAdmin = toStrictBool(me.canAccessAdmin, toStrictBool(me.isAdmin, false));
+    currentUserCanAccessS3Sharing = toStrictBool(me.canAccessS3Sharing, canAccessAdmin);
     const isSuperAdmin = toStrictBool(me.isSuperAdmin, toStrictBool(me.baseIsSuperAdmin, false));
     const canAccessTextAdmin = toStrictBool(me.canAccessTextAdmin, canAccessAdmin);
     const canEditMetadata = toStrictBool(me.canEditMetadata, false);
@@ -1691,7 +1693,7 @@ async function loadCurrentUser(options = {}) {
     currentUserBtn.title = value;
     sessionStorage.setItem(SESSION_CURRENT_USER_LABEL, value);
     if (adminMenuLink) {
-      adminMenuLink.classList.toggle('hidden', !accessScopeModule.canShowAdminMenu(me));
+      adminMenuLink.classList.toggle('hidden', !(accessScopeModule.canShowAdminMenu(me) || currentUserCanAccessS3Sharing));
     }
     applyCurrentUserAssetTypeScope();
     currentUserPermissionSignature = buildCurrentUserPermissionSignature();
@@ -1712,6 +1714,7 @@ async function loadCurrentUser(options = {}) {
     }
     currentUserIsSuperAdmin = false;
     currentUserCanAccessAdmin = false;
+    currentUserCanAccessS3Sharing = false;
     currentUserCanEditMetadata = false;
     currentUserCanEditOffice = false;
     currentUserCanDeleteAssets = false;
@@ -2328,6 +2331,7 @@ detailModule = window.createMainDetailModule({
   currentUserCanEditOffice: () => currentUserCanEditOffice,
   currentUserIsSuperAdmin: () => currentUserIsSuperAdmin,
   currentUserCanAccessAdmin: () => currentUserCanAccessAdmin,
+  currentUserCanAccessS3Sharing: () => currentUserCanAccessS3Sharing,
   currentUserCanDeleteAssets: () => currentUserCanDeleteAssets,
   currentUserCanDeleteAssetInUi,
   currentUserOwnsAsset,
@@ -2787,6 +2791,7 @@ const detailAssetActionsModule = window.createMainDetailAssetActions({
   canEditMetadata: () => currentUserCanEditMetadata,
   canEditOffice: () => currentUserCanEditOffice,
   canUsePdfAdvancedTools: () => currentUserCanUsePdfAdvancedTools,
+  canShareS3: () => currentUserCanAccessS3Sharing,
   canDeleteAsset: currentUserCanDeleteAssetInUi,
   onPermanentDeleteSuccess: async (assetId) => {
     const wasSelected = selectedAssetId === assetId;

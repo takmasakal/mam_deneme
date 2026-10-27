@@ -30,6 +30,7 @@ function registerAssetRoutes(app, deps) {
     collectAssetCleanupPaths,
     collectVersionPreviewCleanupPaths,
     cleanupAssetFiles,
+    revokeSharesForAsset,
     cleanupUnreferencedAssetFiles,
     removeAssetFromCollections,
     removeAssetFromElastic,
@@ -2199,6 +2200,7 @@ function registerAssetRoutes(app, deps) {
       if (!result.rowCount) {
         return res.status(404).json({ error: 'Asset not found' });
       }
+      await revokeSharesForAsset?.(req.params.id, loaded.accessContext?.username || '');
       await indexAssetToElastic(req.params.id).catch(() => {});
       await recordAuditEvent?.(req, {
         action: 'asset.trashed',
@@ -2257,6 +2259,7 @@ function registerAssetRoutes(app, deps) {
       const existing = { rows: [loaded.row], rowCount: 1 };
       const versionRows = (await pool.query('SELECT * FROM asset_versions WHERE asset_id = $1', [req.params.id])).rows;
       const cleanupTargets = collectAssetCleanupPaths(existing.rows[0], versionRows);
+      await revokeSharesForAsset?.(req.params.id, loaded.accessContext?.username || '');
       await pool.query('DELETE FROM assets WHERE id = $1 RETURNING id', [req.params.id]);
       await removeAssetFromCollections(req.params.id);
       cleanupAssetFiles(cleanupTargets);

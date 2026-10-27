@@ -28,6 +28,8 @@ const { createAiExecutionService } = require('./services/aiExecutionService');
 const { createMediaOperationsService } = require('./services/mediaOperationsService');
 const { createProcessingJob, PROCESSING_TASKS } = require('./services/processingJobContract');
 const { createProcessingStorageService } = require('./services/processingStorageService');
+const { createS3ShareSettingsService } = require('./services/s3ShareSettingsService');
+const { createAssetShareService } = require('./services/assetShareService');
 const { createRemoteProcessingAdapter } = require('./services/remoteProcessingAdapter');
 const uiTranslations = require('../public/i18n.json');
 const { createMediaArtifactService } = require('./services/mediaArtifactService');
@@ -70,6 +72,7 @@ const { registerAdminRoutes } = require('./routes/admin');
 const { registerPdfRoutes } = require('./routes/pdf');
 const { registerAssetRoutes } = require('./routes/assets');
 const { registerTextProcessingRoutes } = require('./routes/textProcessing');
+const { registerS3ShareRoutes } = require('./routes/s3Shares');
 const {
   sanitizeFileName,
   getFileExtension,
@@ -147,6 +150,12 @@ const processingStorageService = createProcessingStorageService({
     primary: PROCESSING_STORAGE_PRIMARY_ROOT,
     scratch: PROCESSING_STORAGE_SCRATCH_ROOT
   }
+});
+const s3ShareSettingsService = createS3ShareSettingsService({ pool });
+const assetShareService = createAssetShareService({
+  pool,
+  settingsService: s3ShareSettingsService,
+  processingStorage: processingStorageService
 });
 const {
   artifactRoot,
@@ -7424,6 +7433,7 @@ registerAssetRoutes(app, {
   getAdminSettings,
   collectAssetCleanupPaths,
   cleanupAssetFiles,
+  revokeSharesForAsset: assetShareService.revokeSharesForAsset,
   cleanupUnreferencedAssetFiles,
   removeAssetFromCollections,
   removeAssetFromElastic: deleteAssetFromElastic,
@@ -7495,6 +7505,16 @@ registerAssetRoutes(app, {
     mapVersionRow,
   recordAuditEvent,
   nanoid
+});
+
+registerS3ShareRoutes(app, {
+  pool,
+  assetAccessService,
+  resolveEffectivePermissions,
+  settingsService: s3ShareSettingsService,
+  shareService: assetShareService,
+  publicUploadUrlToAbsolutePath,
+  recordAuditEvent
 });
 
 app.get('/api/collections', async (_req, res) => {

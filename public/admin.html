@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Belgelik Admin — System Health</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/admin/admin.css?v=20261022-ocr-save-status-1" />
+    <link rel="stylesheet" href="/admin/admin.css?v=20261027-group-admin-s3-layout-1" />
   </head>
   <body class="admin-page admin-access-pending">
     <a class="skip-link" href="#mainContent">Skip to content</a>
@@ -20,6 +20,8 @@
           <a data-v2-view-link="health" href="/admin"><span class="nav-icon" aria-hidden="true">⌁</span><span data-v2-i18n="system_health">System Health</span></a>
           <a data-v2-view-link="diagnostics" href="/admin?view=diagnostics"><span class="nav-icon" aria-hidden="true">⌕</span><span data-v2-i18n="runtime_diagnostics">Diagnostics</span></a>
           <a data-v2-view-link="audit" href="/admin?view=audit"><span class="nav-icon" aria-hidden="true">▤</span><span data-v2-i18n="audit_history">Audit History</span></a>
+
+          <a data-v2-view-link="s3-sharing" href="/admin?view=s3-sharing" hidden><span class="nav-icon" aria-hidden="true">↗</span><span data-v2-i18n="s3_sharing">S3 Sharing</span></a>
           <a data-v2-view-link="asset-rights" href="/admin?view=asset-rights"><span class="nav-icon" aria-hidden="true">◇</span><span data-v2-i18n="asset_rights">Asset Rights</span></a>
           <a data-v2-view-link="metadata" href="/admin?view=metadata"><span class="nav-icon" aria-hidden="true">✣</span><span data-v2-i18n="metadata_generation">Metadata Generation</span></a>
           <a data-v2-view-link="settings" href="/admin?view=settings"><span class="nav-icon" aria-hidden="true">⚙</span><span data-v2-i18n="settings">Settings</span></a>
@@ -111,6 +113,31 @@
             </section>
           </section>
 
+          <section class="s3-sharing-view" data-v2-view="s3-sharing" hidden>
+            <section id="s3ShareSettingsSection" class="settings-tool-card" hidden>
+              <div class="s3-section-heading"><div><h2 data-v2-i18n="s3_provider_settings">Provider settings</h2><p data-v2-i18n="s3_provider_description">Configure the object storage used for temporary share links.</p></div></div>
+              <form id="s3ShareSettingsForm">
+                <div class="s3-provider-grid">
+                  <label class="s3-provider-endpoint"><span data-v2-i18n="s3_endpoint">Endpoint</span><input name="endpoint" type="url" placeholder="https://s3.example.net" required /></label>
+                  <label><span data-v2-i18n="s3_region">Region</span><input name="region" value="auto" required /></label>
+                  <label><span data-v2-i18n="s3_bucket">Bucket</span><input name="bucket" required /></label>
+                  <label><span data-v2-i18n="s3_access_key">Access key ID</span><input name="accessKeyId" autocomplete="new-password" /></label>
+                  <label><span data-v2-i18n="s3_secret_key">Secret access key</span><input name="secretAccessKey" type="password" autocomplete="new-password" /></label>
+                  <label><span data-v2-i18n="s3_default_expiry">Default expiry (days)</span><input name="defaultTtlDays" type="number" min="1" max="7" value="7" required /></label>
+                  <label><span data-v2-i18n="s3_max_expiry">Maximum expiry (days)</span><input name="maxTtlDays" type="number" min="1" max="7" value="7" required /></label>
+                  <label class="s3-path-style"><input name="forcePathStyle" type="checkbox" /><span data-v2-i18n="s3_path_style">Path-style requests (MinIO)</span></label>
+                </div>
+                <p id="s3ShareCredentialHint" class="settings-help"></p>
+                <div class="settings-actions"><button class="primary-link button-reset" type="submit" data-v2-i18n="s3_save_provider">Save provider</button><button id="s3ShareTestConnection" class="secondary-button" type="button" data-v2-i18n="test_connection">Test connection</button></div>
+              </form>
+            </section>
+            <section class="settings-record-section">
+              <div class="settings-section-heading"><h2 data-v2-i18n="active_shares">Active and recent shares</h2><button id="s3ShareRefresh" class="secondary-button" type="button" data-v2-i18n="refresh">Refresh</button></div>
+              <div id="s3ShareRows" class="settings-records"></div>
+              <div id="s3ShareMessage" class="inline-message" role="status"></div>
+            </section>
+          </section>
+
           <section class="rights-view" data-v2-view="asset-rights" hidden>
             <section class="v2-panel">
               <form id="assetRightsFilters" class="rights-toolbar">
@@ -164,6 +191,6 @@
     <script src="/session-expiry.js?v=20260714-session-expiry-3"></script>
     <script src="/admin-system-health.js?v=20261019-server-resources-2"></script>
     <script src="/admin-records.js?v=20261018-content-status-1"></script>
-    <script src="/admin/admin.js?v=20261022-ocr-save-status-1"></script>
+    <script src="/admin/admin.js?v=20261027-s3-sharing-layout-2"></script>
   </body>
 </html>

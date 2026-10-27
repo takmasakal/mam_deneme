@@ -73,6 +73,18 @@ function createAuthMiddlewareService({
     }
   }
 
+  async function requireS3ShareAccess(req, res, next) {
+    try {
+      const effective = await loadEffective(req);
+      if (effective.isSuperAdmin || effective.canAccessAdmin || effective.canAccessS3Sharing) return next();
+      const context = await assetAccessService.resolveAccessContext(req, resolveEffectivePermissions);
+      if (assetAccessService.hasScopedAdminScopeAccess(context, 's3-share')) return next();
+      return forbidden(res);
+    } catch (_error) {
+      return res.status(500).json({ error: 'Failed to verify S3 sharing permissions' });
+    }
+  }
+
   async function requireScopedAdminAccess(req, res, next) {
     const textAdminPaths = [
       /^\/ocr-records(?:\/content)?$/,
@@ -97,6 +109,9 @@ function createAuthMiddlewareService({
       /^\/document-rights\/assets\/[^/]+\/edit-lock$/
     ];
     const safePath = String(req.path || '').trim();
+    if (/^\/s3-sharing(?:\/.*)?$/.test(safePath)) {
+      return requireS3ShareAccess(req, res, next);
+    }
     if (/^\/metadata\/(?:assets\/suggest|generate)$/.test(safePath)) {
       return requirePermissionFlag('canAccessMetadataAdmin', 'Failed to verify metadata admin permissions')(req, res, next);
     }

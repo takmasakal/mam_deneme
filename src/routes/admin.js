@@ -763,6 +763,11 @@ app.post('/api/admin/group-admins', async (req, res) => {
     if (!groupName || !username) {
       return res.status(400).json({ error: 'groupName and username are required' });
     }
+    const existing = await pool.query(
+      'SELECT admin_scopes FROM group_admins WHERE lower(group_name) = $1 AND lower(username) = $2 LIMIT 1',
+      [groupName, username]
+    );
+    const previousScopes = existing.rows[0]?.admin_scopes || [];
     const now = new Date().toISOString();
     const createdBy = String(effective.username || effective.displayName || '').trim();
     const result = await pool.query(
@@ -776,6 +781,10 @@ app.post('/api/admin/group-admins', async (req, res) => {
         RETURNING *
       `,
       [resolvedNanoid(), groupName, username, adminScopes, assetTypeGroups, now, createdBy]
+    );
+    await syncGroupAdminScopesToPrincipalPermissions(
+      username,
+      changedPermissionScopes(previousScopes, result.rows[0].admin_scopes || [])
     );
     await recordAuditEvent?.(req, {
       action: 'group_admin.saved',
@@ -801,6 +810,12 @@ app.patch('/api/admin/group-admins/:id', async (req, res) => {
     if (!groupName || !username) {
       return res.status(400).json({ error: 'groupName and username are required' });
     }
+    const previousResult = await pool.query(
+      'SELECT username, admin_scopes FROM group_admins WHERE id = $1 LIMIT 1',
+      [req.params.id]
+    );
+    if (!previousResult.rowCount) return res.status(404).json({ error: 'Group admin not found' });
+    const previousAssignment = previousResult.rows[0];
     const result = await pool.query(
       `
         UPDATE group_admins
@@ -822,6 +837,23 @@ app.patch('/api/admin/group-admins/:id', async (req, res) => {
       ]
     );
     if (!result.rowCount) return res.status(404).json({ error: 'Group admin not found' });
+    const savedAssignment = result.rows[0];
+    const previousUsername = assetAccessService.normalizeAccessName(previousAssignment.username);
+    if (previousUsername !== username) {
+      await syncGroupAdminScopesToPrincipalPermissions(
+        previousUsername,
+        changedPermissionScopes(previousAssignment.admin_scopes || [], [])
+      );
+      await syncGroupAdminScopesToPrincipalPermissions(
+        username,
+        changedPermissionScopes([], savedAssignment.admin_scopes || [])
+      );
+    } else {
+      await syncGroupAdminScopesToPrincipalPermissions(
+        username,
+        changedPermissionScopes(previousAssignment.admin_scopes || [], savedAssignment.admin_scopes || [])
+      );
+    }
     await recordAuditEvent?.(req, {
       action: 'group_admin.updated',
       targetType: 'group_admin',
@@ -844,6 +876,10 @@ app.delete('/api/admin/group-admins/:id', async (req, res) => {
     if (!effective) return null;
     const result = await pool.query('DELETE FROM group_admins WHERE id = $1 RETURNING *', [req.params.id]);
     if (!result.rowCount) return res.status(404).json({ error: 'Group admin not found' });
+    await syncGroupAdminScopesToPrincipalPermissions(
+      result.rows[0].username,
+      changedPermissionScopes(result.rows[0].admin_scopes || [], [])
+    );
     await recordAuditEvent?.(req, {
       action: 'group_admin.deleted',
       targetType: 'group_admin',
@@ -3253,6 +3289,94 @@ function resolveAssetDerivedPermissionKeysForUser({ username, displayName, email
   return uniquePermissionKeys(Array.from(keys));
 }
 
+async function syncPrincipalPermissionScopes(principalType, principalName, permissionKeys, previousPermissionKeys = []) {
+  const name = assetAccessService.normalizeAccessName(principalName);
+  if (!name) return;
+  const column = principalType === 'group' ? 'group_name' : 'username';
+  const result = await pool.query(`SELECT id, admin_scopes FROM group_admins WHERE lower(${column}) = $1`, [name]);
+  const enabled = new Set(Array.isArray(permissionKeys) ? permissionKeys : []);
+  const previouslyEnabled = new Set(Array.isArray(previousPermissionKeys) ? previousPermissionKeys : []);
+  const mappings = [
+    ['document.rights.admin', 'document-rights'],
+    ['text.admin', 'text-admin'],
+    ['s3.share', 's3-share']
+  ];
+  for (const row of result.rows) {
+    const scopes = new Set(assetAccessService.normalizeAdminScopeList(row.admin_scopes, ['asset-rights']));
+    for (const [permissionKey, scope] of mappings) {
+      if (enabled.has(permissionKey)) scopes.add(scope);
+      else if (previouslyEnabled.has(permissionKey)) scopes.delete(scope);
+    }
+    const nextScopes = Array.from(scopes);
+    const currentScopes = assetAccessService.normalizeAdminScopeList(row.admin_scopes, ['asset-rights']);
+    if (nextScopes.length !== currentScopes.length || nextScopes.some((scope) => !currentScopes.includes(scope))) {
+      await pool.query('UPDATE group_admins SET admin_scopes = $2 WHERE id = $1', [row.id, nextScopes]);
+    }
+  }
+}
+
+async function syncGroupAdminScopesToPrincipalPermissions(principalName, changedScopes = []) {
+  const name = assetAccessService.normalizeAccessName(principalName);
+  const changed = new Set(Array.isArray(changedScopes) ? changedScopes : []);
+  if (!name || !changed.size) return;
+  const mappings = [
+    ['document-rights', 'document.rights.admin'],
+    ['text-admin', 'text.admin'],
+    ['s3-share', 's3.share']
+  ].filter(([scope]) => changed.has(scope));
+  if (!mappings.length) return;
+
+  const [assignmentRows, current] = await Promise.all([
+    pool.query('SELECT admin_scopes FROM group_admins WHERE lower(username) = $1', [name]),
+    getUserPermissionsSettings()
+  ]);
+  const activeScopes = new Set(assignmentRows.rows.flatMap((row) => assetAccessService.normalizeAdminScopeList(row.admin_scopes, [])));
+  const savedUsers = current?.users && typeof current.users === 'object' && !Array.isArray(current.users) ? current.users : {};
+  const savedGroups = current?.groups && typeof current.groups === 'object' && !Array.isArray(current.groups) ? current.groups : {};
+  const legacyUsers = Object.fromEntries(Object.entries(current || {}).filter(([key]) => !['users', 'groups'].includes(String(key || '').trim())));
+
+  let isGroup = Object.prototype.hasOwnProperty.call(savedGroups, name);
+  if (!isGroup && typeof fetchKeycloakGroups === 'function') {
+    try {
+      const groupData = await fetchKeycloakGroups();
+      isGroup = (Array.isArray(groupData?.groups) ? groupData.groups : []).some((group) =>
+        [group?.name, group?.path].some((value) => assetAccessService.normalizeAccessName(value) === name)
+      );
+    } catch (_error) {
+      // Keep the persisted principal type if Keycloak is temporarily unavailable.
+    }
+  }
+  const rawEntry = isGroup ? savedGroups[name] : { ...legacyUsers, ...savedUsers }[name];
+  const entry = normalizePermissionEntry(rawEntry, []);
+  const permissionKeys = new Set(entry.permissionKeys);
+  const deniedPermissionKeys = new Set(entry.deniedPermissionKeys || []);
+  for (const [scope, permissionKey] of mappings) {
+    if (activeScopes.has(scope)) {
+      permissionKeys.add(permissionKey);
+      deniedPermissionKeys.delete(permissionKey);
+    } else {
+      permissionKeys.delete(permissionKey);
+      deniedPermissionKeys.add(permissionKey);
+    }
+  }
+  const nextRawEntry = { ...rawEntry, permissionKeys: Array.from(permissionKeys), deniedPermissionKeys: Array.from(deniedPermissionKeys) };
+  for (const definition of getPermissionDefinitionsPayload()) {
+    nextRawEntry[definition.legacyField] = permissionKeys.has(definition.key);
+  }
+  const nextEntry = normalizePermissionEntry(nextRawEntry, []);
+  if (isGroup) {
+    await saveUserPermissionsSettings({ ...current, users: savedUsers, groups: { ...savedGroups, [name]: nextEntry } });
+  } else {
+    await saveUserPermissionsSettings({ ...current, users: { ...legacyUsers, ...savedUsers, [name]: nextEntry }, groups: savedGroups });
+  }
+}
+
+function changedPermissionScopes(previousScopes = [], nextScopes = []) {
+  const previous = new Set(assetAccessService.normalizeAdminScopeList(previousScopes, []));
+  const next = new Set(assetAccessService.normalizeAdminScopeList(nextScopes, []));
+  return ['document-rights', 'text-admin', 's3-share'].filter((scope) => previous.has(scope) !== next.has(scope));
+}
+
 app.get('/api/admin/user-permissions', async (req, res) => {
   try {
     const effective = await requireSuperAdminRequest(req, res);
@@ -3326,6 +3450,7 @@ app.get('/api/admin/user-permissions', async (req, res) => {
             deniedPermissionKeys: entry.deniedPermissionKeys,
             adminPageAccess: entry.adminPageAccess,
             textAdminAccess: entry.textAdminAccess,
+            s3ShareAccess: entry.s3ShareAccess,
             metadataEdit: entry.metadataEdit,
             assetDelete: entry.assetDelete,
             pdfAdvancedTools: entry.pdfAdvancedTools,
@@ -3408,6 +3533,7 @@ app.get('/api/admin/user-permissions', async (req, res) => {
           groups: userGroups,
           adminPageAccess: effective.adminPageAccess,
           textAdminAccess: effective.textAdminAccess,
+          s3ShareAccess: effective.s3ShareAccess,
           metadataEdit: effective.metadataEdit,
           assetDelete: effective.assetDelete,
           pdfAdvancedTools: effective.pdfAdvancedTools,
@@ -3452,6 +3578,9 @@ app.patch('/api/admin/user-permissions/:username', async (req, res) => {
     }
 
     const current = await getUserPermissionsSettings();
+    const currentSavedUsers = current?.users && typeof current.users === 'object' && !Array.isArray(current.users) ? current.users : {};
+    const currentLegacyUsers = Object.fromEntries(Object.entries(current || {}).filter(([key]) => !['users', 'groups'].includes(String(key || '').trim())));
+    const previousEntry = normalizePermissionEntry({ ...currentLegacyUsers, ...currentSavedUsers }[username], []);
     const requestedPermissionKeys = Array.isArray(req.body?.permissionKeys)
       ? req.body.permissionKeys.filter((key) => PERMISSION_KEYS.includes(String(key || '').trim()))
       : null;
@@ -3464,6 +3593,7 @@ app.patch('/api/admin/user-permissions/:username', async (req, res) => {
         deniedPermissionKeys,
         adminPageAccess: req.body?.adminPageAccess,
         textAdminAccess: req.body?.textAdminAccess,
+        s3ShareAccess: req.body?.s3ShareAccess,
         metadataEdit: req.body?.metadataEdit,
         assetDelete: req.body?.assetDelete,
         pdfAdvancedTools: req.body?.pdfAdvancedTools,
@@ -3486,6 +3616,7 @@ app.patch('/api/admin/user-permissions/:username', async (req, res) => {
       groups: savedGroups
     };
     await saveUserPermissionsSettings(next);
+    await syncPrincipalPermissionScopes('user', username, nextEntry.permissionKeys, previousEntry.permissionKeys);
     return res.json({
       username,
       permissionKeys: nextEntry.permissionKeys,
@@ -3519,6 +3650,8 @@ app.patch('/api/admin/group-permissions/:groupName', async (req, res) => {
       return res.status(404).json({ error: 'Group not found' });
     }
     const current = await getUserPermissionsSettings();
+    const currentSavedGroups = current?.groups && typeof current.groups === 'object' && !Array.isArray(current.groups) ? current.groups : {};
+    const previousEntry = normalizePermissionEntry(currentSavedGroups[groupName], []);
     const requestedPermissionKeys = Array.isArray(req.body?.permissionKeys)
       ? req.body.permissionKeys.filter((key) => PERMISSION_KEYS.includes(String(key || '').trim()))
       : null;
@@ -3527,6 +3660,7 @@ app.patch('/api/admin/group-permissions/:groupName', async (req, res) => {
         permissionKeys: requestedPermissionKeys,
         adminPageAccess: req.body?.adminPageAccess,
         textAdminAccess: req.body?.textAdminAccess,
+        s3ShareAccess: req.body?.s3ShareAccess,
         metadataEdit: req.body?.metadataEdit,
         assetDelete: req.body?.assetDelete,
         pdfAdvancedTools: req.body?.pdfAdvancedTools,
@@ -3551,6 +3685,7 @@ app.patch('/api/admin/group-permissions/:groupName', async (req, res) => {
       }
     };
     await saveUserPermissionsSettings(next);
+    await syncPrincipalPermissionScopes('group', groupName, nextEntry.permissionKeys, previousEntry.permissionKeys);
     return res.json({
       groupName,
       permissionKeys: nextEntry.permissionKeys,

@@ -31,6 +31,10 @@ function createMePayloadService({
       effective.canAccessTextAdmin
       || (includeScopedTextAdmin && assetAccessService.hasScopedAdminScopeAccess(accessContext, 'text-admin'))
     );
+    const canAccessS3Sharing = Boolean(
+      effective.canAccessS3Sharing
+      || assetAccessService.hasScopedAdminScopeAccess(accessContext, 's3-share')
+    );
 
     return {
       authenticated: true,
@@ -45,6 +49,7 @@ function createMePayloadService({
         isAdmin: effective.isAdmin,
         canAccessAdmin: effective.canAccessAdmin,
         canAccessTextAdmin,
+        canAccessS3Sharing,
         canAccessMetadataAdmin: Boolean(effective.canAccessMetadataAdmin),
         canAccessAssetRightsAdmin: Boolean(
           effective.canAccessAdmin || assetAccessService.hasScopedAssetRightsAdminAccess(accessContext)

@@ -63,6 +63,7 @@ services:
       MAM_DB_USER: postgres
       MAM_DB_NAME: mam_mvp
       MAM_DB_PASSWORD_FILE: /run/secrets/mam_postgres_password
+      S3_SHARE_CREDENTIALS_KEY: ${S3_SHARE_CREDENTIALS_KEY:-}
       KEYCLOAK_DB_HOST: keycloak-postgres
       KEYCLOAK_DB_PORT: 5432
       KEYCLOAK_DB_USER: ${KEYCLOAK_DB_USER:-keycloak}
