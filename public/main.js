@@ -153,6 +153,7 @@ let searchSuggestModule = null;
 const selectedAssetIds = new Set();
 let lastSelectedAssetId = null;
 let currentSearchQuery = '';
+let currentTagQuery = '';
 let currentOcrQuery = '';
 let currentSubtitleQuery = '';
 let currentClipQuery = '';
@@ -2188,6 +2189,7 @@ const assetBrowserModule = window.createMainAssetBrowserModule({
   searchStateRef: {
     get currentSearchDidYouMean() { return currentSearchDidYouMean; },
     get currentSearchQuery() { return currentSearchQuery; },
+    get currentTagQuery() { return currentTagQuery; },
     get currentSearchFuzzyUsed() { return currentSearchFuzzyUsed; },
     get currentOcrDidYouMean() { return currentOcrDidYouMean; },
     get currentOcrQuery() { return currentOcrQuery; },
@@ -2606,6 +2608,8 @@ const assetsModule = window.createMainAssetsModule({
   searchStateRef: {
     get currentSearchQuery() { return currentSearchQuery; },
     set currentSearchQuery(next) { currentSearchQuery = next; },
+    get currentTagQuery() { return currentTagQuery; },
+    set currentTagQuery(next) { currentTagQuery = next; },
     get currentOcrQuery() { return currentOcrQuery; },
     set currentOcrQuery(next) { currentOcrQuery = next; },
     get currentSubtitleQuery() { return currentSubtitleQuery; },

@@ -700,13 +700,13 @@
       }).join(' ');
     }
 
-    function tagHighlightSnippet(asset, query) {
+    function tagHighlightSnippet(asset, query, markClass = 'search-hit') {
       const terms = extractHighlightTerms(query);
       const tags = Array.isArray(asset?.tags) ? asset.tags : [];
       if (!terms.length || !tags.length) return '';
       const hits = tags.map((tag) => String(tag || '').trim()).filter(Boolean).filter((tag) => terms.some((term) => textIncludesSearchTerm(tag, term))).slice(0, 3);
       if (!hits.length) return '';
-      return hits.map((tag) => `<button type="button" class="dc-hit field-hit-jump" data-field-jump="1" data-id="${escapeHtml(String(asset.id || ''))}" data-field-name="tags" data-focus-tag="${escapeHtml(tag)}"><strong>${escapeHtml(t('tags'))}:</strong> ${highlightMatch(tag, query)}</button>`).join(' ');
+      return hits.map((tag) => `<button type="button" class="dc-hit field-hit-jump" data-field-jump="1" data-id="${escapeHtml(String(asset.id || ''))}" data-field-name="tags" data-focus-tag="${escapeHtml(tag)}"><strong>${escapeHtml(t('tags'))}:</strong> ${highlightMatch(tag, query, markClass)}</button>`).join(' ');
     }
 
     function clipHighlightSnippet(asset, query) {

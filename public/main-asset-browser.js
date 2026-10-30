@@ -465,6 +465,7 @@ function renderAssets(assets, options = {}) {
   const searchState = {
     currentSearchDidYouMean: searchStateRef.currentSearchDidYouMean,
     currentSearchQuery: searchStateRef.currentSearchQuery,
+    currentTagQuery: searchStateRef.currentTagQuery,
     currentSearchFuzzyUsed: searchStateRef.currentSearchFuzzyUsed,
     currentSearchHighlightQuery: searchStateRef.currentSearchHighlightQuery,
     currentOcrDidYouMean: searchStateRef.currentOcrDidYouMean,
