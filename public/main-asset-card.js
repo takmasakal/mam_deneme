@@ -27,9 +27,11 @@
 
     function render(asset, searchState = {}, searchHighlightClass = 'search-hit') {
       const currentSearchQuery = String(searchState.currentSearchQuery || '').trim();
+      const currentTagQuery = String(searchState.currentTagQuery || '').trim();
       const currentSearchHighlightQuery = String(
         searchState.currentSearchHighlightQuery || currentSearchQuery
       ).trim();
+      const tagHighlightQuery = [currentSearchHighlightQuery, currentTagQuery].filter(Boolean).join(' ');
       const currentOcrQuery = String(searchState.currentOcrQuery || '').trim();
       const currentOcrHighlightQuery = String(searchState.currentOcrHighlightQuery || '').trim();
       const currentSubtitleQuery = String(searchState.currentSubtitleQuery || '').trim();
@@ -63,8 +65,8 @@
       const dcHits = hasTextSearch
         ? dcHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass)
         : '';
-      const tagHits = hasTextSearch
-        ? tagHighlightSnippet(asset, currentSearchHighlightQuery, searchHighlightClass)
+      const tagHits = tagHighlightQuery
+        ? tagHighlightSnippet(asset, tagHighlightQuery, searchHighlightClass)
         : '';
       const clipQueries = Array.from(new Set([
         hasTextSearch ? currentSearchHighlightQuery : '',
@@ -160,7 +162,7 @@
             <div class="asset-meta">${escapeHtml(t('asset_uploaded_at'))}: ${escapeHtml(formatDate(asset.createdAt))}</div>
             <div class="asset-meta">${escapeHtml(t('asset_updated_at'))}: ${escapeHtml(formatDate(asset.updatedAt))}</div>
             <div class="chips asset-card-tags">
-              ${(asset.tags || []).map((tag) => `<button type="button" class="chip chip-tag-filter" data-chip-tag="${escapeHtml(tag)}" style="${tagColorStyle(tag)}">${renderText(tag)}</button>`).join('')}
+              ${(asset.tags || []).map((tag) => `<button type="button" class="chip chip-tag-filter" data-chip-tag="${escapeHtml(tag)}" style="${tagColorStyle(tag)}">${highlightMatch(tag, tagHighlightQuery, searchHighlightClass)}</button>`).join('')}
             </div>
             ${asset.inTrash ? `
               <div class="card-actions">

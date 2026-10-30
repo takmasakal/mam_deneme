@@ -134,6 +134,7 @@
       const trashScopeRaw = String(filters.trash || 'active').trim().toLowerCase();
       const trashScope = ['active', 'trash', 'all'].includes(trashScopeRaw) ? trashScopeRaw : 'active';
       searchStateRef.currentSearchQuery = String(filters.q || '').trim();
+      searchStateRef.currentTagQuery = hasAdvancedSearch ? '' : String(filters.tag || '').trim();
       searchStateRef.currentOcrQuery = String(filters.ocrQ || '').trim();
       searchStateRef.currentSubtitleQuery = String(filters.subtitleQ || '').trim();
       searchStateRef.currentClipQuery = hasAdvancedSearch ? String(filters.clipQ || '').trim() : '';

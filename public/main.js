@@ -149,6 +149,7 @@ const accessScopeModule = typeof window.createMainAccessScopeModule === 'functio
   ? window.createMainAccessScopeModule()
   : null;
 let currentSearchQuery = '';
+let currentTagQuery = '';
 let currentOcrQuery = '';
 let currentSubtitleQuery = '';
 let currentClipQuery = '';
@@ -2131,6 +2132,7 @@ const assetBrowserModule = window.createMainAssetBrowserModule({
     get currentSearchQuery() { return currentSearchQuery; },
     get currentSearchFuzzyUsed() { return currentSearchFuzzyUsed; },
     get currentOcrDidYouMean() { return currentOcrDidYouMean; },
+    get currentTagQuery() { return currentTagQuery; },
     get currentOcrQuery() { return currentOcrQuery; },
     get currentOcrFuzzyUsed() { return currentOcrFuzzyUsed; },
     get currentSubtitleDidYouMean() { return currentSubtitleDidYouMean; },
@@ -2556,6 +2558,8 @@ const assetsModule = window.createMainAssetsModule({
     set currentSearchQuery(next) { currentSearchQuery = next; },
     get currentOcrQuery() { return currentOcrQuery; },
     set currentOcrQuery(next) { currentOcrQuery = next; },
+    get currentTagQuery() { return currentTagQuery; },
+    set currentTagQuery(next) { currentTagQuery = next; },
     get currentSubtitleQuery() { return currentSubtitleQuery; },
     set currentSubtitleQuery(next) { currentSubtitleQuery = next; },
     get currentClipQuery() { return currentClipQuery; },
