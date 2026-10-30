@@ -60,7 +60,7 @@
       page_of: 'Page {page} of {pages} · {total} events', retention_saved: 'Retention settings saved.',
       audit_cleanup_dates: 'Choose a valid start and end date before deleting.', audit_cleanup_confirm: 'Permanently delete audit events in this date range?',
       audit_cleanup_done: '{count} audit events deleted.', request_failed: 'Request failed'
-      ,rights_mode: 'Rights mode', individual_assets: 'Individual assets', asset_types: 'Asset types', search_assets: 'Search assets',
+      ,rights_mode: 'Rights mode', resize_asset_name_column: 'Resize asset name column', individual_assets: 'Individual assets', asset_types: 'Asset types', search_assets: 'Search assets',
       asset_type: 'Asset type', photo: 'Photo', document: 'Document', other: 'Other', visibility: 'Visibility', all: 'All',
       private: 'Private', owner_groups: 'Owner groups', selected_principals: 'Selected groups/users', public: 'Public',
       locked_only: 'Locked', load: 'Load', asset_rights_subtitle: 'Visibility and read, edit, download, and upload policies',
@@ -111,7 +111,7 @@
       page_of: 'Sayfa {page} / {pages} · {total} kayıt', retention_saved: 'Saklama ayarları kaydedildi.',
       audit_cleanup_dates: 'Silmeden önce geçerli bir başlangıç ve bitiş tarihi seçin.', audit_cleanup_confirm: 'Bu tarih aralığındaki işlem kayıtları kalıcı olarak silinsin mi?',
       audit_cleanup_done: '{count} işlem kaydı silindi.', request_failed: 'İstek başarısız',
-      rights_mode: 'Yetki modu', individual_assets: 'Tekil varlıklar', asset_types: 'Varlık türleri', search_assets: 'Varlık ara',
+      rights_mode: 'Yetki modu', resize_asset_name_column: 'Varlık adı kolonunu yeniden boyutlandır', individual_assets: 'Tekil varlıklar', asset_types: 'Varlık türleri', search_assets: 'Varlık ara',
       asset_type: 'Varlık türü', photo: 'Fotoğraf', document: 'Belge', other: 'Diğer', visibility: 'Görünürlük', all: 'Tümü',
       private: 'Gizli', owner_groups: 'Sahip gruplar', selected_principals: 'Seçili grup/kullanıcılar', public: 'Herkese açık',
       locked_only: 'Kilitli', load: 'Yükle', asset_rights_subtitle: 'Görünürlük ile okuma, düzenleme, indirme ve yükleme politikaları',
@@ -195,6 +195,16 @@
   let rightsModeValue = 'asset';
   let rightsLockedOnly = false;
   let rightsGroupInput = null;
+  const rightsNameColumnStorageKey = 'mam.admin.assetRights.nameColumnWidth';
+  const clampRightsNameColumnWidth = (value) => Math.min(420, Math.max(140, Number(value) || 180));
+  let rightsNameColumnWidth = clampRightsNameColumnWidth(global.localStorage?.getItem(rightsNameColumnStorageKey));
+
+  function setRightsNameColumnWidth(value, persist = false) {
+    rightsNameColumnWidth = clampRightsNameColumnWidth(value);
+    const table = byId('assetRightsRows')?.querySelector('.rights-table');
+    if (table) table.style.setProperty('--rights-name-col-width', `${rightsNameColumnWidth}px`);
+    if (persist) global.localStorage?.setItem(rightsNameColumnStorageKey, String(rightsNameColumnWidth));
+  }
   let metadataSuggestionTimer = 0;
 
   const byId = (id) => document.getElementById(id);
@@ -492,7 +502,7 @@
     const modeSelect = `<select id="assetRightsMode" aria-label="${escapeHtml(t('rights_mode'))}"><option value="asset"${mode === 'asset' ? ' selected' : ''}>${escapeHtml(t('asset'))}</option>${rightsCanUseTypeMode ? `<option value="type"${mode === 'type' ? ' selected' : ''}>${escapeHtml(language === 'tr' ? 'Tür / yükleme' : 'Type / upload')}</option>` : ''}</select>`;
     const assetHeaders = mode === 'asset' ? `<th>${escapeHtml(t('visibility'))}</th><th><span>${escapeHtml(t('owner_groups'))}</span><input id="assetRightsOwnerGroupFilter" type="search" value="${escapeHtml(rightsOwnerGroupFilter)}" placeholder="${escapeHtml(t('owner_groups'))}" /></th>` : '';
     const lockFilter = `<label class="rights-locked-filter"><input id="assetRightsLocked" type="checkbox"${rightsLockedOnly ? ' checked' : ''}${mode === 'type' ? ' disabled' : ''} /> ${escapeHtml(t('locked_only'))}</label>`;
-    byId('assetRightsRows').innerHTML = `${forms.join('')}<div class="rights-table-wrap"><table class="rights-table rights-matrix"><thead><tr><th><span>${escapeHtml(mode === 'type' ? t('asset_type') : t('asset'))}</span>${modeSelect}</th>${assetHeaders}${fields.map((name) => `<th>${escapeHtml(t(rightsFieldLabels[name]))}</th>`).join('')}<th>${lockFilter}</th></tr></thead><tbody>${rows}</tbody></table></div><datalist id="assetRightsGroupOptions">${(rightsGroupNames || []).map((name) => `<option value="${escapeHtml(name)}"></option>`).join('')}</datalist>`;
+    byId('assetRightsRows').innerHTML = `${forms.join('')}<div class="rights-table-wrap"><table class="rights-table rights-matrix" style="--rights-name-col-width:${rightsNameColumnWidth}px"><thead><tr><th class="rights-name-heading"><span>${escapeHtml(mode === 'type' ? t('asset_type') : t('asset'))}</span>${modeSelect}<span class="rights-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize asset name column" aria-valuemin="140" aria-valuemax="420" aria-valuenow="${rightsNameColumnWidth}" tabindex="0"></span></th>${assetHeaders}${fields.map((name) => `<th>${escapeHtml(t(rightsFieldLabels[name]))}</th>`).join('')}<th>${lockFilter}</th></tr></thead><tbody>${rows}</tbody></table></div><datalist id="assetRightsGroupOptions">${(rightsGroupNames || []).map((name) => `<option value="${escapeHtml(name)}"></option>`).join('')}</datalist>`;
   }
 
   function updateRightsPager() {
@@ -1246,6 +1256,13 @@
     if (event.target.matches('input[name$="Groups"]')) showRightsGroupSuggestions(event.target);
   });
   byId('assetRightsRows').addEventListener('keydown', (event) => {
+    const resizer = event.target.closest('.rights-column-resizer');
+    if (resizer && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+      event.preventDefault();
+      setRightsNameColumnWidth(rightsNameColumnWidth + (event.key === 'ArrowRight' ? 20 : -20), true);
+      resizer.setAttribute('aria-valuenow', String(rightsNameColumnWidth));
+      return;
+    }
     if (event.key === 'Escape' && byId('assetRightsGroupSuggestions')) byId('assetRightsGroupSuggestions').hidden = true;
     if (event.key !== 'Enter' || event.target.id !== 'assetRightsOwnerGroupFilter') return;
     event.preventDefault();
@@ -1253,6 +1270,26 @@
     rightsPage = 1;
     loadAssetRights();
   });
+  let rightsColumnResizePointer = null;
+  byId('assetRightsRows').addEventListener('pointerdown', (event) => {
+    const resizer = event.target.closest('.rights-column-resizer');
+    if (!resizer || event.button !== 0) return;
+    event.preventDefault();
+    rightsColumnResizePointer = { pointerId: event.pointerId, startX: event.clientX, startWidth: rightsNameColumnWidth, resizer };
+    resizer.setPointerCapture(event.pointerId);
+  });
+  byId('assetRightsRows').addEventListener('pointermove', (event) => {
+    if (!rightsColumnResizePointer || event.pointerId !== rightsColumnResizePointer.pointerId) return;
+    setRightsNameColumnWidth(rightsColumnResizePointer.startWidth + event.clientX - rightsColumnResizePointer.startX);
+    rightsColumnResizePointer.resizer.setAttribute('aria-valuenow', String(rightsNameColumnWidth));
+  });
+  const finishRightsColumnResize = (event) => {
+    if (!rightsColumnResizePointer || event.pointerId !== rightsColumnResizePointer.pointerId) return;
+    setRightsNameColumnWidth(rightsNameColumnWidth, true);
+    rightsColumnResizePointer = null;
+  };
+  byId('assetRightsRows').addEventListener('pointerup', finishRightsColumnResize);
+  byId('assetRightsRows').addEventListener('pointercancel', finishRightsColumnResize);
 
   byId('settingsTabs').addEventListener('click', async (event) => {
     const button = event.target.closest('[data-settings-tab]');
