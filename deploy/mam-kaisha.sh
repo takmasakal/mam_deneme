@@ -163,6 +163,31 @@ app_image_matches_current_commit() {
     && git diff --quiet "${image_commit}" -- "${APP_IMAGE_INPUTS[@]}"
 }
 
+s3_worker_image_matches_current_commit() {
+  if app_image_inputs_are_dirty; then
+    echo "S3 worker image inputs changed; worker image rebuild is required."
+    return 1
+  fi
+
+  local image_commit
+  image_commit="$(${DOCKER_CMD} image inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' kaisha-s3-share-worker 2>/dev/null || true)"
+  if [[ -z "${image_commit}" || "${image_commit}" == "<no value>" || "${image_commit}" == "unknown" ]]; then
+    return 1
+  fi
+
+  git cat-file -e "${image_commit}^{commit}" 2>/dev/null \
+    && git diff --quiet "${image_commit}" -- "${APP_IMAGE_INPUTS[@]}"
+}
+
+build_s3_worker_if_needed() {
+  if s3_worker_image_matches_current_commit; then
+    echo "S3 worker image already matches app sources for ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT}; skipping build."
+  else
+    echo "Building S3 worker image for ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT}."
+    dc build s3-share-worker
+  fi
+}
+
 up_stack_with_current_image_cache() {
   if app_image_matches_current_commit; then
     echo "App image already matches app sources for ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT}; starting without rebuild."
@@ -354,9 +379,9 @@ case "${cmd}" in
     echo "Starting MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
 
     if [[ "${S3_SHARING_ENABLED}" == "true" ]]; then
-      echo "S3 sharing enabled; building the S3 share worker."
+      echo "S3 sharing enabled."
       dc up -d postgres keycloak-postgres
-      dc build s3-share-worker
+      build_s3_worker_if_needed
     else
       echo "S3 sharing disabled; removing its optional worker container."
       remove_project_s3_share_worker
@@ -429,7 +454,7 @@ case "${cmd}" in
     dc up -d postgres keycloak-postgres
 
     if [[ "${S3_SHARING_ENABLED}" == "true" ]]; then
-      dc build s3-share-worker
+      build_s3_worker_if_needed
     fi
 
     DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-postgres-password.sh \
