@@ -621,6 +621,14 @@ button:hover {
   margin-top: 8px;
 }
 
+.asset-card-tags {
+  max-height: 52px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  align-content: flex-start;
+  overscroll-behavior: contain;
+}
+
 .tech-info-box {
   margin-top: 10px;
   padding: 10px;
