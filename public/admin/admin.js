@@ -304,7 +304,7 @@
     if (adminPermissions.canAccessAssetRightsAdmin || canUseFullAdmin()) allowed.push('asset-rights');
     if (adminPermissions.canAccessMetadataAdmin || canUseFullAdmin()) allowed.push('metadata');
     if (adminPermissions.canAccessTextAdmin || canUseFullAdmin()) allowed.push('settings');
-    if (adminPermissions.canAccessS3Sharing || canUseFullAdmin()) allowed.push('s3-sharing');
+    if (adminPermissions.s3SharingEnabled && (adminPermissions.canAccessS3Sharing || canUseFullAdmin())) allowed.push('s3-sharing');
     return allowed;
   }
 

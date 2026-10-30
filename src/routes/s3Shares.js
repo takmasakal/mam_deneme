@@ -21,6 +21,7 @@ function createShareAccessHelpers({ assetAccessService, resolveEffectivePermissi
 }
 
 function registerS3ShareRoutes(app, deps = {}) {
+  if (String(process.env.S3_SHARING_ENABLED || '').trim().toLowerCase() !== 'true') return;
   const {
     pool,
     assetAccessService,

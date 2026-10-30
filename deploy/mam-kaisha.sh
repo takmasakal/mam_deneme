@@ -56,8 +56,12 @@ dc() {
     echo "Docker daemon is not reachable. Start Docker or use sudo."
     exit 1
   fi
+  local profile_args=()
+  if [[ "${S3_SHARING_ENABLED:-false}" == "true" ]]; then
+    profile_args+=(--profile s3-sharing)
+  fi
   # shellcheck disable=SC2086
-  ${DOCKER_CMD} compose --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}" "$@"
+  ${DOCKER_CMD} compose --env-file "${ENV_FILE}" -f "${BASE_COMPOSE}" -f "${KAISHA_COMPOSE}" "${profile_args[@]}" "$@"
 }
 
 ensure_external_volumes() {
@@ -73,6 +77,30 @@ ensure_external_volumes() {
     # shellcheck disable=SC2086
     ${DOCKER_CMD} volume inspect "${volume}" >/dev/null 2>&1 || ${DOCKER_CMD} volume create "${volume}" >/dev/null
   done
+}
+
+remove_project_s3_share_worker() {
+  if [[ -z "${DOCKER_CMD}" ]]; then
+    DOCKER_CMD="$(detect_docker_cmd)"
+  fi
+  if [[ -z "${DOCKER_CMD}" ]]; then
+    echo "Docker daemon is not reachable. Start Docker or use sudo."
+    return 1
+  fi
+
+  local worker_ids
+  worker_ids="$(${DOCKER_CMD} ps -aq \
+    --filter label=com.docker.compose.project=kaisha \
+    --filter label=com.docker.compose.service=s3-share-worker)"
+  if [[ -z "${worker_ids}" ]]; then
+    return 0
+  fi
+
+  while IFS= read -r worker_id; do
+    [[ -z "${worker_id}" ]] && continue
+    ${DOCKER_CMD} stop "${worker_id}" >/dev/null 2>&1 || true
+    ${DOCKER_CMD} rm "${worker_id}" >/dev/null
+  done <<< "${worker_ids}"
 }
 
 ensure_s3_share_credentials_key() {
@@ -270,7 +298,8 @@ usage() {
 Usage:
   ./deploy/mam-kaisha.sh init [MAM_HOST] [KEYCLOAK_HOST] [OFFICE_HOST] [WHITELIST_DOMAIN]
   ./deploy/mam-kaisha.sh build
-  ./deploy/mam-kaisha.sh up
+  ./deploy/mam-kaisha.sh up            # normal start, S3 sharing off
+  ./deploy/mam-kaisha.sh up -s3        # start with S3 sharing worker enabled
   ./deploy/mam-kaisha.sh down           # enable maintenance first, then stop containers
   ./deploy/mam-kaisha.sh restart        # restart and rebuild app image when current commit changed
   ./deploy/mam-kaisha.sh ps
@@ -300,6 +329,18 @@ case "${cmd}" in
     dc build app oauth2-proxy
     ;;
   up)
+    shift || true
+    S3_SHARING_ENABLED=false
+    for option in "$@"; do
+      if [[ "${option}" == "-s3" ]]; then
+        S3_SHARING_ENABLED=true
+      else
+        echo "Unknown up option: ${option}"
+        usage
+        exit 2
+      fi
+    done
+    export S3_SHARING_ENABLED
     ensure_init
     ensure_s3_share_credentials_key
     ensure_external_volumes
@@ -312,7 +353,15 @@ case "${cmd}" in
 
     echo "Starting MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
 
-    dc up -d postgres keycloak-postgres
+    if [[ "${S3_SHARING_ENABLED}" == "true" ]]; then
+      echo "S3 sharing enabled; building the S3 share worker."
+      dc up -d postgres keycloak-postgres
+      dc build s3-share-worker
+    else
+      echo "S3 sharing disabled; removing its optional worker container."
+      remove_project_s3_share_worker
+      dc up -d postgres keycloak-postgres
+    fi
 
     DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-postgres-password.sh \
       --env-file "${ENV_FILE}" \
@@ -340,11 +389,24 @@ case "${cmd}" in
 
   down)
     ./deploy/belgelik-maintenance.sh on
+    remove_project_s3_share_worker
     dc down
     echo "Belgelik stack is down. Maintenance mode remains ON."
     ;;
 
   restart)
+    shift || true
+    S3_SHARING_ENABLED=false
+    for option in "$@"; do
+      if [[ "${option}" == "-s3" ]]; then
+        S3_SHARING_ENABLED=true
+      else
+        echo "Unknown restart option: ${option}"
+        usage
+        exit 2
+      fi
+    done
+    export S3_SHARING_ENABLED
     ensure_init
     ensure_s3_share_credentials_key
     ensure_external_volumes
@@ -355,11 +417,20 @@ case "${cmd}" in
     # Böylece dc down sırasında kullanıcı hata ekranı görmez.
     ./deploy/belgelik-maintenance.sh on
 
+    if [[ "${S3_SHARING_ENABLED}" != "true" ]]; then
+      echo "S3 sharing disabled; removing its optional worker container."
+      remove_project_s3_share_worker
+    fi
+
     echo "Restarting MAM app from ${MAM_GIT_BRANCH}@${MAM_GIT_COMMIT} (${MAM_BUILD_DATE})"
 
     dc down
 
     dc up -d postgres keycloak-postgres
+
+    if [[ "${S3_SHARING_ENABLED}" == "true" ]]; then
+      dc build s3-share-worker
+    fi
 
     DOCKER_CMD="${DOCKER_CMD}" ./deploy/sync-postgres-password.sh \
       --env-file "${ENV_FILE}" \
